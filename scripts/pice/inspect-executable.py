@@ -81,12 +81,76 @@ def inspect(data):
             'fixups_applied': False, 'objects': objects}
 
 
+def inspect_fixups(data, image):
+    """Describe the internal fixup variants used by these DOS executables.
+
+    No relocated image is emitted. External, chained, additive and list
+    encodings are rejected rather than interpreted speculatively.
+    """
+    le = image['le_offset']
+    def u32(offset):
+        if offset < 0 or offset+4 > len(data):
+            raise ValueError('truncated fixup field')
+        return struct.unpack_from('<I', data, offset)[0]
+    table = le+u32(le+104)
+    records = le+u32(le+108)
+    limit = le+u32(le+112)
+    pages = image['page_count']
+    if table < le+196 or table+4*(pages+1) > records or records > limit or limit > len(data):
+        raise ValueError('invalid fixup table bounds')
+    offsets = [u32(table+4*i) for i in range(pages+1)]
+    if offsets[0] or offsets[-1] > limit-records or any(a>b for a,b in zip(offsets,offsets[1:])):
+        raise ValueError('invalid fixup page offsets')
+    owners = {}
+    objtab = le+u32(le+64)
+    for obj in image['objects']:
+        first = u32(objtab+(obj['object']-1)*24+12)-1
+        for ordinal in range(len(obj['pages'])):
+            if first+ordinal in owners:
+                raise ValueError('overlapping object page maps')
+            owners[first+ordinal] = (obj, ordinal)
+    result = []
+    widths = {2: 2, 6: 6, 7: 4}
+    for page in range(pages):
+        pos, end = records+offsets[page], records+offsets[page+1]
+        while pos < end:
+            if end-pos < 5:
+                raise ValueError('truncated fixup record')
+            source_type, flags, source, target_object = struct.unpack_from('<BBhB', data, pos)
+            pos += 5
+            if source_type not in widths or flags not in (0,16):
+                raise ValueError('unsupported fixup encoding')
+            target = 0
+            if source_type != 2:
+                width = 4 if flags & 16 else 2
+                if end-pos < width:
+                    raise ValueError('truncated fixup target')
+                target = int.from_bytes(data[pos:pos+width], 'little')
+                pos += width
+            if page not in owners or not 1 <= target_object <= len(image['objects']):
+                raise ValueError('invalid fixup object')
+            obj, ordinal = owners[page]
+            source_offset = ordinal*image['page_size']+source
+            if source_offset < 0 or source_offset+widths[source_type] > obj['virtual_size']:
+                raise ValueError(f'fixup outside object bounds: source={obj["object"]}:{source_offset:x}, target={target_object}:{target:x}')
+            result.append({'source_object': obj['object'], 'source_offset': source_offset,
+                           'source_type': source_type, 'target_object': target_object,
+                           'target_offset': target,
+                           'target_within_object': target < image['objects'][target_object-1]['virtual_size']})
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('executable', type=Path)
+    parser.add_argument('--fixups', action='store_true', help='include internal relocation metadata')
     args = parser.parse_args()
     try:
-        print(json.dumps(inspect(args.executable.read_bytes()), indent=2))
+        data = args.executable.read_bytes()
+        result = inspect(data)
+        if args.fixups:
+            result['fixups'] = inspect_fixups(data, result)
+        print(json.dumps(result, indent=2))
     except (ValueError, OSError) as error:
         parser.exit(1, f'{error}\n')
 

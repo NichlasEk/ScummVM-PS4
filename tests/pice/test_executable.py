@@ -47,6 +47,35 @@ class ExecutableTests(unittest.TestCase):
             with self.subTest(offset=offset, value=value), self.assertRaises(ValueError):
                 inspector.inspect(data)
 
+    def fixup_fixture(self):
+        data = self.fixture()
+        for field, value in [(104, 228), (108, 240), (112, 247)]:
+            struct.pack_into('<I', data, 128 + field, value)
+        struct.pack_into('<3I', data, 128 + 228, 0, 7, 7)
+        struct.pack_into('<BBhBH', data, 128 + 240, 7, 0, 4, 1, 23)
+        return data
+
+    def test_internal_fixup(self):
+        data = self.fixup_fixture()
+        result = inspector.inspect_fixups(data, inspector.inspect(data))
+        self.assertEqual(result[0]['source_offset'], 4)
+        self.assertEqual(result[0]['target_offset'], 23)
+        self.assertTrue(result[0]['target_within_object'])
+
+    def test_cross_page_fixup(self):
+        data = self.fixup_fixture()
+        struct.pack_into('<3I', data, 128 + 228, 0, 0, 7)
+        struct.pack_into('<h', data, 128 + 242, -2)
+        result = inspector.inspect_fixups(data, inspector.inspect(data))
+        self.assertEqual(result[0]['source_offset'], 254)
+
+    def test_reject_bad_fixup(self):
+        for offset, value in [(128 + 241, 4), (128 + 244, 0), (128 + 232, 6)]:
+            data = self.fixup_fixture()
+            data[offset] = value
+            with self.subTest(offset=offset), self.assertRaises(ValueError):
+                inspector.inspect_fixups(data, inspector.inspect(data))
+
     def test_unsupported_page_encoding(self):
         data = self.fixture()
         data[128 + 223] = 1

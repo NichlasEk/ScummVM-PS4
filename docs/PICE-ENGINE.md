@@ -200,3 +200,72 @@ oracle, encoded FNV a67ddbaf matches, all parser self-tests pass, and animation
 0 still boots. Evidence: artifacts/pice/language-index-guest.log and
 language-index-oracle.json. This checkpoint adds a resource lookup building
 block; no room-script execution or gameplay is implemented yet.
+
+## Script-bank and execution checkpoint
+
+`inspect-executable.py --fixups` now decodes the observed internal LE fixup
+variants into source-object/source-offset and target-object/target-offset
+metadata. It does not apply them or export executable bytes. Tests cover
+ordinary and negative cross-page source offsets and invalid encodings.
+ICE640 has 9,815 fixup records; ICE320 has 9,821. One target in each file is
+outside its object's virtual extent and is marked as such rather than treated
+as a dereferenceable pointer. External/chained/additive/list encodings remain
+unsupported and fail explicitly.
+
+This resolves a crucial ambiguity: the resource-name tables referenced from
+code offsets 0x1ba88 and 0x1ba9f target **object 1**, not object 3. Object 1
+contains data as well as its executable flag. Chained-XOR blocks at object 1
+0xd60 (352 bytes after its length) and 0xed0 (304 bytes) decode to 29 graphics
+and 25 sound group names. Examples: SA02 -> 0, SB02 -> 815, SM02 -> 1138,
+SOBJECT -> 1306. Metadata was inspected locally; no game table bytes are added
+to the repository.
+
+The SM02..SM12 range, KSVGA IDs 1138..1305, contains 155 script banks and 13
+five-byte `dummy` placeholders. There are 1,499 script entry points. A bank
+starts with uint16 N followed by N-1 uint16 offsets. The first word N is also
+the first entry's offset: all offsets are measured in **16-bit words from the
+resource start**, not bytes. Original code evidence: object 2 0x1de reads
+N-1; 0x21e loads table[index], doubles it and adds the resource base. Each
+scheduler bank has 50 task slots. The new parser validates these bounds and
+allows aliased entry addresses; it does not presume code regions cannot jump
+between entries or attempt to validate every instruction yet.
+
+Command dispatch: object 2 0x21ae reads a 16-bit opcode through the current
+instruction pointer and calls the table at object 3 offset 0x11d9. Confirmed
+pure subset implemented with bounded recursion and transactional PC updates:
+
+| Opcode | Operation | Handler in object 2 |
+| --- | --- | --- |
+| 7 | signed inequality | 0x2700 |
+| 8 | signed less-than | 0x271e |
+| 9 | signed greater-than | 0x273c |
+| 10 | signed less-or-equal | 0x275a |
+| 11 | signed greater-or-equal | 0x2778 |
+| 12, 13 | eager logical AND, OR | 0x2799, 0x27c4 |
+| 14, 15, 16 | addition, subtraction, multiplication (low 16 bits) | 0x27eb, 0x2805, 0x2821 |
+| 20 | following 16-bit literal | 0x2916 |
+
+The small explicitly stepped ScriptRunner additionally handles 3 (start entry;
+0x23a2 -> 0x21e) and 31 (stop entry; 0x23c8 -> 0x2a1). Task state here is only
+PC and active/inactive. Original teardown of actor/audio resources, waits,
+scheduler ordering, branching, variable state, movie playback and scene
+operations are not implemented. Unsupported commands stop with kUnsupported;
+invalid input stops with kInvalid. They are never silently skipped.
+
+Synthetic guest tests cover every implemented binary operation, signed values,
+wraparound, nested expressions, truncated operands, recursion limits, malformed
+entry tables, starting/stopping two tasks and faulting on unknown commands.
+The actual resource 1138 entry 0 begins with stop-entry and literal zero. The
+preview verifies decoding that argument and stepping the task until it stops
+itself. This is real but very limited script execution, not a playable scene.
+The next entry starts with unsupported opcode 138 (movie-related evidence
+still needs investigation); no attempt is made to fake its effects.
+
+Independent corpus oracle: `scripts/pice/audit-scripts.py /path/KSVGA.KRO`.
+It emits only entry metadata and hashes, not script bytes.
+
+Verification completed in shadPS4: all 155 bank entry counts and FNV hashes
+match the independent oracle; 1,499 entries and 13 placeholders are reported.
+Guest synthetic tests pass, original stop-self reaches byte offset 10 and
+animation 0 still starts. Evidence: artifacts/pice/script-runner-guest.log and
+script-index-oracle.json. No physical PS4 verification of this PICE checkpoint.

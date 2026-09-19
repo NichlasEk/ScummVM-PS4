@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/pice.h"
 #include "pice/resource-names.h"
+#include "pice/script.h"
 #include "engines/util.h"
 #include "common/system.h"
 #include "common/events.h"
@@ -145,7 +146,7 @@ void PiceEngine::playSpeech() {
  }
 }
 Common::Error PiceEngine::run() {
- if (!runSelfTests() || !runSpriteTests() || !runResourceNameTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
+ if (!runSelfTests() || !runSpriteTests() || !runResourceNameTests() || !runScriptTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
  debug("[pice] parser self-tests PASS");
  if (!_graphics.open(Common::Path("KSVGA.KRO")) || !_language.open(Common::Path("E_KLANG.KRO")))
   return Common::Error(Common::kReadingFailed, "PICE preview requires the English European CD KSVGA.KRO and E_KLANG.KRO");
@@ -164,6 +165,29 @@ Common::Error PiceEngine::run() {
    debug("[pice] language-group=%s base=%u",names.entry(i).name.c_str(),id);
   }
  } else warning("[pice] E_KLANG.BIN unavailable; named language resources disabled");
+ // English EU graphics-name table identifies SM02..SM12 as 1138..1305.
+ // This audits entry tables only; it does not run scene side effects.
+ uint banks=0, entries=0, placeholders=0;
+ for (uint i=1138;i<1306;++i) {
+  Common::Array<byte> bytes;
+  if (!_graphics.read(i,bytes)) return Common::Error(Common::kReadingFailed,"Cannot read script bank");
+  if (bytes.size()==5 && memcmp(&bytes[0],"dummy",5)==0) { ++placeholders; continue; }
+  ScriptResource scripts;
+  if (!scripts.load(bytes)) return Common::Error(Common::kReadingFailed,"Invalid script entry table");
+  ++banks; entries+=scripts.count();
+  debug("[pice] script-bank=%u entries=%u fnv=%08x",i,scripts.count(),hashBytes(bytes));
+  if (i==1138) {
+   uint16 opcode; scripts.word(scripts.entry(0),opcode);
+   uint32 pc=scripts.entry(0)+2; int16 value;
+   if (opcode!=31 || !scripts.expression(pc,value)) return Common::Error(Common::kReadingFailed,"Unexpected first script prefix");
+   debug("[pice] script-prefix resource=1138 entry=0 opcode=%u argument=%d next-byte=%u",opcode,value,pc);
+   ScriptRunner runner(scripts);
+   if (!runner.start(0) || runner.step(0)!=ScriptRunner::kStopped || runner.running(0))
+    return Common::Error(Common::kReadingFailed,"First script did not stop its own task");
+   debug("[pice] script-runner resource=1138 entry=0 stop-self PASS next-byte=%u",runner.position(0));
+  }
+ }
+ debug("[pice] script-index banks=%u entries=%u placeholders=%u",banks,entries,placeholders);
  for (uint i = 0; i + 1 < _graphics.count(); ++i) {
   const KroEntry &e = _graphics.entry(i);
   if (e.size < 640*200 || e.size > 640*320+4 || _graphics.entry(i+1).size != 768) continue;

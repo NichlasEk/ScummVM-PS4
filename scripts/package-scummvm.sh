@@ -6,6 +6,18 @@ sdk=$OO_PS4_TOOLCHAIN
 stage="$root/build/scummvm-pkg"
 dist="$root/dist"
 content_id=IV0000-SCVM00002_00-SCUMMVMPS4000001
+app_title='ScummVM PS4'
+output_name=ScummVM-PS4-2.9.1.pkg
+dott_source=
+if [[ ${1:-} == --with-dott && $# == 2 ]]; then
+    dott_source=$(CDPATH= cd -- "$2" && pwd)
+    stage="$root/build/scummvm-dott-pkg"
+    app_title='ScummVM PS4 + DOTT'
+    output_name=ScummVM-PS4-2.9.1-DOTT.pkg
+elif [[ $# != 0 ]]; then
+    echo "Usage: $0 [--with-dott DIRECTORY_CONTAINING_TENTACLE_FILES]" >&2
+    exit 2
+fi
 # Fail before packaging if cross-compilation accidentally picks up host libraries.
 python3 - "$root/build/scummvm/scummvm" <<'CHECK'
 import re, subprocess, sys
@@ -22,7 +34,7 @@ mkdir -p "$stage/sce_sys/about" "$stage/sce_module" "$stage/data" "$stage/games"
  -out="$root/build/scummvm/scummvm.oelf" --eboot "$stage/eboot.bin" --paid 0x3800000000000011
 cp "$sdk/samples/SDL2/sce_module/"{libc.prx,libSceFios2.prx} "$stage/sce_module/"
 cp "$sdk/samples/piglet/sce_sys/about/right.sprx" "$stage/sce_sys/about/"
-cp "$sdk/samples/SDL2/sce_sys/icon0.png" "$stage/sce_sys/"
+cp "$root/assets/icon0.png" "$stage/sce_sys/"
 cp "$root/.tools/scummvm-src/COPYING" "$stage/data/COPYING"
 printf '%s\n' 'Place legally obtained SCUMM game data in subdirectories here.' > "$stage/games/README.txt"
 pkgtool="$sdk/bin/linux/PkgTool.Core"
@@ -33,15 +45,32 @@ if [[ -e "$sfo" ]]; then mv "$sfo" "$sfo.previous"; fi
 for pair in APP_TYPE:1 ATTRIBUTE:0 DOWNLOAD_DATA_SIZE:0 SYSTEM_VER:0; do
  "${pkgtool}" sfo_setentry "$sfo" "${pair%%:*}" --type Integer --maxsize 4 --value "${pair#*:}"
 done
-"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.00
-"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.00
+"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.01
+"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.01
 "$pkgtool" sfo_setentry "$sfo" CATEGORY --type Utf8 --maxsize 4 --value gd
 "$pkgtool" sfo_setentry "$sfo" CONTENT_ID --type Utf8 --maxsize 48 --value "$content_id"
 "$pkgtool" sfo_setentry "$sfo" TITLE_ID --type Utf8 --maxsize 12 --value SCVM00002
-"$pkgtool" sfo_setentry "$sfo" TITLE --type Utf8 --maxsize 128 --value 'ScummVM PS4'
+"$pkgtool" sfo_setentry "$sfo" TITLE --type Utf8 --maxsize 128 --value "$app_title"
+package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right.sprx
+    sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING games/README.txt)
+if [[ -n "$dott_source" ]]; then
+    mkdir -p "$stage/games/dott"
+    # Include only the full game's data, not DOS executables or unrelated demos.
+    python3 - "$dott_source" "$stage/games/dott" <<'DOTT'
+import pathlib, shutil, sys
+source, destination = map(pathlib.Path, sys.argv[1:])
+files = {p.name.lower(): p for p in source.iterdir() if p.is_file()}
+for name in ('tentacle.000', 'tentacle.001', 'monster.sou'):
+    if name not in files or files[name].stat().st_size == 0:
+        sys.exit('Missing DOTT CD data file: ' + str(source / name))
+    shutil.copyfile(files[name], destination / name)
+DOTT
+    cp "$root/config/scummvm-dott.ini" "$stage/scummvm-default.ini"
+    package_files+=(games/dott/tentacle.000 games/dott/tentacle.001 games/dott/monster.sou scummvm-default.ini)
+fi
 cd "$stage"
 "$sdk/bin/linux/create-gp4" -out pkg.gp4 --content-id="$content_id" \
- --files 'eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right.sprx sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING games/README.txt'
+ --files "${package_files[*]}"
 # This SDK's create-gp4 emits a fixed sample directory tree. Derive it from
 # the actual files so data/games and future asset directories are included.
 python3 - <<'GP4'
@@ -62,5 +91,10 @@ ET.indent(tree)
 tree.write(p, encoding='utf-8', xml_declaration=True)
 GP4
 "$pkgtool" pkg_build pkg.gp4 .
-cp "$content_id.pkg" "$dist/$content_id.pkg"
-sha256sum eboot.bin "$dist/$content_id.pkg"
+cp "$content_id.pkg" "$dist/$output_name"
+sha256sum eboot.bin "$dist/$output_name"
+(cd "$dist" && sha256sum "$output_name" > "$output_name.sha256")
+# Preserve the original generic artifact path used by existing local workflows.
+if [[ -z "$dott_source" ]]; then
+    cp "$dist/$output_name" "$dist/$content_id.pkg"
+fi

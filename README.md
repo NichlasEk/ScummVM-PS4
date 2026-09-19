@@ -2,8 +2,14 @@
 
 ScummVM 2.9.1 with the SCUMM engine, cross-compiled for PS4 and boot-tested
 in shadPS4 0.18.0. The real launcher is visible and the pointer can be
-controlled with keyboard-emulated sticks or a PC mouse. Hardware testing
-and actual game/save validation are still pending.
+controlled with keyboard-emulated sticks or a PC mouse. The user has confirmed DOTT running on a real PS4. The latest pointer/storage
+changes still need hardware testing; save/load validation remains pending.
+
+## Install on PS4 and add games
+
+The default package contains **no games**. It has the ScummVM icon, a 8× faster
+PS4 pointer, and storage shortcuts for USB and internal game directories.
+See [standalone install and game setup](docs/STANDALONE-PS4.md).
 
 ## Run ScummVM in the emulator
 
@@ -44,7 +50,7 @@ another installation with the same SDK layout.
 ./scripts/build-scummvm.sh
 ```
 
-- Package: `dist/IV0000-SCVM00002_00-SCUMMVMPS4000001.pkg`
+- Package: `dist/ScummVM-PS4-2.9.1.pkg`
 - Guest executable: `build/scummvm-pkg/eboot.bin`
 - Guest settings/saves/logs: `.tools/xdg/shadPS4/data/scummvm/`
 - Build logs/evidence: `artifacts/scummvm/`
@@ -57,6 +63,18 @@ old checkout is read-only reference material. The portable changes live in
 `patches/scummvm/ps4.patch`; generated sources/builds stay ignored by Git.
 
 See [ScummVM validation and remaining work](docs/SCUMMVM.md).
+
+## Bundle your DOTT CD data for a PS4 test
+
+```sh
+./scripts/build-scummvm.sh
+./scripts/package-scummvm.sh --with-dott /path/to/dott-data
+```
+
+The directory must contain `tentacle.000`, `tentacle.001`, and `monster.sou`.
+The result is `dist/ScummVM-PS4-2.9.1-DOTT.pkg`, with DOTT preselected on a
+fresh installation. Existing settings and saves are preserved. See
+[DOTT hardware-test package](docs/DOTT-PS4-TEST.md) for verification and setup.
 
 ## Diagnostic app
 

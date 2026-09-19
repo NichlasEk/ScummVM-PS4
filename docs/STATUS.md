@@ -1,5 +1,23 @@
 # Status
 
+## 2026-09-19: physical PS4 confirmed; standalone revision
+
+The user confirms that the DOTT bundle runs on their real PS4. Their feedback
+was slow pointer movement. Version 1.01 multiplies virtual pointer speed by
+four, replaces the SDK icon with the upstream ScummVM icon, creates an internal
+game directory and presents USB/internal storage in the root browser. The
+default package excludes all game data. Hardware retesting of these changes
+and save/load/audio checks remain pending. See [standalone setup](STANDALONE-PS4.md).
+
+## 2026-09-19: DOTT bundled for hardware testing
+
+The user demonstrated the DOTT intro running in shadPS4. A local PKG now
+bundles their full CD game data and a first-launch game entry. Package
+signatures/digests and extracted contents were verified, and the extracted
+executable boots with DOTT preselected. Hardware test remains pending.
+See [DOTT-PS4-TEST.md](DOTT-PS4-TEST.md) for the artifact and SHA-256.
+
+
 ## 2026-09-19: ScummVM launcher boots in shadPS4
 
 The user clarified that the milestone is the real ScummVM application in the

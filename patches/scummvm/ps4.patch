@@ -14,7 +14,7 @@
  #include "common/scummsys.h"
  
  #if defined(POSIX) && !defined(MACOSX) && !defined(SAMSUNGTV) && !defined(MAEMO) && !defined(OPENDINGUX) && !defined(OPENPANDORA) && !defined(PLAYSTATION3) && !defined(PSP2) && !defined(NINTENDO_SWITCH)  && !defined(__EMSCRIPTEN__) && !defined(MIYOO) && !defined(MIYOOMINI) && !defined(SAILFISH)
-@@ -28,6 +35,27 @@
+@@ -28,6 +35,37 @@
  #include "base/main.h"
  
  int main(int argc, char *argv[]) {
@@ -23,6 +23,7 @@
 +	printf("[scummvm-ps4] entered main\n");
 +	mkdir("/data/scummvm", 0777);
 +	mkdir("/data/scummvm/saves", 0777);
++	mkdir("/data/scummvm/games", 0777);
 +	chdir("/app0");
 +	// Seed writable settings only on first launch; preserve user changes.
 +	FILE *config = fopen("/data/scummvm/scummvm.ini", "r");
@@ -31,10 +32,19 @@
 +	} else {
 +		config = fopen("/data/scummvm/scummvm.ini", "w");
 +		if (config) {
++			FILE *defaults = fopen("/app0/scummvm-default.ini", "r");
++			if (defaults) {
++				char buffer[1024];
++				size_t count;
++				while ((count = fread(buffer, 1, sizeof(buffer), defaults)) != 0)
++					fwrite(buffer, 1, count, config);
++				fclose(defaults);
++			} else {
 +			fputs("[scummvm]\nextrapath=/app0/data\nthemepath=/app0/data\n"
-+			      "savepath=/data/scummvm/saves\nbrowser_lastpath=/app0/games\n"
++			      "savepath=/data/scummvm/saves\nbrowser_lastpath=/\n"
 +			      "gui_theme=builtin\njoystick_num=0\nfullscreen=false\n"
 +			      "gfx_mode=normal\n", config);
++			}
 +			fclose(config);
 +		}
 +	}
@@ -199,6 +209,38 @@
  }
  
  void POSIXFilesystemNode::setFlags() {
+@@ -165,6 +191,31 @@
+ 			ulDrvMap >>= 1;
+ 		}
+ 
++		return true;
++	}
++#endif
++
++#ifdef __PS4__
++	// The sandbox root may not be enumerable. Present reachable storage roots
++	// directly, checking them anew so USB hotplug is reflected in the browser.
++	if (_path == "/") {
++		if (mode == Common::FSNode::kListFilesOnly)
++			return true;
++		const char *paths[] = {"/data/scummvm/games", "/mnt/usb0", "/mnt/usb1",
++			"/mnt/usb2", "/mnt/usb3", "/mnt/usb4", "/mnt/usb5",
++			"/mnt/usb6", "/mnt/usb7", "/app0/games"};
++		const char *names[] = {"Internal storage - games", "USB 0", "USB 1",
++			"USB 2", "USB 3", "USB 4", "USB 5", "USB 6", "USB 7",
++			"Bundled games"};
++		for (unsigned i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
++			POSIXFilesystemNode *entry = new POSIXFilesystemNode(paths[i]);
++			if (entry->_isValid && entry->_isDirectory) {
++				entry->_displayName = names[i];
++				myList.push_back(entry);
++			} else {
++				delete entry;
++			}
++		}
+ 		return true;
+ 	}
+ #endif
 --- a/backends/events/sdl/sdl-events.cpp
 +++ b/backends/events/sdl/sdl-events.cpp
 @@ -20,6 +20,9 @@
@@ -269,3 +311,17 @@
  	Common::JoystickButton osystemButtons[] = {
  	    Common::JOYSTICK_BUTTON_A,
  	    Common::JOYSTICK_BUTTON_B,
+--- a/backends/keymapper/virtual-mouse.cpp
++++ b/backends/keymapper/virtual-mouse.cpp
+@@ -192,6 +192,11 @@
+ 	if (magnitude >= deadZone) {
+ 		float scalingFactor = 1.0f / magnitude * (magnitude - deadZone) / (JOYAXIS_MAX - deadZone);
+ 		float speedFactor = computeJoystickMouseSpeedFactor();
++#ifdef __PS4__
++		// Console display needs a faster pointer; retain the speed slider and
++		// analog precision. Applies to existing configs as well as new installs.
++		speedFactor *= 8.0f;
++#endif
+ 		_mouseVelocityX = analogX * scalingFactor * speedFactor;
+ 		_mouseVelocityY = analogY * scalingFactor * speedFactor;
+ 	} else {

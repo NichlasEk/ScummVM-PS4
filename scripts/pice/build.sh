@@ -13,6 +13,8 @@ export SCUMMVM_TITLE='ScummVM PICE Preview'
 export SCUMMVM_PACKAGE_NAME=ScummVM-PS4-PICE-preview.pkg
 mkdir -p "$root/artifacts/pice" "$SCUMMVM_BUILD_DIR"
 "$root/scripts/prepare-scummvm.sh"
+"$root/scripts/build-ps4-storage.sh"
+"$root/scripts/build-ps4-input.sh"
 mkdir -p "$SCUMMVM_SOURCE_DIR/engines/pice"
 python3 - "$root/engines/pice" "$SCUMMVM_SOURCE_DIR/engines/pice" <<'COPY'
 import filecmp, pathlib, shutil, sys
@@ -43,6 +45,10 @@ if [[ ! -f "$SCUMMVM_BUILD_DIR/config.h" || ! -f "$SCUMMVM_BUILD_DIR/.pice-confi
  "$root/scripts/configure-scummvm.sh" > "$root/artifacts/pice/configure.log" 2>&1
  touch "$SCUMMVM_BUILD_DIR/config.h"
  printf '%s\n' "$fingerprint" > "$SCUMMVM_BUILD_DIR/.pice-config-id"
+fi
+# Static dependency changes must relink even when no ScummVM source changed.
+if [[ -f "$SCUMMVM_BUILD_DIR/scummvm" ]] && { [[ "$root/build/ps4-input/libSDL2.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-storage/libscummvm-jbc.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]]; }; then
+ rm -- "$SCUMMVM_BUILD_DIR/scummvm"
 fi
 make -C "$SCUMMVM_BUILD_DIR" -j"${BUILD_JOBS:-12}" > "$root/artifacts/pice/build.log" 2>&1
 "$root/scripts/package-scummvm.sh" > "$root/artifacts/pice/package.log" 2>&1

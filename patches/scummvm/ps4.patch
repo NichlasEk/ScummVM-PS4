@@ -1,6 +1,6 @@
 --- a/backends/platform/sdl/posix/posix-main.cpp
 +++ b/backends/platform/sdl/posix/posix-main.cpp
-@@ -19,6 +19,13 @@
+@@ -19,6 +19,14 @@
   *
   */
  
@@ -9,12 +9,13 @@
 +#include <stdio.h>
 +#include <sys/stat.h>
 +#include <unistd.h>
++extern "C" void ps4_release_usb_mounts(void);
 +#endif
 +
  #include "common/scummsys.h"
  
  #if defined(POSIX) && !defined(MACOSX) && !defined(SAMSUNGTV) && !defined(MAEMO) && !defined(OPENDINGUX) && !defined(OPENPANDORA) && !defined(PLAYSTATION3) && !defined(PSP2) && !defined(NINTENDO_SWITCH)  && !defined(__EMSCRIPTEN__) && !defined(MIYOO) && !defined(MIYOOMINI) && !defined(SAILFISH)
-@@ -28,6 +35,37 @@
+@@ -28,6 +36,37 @@
  #include "base/main.h"
  
  int main(int argc, char *argv[]) {
@@ -52,6 +53,16 @@
  
  	// Create our OSystem instance
  	g_system = new OSystem_POSIX();
+@@ -45,6 +84,9 @@
+ 
+ 	// Free OSystem
+ 	g_system->destroy();
++#ifdef __PS4__
++	ps4_release_usb_mounts();
++#endif
+ 
+ 	return res;
+ }
 --- a/backends/platform/sdl/posix/posix.cpp
 +++ b/backends/platform/sdl/posix/posix.cpp
 @@ -112,6 +112,9 @@
@@ -167,18 +178,20 @@
  int SurfaceSdlGraphicsManager::SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int ncolors) {
 --- a/backends/fs/posix/posix-fs.cpp
 +++ b/backends/fs/posix/posix-fs.cpp
-@@ -34,6 +34,10 @@
+@@ -34,6 +34,12 @@
  #include "backends/fs/posix/posix-fs.h"
  #include "backends/fs/posix/posix-iostream.h"
  #include "common/algorithm.h"
 +#ifdef __PS4__
 +#include "backends/fs/posix/ps4-dirent.h"
++extern "C" void ps4_refresh_usb_mounts(void);
 +#include "common/textconsole.h"
++#include "common/config-manager.h"
 +#endif
  
  #include <sys/param.h>
  #include <sys/stat.h>
-@@ -57,15 +61,41 @@
+@@ -57,15 +63,41 @@
  #endif
  
  bool POSIXFilesystemNode::exists() const {
@@ -220,7 +233,7 @@
  }
  
  void POSIXFilesystemNode::setFlags() {
-@@ -169,6 +199,74 @@
+@@ -169,6 +201,80 @@
  	}
  #endif
  
@@ -228,6 +241,8 @@
 +	// The sandbox root may not be enumerable. Present reachable storage roots
 +	// directly, checking them anew so USB hotplug is reflected in the browser.
 +	if (_path == "/") {
++		if (ConfMan.get("ps4_usb_sandbox") != "false")
++			ps4_refresh_usb_mounts();
 +		if (mode == Common::FSNode::kListFilesOnly)
 +			return true;
 +		const char *paths[] = {"/data/scummvm/games", "/mnt/usb0", "/mnt/usb1",
@@ -238,6 +253,10 @@
 +			"Bundled games"};
 +		for (unsigned i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
 +			POSIXFilesystemNode *entry = new POSIXFilesystemNode(paths[i]);
++			if ((!entry->_isValid || !entry->_isDirectory) && i >= 1 && i <= 8) {
++				delete entry;
++				entry = new POSIXFilesystemNode(Common::String::format("/usb%u", i - 1));
++			}
 +			if (entry->_isValid && entry->_isDirectory) {
 +				entry->_displayName = names[i];
 +				myList.push_back(entry);
@@ -295,7 +314,7 @@
  	DIR *dirp = opendir(_path.c_str());
  	struct dirent *dp;
  
-@@ -247,9 +345,15 @@
+@@ -247,9 +353,16 @@
  	closedir(dirp);
  
  	return true;
@@ -305,7 +324,8 @@
  AbstractFSNode *POSIXFilesystemNode::getParent() const {
 +#ifdef __PS4__
 +	if (_path == "/data/scummvm/games" || _path == "/app0/games" ||
-+	    (_path.hasPrefix("/mnt/usb") && _path.size() == 9))
++	    (_path.hasPrefix("/mnt/usb") && _path.size() == 9) ||
++	    (_path.hasPrefix("/usb") && _path.size() == 5))
 +		return makeNode("/");
 +#endif
  	if (_path == "/")
@@ -383,13 +403,25 @@
  	    Common::JOYSTICK_BUTTON_B,
 --- a/backends/keymapper/virtual-mouse.cpp
 +++ b/backends/keymapper/virtual-mouse.cpp
-@@ -192,6 +192,11 @@
- 	if (magnitude >= deadZone) {
+@@ -186,12 +186,22 @@
+ 	float analogX  = (float)_inputAxisPositionX;
+ 	float analogY  = (float)_inputAxisPositionY;
+ 	float deadZone = (float)ConfMan.getInt("joystick_deadzone") * 1000.0f;
++#ifdef __PS4__
++	deadZone = CLIP(deadZone, 0.0f, float(JOYAXIS_MAX - 1));
++#endif
+ 
+ 	float magnitude = sqrt(analogX * analogX + analogY * analogY);
+ 
+-	if (magnitude >= deadZone) {
++	if (magnitude > deadZone) {
  		float scalingFactor = 1.0f / magnitude * (magnitude - deadZone) / (JOYAXIS_MAX - deadZone);
  		float speedFactor = computeJoystickMouseSpeedFactor();
 +#ifdef __PS4__
-+		// Console display needs a faster pointer; retain the speed slider and
-+		// analog precision. Applies to existing configs as well as new installs.
++		// Quadratic radial response: small deflections retain subpixel precision,
++		// full deflection retains the 1.02 maximum. Cap diagonal magnitude.
++		float amount = MIN(1.0f, (magnitude - deadZone) / (JOYAXIS_MAX - deadZone));
++		scalingFactor = amount * amount / magnitude;
 +		speedFactor *= 2.0f;
 +#endif
  		_mouseVelocityX = analogX * scalingFactor * speedFactor;

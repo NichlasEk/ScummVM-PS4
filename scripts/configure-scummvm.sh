@@ -5,6 +5,8 @@ export OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchai
 sdk=$OO_PS4_TOOLCHAIN
 build_dir=${SCUMMVM_BUILD_DIR:-"$root/build/scummvm"}
 source_dir=${SCUMMVM_SOURCE_DIR:-"$root/.tools/scummvm-src"}
+"$root/scripts/build-ps4-storage.sh"
+"$root/scripts/build-ps4-input.sh"
 mkdir -p "$build_dir"
 cd "$build_dir"
 export CXX=clang++ CC=clang AR=llvm-ar RANLIB=llvm-ranlib
@@ -13,7 +15,7 @@ export PATH="$root/scripts:$PATH"
 export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig"
 export CXXFLAGS="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -O2 -D__PS4__ -include $root/compat/ps4/include/ps4-abi.h -D_BSD_SOURCE -D_LIBCPP_HAS_NO_LOCALE -nostdinc++ -isysroot $sdk -isystem $sdk/include -isystem $sdk/include/c++/v1 ${SCUMMVM_EXTRA_CXXFLAGS:-}"
 export LDFLAGS="--target=x86_64-pc-freebsd12-elf -fuse-ld=lld -nostdlib -Wl,-pie -Wl,--script=$sdk/link.x -Wl,--eh-frame-hdr -L$sdk/lib $sdk/lib/crt1.o -lc -lkernel"
-export LIBS="-lc++ -lc++abi -lc -lkernel"
+export LIBS="$root/build/ps4-storage/libscummvm-jbc.a -lc++ -lc++abi -lc -lkernel"
 "$source_dir/configure" --host=x86_64-pc-freebsd --backend=sdl \
  --disable-all-engines --enable-engine="${SCUMMVM_ENGINES:-scumm}" --disable-detection-full \
  --enable-release --enable-optimizations --enable-text-console \

@@ -102,3 +102,27 @@ oracle. Screenshot: artifacts/pice/first-background.png. Runtime log:
 artifacts/pice/emulator.log. Audio decoding/mixer submission is verified;
 there is no audio capture confirming audible playback. This remains a resource
 preview with no game interpreter.
+
+## Sprite/sequence checkpoint
+
+The independent scripts/pice/audit-sprites.py validates 24,535 RLE sprites
+in 734 KSVGA resources; 15 different header variants are explicitly excluded.
+The new PS4 sprite decoder passed its synthetic tests in shadPS4 and resource
+0 bitmap 0 produced pixel FNV 1a3dd53e, mask FNV b6a10fcc, palette 4f3aa5cc,
+matching the host oracle. The resource has 104 composition frames and 16
+sequences; the preview selects sequence 8 with 12 steps.
+
+Per bitmap: uint16 LE width/height. Each row starts with a byte span count;
+each span has skip, groups-of-four, remainder (0..3), then literal pixels.
+A final byte skips the rest of the row. A zero uint16 tail is optional.
+Transparency is a separate mask; color index 0 may be opaque.
+
+Frame records: two-byte header then 8-byte component records. Sequence records
+also have a two-byte header and 8-byte steps referencing composition frames.
+The preview currently accepts component flag pair (1,1) only. Signed offsets
+and duration fields are parsed; their complete semantics still need EXE
+confirmation. Playback uses a provisional 20 ms per duration unit. This does
+not establish original timing, anchor semantics, or gameplay support.
+
+The first frame's guest hashes are verified. Visual animation capture and
+full parser boundary coverage remain to finish after the PS4 USB/input fix.

@@ -33,7 +33,7 @@ bindings=profile/'input_config/SCVM00003.ini'
 if not bindings.exists(): shutil.copyfile(root/'config/emulator/SCVM00002.ini',bindings)
 ini=profile/'data/scummvm/scummvm.ini'
 if not ini.exists():
- ini.write_text('[scummvm]\ngui_theme=builtin\nsavepath=/data/scummvm/saves\ngfx_mode=normal\njoystick_num=0\nfullscreen=false\nconfirm_exit=false\n')
+ ini.write_text('[scummvm]\ngui_theme=builtin\nsavepath=/data/scummvm/saves\ngfx_mode=normal\njoystick_num=0\nfullscreen=false\nconfirm_exit=false\nps4_usb_sandbox=false\n')
 PY
 ulimit -c 0
 printf 'PICE resource preview: original game data mounted separately at /mnt/usb0\n'

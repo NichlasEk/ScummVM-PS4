@@ -3,11 +3,14 @@ set -euo pipefail
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 export OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
 sdk=$OO_PS4_TOOLCHAIN
-stage="$root/build/scummvm-pkg"
-dist="$root/dist"
-content_id=IV0000-SCVM00002_00-SCUMMVMPS4000001
-app_title='ScummVM PS4'
-output_name=ScummVM-PS4-2.9.1.pkg
+stage=${SCUMMVM_STAGE_DIR:-"$root/build/scummvm-pkg"}
+build_dir=${SCUMMVM_BUILD_DIR:-"$root/build/scummvm"}
+source_dir=${SCUMMVM_SOURCE_DIR:-"$root/.tools/scummvm-src"}
+dist=${SCUMMVM_DIST_DIR:-"$root/dist"}
+content_id=${SCUMMVM_CONTENT_ID:-IV0000-SCVM00002_00-SCUMMVMPS4000001}
+title_id=${SCUMMVM_TITLE_ID:-SCVM00002}
+app_title=${SCUMMVM_TITLE:-"ScummVM PS4"}
+output_name=${SCUMMVM_PACKAGE_NAME:-ScummVM-PS4-2.9.1.pkg}
 dott_source=
 if [[ ${1:-} == --with-dott && $# == 2 ]]; then
     dott_source=$(CDPATH= cd -- "$2" && pwd)
@@ -19,7 +22,7 @@ elif [[ $# != 0 ]]; then
     exit 2
 fi
 # Fail before packaging if cross-compilation accidentally picks up host libraries.
-python3 - "$root/build/scummvm/scummvm" <<'CHECK'
+python3 - "$build_dir/scummvm" <<'CHECK'
 import re, subprocess, sys
 needed = re.findall(r'\(NEEDED\).*?\[(.*?)\]', subprocess.check_output(['readelf', '-d', sys.argv[1]], text=True))
 allowed = {'libkernel.so', 'libSceUserService.so', 'libSceVideoOut.so',
@@ -30,12 +33,12 @@ if unexpected:
 print('PS4 imports:', ', '.join(needed))
 CHECK
 mkdir -p "$stage/sce_sys/about" "$stage/sce_module" "$stage/data" "$stage/games" "$dist"
-"$sdk/bin/linux/create-fself" -in="$root/build/scummvm/scummvm" \
- -out="$root/build/scummvm/scummvm.oelf" --eboot "$stage/eboot.bin" --paid 0x3800000000000011
+"$sdk/bin/linux/create-fself" -in="$build_dir/scummvm" \
+ -out="$build_dir/scummvm.oelf" --eboot "$stage/eboot.bin" --paid 0x3800000000000011
 cp "$sdk/samples/SDL2/sce_module/"{libc.prx,libSceFios2.prx} "$stage/sce_module/"
 cp "$sdk/samples/piglet/sce_sys/about/right.sprx" "$stage/sce_sys/about/"
 cp "$root/assets/icon0.png" "$stage/sce_sys/"
-cp "$root/.tools/scummvm-src/COPYING" "$stage/data/COPYING"
+cp "$source_dir/COPYING" "$stage/data/COPYING"
 printf '%s\n' 'Place legally obtained SCUMM game data in subdirectories here.' > "$stage/games/README.txt"
 pkgtool="$sdk/bin/linux/PkgTool.Core"
 sfo="$stage/sce_sys/param.sfo"
@@ -45,11 +48,11 @@ if [[ -e "$sfo" ]]; then mv "$sfo" "$sfo.previous"; fi
 for pair in APP_TYPE:1 ATTRIBUTE:0 DOWNLOAD_DATA_SIZE:0 SYSTEM_VER:0; do
  "${pkgtool}" sfo_setentry "$sfo" "${pair%%:*}" --type Integer --maxsize 4 --value "${pair#*:}"
 done
-"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.01
-"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.01
+"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.02
+"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.02
 "$pkgtool" sfo_setentry "$sfo" CATEGORY --type Utf8 --maxsize 4 --value gd
 "$pkgtool" sfo_setentry "$sfo" CONTENT_ID --type Utf8 --maxsize 48 --value "$content_id"
-"$pkgtool" sfo_setentry "$sfo" TITLE_ID --type Utf8 --maxsize 12 --value SCVM00002
+"$pkgtool" sfo_setentry "$sfo" TITLE_ID --type Utf8 --maxsize 12 --value "$title_id"
 "$pkgtool" sfo_setentry "$sfo" TITLE --type Utf8 --maxsize 128 --value "$app_title"
 package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right.sprx
     sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING games/README.txt)

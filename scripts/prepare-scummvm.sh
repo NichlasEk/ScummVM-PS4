@@ -2,7 +2,7 @@
 set -euo pipefail
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 revision=9d9b9e93108a276c551aeffa390169ccc5148e15
-source_dir="$root/.tools/scummvm-src"
+source_dir=${SCUMMVM_SOURCE_DIR:-"$root/.tools/scummvm-src"}
 patch_file="$root/patches/scummvm/ps4.patch"
 patch_id=$(sha256sum "$patch_file" | cut -d ' ' -f 1)
 mkdir -p "$root/.tools"

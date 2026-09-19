@@ -1,5 +1,11 @@
 # Första publiceringen — sparat 2026-09-19
 
+## Uppdatering efter PS4-test
+
+Publicering av 1.01 avvaktar: användaren rapporterade ryckig pekare och
+CE-34878-0 när spel skulle läggas till. Se [1.02-utredningen](PS4-1.02-REGRESSION.md).
+Mappen nedan är en äldre kandidat och ska ersättas efter verifierad korrigering.
+
 ## Var vi står
 
 Forumkontot väntar på manuell granskning, enligt användaren. Vi avvaktar

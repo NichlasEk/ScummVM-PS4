@@ -3,17 +3,19 @@ set -euo pipefail
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 export OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
 sdk=$OO_PS4_TOOLCHAIN
-mkdir -p "$root/build/scummvm"
-cd "$root/build/scummvm"
+build_dir=${SCUMMVM_BUILD_DIR:-"$root/build/scummvm"}
+source_dir=${SCUMMVM_SOURCE_DIR:-"$root/.tools/scummvm-src"}
+mkdir -p "$build_dir"
+cd "$build_dir"
 export CXX=clang++ CC=clang AR=llvm-ar RANLIB=llvm-ranlib
 export SDL_CONFIG=scummvm-sdl2-config
 export PATH="$root/scripts:$PATH"
 export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig"
-export CXXFLAGS="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -O2 -D__PS4__ -D_BSD_SOURCE -D_LIBCPP_HAS_NO_LOCALE -nostdinc++ -isysroot $sdk -isystem $sdk/include -isystem $sdk/include/c++/v1"
+export CXXFLAGS="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -O2 -D__PS4__ -include $root/compat/ps4/include/ps4-abi.h -D_BSD_SOURCE -D_LIBCPP_HAS_NO_LOCALE -nostdinc++ -isysroot $sdk -isystem $sdk/include -isystem $sdk/include/c++/v1 ${SCUMMVM_EXTRA_CXXFLAGS:-}"
 export LDFLAGS="--target=x86_64-pc-freebsd12-elf -fuse-ld=lld -nostdlib -Wl,-pie -Wl,--script=$sdk/link.x -Wl,--eh-frame-hdr -L$sdk/lib $sdk/lib/crt1.o -lc -lkernel"
 export LIBS="-lc++ -lc++abi -lc -lkernel"
-"$root/.tools/scummvm-src/configure" --host=x86_64-pc-freebsd --backend=sdl \
- --disable-all-engines --enable-engine=scumm --disable-detection-full \
+"$source_dir/configure" --host=x86_64-pc-freebsd --backend=sdl \
+ --disable-all-engines --enable-engine="${SCUMMVM_ENGINES:-scumm}" --disable-detection-full \
  --enable-release --enable-optimizations --enable-text-console \
  --opengl-mode=none --disable-opengl-game --disable-opengl-game-classic --disable-opengl-game-shaders \
  --disable-timidity --disable-alsa --disable-seq-midi --disable-mt32emu --disable-cloud --disable-sdlnet --disable-enet \

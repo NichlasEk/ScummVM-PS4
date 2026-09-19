@@ -167,7 +167,18 @@
  int SurfaceSdlGraphicsManager::SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int ncolors) {
 --- a/backends/fs/posix/posix-fs.cpp
 +++ b/backends/fs/posix/posix-fs.cpp
-@@ -57,15 +57,41 @@
+@@ -34,6 +34,10 @@
+ #include "backends/fs/posix/posix-fs.h"
+ #include "backends/fs/posix/posix-iostream.h"
+ #include "common/algorithm.h"
++#ifdef __PS4__
++#include "backends/fs/posix/ps4-dirent.h"
++#include "common/textconsole.h"
++#endif
+ 
+ #include <sys/param.h>
+ #include <sys/stat.h>
+@@ -57,15 +61,41 @@
  #endif
  
  bool POSIXFilesystemNode::exists() const {
@@ -209,14 +220,10 @@
  }
  
  void POSIXFilesystemNode::setFlags() {
-@@ -165,6 +191,31 @@
- 			ulDrvMap >>= 1;
- 		}
+@@ -169,6 +199,74 @@
+ 	}
+ #endif
  
-+		return true;
-+	}
-+#endif
-+
 +#ifdef __PS4__
 +	// The sandbox root may not be enumerable. Present reachable storage roots
 +	// directly, checking them anew so USB hotplug is reflected in the browser.
@@ -238,9 +245,72 @@
 +				delete entry;
 +			}
 +		}
- 		return true;
- 	}
- #endif
++		return true;
++	}
++#endif
++
++#ifdef __PS4__
++	// Bypass libc readdir: its implementation trusts d_reclen without bounds
++	// checks. Validate each kernel record before using its name or advancing.
++	warning("[ps4-fs] listing %s", _path.c_str());
++	int fd = open(_path.c_str(), O_RDONLY | O_DIRECTORY);
++	if (fd < 0) {
++		warning("[ps4-fs] open failed: %s errno=%d", _path.c_str(), errno);
++		return false;
++	}
++	byte buffer[4096];
++	bool valid = true;
++	for (;;) {
++		int count = getdents(fd, reinterpret_cast<struct dirent *>(buffer), sizeof(buffer));
++		if (count == 0) break;
++		if (count < 0 || count > int(sizeof(buffer))) {
++			warning("[ps4-fs] getdents failed: %s count=%d errno=%d", _path.c_str(), count, errno);
++			valid = false; break;
++		}
++		for (uint offset = 0; offset < uint(count); ) {
++			uint16 recordSize;
++			uint8 nameSize;
++			if (!ps4DirentRecord(buffer + offset, count - offset, recordSize, nameSize)) {
++				warning("[ps4-fs] invalid directory record: %s offset=%u bytes=%d", _path.c_str(), offset, count);
++				valid = false; break;
++			}
++			Common::String name(reinterpret_cast<const char *>(buffer + offset + 8), nameSize);
++			offset += recordSize;
++			if (name == "." || name == ".." || (!hidden && name[0] == '.')) continue;
++			POSIXFilesystemNode entry(*this);
++			entry._displayName = name;
++			if (entry._path.lastChar() != '/') entry._path += '/';
++			entry._path += name;
++			entry.setFlags();
++			if (!entry._isValid || (mode == Common::FSNode::kListFilesOnly && entry._isDirectory) ||
++			    (mode == Common::FSNode::kListDirectoriesOnly && !entry._isDirectory)) continue;
++			myList.push_back(new POSIXFilesystemNode(entry));
++		}
++		if (!valid) break;
++	}
++	close(fd);
++	warning("[ps4-fs] listing finished: %s valid=%d entries=%u", _path.c_str(), valid, myList.size());
++	return valid;
++#else
+ 	DIR *dirp = opendir(_path.c_str());
+ 	struct dirent *dp;
+ 
+@@ -247,9 +345,15 @@
+ 	closedir(dirp);
+ 
+ 	return true;
++#endif
+ }
+ 
+ AbstractFSNode *POSIXFilesystemNode::getParent() const {
++#ifdef __PS4__
++	if (_path == "/data/scummvm/games" || _path == "/app0/games" ||
++	    (_path.hasPrefix("/mnt/usb") && _path.size() == 9))
++		return makeNode("/");
++#endif
+ 	if (_path == "/")
+ 		return 0;	// The filesystem root has no parent
+ 
 --- a/backends/events/sdl/sdl-events.cpp
 +++ b/backends/events/sdl/sdl-events.cpp
 @@ -20,6 +20,9 @@
@@ -320,8 +390,96 @@
 +#ifdef __PS4__
 +		// Console display needs a faster pointer; retain the speed slider and
 +		// analog precision. Applies to existing configs as well as new installs.
-+		speedFactor *= 8.0f;
++		speedFactor *= 2.0f;
 +#endif
  		_mouseVelocityX = analogX * scalingFactor * speedFactor;
  		_mouseVelocityY = analogY * scalingFactor * speedFactor;
  	} else {
+--- /dev/null
++++ b/backends/fs/posix/ps4-dirent.h
+@@ -0,0 +1,21 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#ifndef BACKENDS_FS_POSIX_PS4_DIRENT_H
++#define BACKENDS_FS_POSIX_PS4_DIRENT_H
++#include <stddef.h>
++#include <stdint.h>
++#include <string.h>
++// PS4/FreeBSD getdents records: ino32, reclen16, type8, namlen8, name.
++// Never dereference a record or construct a string before validating bounds.
++static inline bool ps4DirentRecord(const uint8_t *data, size_t available,
++                                  uint16_t &recordSize, uint8_t &nameSize) {
++ recordSize = nameSize = 0;
++ if (!data || available < 9) return false;
++ const uint16_t length = uint16_t(data[4]) | (uint16_t(data[5]) << 8);
++ const uint8_t names = data[7];
++ if (length < 9 || length > available || names == 0 || size_t(names) + 9 > length)
++  return false;
++ if (data[8 + names] != 0 || memchr(data + 8, 0, names) || memchr(data + 8, '/', names))
++  return false;
++ recordSize = length; nameSize = names; return true;
++}
++#endif
+--- a/gui/browser.cpp
++++ b/gui/browser.cpp
+@@ -107,7 +107,11 @@
+ 		_node = Common::FSNode(ConfMan.getPath("browser_lastpath"));
+ 
+ 	if (!_node.isDirectory())
++#ifdef __PS4__
++		_node = Common::FSNode("/"); // Start at storage shortcuts if a saved USB path vanished.
++#else
+ 		_node = Common::FSNode(".");
++#endif
+ 
+ 	_showHidden = ConfMan.getBool("gui_browser_show_hidden", Common::ConfigManager::kApplicationDomain);
+ 	_showHiddenWidget->setState(_showHidden);
+@@ -128,7 +132,7 @@
+ 			// If nothing is selected in the list widget, choose the current dir.
+ 			// Else, choose the dir that is selected.
+ 			int selection = _fileList->getSelected();
+-			if (selection >= 0)
++			if (selection >= 0 && uint(selection) < _nodeContent.size())
+ 				_choice = _nodeContent[selection];
+ 			else
+ 				_choice = _node;
+@@ -136,7 +140,7 @@
+ 			close();
+ 		} else {
+ 			int selection = _fileList->getSelected();
+-			if (selection < 0)
++			if (selection < 0 || uint(selection) >= _nodeContent.size())
+ 				break;
+ 			if (_nodeContent[selection].isDirectory()) {
+ 				_node = _nodeContent[selection];
+@@ -154,6 +158,8 @@
+ 		break;
+ 	case kListItemActivatedCmd:
+ 	case kListItemDoubleClickedCmd:
++		if (data >= _nodeContent.size())
++			break;
+ 		if (_nodeContent[data].isDirectory()) {
+ 			_node = _nodeContent[data];
+ 			updateListing();
+@@ -167,7 +173,7 @@
+ 		// We do not allow selecting directories in directory
+ 		// browser mode, thus we will invalidate the selection
+ 		// when the user selects a directory over here.
+-		if (data != (uint32)-1 && _isDirBrowser && !_nodeContent[data].isDirectory())
++		if (data < _nodeContent.size() && _isDirBrowser && !_nodeContent[data].isDirectory())
+ 			_fileList->setSelected(-1);
+ 		break;
+ 	case kHiddenCmd:
+--- a/backends/fs/posix/posix-fs-factory.cpp
++++ b/backends/fs/posix/posix-fs-factory.cpp
+@@ -40,7 +40,10 @@
+ }
+ 
+ AbstractFSNode *POSIXFilesystemFactory::makeCurrentDirectoryFileNode() const {
+-#if defined(__ANDROID__)
++#if defined(__PS4__)
++	// PS4 has no reliable process working directory; never return a null node.
++	return new POSIXFilesystemNode("/app0");
++#elif defined(__ANDROID__)
+ 	// Keep this here if we still want to maintain support for the Android SDL port, since this affects that too
+ 	//
+ 	// For Android it does not make sense to have "." in Search Manager as a current directory file node, so we skip it here

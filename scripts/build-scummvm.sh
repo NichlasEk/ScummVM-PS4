@@ -8,6 +8,7 @@ fingerprint=$( { sha256sum "$root/scripts/configure-scummvm.sh" "$root/scripts/s
 stamp="$root/build/scummvm/.configuration-id"
 if [[ ! -f "$root/build/scummvm/config.mk" || ! -f "$stamp" ]] || [[ $(cat "$stamp") != "$fingerprint" ]]; then
     "$root/scripts/configure-scummvm.sh" 2>&1 | tee "$root/artifacts/scummvm/configure.log"
+    touch "$root/build/scummvm/config.h"
     printf '%s\n' "$fingerprint" > "$stamp"
 fi
 make -C "$root/build/scummvm" -j"${BUILD_JOBS:-12}" 2>&1 | tee "$root/artifacts/scummvm/build.log"

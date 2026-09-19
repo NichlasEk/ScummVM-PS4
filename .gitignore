@@ -5,3 +5,4 @@ dist/
 artifacts/
 build-*/
 dist-*/
+__pycache__/

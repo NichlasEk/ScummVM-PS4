@@ -1,65 +1,76 @@
 # ScummVM for PlayStation 4
 
-Clean continuation of the earlier experiments in
-`/home/developer/ps4-scummvm`. The old directory is reference material and is
-not modified by this project.
+ScummVM 2.9.1 with the SCUMM engine, cross-compiled for PS4 and boot-tested
+in shadPS4 0.18.0. The real launcher is visible and the pointer can be
+controlled with keyboard-emulated sticks or a PC mouse. Hardware testing
+and actual game/save validation are still pending.
 
-The first milestone is deliberately smaller than ScummVM: prove the complete
-OpenOrbis path on real hardware with visible graphics, audio, controller input,
-persistent logging, a valid `eboot.bin`, and an installable PKG.
-
-## Build the diagnostic PKG
-
-Requirements:
-
-- OpenOrbis with SDL2, currently expected at `/opt/pacbrew/ps4/openorbis`
-- `make`
-
-Build and verify:
+## Run ScummVM in the emulator
 
 ```sh
+./scripts/run-emulator.sh
+```
+
+The script prepares pinned ScummVM sources, applies the PS4 patch, builds the
+PS4 executable and PKG, installs the verified emulator release if needed,
+and boots ScummVM. The initial build takes several minutes; later builds
+are incremental. No session timeout by default. For a bounded test, use
+`EMULATOR_TIMEOUT=120 ./scripts/run-emulator.sh`.
+
+- **F7**: capture/release PC mouse movement.
+- **Left/right mouse button**: left/right click.
+- **WASD**: left stick / pointer when mouse capture is off.
+- **N/B**: Cross/Circle, corresponding to left/right click in the launcher.
+- **F8**: reload input bindings after changing sensitivity.
+- **F12**: save a screenshot.
+
+Mouse amplification is **3×**. Adjust `mouse_movement_params` in
+`.tools/xdg/shadPS4/input_config/SCVM00002.ini`; the middle value controls
+amplification. Existing bindings are preserved on subsequent launches.
+
+The list is initially empty because no commercial game data is bundled.
+The emulator mounts `build/scummvm-pkg` as `/app0`; game folders can be put
+under `build/scummvm-pkg/games` and selected with **Add Game**. This does not
+add them to the hardware PKG automatically.
+
+## Build and artifacts
+
+Requirements: the OpenOrbis SDK with its SDL port at
+`/opt/openorbis/OpenOrbis/PS4Toolchain`, host `clang++`, `ld.lld`, LLVM archive
+tools, `make`, Python 3, Git, curl, and unzip. Set `OO_PS4_TOOLCHAIN` to use
+another installation with the same SDK layout.
+
+```sh
+./scripts/build-scummvm.sh
+```
+
+- Package: `dist/IV0000-SCVM00002_00-SCUMMVMPS4000001.pkg`
+- Guest executable: `build/scummvm-pkg/eboot.bin`
+- Guest settings/saves/logs: `.tools/xdg/shadPS4/data/scummvm/`
+- Build logs/evidence: `artifacts/scummvm/`
+- Emulator run logs: `artifacts/emulator/`
+- Screenshots: `.tools/xdg/shadPS4/screenshots/`
+
+Source preparation uses the pinned clean revision from the earlier checkout
+at `/home/developer/ps4-scummvm/scummvm` when available, otherwise GitHub. The
+old checkout is read-only reference material. The portable changes live in
+`patches/scummvm/ps4.patch`; generated sources/builds stay ignored by Git.
+
+See [ScummVM validation and remaining work](docs/SCUMMVM.md).
+
+## Diagnostic app
+
+The smaller hardware diagnostic is still available separately:
+
+```sh
+./scripts/run-emulator.sh --diagnostic
 ./scripts/build-diagnostic.sh
 ```
 
-Override the toolchain location when needed:
+Its package is under `diagnostic/dist-openorbis/`, title ID `SCVM00001`.
+Three green bars indicate initialized video/audio/controller. Cross changes
+the background and plays a tone; Circle exits. On hardware the log is
+`/data/scummvm-ps4-diagnostic.log`. See [diagnostic evidence](docs/EMULATOR.md).
 
-```sh
-OO_PS4_TOOLCHAIN=/path/to/openorbis ./scripts/build-diagnostic.sh
-```
-
-The resulting package is written to:
-
-```text
-diagnostic/dist/IV0000-SCVM00001_00-SCUMMVMDIAG00001.pkg
-```
-
-## Test on PS4
-
-Install the package on a homebrew-enabled PS4 and launch **ScummVM PS4
-Diagnostic**.
-
-- Three green horizontal bars: video, audio, and controller initialized.
-- A red middle bar: audio initialization failed.
-- A red lower bar: no controller was opened.
-- A short tone plays at startup.
-- Cross changes the background and restarts the tone.
-- Circle exits cleanly.
-- Startup and input events are written to
-  `/data/scummvm-ps4-diagnostic.log`.
-
-Record whether the app launches, the bar colors, whether the tone is audible,
-whether Cross changes the background, and whether Circle exits. That result
-determines which subsystem to fix before integrating ScummVM.
-
-## Project stages
-
-1. Boot and validate the diagnostic PKG on physical hardware.
-2. Add a minimal ScummVM checkout with only the SCUMM engine.
-3. Introduce a PS4 platform layer for paths, saves, lifecycle, and controller
-   pointer mapping.
-4. Package a freeware ScummVM demo and validate gameplay and saves.
-5. Expand engines and optional codecs incrementally.
-
-Project-specific code is licensed under GPL-3.0-or-later to remain compatible
-with upstream ScummVM. Generated packages also contain separately licensed
-OpenOrbis and SDL components supplied by the installed toolchain.
+Project code is GPL-3.0-or-later; generated packages also include separately
+licensed OpenOrbis/SDL components. ScummVM retains its upstream license notices.

@@ -2,7 +2,7 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-toolchain=${OO_PS4_TOOLCHAIN:-/opt/pacbrew/ps4/openorbis}
+toolchain=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
 
 if [ ! -d "$toolchain" ]; then
 	echo "OpenOrbis toolchain not found: $toolchain" >&2

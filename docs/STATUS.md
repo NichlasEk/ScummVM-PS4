@@ -1,5 +1,26 @@
 # Status
 
+## 2026-09-19: ScummVM launcher boots in shadPS4
+
+The user clarified that the milestone is the real ScummVM application in the
+emulator. This supersedes the original requirement to wait for physical
+hardware before integrating ScummVM. ScummVM 2.9.1 now builds as a PS4 SELF
+and PKG and displays its launcher in shadPS4. PC mouse mapping is installed
+with 3x amplification. See [SCUMMVM.md](SCUMMVM.md) for evidence and next work.
+
+`./scripts/run-emulator.sh` now starts ScummVM. Use `--diagnostic` for the bars.
+
+
+## 2026-09-19: emulator diagnostic passed
+
+shadPS4 0.18.0 boots the diagnostic with visible green video/audio/controller
+bars. Cross changes the background and plays the verified tone; Circle reaches
+guest shutdown. See [EMULATOR.md](EMULATOR.md) for evidence, build changes,
+artifact hashes, and remaining emulator limitations.
+
+Use `./scripts/run-emulator.sh --diagnostic`. Diagnostic packages are under
+`diagnostic/dist-openorbis/`. Physical PS4 validation is still pending.
+
 ## 2026-08-11: clean baseline
 
 The previous work in `/home/developer/ps4-scummvm` established two useful facts:
@@ -21,10 +42,9 @@ The copied runtime modules are intentionally generated into `diagnostic/build`
 from the installed OpenOrbis samples. They are not maintained as source files
 in this repository.
 
-## Gate for ScummVM integration
+## Original hardware gate (superseded for emulator integration)
 
 Do not add the upstream ScummVM tree until the diagnostic package both launches
 and shows the video status bar on physical hardware. If it launches, capture
 the other two status bars, audible tone, controller response, clean exit, and
 the contents of `/data/scummvm-ps4-diagnostic.log`.
-

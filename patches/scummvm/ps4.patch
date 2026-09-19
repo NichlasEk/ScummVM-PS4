@@ -1,0 +1,271 @@
+--- a/backends/platform/sdl/posix/posix-main.cpp
++++ b/backends/platform/sdl/posix/posix-main.cpp
+@@ -19,6 +19,13 @@
+  *
+  */
+ 
++#ifdef __PS4__
++#define FORBIDDEN_SYMBOL_ALLOW_ALL
++#include <stdio.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#endif
++
+ #include "common/scummsys.h"
+ 
+ #if defined(POSIX) && !defined(MACOSX) && !defined(SAMSUNGTV) && !defined(MAEMO) && !defined(OPENDINGUX) && !defined(OPENPANDORA) && !defined(PLAYSTATION3) && !defined(PSP2) && !defined(NINTENDO_SWITCH)  && !defined(__EMSCRIPTEN__) && !defined(MIYOO) && !defined(MIYOOMINI) && !defined(SAILFISH)
+@@ -28,6 +35,27 @@
+ #include "base/main.h"
+ 
+ int main(int argc, char *argv[]) {
++#ifdef __PS4__
++	setvbuf(stdout, nullptr, _IONBF, 0);
++	printf("[scummvm-ps4] entered main\n");
++	mkdir("/data/scummvm", 0777);
++	mkdir("/data/scummvm/saves", 0777);
++	chdir("/app0");
++	// Seed writable settings only on first launch; preserve user changes.
++	FILE *config = fopen("/data/scummvm/scummvm.ini", "r");
++	if (config) {
++		fclose(config);
++	} else {
++		config = fopen("/data/scummvm/scummvm.ini", "w");
++		if (config) {
++			fputs("[scummvm]\nextrapath=/app0/data\nthemepath=/app0/data\n"
++			      "savepath=/data/scummvm/saves\nbrowser_lastpath=/app0/games\n"
++			      "gui_theme=builtin\njoystick_num=0\nfullscreen=false\n"
++			      "gfx_mode=normal\n", config);
++			fclose(config);
++		}
++	}
++#endif
+ 
+ 	// Create our OSystem instance
+ 	g_system = new OSystem_POSIX();
+--- a/backends/platform/sdl/posix/posix.cpp
++++ b/backends/platform/sdl/posix/posix.cpp
+@@ -112,6 +112,9 @@
+ }
+ 
+ Common::Path OSystem_POSIX::getDefaultConfigFileName() {
++#ifdef __PS4__
++	return Common::Path("/data/scummvm/scummvm.ini", '/');
++#endif
+ 	const Common::String baseConfigName = "scummvm.ini";
+ 
+ 	Common::String configFile;
+@@ -336,6 +339,9 @@
+ }
+ 
+ Common::Path OSystem_POSIX::getDefaultLogFileName() {
++#ifdef __PS4__
++	return Common::Path("/data/scummvm/scummvm.log", '/');
++#endif
+ 	Common::String logFile;
+ 
+ 	// On POSIX systems we follow the XDG Base Directory Specification for
+--- a/backends/platform/sdl/sdl-window.cpp
++++ b/backends/platform/sdl/sdl-window.cpp
+@@ -347,6 +347,17 @@
+ }
+ 
+ bool SdlWindow::createOrUpdateWindow(int width, int height, uint32 flags) {
++#ifdef __PS4__
++	// OpenOrbis has a fixed display; game sizes are scaled by the renderer.
++	if (!_window) {
++		SDL_DisplayMode mode;
++		if (SDL_GetCurrentDisplayMode(0, &mode) != 0)
++			return false;
++		_window = SDL_CreateWindow(_windowCaption.c_str(), 0, 0, mode.w, mode.h, 0);
++	}
++	_lastFlags = 0;
++	return _window != nullptr;
++#endif
+ 	if (_inputGrabState) {
+ 		flags |= SDL_WINDOW_INPUT_GRABBED;
+ 	}
+--- a/backends/graphics/surfacesdl/surfacesdl-graphics.cpp
++++ b/backends/graphics/surfacesdl/surfacesdl-graphics.cpp
+@@ -1183,6 +1183,10 @@
+ }
+ 
+ void SurfaceSdlGraphicsManager::internUpdateScreen() {
++#ifdef __PS4__
++	// The software framebuffer needs a complete backing image on each flip.
++	_forceRedraw = true;
++#endif
+ 	SDL_Surface *srcSurf, *origSurf;
+ 	int height, width;
+ 	int scale1;
+@@ -1546,7 +1550,13 @@
+ #endif
+ 
+ 	if (doPresent) {
++#ifndef __PS4__
+ 		SDL_RenderPresent(_renderer);
++#endif
++#ifdef __PS4__
++		if (SDL_UpdateWindowSurface(_window->getSDLWindow()) != 0)
++			error("PS4 framebuffer update failed: %s", SDL_GetError());
++#endif
+ 	}
+ #else
+ 	if (_isDoubleBuf)
+@@ -2875,7 +2885,12 @@
+ 		rendererFlags |= SDL_RENDERER_PRESENTVSYNC;
+ 	}
+ 
++#ifdef __PS4__
++	SDL_Surface *framebuffer = SDL_GetWindowSurface(_window->getSDLWindow());
++	_renderer = framebuffer ? SDL_CreateSoftwareRenderer(framebuffer) : nullptr;
++#else
+ 	_renderer = SDL_CreateRenderer(_window->getSDLWindow(), -1, rendererFlags);
++#endif
+ 	if (!_renderer) {
+ 		if (_videoMode.vsync) {
+ 			// VSYNC might not be available, so retry without VSYNC
+@@ -2918,7 +2933,9 @@
+ }
+ 
+ void SurfaceSdlGraphicsManager::SDL_UpdateRects(SDL_Surface *screen, int numrects, SDL_Rect *rects) {
++#ifndef __PS4__
+ 	SDL_UpdateTexture(_screenTexture, nullptr, screen->pixels, screen->pitch);
++#endif
+ 
+ 	SDL_Rect viewport;
+ 
+@@ -2938,12 +2955,19 @@
+ 	viewport.w = drawRect.width();
+ 	viewport.h = drawRect.height();
+ 
++#ifdef __PS4__
++	SDL_Surface *framebuffer = SDL_GetWindowSurface(_window->getSDLWindow());
++	SDL_SetClipRect(framebuffer, nullptr);
++	SDL_FillRect(framebuffer, nullptr, 0);
++	if (SDL_BlitScaled(screen, nullptr, framebuffer, &viewport) != 0)
++		error("PS4 framebuffer blit failed: %s", SDL_GetError());
++#else
+ 	SDL_RenderClear(_renderer);
+-
+ 	if (rotangle != 0)
+ 		SDL_RenderCopyEx(_renderer, _screenTexture, nullptr, &viewport, rotangle, nullptr, SDL_FLIP_NONE);
+ 	else
+ 		SDL_RenderCopy(_renderer, _screenTexture, nullptr, &viewport);
++#endif
+ }
+ 
+ int SurfaceSdlGraphicsManager::SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int ncolors) {
+--- a/backends/fs/posix/posix-fs.cpp
++++ b/backends/fs/posix/posix-fs.cpp
+@@ -57,15 +57,41 @@
+ #endif
+ 
+ bool POSIXFilesystemNode::exists() const {
++	#ifdef __PS4__
++	// OpenOrbis/shadPS4 does not provide a usable access() implementation.
++	struct stat st;
++	if (stat(_path.c_str(), &st) != 0)
++		return false;
++	return true;
++#else
+ 	return access(_path.c_str(), F_OK) == 0;
++#endif
+ }
+ 
+ bool POSIXFilesystemNode::isReadable() const {
++	#ifdef __PS4__
++	// OpenOrbis/shadPS4 does not provide a usable access() implementation.
++	struct stat st;
++	if (stat(_path.c_str(), &st) != 0)
++		return false;
++	return (st.st_mode & (S_IRUSR | S_IRGRP | S_IROTH)) != 0;
++#else
+ 	return access(_path.c_str(), R_OK) == 0;
++#endif
+ }
+ 
+ bool POSIXFilesystemNode::isWritable() const {
++	#ifdef __PS4__
++	// OpenOrbis/shadPS4 does not provide a usable access() implementation.
++	struct stat st;
++	if (stat(_path.c_str(), &st) != 0)
++		return false;
++	if (_path == "/app0" || _path.hasPrefix("/app0/"))
++		return false;
++	return (st.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)) != 0;
++#else
+ 	return access(_path.c_str(), W_OK) == 0;
++#endif
+ }
+ 
+ void POSIXFilesystemNode::setFlags() {
+--- a/backends/events/sdl/sdl-events.cpp
++++ b/backends/events/sdl/sdl-events.cpp
+@@ -20,6 +20,9 @@
+  */
+ 
+ #include "common/scummsys.h"
++#ifdef __PS4__
++#include <orbis/Pad.h>
++#endif
+ 
+ #if defined(SDL_BACKEND)
+ 
+@@ -736,6 +739,28 @@
+ 		return true;
+ 	}
+ 
++#ifdef __PS4__
++	// This SDL PS4 driver drops stick-neutral events and uses nonstandard axes.
++	// Read axes from the already-open pad so releasing a stick stops the cursor.
++	if (_joystick) {
++		static int16 previous[4] = {0, 0, 0, 0};
++		OrbisPadData pad = {};
++		bool connected = scePadReadState(SDL_JoystickInstanceID(_joystick), &pad) == 0 && pad.connected;
++		const uint8 values[4] = {pad.leftStick.x, pad.leftStick.y, pad.rightStick.x, pad.rightStick.y};
++		for (int axis = 0; axis < 4; ++axis) {
++			int position = connected ? (int(values[axis]) - 128) * 256 : 0;
++			if (position > -4096 && position < 4096)
++				position = 0;
++			if (previous[axis] != position) {
++				previous[axis] = position;
++				event.type = Common::EVENT_JOYAXIS_MOTION;
++				event.joystick.axis = axis;
++				event.joystick.position = position;
++				return true;
++			}
++		}
++	}
++#endif
+ 	SDL_Event ev;
+ 	while (SDL_PollEvent(&ev)) {
+ 		preprocessEvents(&ev);
+@@ -933,7 +958,11 @@
+ 		case SDL_JOYBUTTONUP:
+ 			return handleJoyButtonUp(ev, event);
+ 		case SDL_JOYAXISMOTION:
++#ifdef __PS4__
++			return false; // axes, including neutral, are delivered above
++#else
+ 			return handleJoyAxisMotion(ev, event);
++#endif
+ 		case SDL_JOYHATMOTION:
+ 			return handleJoyHatMotion(ev, event);
+ 		default:
+@@ -1126,6 +1155,16 @@
+ }
+ 
+ int SdlEventSource::mapSDLJoystickButtonToOSystem(Uint8 sdlButton) {
++#ifdef __PS4__
++	// OpenOrbis indexes Options/L3/R3 after unused Share/Guide slots.
++	switch (sdlButton) {
++	case 9: return Common::JOYSTICK_BUTTON_START;
++	case 11: return Common::JOYSTICK_BUTTON_LEFT_STICK;
++	case 12: return Common::JOYSTICK_BUTTON_RIGHT_STICK;
++	case 17: return Common::JOYSTICK_BUTTON_BACK;
++	default: if (sdlButton >= 6) return -1;
++	}
++#endif
+ 	Common::JoystickButton osystemButtons[] = {
+ 	    Common::JOYSTICK_BUTTON_A,
+ 	    Common::JOYSTICK_BUTTON_B,

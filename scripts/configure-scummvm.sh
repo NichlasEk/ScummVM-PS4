@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
+sdk=$OO_PS4_TOOLCHAIN
+mkdir -p "$root/build/scummvm"
+cd "$root/build/scummvm"
+export CXX=clang++ CC=clang AR=llvm-ar RANLIB=llvm-ranlib
+export SDL_CONFIG=scummvm-sdl2-config
+export PATH="$root/scripts:$PATH"
+export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig"
+export CXXFLAGS="--target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -O2 -D__PS4__ -D_BSD_SOURCE -D_LIBCPP_HAS_NO_LOCALE -nostdinc++ -isysroot $sdk -isystem $sdk/include -isystem $sdk/include/c++/v1"
+export LDFLAGS="--target=x86_64-pc-freebsd12-elf -fuse-ld=lld -nostdlib -Wl,-pie -Wl,--script=$sdk/link.x -Wl,--eh-frame-hdr -L$sdk/lib $sdk/lib/crt1.o -lc -lkernel"
+export LIBS="-lc++ -lc++abi -lc -lkernel"
+"$root/.tools/scummvm-src/configure" --host=x86_64-pc-freebsd --backend=sdl \
+ --disable-all-engines --enable-engine=scumm --disable-detection-full \
+ --enable-release --enable-optimizations --enable-text-console \
+ --opengl-mode=none --disable-opengl-game --disable-opengl-game-classic --disable-opengl-game-shaders \
+ --disable-timidity --disable-alsa --disable-seq-midi --disable-mt32emu --disable-cloud --disable-sdlnet --disable-enet \
+ --disable-libcurl --disable-discord --disable-taskbar --disable-system-dialogs --disable-libunity --disable-gtk \
+ --disable-tts --disable-sparkle --disable-ogg --disable-vorbis --disable-tremor --disable-mad --disable-flac \
+ --disable-fribidi --disable-zlib --disable-jpeg --disable-png --disable-gif --disable-theoradec --disable-vpx \
+ --disable-faad --disable-fluidsynth --disable-fluidlite --disable-sonivox --disable-freetype2 \
+ --disable-mikmod --disable-mpeg2 --disable-a52 --disable-openmpt --disable-mpcdec --disable-nasm --disable-readline --disable-sndio --disable-lua --disable-translation

@@ -1,4 +1,7 @@
 build/
 dist/
 *.log
-
+.tools/
+artifacts/
+build-*/
+dist-*/

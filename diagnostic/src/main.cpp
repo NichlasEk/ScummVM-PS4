@@ -59,8 +59,16 @@ int main(int, char **) {
 	}
 	logLine("SDL initialized");
 
+	SDL_DisplayMode display{};
+	if (SDL_GetCurrentDisplayMode(0, &display) != 0 || display.w <= 0 || display.h <= 0) {
+		logLine("could not determine display size");
+		SDL_Quit();
+		return 2;
+	}
+	// The PS4 software framebuffer clips using unsigned window coordinates.
+	// An oversized, implicitly centered window can therefore render off-screen.
 	SDL_Window *window = SDL_CreateWindow("ScummVM PS4 Diagnostic",
-		SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, kWidth, kHeight, 0);
+		0, 0, display.w, display.h, 0);
 	if (!window) {
 		logLine(SDL_GetError());
 		SDL_Quit();
@@ -76,6 +84,7 @@ int main(int, char **) {
 		return 3;
 	}
 	logLine("video initialized");
+	SDL_RenderSetLogicalSize(renderer, kWidth, kHeight);
 
 	SDL_AudioSpec wanted{};
 	wanted.freq = 48000;
@@ -109,9 +118,13 @@ int main(int, char **) {
 			if (event.type != SDL_JOYBUTTONDOWN)
 				continue;
 
-			alternatePalette = !alternatePalette;
 			if (event.jbutton.button == kCrossButton) {
-				gToneFramesRemaining = kAudioFrames;
+				alternatePalette = !alternatePalette;
+				if (audioReady) {
+					SDL_LockAudioDevice(audioDevice);
+					gToneFramesRemaining = kAudioFrames;
+					SDL_UnlockAudioDevice(audioDevice);
+				}
 				logLine("cross pressed; tone restarted");
 			} else if (event.jbutton.button == kCircleButton) {
 				logLine("circle pressed; exiting");
@@ -134,7 +147,10 @@ int main(int, char **) {
 			controllerReady ? 210 : 35, 35);
 
 		SDL_RenderPresent(renderer);
-		SDL_UpdateWindowSurface(window);
+		if (SDL_UpdateWindowSurface(window) != 0) {
+			logLine(SDL_GetError());
+			running = false;
+		}
 		SDL_Delay(16);
 	}
 

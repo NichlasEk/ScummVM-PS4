@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -eu
+sdk=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
+case "$*" in
+  *--version*) echo 2.0.9 ;;
+  *--cflags*) echo "-I$sdk/include/SDL2" ;;
+  *--libs*) echo "-L$sdk/lib -lSDL2 -lSceUserService -lSceVideoOut -lSceAudioOut -lScePad -lSceSysmodule" ;;
+  *--prefix*) echo "$sdk" ;;
+  *) exit 1 ;;
+esac

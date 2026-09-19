@@ -168,6 +168,7 @@ Common::Error PiceEngine::run() {
  // English EU graphics-name table identifies SM02..SM12 as 1138..1305.
  // This audits entry tables only; it does not run scene side effects.
  uint banks=0, entries=0, placeholders=0;
+ uint prefixStopped=0, prefixUnsupported=0, prefixInvalid=0, prefixBudget=0, prefixMoved=0;
  for (uint i=1138;i<1306;++i) {
   Common::Array<byte> bytes;
   if (!_graphics.read(i,bytes)) return Common::Error(Common::kReadingFailed,"Cannot read script bank");
@@ -176,6 +177,19 @@ Common::Error PiceEngine::run() {
   if (!scripts.load(bytes)) return Common::Error(Common::kReadingFailed,"Invalid script entry table");
   ++banks; entries+=scripts.count();
   debug("[pice] script-bank=%u entries=%u fnv=%08x",i,scripts.count(),hashBytes(bytes));
+  // Independent entry probes with fresh variable state, not a game scheduler.
+  // Stop before unsupported scene commands and yield after 64 instructions.
+  for(uint e=0;e<scripts.count();++e) {
+   ScriptRunner probe(scripts); probe.start(e);
+   ScriptRunner::Result result=probe.run(e,64);
+   if(probe.position(e)!=scripts.entry(e)) ++prefixMoved;
+   switch(result) {
+   case ScriptRunner::kStopped: ++prefixStopped; break;
+   case ScriptRunner::kUnsupported: ++prefixUnsupported; break;
+   case ScriptRunner::kBudgetExhausted: ++prefixBudget; break;
+   default: ++prefixInvalid; break;
+   }
+  }
   if (i==1138) {
    uint16 opcode; scripts.word(scripts.entry(0),opcode);
    uint32 pc=scripts.entry(0)+2; int16 value;
@@ -188,6 +202,7 @@ Common::Error PiceEngine::run() {
   }
  }
  debug("[pice] script-index banks=%u entries=%u placeholders=%u",banks,entries,placeholders);
+ debug("[pice] script-prefix-probes moved=%u stopped=%u unsupported=%u invalid-or-unsupported-expression=%u budget=%u",prefixMoved,prefixStopped,prefixUnsupported,prefixInvalid,prefixBudget);
  for (uint i = 0; i + 1 < _graphics.count(); ++i) {
   const KroEntry &e = _graphics.entry(i);
   if (e.size < 640*200 || e.size > 640*320+4 || _graphics.entry(i+1).size != 768) continue;

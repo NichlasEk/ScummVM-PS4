@@ -269,3 +269,27 @@ match the independent oracle; 1,499 entries and 13 placeholders are reported.
 Guest synthetic tests pass, original stop-self reaches byte offset 10 and
 animation 0 still starts. Evidence: artifacts/pice/script-runner-guest.log and
 script-index-oracle.json. No physical PS4 verification of this PICE checkpoint.
+
+### Variable and control-flow checkpoint
+
+The runner now models the two signed 16-bit variable tables (A: 250 entries,
+B: 300), their reads (5/19) and assignments (25/26). The observed initial
+state is A[0]=-1, remaining A entries zero, and B entries -1. Original handlers:
+0x288f/0x28ee, 0x2852/0x28b7; B initialization 0x783, save/load sizes
+0xbe8d/0xcf49. Assignment commits only after a complete valid RHS.
+
+Opcode 4 (0x2640) jumps by a signed word displacement relative to the end of
+its instruction. Opcode 21 (0x2935) evaluates a condition then either skips
+or takes the following jump. Destinations must be aligned code addresses,
+not entry-table bytes. An explicit instruction budget yields without killing
+the task; backwards loops can resume safely. Waits and scheduler ordering
+remain unimplemented.
+
+Guest tests exercise signed reads, table boundaries, transactional assignment,
+both conditional paths, backward jumps, invalid destinations and resumable
+budget exhaustion. All pass in shadPS4. Independent, fresh-state probes of
+all 1,499 original entries with a 64-instruction budget report 407 stops,
+989 unsupported commands, 102 invalid/unsupported expressions and one budget
+exhaustion; 415 probes changed PC. These are isolated prefix probes, not an
+original game scheduler or a playable scene. Evidence:
+`artifacts/pice/control-flow-guest.log`. Animation and speech preview still run.

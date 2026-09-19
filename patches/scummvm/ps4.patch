@@ -65,7 +65,28 @@
  }
 --- a/backends/platform/sdl/posix/posix.cpp
 +++ b/backends/platform/sdl/posix/posix.cpp
-@@ -112,6 +112,9 @@
+@@ -44,6 +44,9 @@
+ #endif
+ 
+ #include "common/textconsole.h"
++#ifdef __PS4__
++#include "common/config-manager.h"
++#endif
+ 
+ #include <stdlib.h>
+ #include <errno.h>
+@@ -79,6 +82,10 @@
+ }
+ 
+ void OSystem_POSIX::initBackend() {
++#ifdef __PS4__
++	if (!ConfMan.hasKey("vkeybdpath"))
++		ConfMan.set("vkeybdpath", "/app0/data", Common::ConfigManager::kSessionDomain);
++#endif
+ 	// Create the savefile manager
+ 	if (_savefileManager == 0)
+ 		_savefileManager = new POSIXSaveFileManager();
+@@ -112,6 +119,9 @@
  }
  
  Common::Path OSystem_POSIX::getDefaultConfigFileName() {
@@ -75,7 +96,7 @@
  	const Common::String baseConfigName = "scummvm.ini";
  
  	Common::String configFile;
-@@ -336,6 +339,9 @@
+@@ -336,6 +346,9 @@
  }
  
  Common::Path OSystem_POSIX::getDefaultLogFileName() {
@@ -587,7 +608,7 @@
  
  	// Current path - TODO: handle long paths ?
  	_currentPath = new EditTextWidget(this, "Browser.Path", Common::U32String(), Common::U32String(), 0, kPathEditedCmd);
-@@ -107,7 +115,11 @@
+@@ -107,8 +115,20 @@
  		_node = Common::FSNode(ConfMan.getPath("browser_lastpath"));
  
  	if (!_node.isDirectory())
@@ -595,11 +616,21 @@
 +		_node = Common::FSNode("/"); // Start at storage shortcuts if a saved USB path vanished.
 +#else
  		_node = Common::FSNode(".");
+-
 +#endif
- 
++
++#ifdef __PS4__
++	// Migrate existing installations once, then respect the user's checkbox.
++	if (!ConfMan.getBool("ps4_hidden_default_applied", Common::ConfigManager::kApplicationDomain)) {
++		ConfMan.setBool("gui_browser_show_hidden", true, Common::ConfigManager::kApplicationDomain);
++		ConfMan.setBool("ps4_hidden_default_applied", true, Common::ConfigManager::kApplicationDomain);
++		ConfMan.flushToDisk();
++	}
++#endif
  	_showHidden = ConfMan.getBool("gui_browser_show_hidden", Common::ConfigManager::kApplicationDomain);
  	_showHiddenWidget->setState(_showHidden);
-@@ -128,7 +140,7 @@
+ 
+@@ -128,7 +148,7 @@
  			// If nothing is selected in the list widget, choose the current dir.
  			// Else, choose the dir that is selected.
  			int selection = _fileList->getSelected();
@@ -608,7 +639,7 @@
  				_choice = _nodeContent[selection];
  			else
  				_choice = _node;
-@@ -136,7 +148,7 @@
+@@ -136,7 +156,7 @@
  			close();
  		} else {
  			int selection = _fileList->getSelected();
@@ -617,7 +648,7 @@
  				break;
  			if (_nodeContent[selection].isDirectory()) {
  				_node = _nodeContent[selection];
-@@ -154,6 +166,8 @@
+@@ -154,6 +174,8 @@
  		break;
  	case kListItemActivatedCmd:
  	case kListItemDoubleClickedCmd:
@@ -626,7 +657,7 @@
  		if (_nodeContent[data].isDirectory()) {
  			_node = _nodeContent[data];
  			updateListing();
-@@ -167,7 +181,7 @@
+@@ -167,7 +189,7 @@
  		// We do not allow selecting directories in directory
  		// browser mode, thus we will invalidate the selection
  		// when the user selects a directory over here.
@@ -635,7 +666,7 @@
  			_fileList->setSelected(-1);
  		break;
  	case kHiddenCmd:
-@@ -199,6 +213,19 @@
+@@ -199,6 +221,19 @@
  		_nodeContent.clear();
  	else
  		Common::sort(_nodeContent.begin(), _nodeContent.end());

@@ -18,7 +18,7 @@ export LDFLAGS="--target=x86_64-pc-freebsd12-elf -fuse-ld=lld -nostdlib -Wl,-pie
 export LIBS="$root/build/ps4-storage/libscummvm-jbc.a -lc++ -lc++abi -lc -lkernel"
 "$source_dir/configure" --host=x86_64-pc-freebsd --backend=sdl \
  --disable-all-engines --enable-engine="${SCUMMVM_ENGINES:-scumm}" --disable-detection-full \
- --enable-release --enable-optimizations --enable-text-console \
+ --enable-release --enable-optimizations --enable-text-console --enable-vkeybd \
  --opengl-mode=none --disable-opengl-game --disable-opengl-game-classic --disable-opengl-game-shaders \
  --disable-timidity --disable-alsa --disable-seq-midi --disable-mt32emu --disable-cloud --disable-sdlnet --disable-enet \
  --disable-libcurl --disable-discord --disable-taskbar --disable-system-dialogs --disable-libunity --disable-gtk \

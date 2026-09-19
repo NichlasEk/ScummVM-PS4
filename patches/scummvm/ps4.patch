@@ -107,7 +107,21 @@
  	}
 --- a/backends/graphics/surfacesdl/surfacesdl-graphics.cpp
 +++ b/backends/graphics/surfacesdl/surfacesdl-graphics.cpp
-@@ -1183,6 +1183,10 @@
+@@ -270,7 +270,13 @@
+ 		return _videoMode.aspectRatioCorrection;
+ #endif
+ 	case OSystem::kFeatureVSync:
++#ifdef __PS4__
++		// SDL's PS4 framebuffer always waits for the VideoOut flip. Reporting
++		// false makes the GUI sleep for a frame before waiting for another.
++		return true;
++#else
+ 		return _videoMode.vsync;
++#endif
+ 	case OSystem::kFeatureFilteringMode:
+ 		return _videoMode.filtering;
+ 	case OSystem::kFeatureCursorPalette:
+@@ -1183,6 +1189,10 @@
  }
  
  void SurfaceSdlGraphicsManager::internUpdateScreen() {
@@ -118,7 +132,7 @@
  	SDL_Surface *srcSurf, *origSurf;
  	int height, width;
  	int scale1;
-@@ -1546,7 +1550,13 @@
+@@ -1546,7 +1556,13 @@
  #endif
  
  	if (doPresent) {
@@ -132,7 +146,7 @@
  	}
  #else
  	if (_isDoubleBuf)
-@@ -2875,7 +2885,12 @@
+@@ -2875,7 +2891,12 @@
  		rendererFlags |= SDL_RENDERER_PRESENTVSYNC;
  	}
  
@@ -145,7 +159,7 @@
  	if (!_renderer) {
  		if (_videoMode.vsync) {
  			// VSYNC might not be available, so retry without VSYNC
-@@ -2918,7 +2933,9 @@
+@@ -2918,7 +2939,9 @@
  }
  
  void SurfaceSdlGraphicsManager::SDL_UpdateRects(SDL_Surface *screen, int numrects, SDL_Rect *rects) {
@@ -155,7 +169,7 @@
  
  	SDL_Rect viewport;
  
-@@ -2938,12 +2955,19 @@
+@@ -2938,12 +2961,19 @@
  	viewport.w = drawRect.width();
  	viewport.h = drawRect.height();
  
@@ -178,20 +192,21 @@
  int SurfaceSdlGraphicsManager::SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int ncolors) {
 --- a/backends/fs/posix/posix-fs.cpp
 +++ b/backends/fs/posix/posix-fs.cpp
-@@ -34,6 +34,12 @@
+@@ -34,6 +34,13 @@
  #include "backends/fs/posix/posix-fs.h"
  #include "backends/fs/posix/posix-iostream.h"
  #include "common/algorithm.h"
 +#ifdef __PS4__
 +#include "backends/fs/posix/ps4-dirent.h"
 +extern "C" void ps4_refresh_usb_mounts(void);
++extern "C" int ps4_usb_has_entries(const char *path);
 +#include "common/textconsole.h"
 +#include "common/config-manager.h"
 +#endif
  
  #include <sys/param.h>
  #include <sys/stat.h>
-@@ -57,15 +63,41 @@
+@@ -57,15 +64,41 @@
  #endif
  
  bool POSIXFilesystemNode::exists() const {
@@ -233,7 +248,7 @@
  }
  
  void POSIXFilesystemNode::setFlags() {
-@@ -169,6 +201,80 @@
+@@ -169,6 +202,81 @@
  	}
  #endif
  
@@ -253,11 +268,12 @@
 +			"Bundled games"};
 +		for (unsigned i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
 +			POSIXFilesystemNode *entry = new POSIXFilesystemNode(paths[i]);
-+			if ((!entry->_isValid || !entry->_isDirectory) && i >= 1 && i <= 8) {
++			if (i >= 1 && i <= 8 && !ps4_usb_has_entries(paths[i])) {
 +				delete entry;
-+				entry = new POSIXFilesystemNode(Common::String::format("/usb%u", i - 1));
++				entry = new POSIXFilesystemNode(Common::String::format("/scummvm_usb%u", i - 1));
 +			}
-+			if (entry->_isValid && entry->_isDirectory) {
++			if (entry->_isValid && entry->_isDirectory &&
++			    (!(i >= 1 && i <= 8) || ps4_usb_has_entries(entry->_path.c_str()))) {
 +				entry->_displayName = names[i];
 +				myList.push_back(entry);
 +			} else {
@@ -314,7 +330,7 @@
  	DIR *dirp = opendir(_path.c_str());
  	struct dirent *dp;
  
-@@ -247,9 +353,16 @@
+@@ -247,9 +355,17 @@
  	closedir(dirp);
  
  	return true;
@@ -325,7 +341,8 @@
 +#ifdef __PS4__
 +	if (_path == "/data/scummvm/games" || _path == "/app0/games" ||
 +	    (_path.hasPrefix("/mnt/usb") && _path.size() == 9) ||
-+	    (_path.hasPrefix("/usb") && _path.size() == 5))
++	    (_path.hasPrefix("/usb") && _path.size() == 5) ||
++	    (_path.hasPrefix("/scummvm_usb") && _path.size() == 13))
 +		return makeNode("/");
 +#endif
  	if (_path == "/")
@@ -403,7 +420,51 @@
  	    Common::JOYSTICK_BUTTON_B,
 --- a/backends/keymapper/virtual-mouse.cpp
 +++ b/backends/keymapper/virtual-mouse.cpp
-@@ -186,12 +186,22 @@
+@@ -29,6 +29,9 @@
+ #include "common/translation.h"
+ 
+ #include "gui/gui-manager.h"
++#ifdef __PS4__
++#include "common/textconsole.h"
++#endif
+ 
+ namespace Common {
+ 
+@@ -60,6 +63,22 @@
+ 	if (curTime < _lastUpdateMillis + kUpdateDelay) {
+ 		return false;
+ 	}
++#ifdef __PS4__
++	// Integrate by elapsed time, not number of GUI/game iterations. Do not
++	// convert pauses or debugger stalls into a large cursor jump.
++	uint32 elapsed = curTime - _lastUpdateMillis;
++	float movementScale = float(MIN<uint32>(elapsed, 32)) / kUpdateDelay;
++	static uint32 samples = 0, totalMillis = 0, largestGap = 0;
++	if (_mouseVelocityX != 0.f || _mouseVelocityY != 0.f) {
++		++samples; totalMillis += elapsed; largestGap = MAX(largestGap, elapsed);
++		if (totalMillis >= 5000) {
++			warning("[ps4-pointer] updates=%u elapsed_ms=%u largest_gap_ms=%u raw_axis=%d,%d", samples, totalMillis, largestGap, _inputAxisPositionX, _inputAxisPositionY);
++			samples = totalMillis = largestGap = 0;
++		}
++	}
++#else
++	float movementScale = 1.0f;
++#endif
+ 	_lastUpdateMillis = curTime;
+ 
+ 	// Adjust the speed of the cursor according to the virtual screen resolution
+@@ -73,8 +92,8 @@
+ 	float screenSizeSpeedModifier = screenSize.width() / (float)kDefaultScreenWidth;
+ 
+ 	// Compute the movement delta when compared to the previous update
+-	float deltaX = _subPixelRemainderX + _mouseVelocityX * _slowModifier * screenSizeSpeedModifier * 10.f;
+-	float deltaY = _subPixelRemainderY + _mouseVelocityY * _slowModifier * screenSizeSpeedModifier * 10.f;
++	float deltaX = _subPixelRemainderX + _mouseVelocityX * _slowModifier * screenSizeSpeedModifier * 10.f * movementScale;
++	float deltaY = _subPixelRemainderY + _mouseVelocityY * _slowModifier * screenSizeSpeedModifier * 10.f * movementScale;
+ 
+ 	Common::Point delta;
+ 	delta.x = deltaX;
+@@ -186,12 +205,22 @@
  	float analogX  = (float)_inputAxisPositionX;
  	float analogY  = (float)_inputAxisPositionY;
  	float deadZone = (float)ConfMan.getInt("joystick_deadzone") * 1000.0f;

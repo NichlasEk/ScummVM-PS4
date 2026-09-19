@@ -161,3 +161,42 @@ Format reference: [Open Watcom LE/LX definitions](https://github.com/open-watcom
 The inspector is independently written and does not apply relocations/fixups.
 Next: use these mappings to trace archive readers and identify room/script
 structures. No opcode semantics or playable scene have been established yet.
+
+## Language resource-name index (2026-09-19)
+
+The original ICE640 code provides concrete anchors for further analysis:
+object 2 offset 0x23f9c opens KRO containers, compares the Burp signature,
+reads an 8-byte header and computes count * 20 for its directory. Its caller
+at 0x188e8 opens three resource archives. Object 2 offset 0x18661 applies a
+chained XOR transform to a length-prefixed block, starting with 0x5a and
+using each decoded byte as the next key. Applying that transform to the
+local E_KLANG.BIN yields a structurally consistent resource-name table.
+
+The English CD file is 561 bytes: uint32 length 556, 556 encoded bytes, one
+zero trailer. Decoded content is uint32 count 46 followed by 46 records of
+8-byte zero-padded ASCII names and uint32 archive base indices. Full eight
+character names need not contain a terminator. Bases are increasing and
+within the 717-entry E_KLANG archive. Examples: E_M02R00 -> 0,
+E_M02R01 -> 8, E_X02R24 -> 714. These are resource-group names, not proof
+that room scripts or a room interpreter have been decoded.
+
+Object 2 offset 0x1b998 searches eight-byte names in 12-byte records and
+adds a signed local index to the matched uint32 base. Our initial resolver
+accepts nonnegative indices and rejects crossing the next group's base or
+archive end; this is deliberately stricter than the original addition.
+Do not infer runtime data addresses directly from unrelocated instruction
+operands: the executable inspector still does not apply LE fixups.
+
+The original new `ResourceNames` decoder has synthetic tests for chained
+encoding, lookup, every truncated prefix, out-of-range indices, malformed
+padding, duplicate names, reversed bases and clearing stale state. The engine
+loads E_KLANG.BIN when available and reports every resolved base for comparison
+with the independent `scripts/pice/audit-language-index.py` oracle. Missing
+BIN files leave the existing resource preview working; malformed present
+indices are rejected. No original game bytes or executable extracts are tracked.
+
+Guest verification completed: all 46 name/base pairs exactly match the host
+oracle, encoded FNV a67ddbaf matches, all parser self-tests pass, and animation
+0 still boots. Evidence: artifacts/pice/language-index-guest.log and
+language-index-oracle.json. This checkpoint adds a resource lookup building
+block; no room-script execution or gameplay is implemented yet.

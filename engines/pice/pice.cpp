@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/pice.h"
+#include "pice/resource-names.h"
 #include "engines/util.h"
 #include "common/system.h"
 #include "common/events.h"
@@ -144,11 +145,25 @@ void PiceEngine::playSpeech() {
  }
 }
 Common::Error PiceEngine::run() {
- if (!runSelfTests() || !runSpriteTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
+ if (!runSelfTests() || !runSpriteTests() || !runResourceNameTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
  debug("[pice] parser self-tests PASS");
  if (!_graphics.open(Common::Path("KSVGA.KRO")) || !_language.open(Common::Path("E_KLANG.KRO")))
   return Common::Error(Common::kReadingFailed, "PICE preview requires the English European CD KSVGA.KRO and E_KLANG.KRO");
  debug("[pice] KSVGA=%u E_KLANG=%u entries", _graphics.count(), _language.count());
+ Common::File nameFile;
+ if (nameFile.open(Common::Path("E_KLANG.BIN"))) {
+  if (nameFile.size()<9 || nameFile.size()>1024*1024) return Common::Error(Common::kReadingFailed,"Invalid language index size");
+  Common::Array<byte> bytes; bytes.resize(nameFile.size());
+  ResourceNames names;
+  if (nameFile.read(&bytes[0],bytes.size())!=bytes.size() || !names.load(bytes,_language.count()))
+   return Common::Error(Common::kReadingFailed,"Invalid language resource index");
+  debug("[pice] language-index groups=%u encoded-fnv=%08x",names.count(),hashBytes(bytes));
+  for (uint i=0;i<names.count();++i) {
+   uint32 id;
+   if (!names.resolve(names.entry(i).name,0,id)) return Common::Error(Common::kReadingFailed,"Invalid resource name mapping");
+   debug("[pice] language-group=%s base=%u",names.entry(i).name.c_str(),id);
+  }
+ } else warning("[pice] E_KLANG.BIN unavailable; named language resources disabled");
  for (uint i = 0; i + 1 < _graphics.count(); ++i) {
   const KroEntry &e = _graphics.entry(i);
   if (e.size < 640*200 || e.size > 640*320+4 || _graphics.entry(i+1).size != 768) continue;

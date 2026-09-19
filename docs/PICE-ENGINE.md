@@ -397,3 +397,11 @@ before implementing its effects. Subsequent commands include 30 and 47; their
 actor/audio/coordinate semantics still require investigation. Original clock
 helper 0x1e9e4 scales the IRQ counter (incremented at 0x276e8) by the timer
 reload and 100 / 0x1234dc, useful evidence for future scheduler timing.
+
+### Opening-room runtime continuation
+
+The background-only checkpoint above has been superseded. See
+[PICE-OPENING-RUNTIME.md](PICE-OPENING-RUNTIME.md) for the initialized room,
+script-driven entrance and captain's dialogue, concurrent actor walks, guest
+tests, remaining limitations and the exact next opcode. The full game is
+still not playable.

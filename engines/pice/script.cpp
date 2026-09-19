@@ -91,6 +91,52 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
  }
  return true;
 }
+// Expression argument layouts are shared by assignments and discarded-result
+// statements, so adding a handler cannot accidentally support only one form.
+static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
+ before=after=0; key=false;
+ switch(op) {
+ case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
+ case 56: case 92: case 93: case 100: before=1; return true;
+ case 58: case 95: before=4; return true;
+ case 109: before=5; return true;
+ case 135: before=3; return true;
+ case 29: case 133: after=1; return true;
+ case 137: after=2; return true;
+ case 77: after=4; return true;
+ case 96: before=1; after=3; return true;
+ case 117: before=1; after=4; return true;
+ case 57: case 61: before=2; after=1; key=true; return true;
+ case 59: before=5; after=1; key=true; return true;
+ default: return false;
+ }
+}
+bool ScriptRunner::value(uint32 &pc,int16 &result) {
+ if (_bank.expression(pc,result,_variables)) return true;
+ if (!_scene) return false;
+ uint32 next=pc; uint16 op;
+ if (!_bank.word(next,op)) return false;
+ uint before,after; bool hasKey;
+ if(invocationShape(op,before,after,hasKey)) {
+  next+=2; Common::String name,key; Common::Array<int16> args; int16 arg;
+  for(uint i=0;i<before;++i) { if(!_bank.expression(next,arg,_variables)) return false; args.push_back(arg); }
+  if(after) {
+   if(!_bank.string(next,name)) return false;
+   for(uint i=0;i<after;++i) { if(!_bank.expression(next,arg,_variables)) return false; args.push_back(arg); }
+   if(hasKey && !_bank.string(next,key)) return false;
+  }
+  if(!_scene->invoke(op,name,args,key,result)) return false;
+  pc=next; return true;
+ }
+ if(op!=55 && op!=63 && op!=66) return false;
+ next+=2; Common::String name; int16 local,sequence=0,node=0;
+ if (!_bank.string(next,name) || !_bank.expression(next,local,_variables) ||
+     (op!=66 && !_bank.expression(next,sequence,_variables)) || (op==55 && !_bank.expression(next,node,_variables))) return false;
+ if (local<0 || sequence<0) return false;
+ bool ok=op==55 ? _scene->createActor(name,local,sequence,node,result) : op==63 ? _scene->createItem(name,local,sequence,result) : _scene->createMenu(name,local,result);
+ if (!ok) return false;
+ pc=next; return true;
+}
 bool ScriptRunner::start(uint index) {
  if (index>=_tasks.size()) return false;
  _tasks[index]=Task(); _tasks[index].pc=_bank.entry(index); _tasks[index].active=true; return true;
@@ -99,6 +145,18 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  if (index>=_tasks.size()) return kInvalid;
  Task &task=_tasks[index];
  if (!task.active) return kStopped;
+ if (task.peer>=0) {
+  if(task.barrierReady) { task.peer=-1; task.barrierReady=false; }
+  else {
+   Task &peer=_tasks[task.peer];
+   if(peer.active && peer.peer==int(index) && !peer.barrierReady) task.barrierReady=peer.barrierReady=true;
+  }
+  return kWaiting;
+ }
+ if (task.actor>=0) {
+  if (!_scene || !_scene->actorBusy(task.actor)) task.actor=-1;
+  return kWaiting;
+ }
  if (task.waiting) {
   if (task.remainingTicks<=0 || elapsedTicks>=uint32(task.remainingTicks)) {
    task.remainingTicks=0; task.waiting=false;
@@ -109,14 +167,71 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  uint16 opcode;
  if (!_bank.word(task.pc,opcode)) { task.active=false; return kInvalid; }
  uint32 next=task.pc;
+ uint wrappers=0;
+ while(opcode==6) { // 0x26c0 discards the following expression result
+  if (++wrappers>32 || !_bank.word(next+2,opcode)) { task.active=false; return kInvalid; }
+  next+=2;
+ }
  int16 argument;
+ if(opcode==129) {
+  if(!_scene) { task.active=false; return kUnsupported; }
+  next+=2; Common::String textName,key,animationName; Common::Array<int16> args;
+  if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+  args.push_back(argument);
+  if(!_bank.string(next,textName) || !_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+  args.push_back(argument);
+  if(!_bank.string(next,key) || !_bank.string(next,animationName)) { task.active=false; return kInvalid; }
+  for(uint i=0;i<5;++i) {
+   if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+   args.push_back(argument);
+  }
+  if(!_scene->animatedDialogue(textName,key,animationName,args)) { task.active=false; return kUnsupported; }
+  task.pc=next; task.actor=args[0]; return kWaiting;
+ }
+ if(opcode==50 || opcode==51 || opcode==96 || opcode==117) {
+  uint32 actorPC=next+2; int16 actor;
+  if(!_bank.expression(actorPC,actor,_variables) || actor<0) { task.active=false; return kInvalid; }
+  if(!value(next,argument)) { task.active=false; return kUnsupported; }
+  task.pc=next; task.actor=actor; return kWaiting;
+ }
+ uint before,after; bool hasKey;
+ if(opcode==55 || opcode==63 || opcode==66 || invocationShape(opcode,before,after,hasKey)) {
+  if(!value(next,argument)) { task.active=false; return kUnsupported; }
+  task.pc=next; return kAdvanced;
+ }
+ if (opcode==44) { // 0x223e / dispatcher states 3 and 8: mutual rendezvous
+  next+=2;
+  if(!_bank.expression(next,argument,_variables) || argument<0 || uint(argument)>=_tasks.size() || uint(argument)==index) {
+   task.active=false; return kInvalid;
+  }
+  task.pc=next; task.peer=argument; return kWaiting;
+ }
  if (opcode==22) { // 0x266e: signed expression -> state 2 countdown
   next+=2;
   if (!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
   task.pc=next; task.remainingTicks=argument; task.waiting=true;
   return kWaiting;
  }
- if (opcode==1 || opcode==27) {
+ if (opcode==47 || opcode==48 || opcode==49) {
+  uint16 args[5]; uint count=opcode==49 ? 5 : 4; next+=2;
+  for(uint i=0;i<count;++i) {
+   if (!_bank.word(next,args[i])) { task.active=false; return kInvalid; }
+   next+=2;
+  }
+  bool valid=opcode==47 ? _navigation.node(int16(args[0]),int16(args[1]),int16(args[2]),args[3]) :
+     opcode==48 ? _navigation.edge(int16(args[0]),int16(args[1]),int16(args[2]),byte(args[3])) :
+     _navigation.triangle(int16(args[0]),int16(args[1]),int16(args[2]),int16(args[3]),byte(args[4]));
+  if (!valid) { task.active=false; return kInvalid; }
+  task.pc=next; return kAdvanced;
+ }
+ if (opcode==30) {
+  if (!_scene) { task.active=false; return kUnsupported; }
+  next+=2; int16 value;
+  if (!_bank.expression(next,argument,_variables) || !_bank.expression(next,value,_variables)) { task.active=false; return kInvalid; }
+  if (!_scene->volume(argument,value)) { task.active=false; return kUnsupported; }
+  task.pc=next; return kAdvanced;
+ }
+ if (opcode==1 || opcode==27 || opcode==78) {
   if (!_scene) { task.active=false; return kUnsupported; }
   next+=2; Common::String name; int16 flags=0;
   if (!_bank.string(next,name) || !_bank.expression(next,argument,_variables) ||
@@ -130,7 +245,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
    if (name[i]=='.') { name=Common::String(name.c_str(),i); break; }
   }
   if (name.empty() || argument<0) { task.active=false; return kInvalid; }
-  bool applied=opcode==1 ? _scene->background(name,argument,flags) : _scene->palette(name,argument);
+  bool applied=opcode==1 ? _scene->background(name,argument,flags) : opcode==27 ? _scene->palette(name,argument) : _scene->scenery(name,argument);
   if (!applied) { task.active=false; return kUnsupported; }
   task.pc=next; return kAdvanced;
  }
@@ -147,11 +262,12 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   return task.active ? kAdvanced : kStopped;
  }
  if (opcode==25 || opcode==26) {
-  uint16 index;
+  uint16 destination;
   next+=2;
-  if (!_bank.word(next,index)) { task.active=false; return kInvalid; }
+  if (!_bank.word(next,destination)) { task.active=false; return kInvalid; }
   next+=2;
-  if (!_bank.expression(next,argument,_variables) || !_variables->write(opcode==26,int16(index),argument)) {
+  int16 oldValue;
+  if (!_variables->read(opcode==26,int16(destination),oldValue) || !value(next,argument) || !_variables->write(opcode==26,int16(destination),argument)) {
    task.active=false; return kInvalid;
   }
   task.pc=next; return kAdvanced;
@@ -305,7 +421,16 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
-  int backgrounds=0,palettes=0;
+  int backgrounds=0,palettes=0,calls=0;
+  bool busy=true;
+  bool actorBusy(int16 actor) const override { return actor==2 && busy; }
+  bool invoke(uint16 opcode,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) override {
+   if(opcode==109 && args.size()==5 && args[0]==2 && args[1]==3 && args[2]==75 && args[3]==8 && args[4]==1 && name.empty() && key.empty()) {
+    ++calls; result=17; return true;
+   }
+   if(opcode==51 && args.size()==2 && args[0]==2 && args[1]==3) { ++calls; result=2; return true; }
+   return false;
+  }
   bool background(const Common::String &name,int16 local,int16 flags) override {
    if (name!="B00" || local!=3 || flags) return false;
    ++backgrounds; return true;
@@ -327,6 +452,57 @@ bool runScriptTests() {
  ScriptResource unsupportedScene; if (!unsupportedScene.load(bytes)) return false;
  ScriptRunner rejectedScene(unsupportedScene,nullptr,&sink); rejectedScene.start(0);
  if (rejectedScene.step(0)!=ScriptRunner::kUnsupported || rejectedScene.position(0)!=2 || sink.backgrounds!=1) return false;
+ // A wrapped side-effectful RHS is invoked exactly once, after validating
+ // its destination. Invalid destinations and truncated arguments cannot
+ // allocate resources or advance the task PC.
+ const uint16 bind[]={1,6,25,249,109,20,2,20,3,20,75,20,8,20,1,31,20,0};
+ bytes.resize(sizeof(bind));
+ for(uint i=0;i<sizeof(bind)/2;++i) WRITE_LE_UINT16(&bytes[i*2],bind[i]);
+ ScriptResource bindingBank; if(!bindingBank.load(bytes)) return false;
+ ScriptRunner bindingRunner(bindingBank,nullptr,&sink); bindingRunner.start(0);
+ if(bindingRunner.run(0,10)!=ScriptRunner::kStopped || sink.calls!=1 ||
+    !bindingRunner.variables().read(false,249,value) || value!=17) return false;
+ WRITE_LE_UINT16(&bytes[6],250);
+ ScriptResource badBinding; if(!badBinding.load(bytes)) return false;
+ ScriptRunner invalidBinding(badBinding,nullptr,&sink); invalidBinding.start(0);
+ if(invalidBinding.step(0)!=ScriptRunner::kInvalid || invalidBinding.position(0)!=2 || sink.calls!=1) return false;
+ WRITE_LE_UINT16(&bytes[6],249); bytes.resize(28);
+ ScriptResource shortBinding; if(!shortBinding.load(bytes)) return false;
+ ScriptRunner incompleteBinding(shortBinding,nullptr,&sink); incompleteBinding.start(0);
+ if(incompleteBinding.step(0)!=ScriptRunner::kInvalid || sink.calls!=1) return false;
+ // Waiting for an actor does not re-run the animation command; completion
+ // yields one visit before the script continues, just like timed waits.
+ const uint16 animate[]={1,51,20,2,20,3,31,20,0};
+ bytes.resize(sizeof(animate));
+ for(uint i=0;i<sizeof(animate)/2;++i) WRITE_LE_UINT16(&bytes[i*2],animate[i]);
+ ScriptResource animationBank; if(!animationBank.load(bytes)) return false;
+ ScriptRunner animationRunner(animationBank,nullptr,&sink); animationRunner.start(0);
+ if(animationRunner.step(0)!=ScriptRunner::kWaiting || animationRunner.position(0)!=12 || sink.calls!=2 ||
+    animationRunner.step(0,100)!=ScriptRunner::kWaiting || animationRunner.position(0)!=12 || sink.calls!=2) return false;
+ sink.busy=false;
+ if(animationRunner.step(0)!=ScriptRunner::kWaiting || animationRunner.step(0)!=ScriptRunner::kStopped || sink.calls!=2) return false;
+ // Two tasks rendezvous after different delays; neither can pass a barrier
+ // until the other reaches the matching instruction.
+ const uint16 barrier[]={2,8,44,20,1,31,20,0,22,20,2,44,20,0,31,20,1};
+ bytes.resize(sizeof(barrier));
+ for(uint i=0;i<sizeof(barrier)/2;++i) WRITE_LE_UINT16(&bytes[i*2],barrier[i]);
+ ScriptResource barrierBank; if(!barrierBank.load(bytes)) return false;
+ ScriptRunner rendezvous(barrierBank); rendezvous.start(0); rendezvous.start(1);
+ if(rendezvous.step(0)!=ScriptRunner::kWaiting || rendezvous.step(1)!=ScriptRunner::kWaiting ||
+    rendezvous.step(0)!=ScriptRunner::kWaiting || !rendezvous.waiting(0)) return false;
+ rendezvous.step(1,2); rendezvous.step(1); // task 1 reaches the barrier
+ rendezvous.step(0); // releases both sides, but neither executes beyond it
+ if(!rendezvous.running(0) || !rendezvous.running(1)) return false;
+ rendezvous.step(0); rendezvous.step(1);
+ if(rendezvous.step(0)!=ScriptRunner::kStopped || rendezvous.step(1)!=ScriptRunner::kStopped) return false;
+ // Node arguments are raw signed words, rather than expression opcodes.
+ const uint16 nodeProgram[]={1,47,2,0xfffb,7,100,31,20,0};
+ bytes.resize(sizeof(nodeProgram));
+ for(uint i=0;i<sizeof(nodeProgram)/2;++i) WRITE_LE_UINT16(&bytes[i*2],nodeProgram[i]);
+ ScriptResource nodeBank; if(!nodeBank.load(bytes)) return false;
+ ScriptRunner nodeRunner(nodeBank); nodeRunner.start(0);
+ if(nodeRunner.run(0,10)!=ScriptRunner::kStopped || !nodeRunner.navigation().nodes[2].active ||
+    nodeRunner.navigation().nodes[2].x!=-5 || nodeRunner.navigation().nodes[2].y!=7) return false;
  // Terminator without its required alignment byte is truncated.
  bytes.resize(5); WRITE_LE_UINT16(&bytes[0],1); bytes[2]='A'; bytes[3]='B'; bytes[4]=0;
  ScriptResource shortString; if (!shortString.load(bytes)) return false;

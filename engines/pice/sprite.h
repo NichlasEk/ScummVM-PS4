@@ -16,11 +16,14 @@ struct SpriteSequence { Common::Array<SequenceStep> steps; };
 class SpriteResource {
 public:
  bool load(const Common::Array<byte> &data);
+ bool hasSequence(int index) const { return index>=0 && uint(index)<sequences.size() && !sequences[index].steps.empty(); }
  bool image(uint index, SpriteImage &out) const;
+ bool paintFrame(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const;
  Common::Array<SpriteFrame> frames;
  Common::Array<SpriteSequence> sequences;
  Common::Array<byte> palette;
 private:
+ bool paint(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const;
  Common::Array<byte> _data;
  Common::Array<uint32> _images;
 };

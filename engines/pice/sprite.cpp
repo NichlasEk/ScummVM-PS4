@@ -71,7 +71,7 @@ bool SpriteResource::load(const Common::Array<byte> &data) {
    SpritePart part;
    part.flagsX = r[0]; part.flagsY = r[1]; part.image = READ_LE_UINT16(r+2);
    part.x = int16(READ_LE_UINT16(r+4)); part.y = int16(READ_LE_UINT16(r+6));
-   if (part.image >= imageOffsets.size()-1) return false;
+   if (part.flagsX>1 || part.image >= (part.flagsX==0 ? frameOffsets.size()-1 : imageOffsets.size()-1)) return false;
    frame.parts.push_back(part);
   }
   parsed.frames.push_back(frame);
@@ -79,8 +79,8 @@ bool SpriteResource::load(const Common::Array<byte> &data) {
  for (uint i = 0; i + 1 < sequenceOffsets.size(); ++i) {
   uint32 start = sequenceOffsets[i], length = sequenceOffsets[i+1] - start;
   if (length < 2 || data[start] || length != 2U + 8U*data[start+1]) return false;
-  // Empty sequences cannot be advanced or selected by the preview.
-  if (!data[start+1]) return false;
+  // Some original resources contain unused empty sequence slots. Preserve
+  // their indices; callers must reject selecting them via hasSequence().
   SpriteSequence seq;
   for (uint j = 0; j < data[start+1]; ++j) {
    const byte *r = &data[start + 2 + j*8];
@@ -101,6 +101,37 @@ bool SpriteResource::image(uint index, SpriteImage &out) const {
  out = SpriteImage();
  return index + uint64(1) < _images.size() &&
   decodeSprite(&_data[_images[index]], _images[index+1] - _images[index], out);
+}
+bool SpriteResource::paintFrame(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const {
+ if (!width || !height || width>4096 || height>4096 || canvas.size()!=uint64(width)*height) return false;
+ Common::Array<byte> result=canvas; uint budget=4096;
+ if (!paint(frame,x,bottom,result,width,height,0,budget)) return false;
+ canvas=result; return true;
+}
+bool SpriteResource::paint(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const {
+ if(frame>=frames.size() || depth>=16 || !budget) return false;
+ --budget;
+ for(uint i=0;i<frames[frame].parts.size();++i) {
+  const SpritePart &part=frames[frame].parts[i];
+  if(part.flagsY!=1) return false;
+  int px=x+part.x, py=bottom+part.y;
+  // 0xb521 distinguishes frame references (kind 0) from bitmaps (kind 1).
+  // The bitmap rectangle ends at its Y anchor (0x1f67c).
+  if(part.flagsX==0) { if(!paint(part.image,px,py,canvas,width,height,depth+1,budget)) return false; }
+  else if(part.flagsX==1) {
+   SpriteImage bitmap; if(!image(part.image,bitmap)) return false;
+   py-=bitmap.height;
+   for(uint row=0;row<bitmap.height;++row) {
+    int dy=py+row; if(dy<0 || dy>=int(height)) continue;
+    for(uint col=0;col<bitmap.width;++col) {
+     int dx=px+col; if(dx<0 || dx>=int(width)) continue;
+     uint source=row*bitmap.width+col;
+     if(bitmap.mask[source]) canvas[dy*width+dx]=bitmap.pixels[source];
+    }
+   }
+  } else return false;
+ }
+ return true;
 }
 bool runSpriteTests() {
  // Two rows: a transparent pixel, two opaque pixels (including palette 0),
@@ -146,6 +177,26 @@ bool runSpriteTests() {
      parsed.sequences[0].steps[0].ticks != 5 || parsed.sequences[0].steps[0].x != -2 ||
      parsed.palette[7] != 42 || !parsed.image(0, image) || image.mask[1] != 255 ||
      parsed.image(1, image) || image.width) return false;
+ // Bottom anchored composition preserves transparent destination pixels,
+ // including when a literal palette-zero pixel lies beside transparency.
+ Common::Array<byte> canvas; canvas.resize(16,9);
+ if(!parsed.paintFrame(0,3,-2,canvas,4,4) || canvas[0]!=9 || canvas[1]!=0 || canvas[2]!=7 || canvas[4]!=9) return false;
+ canvas.clear(); canvas.resize(16,9);
+ if(!parsed.paintFrame(0,1,-2,canvas,4,4) || canvas[0]!=7 || canvas[1]!=9) return false;
+ // Compound frame references use the same anchor; recursive cycles fail
+ // transactionally instead of leaving a partially painted destination.
+ SpriteFrame compound; SpritePart reference;
+ reference.image=0; reference.x=0; reference.y=0; reference.flagsX=0; reference.flagsY=1;
+ compound.parts.push_back(reference); parsed.frames.push_back(compound);
+ canvas.clear(); canvas.resize(16,9);
+ if(!parsed.paintFrame(1,3,-2,canvas,4,4) || canvas[1]!=0 || canvas[2]!=7) return false;
+ parsed.frames[1].parts[0].image=1;
+ canvas.clear(); canvas.resize(16,9);
+ if(parsed.paintFrame(1,3,-2,canvas,4,4)) return false;
+ for(uint i=0;i<canvas.size();++i) if(canvas[i]!=9) return false;
+ parsed.frames[0].parts[0].flagsY=2;
+ if(parsed.paintFrame(0,3,-2,canvas,4,4)) return false;
+ for(uint i=0;i<canvas.size();++i) if(canvas[i]!=9) return false;
  for (uint n = 0; n < resource.size(); ++n) {
   Common::Array<byte> truncated = resource;
   truncated.resize(n);
@@ -160,13 +211,13 @@ bool runSpriteTests() {
   if (!parsed.load(resource) || parsed.load(corrupted) || !parsed.frames.empty() ||
       !parsed.sequences.empty() || !parsed.palette.empty()) return false;
  }
- // A correctly sized empty sequence must be rejected, not divide by zero
- // when the user cycles through sequences.
+ // An unused empty sequence is legal in a resource, but cannot be selected.
  Common::Array<byte> empty = resource;
  for (uint i = 0; i < 8; ++i) empty.remove_at(c+6);
  empty[c+5] = 0;
  WRITE_LE_UINT32(&empty[16], p-8);
  WRITE_LE_UINT32(&empty[20], empty.size());
- return !parsed.load(empty) && parsed.load(resource) && parsed.image(0, image);
+ return parsed.load(empty) && !parsed.hasSequence(0) && !parsed.hasSequence(-1) &&
+        parsed.load(resource) && parsed.hasSequence(0) && !parsed.hasSequence(1) && parsed.image(0, image);
 }
 }

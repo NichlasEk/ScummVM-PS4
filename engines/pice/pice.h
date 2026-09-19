@@ -4,6 +4,7 @@
 #include "engines/engine.h"
 #include "audio/mixer.h"
 #include "pice/kro.h"
+#include "pice/resource-names.h"
 #include "pice/sprite.h"
 namespace Pice {
 class PiceEngine : public Engine {
@@ -13,6 +14,10 @@ public:
 private:
  bool showPicture(uint position);
  void playSpeech();
+ bool playVoice(uint resource);
+ bool playDialogueSample();
+ ResourceNames _languageNames;
+ Common::String _subtitle;
  void drawLabels();
  bool showAnimation(uint resource);
  void advanceAnimation();

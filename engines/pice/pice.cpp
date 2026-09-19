@@ -2,6 +2,8 @@
 #include "pice/pice.h"
 #include "pice/resource-names.h"
 #include "pice/script.h"
+#include "pice/dialogue.h"
+#include "pice/voice.h"
 #include "engines/util.h"
 #include "common/system.h"
 #include "common/events.h"
@@ -29,7 +31,9 @@ void PiceEngine::drawLabels() {
  Common::String status = _spriteMode ? Common::String::format("Sprite %u | sequence %u | step %u/%u | provisional 20 ms/tick", _animationId, _sequence, _step + 1, _animation.sequences[_sequence].steps.size()) : Common::String::format("KSVGA resource %u | image %u/%u", _pictures[_picture], _picture + 1, _pictures.size());
  font->drawString(screen, status, 8, 24, 624, _textColor);
  font->drawString(screen, "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
- font->drawString(screen, "[ Previous ]       [ Next ]        [ Voice sample ]       [ Exit ]", 8, 385, 624, _textColor);
+ font->drawString(screen, "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
+ screen->fillRect(Common::Rect(0,338,640,360),0);
+ if (!_subtitle.empty()) font->drawString(screen,_subtitle,8,341,624,_textColor,Graphics::kTextAlignCenter);
  _system->unlockScreen();
 }
 bool PiceEngine::showPicture(uint position) {
@@ -127,26 +131,44 @@ void PiceEngine::advanceAnimation() {
  _nextFrame = _system->getMillis() + MAX<uint32>(1, step.ticks) * 20;
  _step = (_step + 1) % sequence.steps.size();
 }
-void PiceEngine::playSpeech() {
- _mixer->stopHandle(_speechHandle);
+bool PiceEngine::playVoice(uint resource) {
  Common::Array<byte> data;
- for (uint n = 0; n < _language.count(); ++n) {
-  uint resource = _speech++ % _language.count();
-  if (!_language.read(resource, data)) { warning("[pice] Cannot decode voice %u", resource); return; }
-  if (data.size() < 12 || READ_BE_UINT32(&data[0]) != MKTAG('R','I','F','F')) continue;
-  byte *owned = (byte *)malloc(data.size());
-  if (!owned) return;
-  memcpy(owned, &data[0], data.size());
-  Common::MemoryReadStream *stream = new Common::MemoryReadStream(owned, data.size(), DisposeAfterUse::YES);
-  Audio::SeekableAudioStream *wave = Audio::makeWAVStream(stream, DisposeAfterUse::YES);
-  if (!wave) { warning("[pice] Invalid WAV resource %u", resource); return; }
-  debug("[pice] speech=%u bytes=%u fnv=%08x rate=%d", resource, data.size(), hashBytes(data), wave->getRate());
-  _mixer->playStream(Audio::Mixer::kSpeechSoundType, &_speechHandle, wave);
-  return;
+ uint32 offset,size;
+ if (!_language.read(resource,data) || !voicePayload(data,offset,size)) return false;
+ byte *owned=(byte *)malloc(size);
+ if (!owned) return false;
+ memcpy(owned,&data[offset],size);
+ Common::MemoryReadStream *stream=new Common::MemoryReadStream(owned,size,DisposeAfterUse::YES);
+ Audio::SeekableAudioStream *wave=Audio::makeWAVStream(stream,DisposeAfterUse::YES);
+ if (!wave) { warning("[pice] Invalid WAV resource %u",resource); return false; }
+ _mixer->stopHandle(_speechHandle);
+ debug("[pice] speech=%u bytes=%u fnv=%08x rate=%d wave-offset=%u wave-bytes=%u",resource,data.size(),hashBytes(data),wave->getRate(),offset,size);
+ _mixer->playStream(Audio::Mixer::kSpeechSoundType,&_speechHandle,wave);
+ return true;
+}
+void PiceEngine::playSpeech() {
+ _subtitle.clear();
+ for (uint n=0;n<_language.count();++n) {
+  uint resource=_speech++ % _language.count();
+  if (playVoice(resource)) { drawLabels(); return; }
  }
 }
+bool PiceEngine::playDialogueSample() {
+ // Explicit testbench selection, not an event triggered by a running scene.
+ uint32 textResource,voiceResource;
+ Common::Array<byte> data; DialogueLine line;
+ if (!_languageNames.resolve("E_T02",6,textResource) || !_language.read(textResource,data) ||
+     !decodeDialogue(data,"1070",line) || line.voice<0 ||
+     !_languageNames.resolve(line.voiceGroup,uint(line.voice),voiceResource) ||
+     line.pages.size()!=1 || line.pages[0].size()!=1 || !playVoice(voiceResource)) return false;
+ _subtitle=line.pages[0][0];
+ debug("[pice] dialogue bank=%u key=1070 group=%s local=%d voice=%u text-fnv=%08x subtitle=%s",
+       textResource,line.voiceGroup.c_str(),line.voice,voiceResource,hashBytes(data),_subtitle.c_str());
+ drawLabels();
+ return true;
+}
 Common::Error PiceEngine::run() {
- if (!runSelfTests() || !runSpriteTests() || !runResourceNameTests() || !runScriptTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
+ if (!runSelfTests() || !runSpriteTests() || !runResourceNameTests() || !runScriptTests() || !runDialogueTests() || !runVoiceTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
  debug("[pice] parser self-tests PASS");
  if (!_graphics.open(Common::Path("KSVGA.KRO")) || !_language.open(Common::Path("E_KLANG.KRO")))
   return Common::Error(Common::kReadingFailed, "PICE preview requires the English European CD KSVGA.KRO and E_KLANG.KRO");
@@ -155,7 +177,7 @@ Common::Error PiceEngine::run() {
  if (nameFile.open(Common::Path("E_KLANG.BIN"))) {
   if (nameFile.size()<9 || nameFile.size()>1024*1024) return Common::Error(Common::kReadingFailed,"Invalid language index size");
   Common::Array<byte> bytes; bytes.resize(nameFile.size());
-  ResourceNames names;
+  ResourceNames &names = _languageNames;
   if (nameFile.read(&bytes[0],bytes.size())!=bytes.size() || !names.load(bytes,_language.count()))
    return Common::Error(Common::kReadingFailed,"Invalid language resource index");
   debug("[pice] language-index groups=%u encoded-fnv=%08x",names.count(),hashBytes(bytes));
@@ -216,8 +238,8 @@ Common::Error PiceEngine::run() {
  syncSoundSettings();
  CursorMan.setDefaultArrowCursor(true); CursorMan.showMouse(true);
  if (!showPicture(0)) { CursorMan.popCursor(); return Common::Error(Common::kReadingFailed); }
- // Exercise the real WAV path on the first testbench run as well as by request.
- playSpeech();
+ // Exercise a text-to-voice mapping from original data; no gameplay trigger yet.
+ if (!playDialogueSample()) playSpeech();
  if (!showAnimation(0)) warning("[pice] Animation 0 unsupported; staying in background preview");
  bool done = false;
  while (!shouldQuit() && !done) {
@@ -233,7 +255,7 @@ Common::Error PiceEngine::run() {
     } else if (event.mouse.y >= 380) {
      if (event.mouse.x < 155) change = -1;
      else if (event.mouse.x < 310) change = 1;
-     else if (event.mouse.x < 500) playSpeech();
+     else if (event.mouse.x < 500) playDialogueSample();
      else done = true;
     } else change = 1;
    }
@@ -242,6 +264,7 @@ Common::Error PiceEngine::run() {
     if (event.kbd.keycode == Common::KEYCODE_RIGHT) change = 1;
     if (event.kbd.keycode == Common::KEYCODE_LEFT) change = -1;
     if (event.kbd.keycode == Common::KEYCODE_SPACE) playSpeech();
+    if (event.kbd.keycode == Common::KEYCODE_c) playDialogueSample();
    }
    if (change && _spriteMode) {
     int next = int(_sequence) + change;

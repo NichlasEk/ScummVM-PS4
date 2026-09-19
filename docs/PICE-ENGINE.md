@@ -293,3 +293,51 @@ all 1,499 original entries with a 64-instruction budget report 407 stops,
 exhaustion; 415 probes changed PC. These are isolated prefix probes, not an
 original game scheduler or a playable scene. Evidence:
 `artifacts/pice/control-flow-guest.log`. Animation and speech preview still run.
+
+### Dialogue milestone: "KAA NAAMA FTAH'N CTHULHU!"
+
+The preview now resolves E_T02 local 6, text key 1070 from the user's English
+CD data. Its directory identifies E_M02R03 and local voice 7, which resolve
+through E_KLANG.BIN to voice resource 86. Both the displayed sentence and
+voice selection are read from the game resources, not embedded in the engine.
+The startup selection is explicit testbench code; it is not a script-triggered
+scene and the walking sprite is unrelated to the speaker. Repeat line replays
+the dialogue; Space/middle-click still browse voice samples. Native keyboard C
+also repeats the dialogue (host emulator key mapping may intercept it).
+
+Dialogue decoder evidence in ICE640 object 2:
+- 0x1d08a and 0x1d0f2 derive directory count from (firstOffset - 10) / 11.
+- Directory records are seven-byte keys plus uint32 offsets. The directory is
+  followed by the eight-byte voice group, a zero and the first voice flag.
+- Lookup returns entry+2; entry[-1] enables voice and entry holds its signed
+  local index (0x4499, 0x44b9).
+- Relative uint16 page offsets start at entry+2. The first offset / 2 gives
+  page count (0x42ae). Each page begins with a line count and terminated lines
+  (0x4555, 0x42b5).
+
+The bounded decoder validates directory geometry, offsets, page order, line
+counts and string termination. Synthetic tests cover missing keys, silent
+lines, multiple pages, truncation, invalid offsets and unterminated text.
+Page timing, actor ownership, glyph encoding beyond this ASCII test sentence
+and full dialogue scheduling are not implemented yet.
+
+Voice 86 uses the observed 20-byte EDITLS:05/03/95_1.0 header. A uint32 span
+at byte 20 includes its own four bytes; the embedded RIFF/WAVE starts at 24.
+All 35 EDITLS language resources in this corpus have this same envelope and
+span relation. The decoder checks both lengths and passes only the bounded
+WAVE payload to ScummVM. Extra wrapper chunks are not interpreted; this does
+not implement lip synchronization. Synthetic tests reject bad lengths,
+unsupported wrapper versions and non-WAVE payloads.
+
+Verification in shadPS4:
+- Guest parser tests PASS after rebuilding.
+- Text resource 639 FNV 055378b1; voice 86 FNV 8cb20528, 74,808 decoded bytes.
+- WAVE offset 24, length 74,729, 22,050 Hz, approximately 3.387 seconds.
+- Screenshot shows the decoded sentence; captured output correlates with the
+  source PCM at 0.906 (48 kHz output resampled against 22.05 kHz source).
+- User explicitly confirmed hearing the line.
+
+Ignored evidence: artifacts/pice/dialogue-guest.log, dialogue-output.wav,
+quote-candidates/86.wav and the emulator screenshot
+SCVM00003_20260919_211344_294_game_000000.png. Commercial text/audio remains
+only in local game data and ignored evidence, not in committed assets.

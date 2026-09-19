@@ -79,6 +79,8 @@ bool SpriteResource::load(const Common::Array<byte> &data) {
  for (uint i = 0; i + 1 < sequenceOffsets.size(); ++i) {
   uint32 start = sequenceOffsets[i], length = sequenceOffsets[i+1] - start;
   if (length < 2 || data[start] || length != 2U + 8U*data[start+1]) return false;
+  // Empty sequences cannot be advanced or selected by the preview.
+  if (!data[start+1]) return false;
   SpriteSequence seq;
   for (uint j = 0; j < data[start+1]; ++j) {
    const byte *r = &data[start + 2 + j*8];
@@ -115,6 +117,56 @@ bool runSpriteTests() {
  if (decodeSprite(bad, sizeof(bad), image)) return false;
  memcpy(bad, valid, sizeof(valid)); bad[12] = 2;
  if (decodeSprite(bad, sizeof(bad), image)) return false;
- return !decodeSprite(nullptr, 0, image);
+ if (decodeSprite(nullptr, 0, image)) return false;
+ // Original one-image, one-frame, one-sequence container. All offsets are
+ // generated independently of the parser; negative placement and opaque zero
+ // are intentional. No commercial resource bytes are used in this fixture.
+ const uint32 b = 38, c = b + 6 + sizeof(valid), p = c + 14;
+ Common::Array<byte> resource;
+ resource.resize(p + 768, 0);
+ WRITE_LE_UINT32(&resource[0], 24);
+ WRITE_LE_UINT32(&resource[4], b);
+ WRITE_LE_UINT32(&resource[8], c);
+ WRITE_LE_UINT32(&resource[16], p);
+ WRITE_LE_UINT32(&resource[20], resource.size());
+ WRITE_LE_UINT32(&resource[24], 4);
+ resource[29] = 1; resource[30] = 1; resource[31] = 1;
+ WRITE_LE_UINT16(&resource[34], 0xfffd);
+ WRITE_LE_UINT16(&resource[36], 4);
+ WRITE_LE_UINT32(&resource[b], 6);
+ memcpy(&resource[b+6], valid, sizeof(valid));
+ WRITE_LE_UINT32(&resource[c], 4);
+ resource[c+5] = 1;
+ WRITE_LE_UINT16(&resource[c+8], 5);
+ WRITE_LE_UINT16(&resource[c+10], 0xfffe);
+ resource[p+7] = 42;
+ SpriteResource parsed;
+ if (!parsed.load(resource) || parsed.frames.size() != 1 || parsed.sequences.size() != 1 ||
+     parsed.frames[0].parts[0].x != -3 || parsed.frames[0].parts[0].y != 4 ||
+     parsed.sequences[0].steps[0].ticks != 5 || parsed.sequences[0].steps[0].x != -2 ||
+     parsed.palette[7] != 42 || !parsed.image(0, image) || image.mask[1] != 255 ||
+     parsed.image(1, image) || image.width) return false;
+ for (uint n = 0; n < resource.size(); ++n) {
+  Common::Array<byte> truncated = resource;
+  truncated.resize(n);
+  if (parsed.load(truncated) || !parsed.frames.empty() || !parsed.sequences.empty() ||
+      !parsed.palette.empty() || parsed.image(0, image)) return false;
+ }
+ // Bad header/order, offset tables, reserved padding, references and counts.
+ const uint32 positions[] = {0,4,8,12,16,20,24,28,29,32,b,b+4,c,c+4,c+5,c+6};
+ for (uint i = 0; i < sizeof(positions)/sizeof(positions[0]); ++i) {
+  Common::Array<byte> corrupted = resource;
+  corrupted[positions[i]] ^= 0x80;
+  if (!parsed.load(resource) || parsed.load(corrupted) || !parsed.frames.empty() ||
+      !parsed.sequences.empty() || !parsed.palette.empty()) return false;
+ }
+ // A correctly sized empty sequence must be rejected, not divide by zero
+ // when the user cycles through sequences.
+ Common::Array<byte> empty = resource;
+ for (uint i = 0; i < 8; ++i) empty.remove_at(c+6);
+ empty[c+5] = 0;
+ WRITE_LE_UINT32(&empty[16], p-8);
+ WRITE_LE_UINT32(&empty[20], empty.size());
+ return !parsed.load(empty) && parsed.load(resource) && parsed.image(0, image);
 }
 }

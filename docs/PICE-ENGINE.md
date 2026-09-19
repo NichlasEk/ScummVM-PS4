@@ -124,5 +124,40 @@ and duration fields are parsed; their complete semantics still need EXE
 confirmation. Playback uses a provisional 20 ms per duration unit. This does
 not establish original timing, anchor semantics, or gameplay support.
 
-The first frame's guest hashes are verified. Visual animation capture and
-full parser boundary coverage remain to finish after the PS4 USB/input fix.
+The first frame's guest hashes are verified. Two shadPS4 screenshots now
+confirm visible animation progression in sequence 8 (steps 7 and 11):
+`artifacts/pice/animation-step-07.png` and `animation-step-11.png`.
+These local evidence files contain original game imagery and are not tracked.
+
+The guest parser self-tests now also construct an original synthetic complete
+sprite container, test every truncated prefix, corrupt header/table fields,
+check invalid image/frame references and signed offsets, and verify that failed
+loads clear previously loaded state. Correctly sized empty sequences are
+rejected, avoiding modulo-zero/indexing when cycling animation sequences.
+This covers the supported container variant, not all observed variants.
+
+## Executable mapping checkpoint (2026-09-19)
+
+`scripts/pice/inspect-executable.py` finds the embedded MZ/LE executable through
+its relative e_lfanew pointer and maps LE object pages to physical file offsets.
+It outputs JSON metadata and hashes only, never executable bytes. Its original
+synthetic tests cover embedded headers, reversed physical pages, truncated
+files, invalid tables/entry points and unsupported page encoding:
+
+```sh
+python3 tests/pice/test_executable.py
+python3 scripts/pice/inspect-executable.py /path/to/ICE640.EXE
+```
+
+Both local European ICE320.EXE and ICE640.EXE parse successfully. ICE640 has
+embedded MZ at 0x25d24, LE at 0x285dc, and physical page data at 0x3b524.
+There are 81 pages and three objects: 16-bit executable, 32-bit executable,
+and 32-bit writable data. The entry is object 2 offset 0x24db0, physical
+file offset 0x6a2d4. The stored page end matches the file size exactly.
+Inspection at this entry finds a jump over Watcom runtime identification into
+startup code; this validates the mapping, not discovery of the game loop.
+
+Format reference: [Open Watcom LE/LX definitions](https://github.com/open-watcom/open-watcom-v2/blob/master/bld/watcom/h/exeflat.h).
+The inspector is independently written and does not apply relocations/fixups.
+Next: use these mappings to trace archive readers and identify room/script
+structures. No opcode semantics or playable scene have been established yet.

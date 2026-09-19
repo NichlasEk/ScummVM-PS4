@@ -5,14 +5,21 @@
 #include "audio/mixer.h"
 #include "pice/kro.h"
 #include "pice/resource-names.h"
+#include "pice/script.h"
 #include "pice/sprite.h"
 namespace Pice {
-class PiceEngine : public Engine {
+class PiceEngine : public Engine, public ScriptSceneSink {
 public:
  explicit PiceEngine(OSystem *system) : Engine(system), _picture(0), _speech(0), _textColor(255) {}
  Common::Error run() override;
 private:
  bool showPicture(uint position);
+ bool background(const Common::String &name,int16 local,int16 flags) override;
+ bool palette(const Common::String &name,int16 local) override;
+ bool showScriptScene();
+ Common::Array<byte> _scenePixels, _scenePalette;
+ bool _scenePreview=false;
+ uint32 _sceneBackground=0, _scenePaletteId=0;
  void playSpeech();
  bool playVoice(uint resource);
  bool playDialogueSample();

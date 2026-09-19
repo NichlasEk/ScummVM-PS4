@@ -341,3 +341,59 @@ Ignored evidence: artifacts/pice/dialogue-guest.log, dialogue-output.wav,
 quote-candidates/86.wav and the emulator screenshot
 SCVM00003_20260919_211344_294_game_000000.png. Commercial text/audio remains
 only in local game data and ignored evidence, not in committed assets.
+
+### First script-driven room graphics and cooperative waits
+
+The preview now executes entry 0 of English EU script bank 1140, starting at
+byte 62. The original instructions load B02 local 0 as the background and B02
+local 1 as its palette. The runner calls a scene sink only after every operand
+has decoded successfully. Unsupported resource groups/flags fail without
+advancing the instruction; unknown commands are not skipped.
+
+Implemented commands:
+- 1 (handler 0x21d1): name string, local-index expression, flags expression.
+- 27 (0x2264): name string, local-index expression.
+- 22 (0x266e): signed wait duration, task state 2. A subsequent dispatcher visit
+  subtracts elapsed ticks. Even the visit that expires a wait returns without
+  executing the next instruction, as original 0x415 does. Zero/negative waits
+  still yield; restarting a task clears its countdown. No wall-clock scheduler
+  is attached to game tasks yet.
+- 45 (0x26de): signed equality, verified through the LE dispatch-table fixup.
+
+The string decoder follows 0x2121's NUL-inclusive even-byte padding and rejects
+truncation, excessive length and unsupported non-ASCII bytes transactionally.
+0x2187/0x1c88b strips the extension and appends an empty suffix in this edition.
+The pointer at object 3 0x2609 targets its empty string at object 3 0x592.
+The graphics prefix pointer 0x25e1 targets "S" at object 3 0x454. Both object
+identities are confirmed by fixups, not assumed from raw pointer values.
+
+This first scene sink deliberately supports only SB02 (resource IDs 815..881),
+640x316 backgrounds, 768-byte palettes and background flags zero. It resolves
+the known group span explicitly; generalized EXE-derived graphics name loading
+is still pending. The preview keeps its existing 640x400 display layout;
+original viewport placement and rendering flags are not yet reproduced.
+
+shadPS4 results:
+- All guest parser tests PASS, including both resource commands, extension
+  stripping, missing sinks, rejected flags, alignment truncation, waits,
+  restart/overshoot handling and equality.
+- Script background resource 815 FNV 2881fe4d and palette 816 FNV fc170f55.
+- Stops at byte 86, opcode 78, after the two original resource commands.
+- Isolated original-entry probes now report 420 stopped, 951 unsupported,
+  71 invalid/unsupported expressions, 4 budget yields and 53 waiting; 500
+  probes changed PC. These counts are not a measure of playable game coverage.
+- Screenshot SCVM00003_20260919_212506_289_game_000000.png shows the room with
+  an explicit stopped-script status. Log: artifacts/pice/scene-timing-guest.log.
+
+The chant remains a separate selectable dialogue demonstration, unrelated to
+this script's current state. Room actors, foreground elements and interaction
+are absent; the background alone is not a complete scene. Clicking the title
+still opens the earlier animation browser.
+
+Next continuation: opcode 78 dispatches to 0x33fa. It reads a name/index, loads
+resource type 2 into handle 0x1446 and calls 0xb5f6 on its payload. In bank 1140
+this is B02 local 12, KSVGA resource 827. Decode that room data and its consumers
+before implementing its effects. Subsequent commands include 30 and 47; their
+actor/audio/coordinate semantics still require investigation. Original clock
+helper 0x1e9e4 scales the IRQ counter (incremented at 0x276e8) by the timer
+reload and 100 / 0x1234dc, useful evidence for future scheduler timing.

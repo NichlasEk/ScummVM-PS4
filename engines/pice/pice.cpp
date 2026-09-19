@@ -29,6 +29,7 @@ void PiceEngine::drawLabels() {
  const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
  font->drawString(screen, "PICE ENGINE PREVIEW - GAMEPLAY NOT IMPLEMENTED", 8, 6, 624, _textColor);
  Common::String status = _spriteMode ? Common::String::format("Sprite %u | sequence %u | step %u/%u | provisional 20 ms/tick", _animationId, _sequence, _step + 1, _animation.sequences[_sequence].steps.size()) : Common::String::format("KSVGA resource %u | image %u/%u", _pictures[_picture], _picture + 1, _pictures.size());
+ if (_scenePreview) status="Room script 1140 | background + palette | stopped at opcode 78";
  font->drawString(screen, status, 8, 24, 624, _textColor);
  font->drawString(screen, "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
  font->drawString(screen, "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
@@ -43,6 +44,7 @@ bool PiceEngine::showPicture(uint position) {
  if (!_graphics.read(resource, pixels) || !decodeImageHeader(pixels, w, h) ||
      !_graphics.read(resource + 1, palette) || palette.size() != 768) return false;
  _spriteMode = false;
+ _scenePreview = false;
  _picture = position;
  _system->getPaletteManager()->setPalette(&palette[0], 0, 256);
  uint brightest = 0;
@@ -56,7 +58,51 @@ bool PiceEngine::showPicture(uint position) {
  debug("[pice] image=%u width=%u height=%u pixel-fnv=%08x palette-fnv=%08x", resource, w, h, hashBytes(pixels), hashBytes(palette));
  return true;
 }
+bool PiceEngine::background(const Common::String &name,int16 local,int16 flags) {
+ // Explicit English EU subset: original name resolution prefixes S; SB02
+ // spans 815..881. Other groups and nonzero flags await implementation.
+ if (!name.equalsIgnoreCase("B02") || local<0 || local>=67 || flags) return false;
+ Common::Array<byte> pixels; uint16 w,h;
+ uint resource=815+uint(local);
+ if (!_graphics.read(resource,pixels) || !decodeImageHeader(pixels,w,h) || w!=640 || h!=316) return false;
+ _scenePixels=pixels; _sceneBackground=resource;
+ debug("[pice] script-background name=%s local=%d flags=%d resource=%u fnv=%08x",name.c_str(),local,flags,resource,hashBytes(pixels));
+ return true;
+}
+bool PiceEngine::palette(const Common::String &name,int16 local) {
+ if (!name.equalsIgnoreCase("B02") || local<0 || local>=67) return false;
+ Common::Array<byte> colors; uint resource=815+uint(local);
+ if (!_graphics.read(resource,colors) || colors.size()!=768) return false;
+ _scenePalette=colors; _scenePaletteId=resource;
+ debug("[pice] script-palette name=%s local=%d resource=%u fnv=%08x",name.c_str(),local,resource,hashBytes(colors));
+ return true;
+}
+bool PiceEngine::showScriptScene() {
+ Common::Array<byte> bytes; ScriptResource bank;
+ if (!_graphics.read(1140,bytes) || !bank.load(bytes)) return false;
+ _scenePixels.clear(); _scenePalette.clear();
+ ScriptRunner runner(bank,nullptr,this);
+ if (!runner.start(0)) return false;
+ ScriptRunner::Result result=runner.run(0,64); uint16 opcode=0;
+ bank.word(runner.position(0),opcode);
+ debug("[pice] scene-prefix bank=1140 entry=0 result=%d pc=%u next-opcode=%u background=%u palette=%u",
+       int(result),runner.position(0),opcode,_sceneBackground,_scenePaletteId);
+ // Assert the known boundary, rather than silently continuing past it.
+ if (result!=ScriptRunner::kUnsupported || opcode!=78 || runner.position(0)!=86 ||
+     _scenePixels.empty() || _scenePalette.size()!=768) return false;
+ _spriteMode=false; _scenePreview=true;
+ _system->getPaletteManager()->setPalette(&_scenePalette[0],0,256);
+ uint brightest=0;
+ for (uint i=0;i<256;++i) {
+  uint light=_scenePalette[i*3]+_scenePalette[i*3+1]+_scenePalette[i*3+2];
+  if (light>brightest) { brightest=light; _textColor=i; }
+ }
+ _system->fillScreen(0);
+ _system->copyRectToScreen(&_scenePixels[4],640,0,42,640,316);
+ drawLabels(); _system->updateScreen(); return true;
+}
 bool PiceEngine::showAnimation(uint resource) {
+ _scenePreview = false;
  Common::Array<byte> data;
  if (!_graphics.read(resource, data) || !_animation.load(data)) return false;
  _sprites.clear();
@@ -190,7 +236,7 @@ Common::Error PiceEngine::run() {
  // English EU graphics-name table identifies SM02..SM12 as 1138..1305.
  // This audits entry tables only; it does not run scene side effects.
  uint banks=0, entries=0, placeholders=0;
- uint prefixStopped=0, prefixUnsupported=0, prefixInvalid=0, prefixBudget=0, prefixMoved=0;
+ uint prefixStopped=0, prefixUnsupported=0, prefixInvalid=0, prefixBudget=0, prefixWaiting=0, prefixMoved=0;
  for (uint i=1138;i<1306;++i) {
   Common::Array<byte> bytes;
   if (!_graphics.read(i,bytes)) return Common::Error(Common::kReadingFailed,"Cannot read script bank");
@@ -209,6 +255,7 @@ Common::Error PiceEngine::run() {
    case ScriptRunner::kStopped: ++prefixStopped; break;
    case ScriptRunner::kUnsupported: ++prefixUnsupported; break;
    case ScriptRunner::kBudgetExhausted: ++prefixBudget; break;
+   case ScriptRunner::kWaiting: ++prefixWaiting; break;
    default: ++prefixInvalid; break;
    }
   }
@@ -224,7 +271,7 @@ Common::Error PiceEngine::run() {
   }
  }
  debug("[pice] script-index banks=%u entries=%u placeholders=%u",banks,entries,placeholders);
- debug("[pice] script-prefix-probes moved=%u stopped=%u unsupported=%u invalid-or-unsupported-expression=%u budget=%u",prefixMoved,prefixStopped,prefixUnsupported,prefixInvalid,prefixBudget);
+ debug("[pice] script-prefix-probes moved=%u stopped=%u unsupported=%u invalid-or-unsupported-expression=%u budget=%u waiting=%u",prefixMoved,prefixStopped,prefixUnsupported,prefixInvalid,prefixBudget,prefixWaiting);
  for (uint i = 0; i + 1 < _graphics.count(); ++i) {
   const KroEntry &e = _graphics.entry(i);
   if (e.size < 640*200 || e.size > 640*320+4 || _graphics.entry(i+1).size != 768) continue;
@@ -240,7 +287,7 @@ Common::Error PiceEngine::run() {
  if (!showPicture(0)) { CursorMan.popCursor(); return Common::Error(Common::kReadingFailed); }
  // Exercise a text-to-voice mapping from original data; no gameplay trigger yet.
  if (!playDialogueSample()) playSpeech();
- if (!showAnimation(0)) warning("[pice] Animation 0 unsupported; staying in background preview");
+ if (!showScriptScene()) warning("[pice] Room script prefix unsupported; staying in background preview");
  bool done = false;
  while (!shouldQuit() && !done) {
   Common::Event event;

@@ -122,9 +122,9 @@ Original binaries/disassembly remain ignored under `artifacts/pice/`.
 ## Remaining work / next exact continuation
 
 1. The opening now reaches the movie-only bank 1176. Opcode 138 uses a native
-   MUX reader and returns to room 0. Entry 20 now stops at byte 6612, opcode
-   **147(B[60],0,5,30)**. See `PICE-MOVIE-RUNTIME.md` for evidence and the next
-   concurrent animation-trigger implementation.
+   MUX reader and returns to room 0. Entry 20 now passes animation-trigger
+   opcode 147 and actor removal 83, then stops at byte 6718, **opcode 152**
+   (autosave). See `PICE-MOVIE-RUNTIME.md` for evidence and continuation.
 2. Bootstrap 34 still contains unsupported context expressions **46(5),46(4)**.
    Opcode 46 dereferences object-3 pointer table 0x11ad. Context 4/5 are previous
    room/chapter; 7/8 are current room/chapter. Do not guess the other contexts.

@@ -97,7 +97,7 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
  case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
- case 98: case 56: case 92: case 93: case 100: before=1; return true;
+ case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 58: case 95: before=4; return true;
  case 109: before=5; return true;
  case 123: case 135: case 136: before=3; return true;
@@ -146,6 +146,10 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  if(exclusiveTask()>=0 && exclusiveTask()!=int(index)) return kWaiting;
  Task &task=_tasks[index];
  if (!task.active) return kStopped;
+ if(task.triggerActor>=0) {
+  if(!_scene || _scene->actorStepReached(task.triggerActor,task.triggerStep)) task.triggerActor=-1;
+  return kWaiting;
+ }
  if (task.peer>=0) {
   if(task.barrierReady) { task.peer=-1; task.barrierReady=false; }
   else {
@@ -217,6 +221,15 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   // Both original dispatch entries point to 0x1619: advance two bytes,
   // return zero, with no other effect in this executable.
   task.pc=next+2; return kAdvanced;
+ }
+ if(opcode==147) {
+  next+=2; Common::Array<int16> args;
+  for(uint n=0;n<4;++n) { if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; } args.push_back(argument); }
+  if(args[0]<0 || args[2]<0 || args[3]<0 || uint(args[3])>=_tasks.size() || uint(args[3])==index) { task.active=false; return kInvalid; }
+  int16 result;
+  if(!_scene || !_scene->invoke(opcode,Common::String(),args,Common::String(),result)) { task.active=false; return kUnsupported; }
+  start(args[3]); _tasks[args[3]].triggerActor=args[0]; _tasks[args[3]].triggerStep=args[2];
+  task.actor=args[0]; task.pc=next; return kWaiting;
  }
  if(opcode==142) {
   if(!_scene) { task.active=false; return kUnsupported; }
@@ -469,9 +482,11 @@ bool runScriptTests() {
   int backgrounds=0,palettes=0,calls=0,roomChanges=0,movies=0;
   bool playMovie(const Common::String &name,int16 before,int16 after) override { if(name!="clip.mux" || before!=1 || after!=0) return false; ++movies; return true; }
   bool changeRoom(int16 chapter,int16 room) override { if(chapter!=2 || room!=24) return false; ++roomChanges; return true; }
-  bool busy=true;
+  bool busy=true; int animationStep=0,triggerCalls=0;
+  bool actorStepReached(int16 actor,int16 target) const override { return !actorBusy(actor) || animationStep>=target; }
   bool actorBusy(int16 actor) const override { return actor==2 && busy; }
   bool invoke(uint16 opcode,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) override {
+   if(opcode==147 && args.size()==4 && args[0]==2 && args[1]==3 && args[2]==5 && args[3]==1) { ++triggerCalls; result=2; return true; }
    if(opcode==109 && args.size()==5 && args[0]==2 && args[1]==3 && args[2]==75 && args[3]==8 && args[4]==1 && name.empty() && key.empty()) {
     ++calls; result=17; return true;
    }
@@ -546,6 +561,24 @@ bool runScriptTests() {
     animationRunner.step(0,100)!=ScriptRunner::kWaiting || animationRunner.position(0)!=12 || sink.calls!=2) return false;
  sink.busy=false;
  if(animationRunner.step(0)!=ScriptRunner::kWaiting || animationRunner.step(0)!=ScriptRunner::kStopped || sink.calls!=2) return false;
+ // A concurrent task starts only when its actor reaches the requested
+ // step, including a catch-up jump over that step. The caller waits longer.
+ const uint16 triggered[]={2,14,147,20,2,20,3,20,5,20,1,31,20,0,25,1,20,99,31,20,1};
+ bytes.resize(sizeof(triggered));
+ for(uint i=0;i<sizeof(triggered)/2;++i) WRITE_LE_UINT16(&bytes[i*2],triggered[i]);
+ ScriptResource triggerBank; if(!triggerBank.load(bytes)) return false;
+ ScriptRunner triggerRunner(triggerBank,nullptr,&sink); triggerRunner.start(0); sink.busy=true; sink.animationStep=0;
+ if(triggerRunner.step(0)!=ScriptRunner::kWaiting || sink.triggerCalls!=1 || !triggerRunner.running(1) ||
+    triggerRunner.step(1)!=ScriptRunner::kWaiting || triggerRunner.position(1)!=28) return false;
+ sink.animationStep=6;
+ if(triggerRunner.step(1)!=ScriptRunner::kWaiting || triggerRunner.step(1)!=ScriptRunner::kAdvanced ||
+    !triggerRunner.variables().read(false,1,value) || value!=99 || triggerRunner.step(0)!=ScriptRunner::kWaiting) return false;
+ sink.busy=false;
+ if(triggerRunner.step(0)!=ScriptRunner::kWaiting || triggerRunner.step(0)!=ScriptRunner::kStopped) return false;
+ WRITE_LE_UINT16(&bytes[20],0); // cannot replace the currently executing task
+ ScriptResource selfTrigger; if(!selfTrigger.load(bytes)) return false;
+ ScriptRunner selfTriggerRunner(selfTrigger,nullptr,&sink); selfTriggerRunner.start(0);
+ if(selfTriggerRunner.step(0)!=ScriptRunner::kInvalid || sink.triggerCalls!=1 || selfTriggerRunner.position(0)!=4) return false;
  // Exclusive script sections prevent interleaving, but still yield at the
  // caller's budget. Ending or faulting the owner releases the scheduler.
  const uint16 exclusive[]={2,12,41,25,0,20,7,42,31,20,0,20,25,1,20,9,31,20,1};

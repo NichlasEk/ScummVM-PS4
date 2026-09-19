@@ -127,8 +127,51 @@ bool PiceEngine::volume(int16 handle,int16 value) {
  _sounds[handle].volume=value*255/100;
  _mixer->setChannelVolume(_sounds[handle].handle,_sounds[handle].volume); return true;
 }
+int16 PiceEngine::storeActor(const RoomActor &actor) {
+ for(uint i=0;i<_actors.size();++i) if(!_actors[i].active) { _actors[i]=actor; return i; }
+ if(_actors.size()>=20) return -1;
+ _actors.push_back(actor); return _actors.size()-1;
+}
+bool PiceEngine::runActorLifecycleTests() {
+ // Removing a middle slot must preserve all remaining IDs, invalidate its
+ // associations and permit reuse without increasing the 20-actor limit.
+ for(uint i=0;i<20;++i) { RoomActor actor; actor.feet.x=i; if(storeActor(actor)!=int(i)) return false; }
+ if(storeActor(RoomActor())!=-1) return false;
+ Hotspot spot; spot.actor=7; _hotspots.push_back(spot);
+ AnimationSound binding; binding.actor=7; _animationSounds.push_back(binding);
+ binding.actor=8; _animationSounds.push_back(binding);
+ WorldItem item; item.actor=7; _worldItems.push_back(item); _player=7;
+ Common::Array<int16> args; args.push_back(7); int16 result;
+ if(!invoke(83,Common::String(),args,Common::String(),result) || result!=7 || _actors.size()!=20 ||
+    _actors[7].active || _actors[8].feet.x!=8 || _hotspots[0].active || _worldItems[0].actor!=-1 ||
+    _animationSounds.size()!=1 || _animationSounds[0].actor!=8 || _player!=-1 || actorBusy(7) ||
+    invoke(83,Common::String(),args,Common::String(),result) || storeActor(RoomActor())!=7) return false;
+ _actors.clear(); _hotspots.clear(); _animationSounds.clear(); _worldItems.clear(); return true;
+}
 bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) {
  result=-1;
+ if(op==83 || op==147 || op==142 || op==98 || op==50 || op==123 || op==51 || op==96 || op==117 || op==97 || op==56 || op==92) {
+  if(args.empty() || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active) return false;
+ }
+ if(op==83) {
+  if(args.size()!=1 || _dialogueActor==args[0]) return false;
+  int16 id=args[0];
+  for(uint i=_animationSounds.size();i>0;--i) if(_animationSounds[i-1].actor==id) _animationSounds.remove_at(i-1);
+  for(uint i=0;i<_hotspots.size();++i) if(_hotspots[i].actor==id) _hotspots[i].active=false;
+  for(uint i=0;i<_worldItems.size();++i) if(_worldItems[i].actor==id) _worldItems[i].actor=-1;
+  _actors[id]=RoomActor(); _actors[id].active=false;
+  if(_player==id) _player=-1;
+  if(_cameraActor==id) _cameraActor=-1;
+  result=id; debug("[pice] remove-actor id=%d",id); return true;
+ }
+ if(op==147) {
+  if(args.size()!=4 || args[0]<0 || uint(args[0])>=_actors.size() || args[1]<0 || args[2]<0) return false;
+  const RoomActor &actor=_actors[args[0]];
+  if(!actor.sprite.hasSequence(args[1]) || uint(args[2])>=actor.sprite.sequences[args[1]].steps.size()) return false;
+  Common::Array<int16> animation; animation.push_back(args[0]); animation.push_back(args[1]);
+  if(!invoke(51,name,animation,key,result)) return false;
+  debug("[pice] animation-trigger actor=%d sequence=%d step=%d task=%d",args[0],args[1],args[2],args[3]); return true;
+ }
  if(op==133 || op==29) {
   if(args.size()!=1 || !name.equalsIgnoreCase("SMP02") || args[0]<0 || args[0]>=68) return false;
   uint slot=0; while(slot<_sounds.size() && _sounds[slot].active) ++slot;
@@ -208,14 +251,14 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   debug("[pice] actor-animation actor=%d resource=%d sequence=%d at=%d,%d",args[0],actor.resource,actor.sequence,actor.feet.x,actor.feet.y); return true;
  }
  if(op==60) {
-  if(args.size()!=2 || args[0]<0 || uint(args[0])>=_items.size() || !_buildingNavigation || _worldItems.size()>=10 || _actors.size()>=20 ||
+  if(args.size()!=2 || args[0]<0 || uint(args[0])>=_items.size() || !_buildingNavigation || _worldItems.size()>=10 ||
      args[1]<0 || uint(args[1])>=_buildingNavigation->nodes.size() || !_buildingNavigation->nodes[args[1]].active) return false;
   RoomActor actor=_items[args[0]]; actor.sequence+=2;
   const RoomNode &node=_buildingNavigation->nodes[args[1]];
   if(!actor.sprite.hasSequence(actor.sequence) || node.scale!=100) return false;
   actor.node=args[1]; actor.feet=Common::Point(node.x,node.y);
-  WorldItem item; item.item=args[0]; item.actor=_actors.size();
-  result=_worldItems.size(); actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); _actors.push_back(actor); _worldItems.push_back(item); return true;
+  WorldItem item; item.item=args[0];
+  result=_worldItems.size(); actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); item.actor=storeActor(actor); if(item.actor<0) return false; _worldItems.push_back(item); return true;
  }
  if(op==61 && args.size()==3 && args[0]==-1) { result=-1; return true; }
  if(op==95) {
@@ -274,11 +317,11 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   result=args[0]; return true;
  }
  if(op==77) {
-  if(args.size()!=4 || !name.equalsIgnoreCase("A02") || args[0]<0 || args[0]>=179 || args[1]<0 || _actors.size()>=20) return false;
+  if(args.size()!=4 || !name.equalsIgnoreCase("A02") || args[0]<0 || args[0]>=179 || args[1]<0) return false;
   Common::Array<byte> data; RoomActor actor;
   if(!_graphics.read(args[0],data) || !actor.sprite.load(data) || !actor.sprite.hasSequence(args[1])) return false;
   actor.resource=args[0]; actor.sequence=args[1]; actor.node=-1; actor.feet=Common::Point(args[2],args[3]);
-  result=_actors.size(); actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); _actors.push_back(actor); return true;
+  actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); result=storeActor(actor); return result>=0;
  }
  return false;
 }
@@ -310,14 +353,14 @@ bool PiceEngine::createItem(const Common::String &name,int16 local,int16 sequenc
  debug("[pice] create-item id=%d resource=%d sequence=%d",id,item.resource,sequence); return true;
 }
 bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequence,int16 node,int16 &id) {
- if (!name.equalsIgnoreCase("A02") || local<0 || local>=179 || _actors.size()>=20 || !_buildingNavigation ||
+ if (!name.equalsIgnoreCase("A02") || local<0 || local>=179 || !_buildingNavigation ||
      node<0 || uint(node)>=_buildingNavigation->nodes.size() || !_buildingNavigation->nodes[node].active) return false;
  RoomActor actor; Common::Array<byte> data;
  if (!_graphics.read(local,data) || !actor.sprite.load(data) || sequence<0 || !actor.sprite.hasSequence(sequence)) return false;
  const RoomNode &position=_buildingNavigation->nodes[node];
  if (position.scale!=100) return false;
  actor.resource=local; actor.sequence=sequence; actor.node=node; actor.feet=Common::Point(position.x,position.y);
- id=_actors.size(); actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); _actors.push_back(actor);
+ actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); id=storeActor(actor); if(id<0) return false;
  debug("[pice] create-actor id=%d resource=%d sequence=%d node=%d x=%d y=%d",id,local,sequence,node,position.x,position.y); return true;
 }
 bool PiceEngine::showScriptScene() {
@@ -443,6 +486,7 @@ bool PiceEngine::renderRoom() {
  memcpy(&_roomCanvas[((400-height)/2)*640],&_scenePixels[4],640*height);
  for(uint i=0;i<_actors.size();++i) {
   const RoomActor &actor=_actors[i];
+  if(!actor.active) continue;
   uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
   if (!actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,_roomCanvas,640,400)) return false;
  }
@@ -521,8 +565,13 @@ bool PiceEngine::animatedDialogue(const Common::String &textName,const Common::S
  debug("[pice] scripted-dialogue actor=%d key=%s voice=%u",args[0],key.c_str(),voices[0]);
  return true;
 }
+bool PiceEngine::actorStepReached(int16 actor,int16 step) const {
+ // Opcode 147 starts a non-looping sequence. Reaching a later step also
+ // releases its task, so bounded catch-up cannot lose a crossed trigger.
+ return !actorBusy(actor) || _actors[actor].step>=uint(step);
+}
 bool PiceEngine::actorBusy(int16 actor) const {
- return actor>=0 && uint(actor)<_actors.size() && (_dialogueActor==actor || _actors[actor].animationMode!=0);
+ return actor>=0 && uint(actor)<_actors.size() && _actors[actor].active && (_dialogueActor==actor || _actors[actor].animationMode!=0);
 }
 void PiceEngine::tickRoom() {
  if(!_scenePreview || !_roomRunner) return;
@@ -544,7 +593,7 @@ void PiceEngine::tickRoom() {
  }
  for(uint i=0;i<_actors.size();++i) {
   RoomActor &actor=_actors[i];
-  if(!actor.animationMode) continue;
+  if(!actor.active || !actor.animationMode) continue;
   if(actor.animationPaused) {
    actor.frameTicks-=ticks;
    if(actor.frameTicks>0) continue;
@@ -765,7 +814,7 @@ bool PiceEngine::playDialogueSample() {
  return true;
 }
 Common::Error PiceEngine::run() {
- if (!runMovieTests() || !runLipSyncTests() || !runRoomTests() || !runSelfTests() || !runSpriteTests() || !runResourceNameTests() || !runScriptTests() || !runDialogueTests() || !runVoiceTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
+ if (!runActorLifecycleTests() || !runMovieTests() || !runLipSyncTests() || !runRoomTests() || !runSelfTests() || !runSpriteTests() || !runResourceNameTests() || !runScriptTests() || !runDialogueTests() || !runVoiceTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
  debug("[pice] parser self-tests PASS");
  if (!_graphics.open(Common::Path("KSVGA.KRO")) || !_language.open(Common::Path("E_KLANG.KRO")) || !_soundArchive.open(Common::Path("KSOUND.KRO")))
   return Common::Error(Common::kReadingFailed, "PICE preview requires the English European CD KSVGA.KRO, E_KLANG.KRO and KSOUND.KRO");

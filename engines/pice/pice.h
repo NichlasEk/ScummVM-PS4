@@ -24,7 +24,7 @@ private:
  bool volume(int16 handle,int16 value) override;
  bool createActor(const Common::String &name,int16 local,int16 sequence,int16 node,int16 &id) override;
  bool invoke(uint16 opcode,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) override;
- struct Hotspot { int16 actor=-1,approach=-1; Common::Rect bounds; Common::String label; };
+ struct Hotspot { bool active=true; int16 actor=-1,approach=-1; Common::Rect bounds; Common::String label; };
  struct AnimationSound { int16 actor=-1,sound=-1,volume=100,sequence=-1,step=-1; bool fired=false; };
  Common::Array<AnimationSound> _animationSounds;
  SpriteResource _inventoryPanel;
@@ -38,8 +38,10 @@ private:
  bool createMenu(const Common::String &name,int16 local,int16 &id) override;
  Common::Array<Common::Array<Common::String> > _menus;
  bool createItem(const Common::String &name,int16 local,int16 sequence,int16 &id) override;
- struct RoomActor { SpriteResource sprite; int16 resource=0,sequence=0,node=0; Common::Point feet, labelPosition; bool routeEnabled=false; uint step=0; int32 frameTicks=0; int16 animationMode=0; Common::Point animationOrigin,walkTarget; int32 walkProgress=0,walkDistance=0; int16 walkDirection=0; Common::Array<Common::Point> path; uint pathIndex=0; bool animationPaused=false; };
+ struct RoomActor { bool active=true; SpriteResource sprite; int16 resource=0,sequence=0,node=0; Common::Point feet, labelPosition; bool routeEnabled=false; uint step=0; int32 frameTicks=0; int16 animationMode=0; Common::Point animationOrigin,walkTarget; int32 walkProgress=0,walkDistance=0; int16 walkDirection=0; Common::Array<Common::Point> path; uint pathIndex=0; bool animationPaused=false; };
  bool startWalkLeg(RoomActor &actor);
+ int16 storeActor(const RoomActor &actor);
+ bool runActorLifecycleTests();
  Common::Array<RoomActor> _actors;
  bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) override;
  Common::RandomSource _random{"pice"};
@@ -72,6 +74,7 @@ private:
  uint _roomBankId=1140;
  bool renderRoom();
  void tickRoom();
+ bool actorStepReached(int16 actor,int16 step) const override;
  bool actorBusy(int16 actor) const override;
  ScriptResource _roomBank;
  Common::ScopedPtr<ScriptRunner> _roomRunner;

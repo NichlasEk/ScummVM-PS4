@@ -71,7 +71,9 @@ room 0 -> room 24 -> room 0 -> room 36 -> room 0. Guest diagnostics reported:
 ```text
 movie validated name=Vin12.mux frames=73 audio=139650 final-fnv=58f69777
 movie completed name=Vin12.mux frames=73 failed=0
-room-task=20 result=2 pc=6612 opcode=147
+animation-trigger actor=1 sequence=0 step=5 task=30
+remove-actor id=1
+room-task=20 result=2 pc=6718 opcode=152
 ```
 
 The image hash agrees with the independent host reconstruction. This validates
@@ -80,17 +82,37 @@ of audiovisual synchronization. `artifacts/pice/emulator.log` and `build.log`
 contain the local evidence. The desktop was locked, so no live window capture
 or manual interaction test was performed.
 
-Next command: bank 1140, entry 20, byte 6612, **147(B[60],0,5,30)**.
-Original handler 0x1e0d starts the actor's sequence, waits for that actor in the
-calling task, and starts entry 30 in dispatcher state 13. State 13 at 0x50b
-waits until the actor becomes idle or its animation step equals the requested
-step (5). This is a frame-triggered concurrent script, not just a sequence
-change. Implement it without losing a trigger when native catch-up crosses
-multiple animation steps. The following opcode 83 removes the actor through
-0x1b849; preserve stable actor IDs and remove its related bindings/hotspots.
+Opcode **147(B[60],0,5,30)** and the following actor removal (83) now execute.
+The original handler 0x1e0d starts a non-looping sequence, waits for the actor in
+its calling task, and starts entry 30 in dispatcher state 13. State 13 at 0x50b
+waits until the actor becomes idle or reaches the requested animation step.
+The native once-only sequence check also accepts a later step so catch-up does
+not lose the trigger. Negative sequence selectors remain unsupported.
 
-Later in entry 20, opcode 152 requests the original autosave (`SAV00`), followed
-by sound/music and hotspot setup. Do not skip autosave or start reporting a
-playable game just because the introductory movie completed. Input dispatch,
-context expressions, inventory interaction, save/load and gameplay scripts all
-still require implementation and validation.
+Opcode 83 removes actor 1 using stable slots, disables its hotspots, removes
+its animation-sound bindings and detaches world-item references. Other IDs do
+not shift. New actors can reuse vacant slots. Synthetic tests cover the
+20-actor capacity, middle-slot removal, association cleanup and slot reuse;
+scheduler tests cover delayed trigger release, crossing the target step,
+independent caller waiting and rejection of a task that would replace itself.
+
+**Current exact stop: bank 1140, entry 20, byte 6718, opcode 152.** This requests
+the original autosave (`G_IceTxt`,2,`SAV00`). Do not silently skip it or create an
+empty save file. Implement native state serialization and restoration first:
+A/B variables, room/script PCs and waits, actor slots and animation/path state,
+inventory and menus, hotspots/actions, navigation, persistent sound ownership,
+and relevant dialogue/input state. Store clocks as remaining durations rather
+than host timestamps. Restore and continue the same script instruction after
+the save request; do not rerun room initialization over restored state.
+
+Original opcode-152 handler 0x20cf stores the localized label request and save
+key, then raises global flag 0x27fb for deferred processing. Identify its consumer
+before implementing the request's scheduling semantics. Later instructions
+perform further sound/music and hotspot setup. Input dispatch, context
+expressions, inventory interaction, save/load and gameplay scripts all still
+require implementation and validation. No complete playthrough is claimed.
+
+The native room snapshot after the movie and actor removal was visually
+inspected: Ryan stands at the left door, Jones remains on the floor, and the
+room's fire/foreground are rendered. This is an engine buffer snapshot, not a
+live capture or physical-PS4 verification.

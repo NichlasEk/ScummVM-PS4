@@ -20,6 +20,12 @@ static void storage_log(const char *format, ...) {
  va_end(copy); va_end(args);
 }
 #define printf storage_log
+static char usb_status[96] = "USB: not scanned";
+const char *ps4_usb_status_text(void) { return usb_status; }
+static void set_status(const char *text, int code) {
+ snprintf(usb_status, sizeof(usb_status), "%s [%d]", text, code);
+ printf("[ps4-usb] %s\n", usb_status);
+}
 static unsigned mounted;
 static uint64_t last_attempt;
 static int have_attempted;
@@ -58,25 +64,25 @@ void ps4_refresh_usb_mounts(void) {
  uint64_t now = sceKernelGetProcessTime();
  if (have_attempted && now - last_attempt < 2000000) return;
  have_attempted = 1; last_attempt = now;
- int missing = 0;
+ int missing = 0, reachable = 0;
  for (int i = 0; i < 8; ++i) {
   char path[32], alias[16];
   snprintf(path, sizeof(path), "/mnt/usb%d", i);
   snprintf(alias, sizeof(alias), "/scummvm_usb%d", i);
-  if (ps4_usb_has_entries(path)) continue;
-  if (ps4_usb_has_entries(alias)) continue;
+  if (ps4_usb_has_entries(path)) { ++reachable; continue; }
+  if (ps4_usb_has_entries(alias)) { ++reachable; continue; }
   missing |= 1 << i;
  }
  // Directly mounted USB already works (including the emulator testbench).
- if (!missing) return;
+ if (!missing || reachable) { set_status("USB ready", 0); return; }
  // Only map missing slots if no directly accessible game-bearing USB exists.
  for (int i = 0; i < 8; ++i) {
   char path[32]; snprintf(path, sizeof(path), "/mnt/usb%d", i);
-  if (ps4_usb_has_entries(path)) return;
+  if (ps4_usb_has_entries(path)) { set_status("USB ready", 0); return; }
  }
  jbc_cred original;
  if (jbc_get_cred(&original)) {
-  printf("[ps4-usb] sandbox access unavailable; no supported homebrew kernel service\n");
+  set_status("USB U1: homebrew storage service unavailable", 1);
   return;
  }
  // Inspect the real mount sources while temporarily outside the sandbox.
@@ -84,7 +90,7 @@ void ps4_refresh_usb_mounts(void) {
  jbc_cred root = original;
  if (jbc_jailbreak_cred(&root) || jbc_set_cred(&root)) {
   jbc_set_cred(&original);
-  printf("[ps4-usb] cannot inspect real USB mounts\n");
+  set_status("USB U2: cannot access console storage", 2);
   return;
  }
  unsigned present = 0;
@@ -95,9 +101,11 @@ void ps4_refresh_usb_mounts(void) {
   if (populated) present |= 1 << i;
  }
  if (jbc_set_cred(&original)) {
-  printf("[ps4-usb] ERROR restoring credentials after USB probe\n");
+  set_status("USB U6: storage access restore failed", 6);
   return;
  }
+ if (!present) { set_status("USB U3: no readable files found on USB", 3); return; }
+ int usable = 0, last_error = 0;
  for (int i = 0; i < 8; ++i) {
   if (!(present & (1 << i))) continue;
   if (!(missing & (1 << i))) continue;
@@ -108,9 +116,13 @@ void ps4_refresh_usb_mounts(void) {
   int result = jbc_mount_in_sandbox(path, name);
   printf("[ps4-usb] map %s -> %s result=%d readable=%d\n", path, alias, result, ps4_usb_has_entries(alias));
   if (!result) mounted |= 1 << i;
+  if (ps4_usb_has_entries(alias)) ++usable;
+  else last_error = result;
  }
  // Defensive restoration also covers a partial credential operation.
- if (jbc_set_cred(&original)) printf("[ps4-usb] ERROR restoring process credentials\n");
+ if (jbc_set_cred(&original)) set_status("USB U6: storage access restore failed", 6);
+ else if (usable) set_status("USB ready", 0);
+ else set_status("USB U4: drive found, cannot read mapped files", last_error);
 }
 void ps4_release_usb_mounts(void) {
  for (int i = 0; i < 8; ++i) {

@@ -420,7 +420,7 @@
  	    Common::JOYSTICK_BUTTON_B,
 --- a/backends/keymapper/virtual-mouse.cpp
 +++ b/backends/keymapper/virtual-mouse.cpp
-@@ -29,6 +29,9 @@
+@@ -29,8 +29,15 @@
  #include "common/translation.h"
  
  #include "gui/gui-manager.h"
@@ -429,8 +429,14 @@
 +#endif
  
  namespace Common {
++#ifdef __PS4__
++static uint32 s_ps4PointerHz = 0;
++extern "C" uint32 ps4_pointer_update_hz(void) { return s_ps4PointerHz; }
++#endif
  
-@@ -60,6 +63,22 @@
+ VirtualMouse::VirtualMouse(EventDispatcher *eventDispatcher) :
+ 		_eventDispatcher(eventDispatcher),
+@@ -60,6 +67,23 @@
  	if (curTime < _lastUpdateMillis + kUpdateDelay) {
  		return false;
  	}
@@ -442,6 +448,7 @@
 +	static uint32 samples = 0, totalMillis = 0, largestGap = 0;
 +	if (_mouseVelocityX != 0.f || _mouseVelocityY != 0.f) {
 +		++samples; totalMillis += elapsed; largestGap = MAX(largestGap, elapsed);
++		if (totalMillis >= 500) s_ps4PointerHz = (samples * 1000 + totalMillis / 2) / totalMillis;
 +		if (totalMillis >= 5000) {
 +			warning("[ps4-pointer] updates=%u elapsed_ms=%u largest_gap_ms=%u raw_axis=%d,%d", samples, totalMillis, largestGap, _inputAxisPositionX, _inputAxisPositionY);
 +			samples = totalMillis = largestGap = 0;
@@ -453,7 +460,7 @@
  	_lastUpdateMillis = curTime;
  
  	// Adjust the speed of the cursor according to the virtual screen resolution
-@@ -73,8 +92,8 @@
+@@ -73,8 +97,8 @@
  	float screenSizeSpeedModifier = screenSize.width() / (float)kDefaultScreenWidth;
  
  	// Compute the movement delta when compared to the previous update
@@ -464,7 +471,7 @@
  
  	Common::Point delta;
  	delta.x = deltaX;
-@@ -186,12 +205,22 @@
+@@ -186,12 +210,22 @@
  	float analogX  = (float)_inputAxisPositionX;
  	float analogY  = (float)_inputAxisPositionY;
  	float deadZone = (float)ConfMan.getInt("joystick_deadzone") * 1000.0f;
@@ -514,7 +521,27 @@
 +#endif
 --- a/gui/browser.cpp
 +++ b/gui/browser.cpp
-@@ -107,7 +107,11 @@
+@@ -32,6 +32,10 @@
+ #endif
+ 
+ #include "common/translation.h"
++#ifdef __PS4__
++extern "C" const char *ps4_usb_status_text(void);
++extern "C" uint32 ps4_pointer_update_hz(void);
++#endif
+ 
+ namespace GUI {
+ 
+@@ -58,7 +62,7 @@
+ 	_showHidden = false;
+ 
+ 	// Headline - TODO: should be customizable during creation time
+-	new StaticTextWidget(this, "Browser.Headline", title);
++	_usbHeadline = new StaticTextWidget(this, "Browser.Headline", title);
+ 
+ 	// Current path - TODO: handle long paths ?
+ 	_currentPath = new EditTextWidget(this, "Browser.Path", Common::U32String(), Common::U32String(), 0, kPathEditedCmd);
+@@ -107,7 +111,11 @@
  		_node = Common::FSNode(ConfMan.getPath("browser_lastpath"));
  
  	if (!_node.isDirectory())
@@ -526,7 +553,7 @@
  
  	_showHidden = ConfMan.getBool("gui_browser_show_hidden", Common::ConfigManager::kApplicationDomain);
  	_showHiddenWidget->setState(_showHidden);
-@@ -128,7 +132,7 @@
+@@ -128,7 +136,7 @@
  			// If nothing is selected in the list widget, choose the current dir.
  			// Else, choose the dir that is selected.
  			int selection = _fileList->getSelected();
@@ -535,7 +562,7 @@
  				_choice = _nodeContent[selection];
  			else
  				_choice = _node;
-@@ -136,7 +140,7 @@
+@@ -136,7 +144,7 @@
  			close();
  		} else {
  			int selection = _fileList->getSelected();
@@ -544,7 +571,7 @@
  				break;
  			if (_nodeContent[selection].isDirectory()) {
  				_node = _nodeContent[selection];
-@@ -154,6 +158,8 @@
+@@ -154,6 +162,8 @@
  		break;
  	case kListItemActivatedCmd:
  	case kListItemDoubleClickedCmd:
@@ -553,7 +580,7 @@
  		if (_nodeContent[data].isDirectory()) {
  			_node = _nodeContent[data];
  			updateListing();
-@@ -167,7 +173,7 @@
+@@ -167,7 +177,7 @@
  		// We do not allow selecting directories in directory
  		// browser mode, thus we will invalidate the selection
  		// when the user selects a directory over here.
@@ -562,6 +589,23 @@
  			_fileList->setSelected(-1);
  		break;
  	case kHiddenCmd:
+@@ -199,6 +209,16 @@
+ 		_nodeContent.clear();
+ 	else
+ 		Common::sort(_nodeContent.begin(), _nodeContent.end());
++
++#ifdef __PS4__
++	if (_node.getPath() == Common::Path("/") && ConfMan.get("ps4_usb_sandbox") != "false") {
++		Common::String status(ps4_usb_status_text());
++		uint32 hz = ps4_pointer_update_hz();
++		if (hz) status += Common::String::format(" | input %u Hz", hz);
++		_usbHeadline->setLabel(Common::U32String(status));
++	} else
++		_usbHeadline->setLabel(_title);
++#endif
+ 
+ 	// Populate the ListWidget
+ 	Common::U32StringArray list;
 --- a/backends/fs/posix/posix-fs-factory.cpp
 +++ b/backends/fs/posix/posix-fs-factory.cpp
 @@ -40,7 +40,10 @@
@@ -576,3 +620,21 @@
  	// Keep this here if we still want to maintain support for the Android SDL port, since this affects that too
  	//
  	// For Android it does not make sense to have "." in Search Manager as a current directory file node, so we skip it here
+--- a/gui/browser.h
++++ b/gui/browser.h
+@@ -29,6 +29,7 @@
+ namespace GUI {
+ 
+ class ListWidget;
++class StaticTextWidget;
+ class EditTextWidget;
+ class CheckboxWidget;
+ class CommandSender;
+@@ -44,6 +45,7 @@
+ 	const Common::FSNode	&getResult() { return _choice; }
+ 
+ protected:
++	StaticTextWidget *_usbHeadline;
+ 	ListWidget		*_fileList;
+ 	EditTextWidget	*_currentPath;
+ 	Common::FSNode	_node;

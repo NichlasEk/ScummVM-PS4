@@ -47,11 +47,11 @@ int main(void) {
  direct_usb=1;
  ps4_refresh_usb_mounts(); assert(!cred_reads && !mounts);
  direct_usb=0; clock_us+=2000000;
- ps4_refresh_usb_mounts(); assert(cred_reads==1 && !mounts);
+ ps4_refresh_usb_mounts(); assert(cred_reads==1 && !mounts); assert(strstr(ps4_usb_status_text(), "U1"));
  kernel_ok=1; empty_slots=1; clock_us+=2000000;
- ps4_refresh_usb_mounts(); assert(!mounts && !aliases && !privileged);
+ ps4_refresh_usb_mounts(); assert(!mounts && !aliases && !privileged); assert(strstr(ps4_usb_status_text(), "U3"));
  available=1; clock_us+=2000000;
- ps4_refresh_usb_mounts(); assert(aliases==1 && mounts==1 && restores>=2);
+ ps4_refresh_usb_mounts(); assert(aliases==1 && mounts==1 && restores>=2); assert(strstr(ps4_usb_status_text(), "USB ready"));
  ps4_refresh_usb_mounts(); assert(mounts==1); // no repeated work in the same browse refresh
  ps4_release_usb_mounts(); assert(!aliases && releases==1);
  ps4_release_usb_mounts(); assert(releases==1); // never unmount someone else's path

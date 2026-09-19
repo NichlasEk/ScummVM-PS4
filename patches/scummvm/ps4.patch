@@ -107,7 +107,17 @@
  	}
 --- a/backends/graphics/surfacesdl/surfacesdl-graphics.cpp
 +++ b/backends/graphics/surfacesdl/surfacesdl-graphics.cpp
-@@ -270,7 +270,13 @@
+@@ -1,3 +1,9 @@
++#ifdef __PS4__
++#include "backends/graphics/surfacesdl/ps4-framebuffer.h"
++static uint32_t ps4ScaleMs, ps4PresentMs;
++extern "C" uint32_t ps4_frame_scale_ms(void) { return ps4ScaleMs; }
++extern "C" uint32_t ps4_frame_present_ms(void) { return ps4PresentMs; }
++#endif
+ /* ScummVM - Graphic Adventure Engine
+  *
+  * ScummVM is the legal property of its developers, whose names
+@@ -270,7 +276,13 @@
  		return _videoMode.aspectRatioCorrection;
  #endif
  	case OSystem::kFeatureVSync:
@@ -121,7 +131,7 @@
  	case OSystem::kFeatureFilteringMode:
  		return _videoMode.filtering;
  	case OSystem::kFeatureCursorPalette:
-@@ -1183,6 +1189,10 @@
+@@ -1183,6 +1195,10 @@
  }
  
  void SurfaceSdlGraphicsManager::internUpdateScreen() {
@@ -132,7 +142,7 @@
  	SDL_Surface *srcSurf, *origSurf;
  	int height, width;
  	int scale1;
-@@ -1546,7 +1556,13 @@
+@@ -1546,7 +1562,15 @@
  #endif
  
  	if (doPresent) {
@@ -140,13 +150,15 @@
  		SDL_RenderPresent(_renderer);
 +#endif
 +#ifdef __PS4__
++		uint32 presentStart = SDL_GetTicks();
 +		if (SDL_UpdateWindowSurface(_window->getSDLWindow()) != 0)
 +			error("PS4 framebuffer update failed: %s", SDL_GetError());
++		ps4PresentMs = SDL_GetTicks() - presentStart;
 +#endif
  	}
  #else
  	if (_isDoubleBuf)
-@@ -2875,7 +2891,12 @@
+@@ -2875,7 +2899,12 @@
  		rendererFlags |= SDL_RENDERER_PRESENTVSYNC;
  	}
  
@@ -159,7 +171,7 @@
  	if (!_renderer) {
  		if (_videoMode.vsync) {
  			// VSYNC might not be available, so retry without VSYNC
-@@ -2918,7 +2939,9 @@
+@@ -2918,7 +2947,9 @@
  }
  
  void SurfaceSdlGraphicsManager::SDL_UpdateRects(SDL_Surface *screen, int numrects, SDL_Rect *rects) {
@@ -169,16 +181,39 @@
  
  	SDL_Rect viewport;
  
-@@ -2938,12 +2961,19 @@
+@@ -2938,12 +2969,42 @@
  	viewport.w = drawRect.width();
  	viewport.h = drawRect.height();
  
 +#ifdef __PS4__
++	uint32 started = SDL_GetTicks();
 +	SDL_Surface *framebuffer = SDL_GetWindowSurface(_window->getSDLWindow());
-+	SDL_SetClipRect(framebuffer, nullptr);
-+	SDL_FillRect(framebuffer, nullptr, 0);
-+	if (SDL_BlitScaled(screen, nullptr, framebuffer, &viewport) != 0)
-+		error("PS4 framebuffer blit failed: %s", SDL_GetError());
++	// Avoid SDL's generic full-frame conversion and scaling on every cursor move.
++	// Cache the exact SDL color mapping once per destination format.
++	static uint32 colors[65536];
++	static uint32 colorFormat = 0;
++	bool copied = false;
++	if (screen->format->format == SDL_PIXELFORMAT_RGB565 && framebuffer->format->BytesPerPixel == 4 &&
++	    !SDL_MUSTLOCK(screen) && !SDL_MUSTLOCK(framebuffer)) {
++		if (colorFormat != framebuffer->format->format) {
++			for (uint i = 0; i < 65536; ++i) {
++				Uint8 r, g, b;
++				SDL_GetRGB(i, screen->format, &r, &g, &b);
++				colors[i] = SDL_MapRGB(framebuffer->format, r, g, b);
++			}
++			colorFormat = framebuffer->format->format;
++		}
++		copied = ps4Scale565(screen->pixels, screen->w, screen->h, screen->pitch,
++		                    framebuffer->pixels, framebuffer->w, framebuffer->h, framebuffer->pitch,
++		                    viewport.x, viewport.y, viewport.w, viewport.h, colors);
++	}
++	if (!copied) {
++		SDL_SetClipRect(framebuffer, nullptr);
++		SDL_FillRect(framebuffer, nullptr, 0);
++		if (SDL_BlitScaled(screen, nullptr, framebuffer, &viewport) != 0)
++			error("PS4 framebuffer blit failed: %s", SDL_GetError());
++	}
++	ps4ScaleMs = SDL_GetTicks() - started;
 +#else
  	SDL_RenderClear(_renderer);
 -
@@ -192,12 +227,16 @@
  int SurfaceSdlGraphicsManager::SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int ncolors) {
 --- a/backends/fs/posix/posix-fs.cpp
 +++ b/backends/fs/posix/posix-fs.cpp
-@@ -34,6 +34,13 @@
+@@ -34,6 +34,17 @@
  #include "backends/fs/posix/posix-fs.h"
  #include "backends/fs/posix/posix-iostream.h"
  #include "common/algorithm.h"
 +#ifdef __PS4__
 +#include "backends/fs/posix/ps4-dirent.h"
++static unsigned ps4ListingRejected;
++static int ps4ListingError;
++extern "C" unsigned ps4_listing_rejected(void) { return ps4ListingRejected; }
++extern "C" int ps4_listing_errno(void) { return ps4ListingError; }
 +extern "C" void ps4_refresh_usb_mounts(void);
 +extern "C" int ps4_usb_has_entries(const char *path);
 +#include "common/textconsole.h"
@@ -206,7 +245,7 @@
  
  #include <sys/param.h>
  #include <sys/stat.h>
-@@ -57,15 +64,41 @@
+@@ -57,15 +68,41 @@
  #endif
  
  bool POSIXFilesystemNode::exists() const {
@@ -248,7 +287,7 @@
  }
  
  void POSIXFilesystemNode::setFlags() {
-@@ -169,6 +202,81 @@
+@@ -169,6 +206,84 @@
  	}
  #endif
  
@@ -287,9 +326,11 @@
 +#ifdef __PS4__
 +	// Bypass libc readdir: its implementation trusts d_reclen without bounds
 +	// checks. Validate each kernel record before using its name or advancing.
++	ps4ListingRejected = 0; ps4ListingError = 0;
 +	warning("[ps4-fs] listing %s", _path.c_str());
 +	int fd = open(_path.c_str(), O_RDONLY | O_DIRECTORY);
 +	if (fd < 0) {
++		ps4ListingError = errno;
 +		warning("[ps4-fs] open failed: %s errno=%d", _path.c_str(), errno);
 +		return false;
 +	}
@@ -317,6 +358,7 @@
 +			if (entry._path.lastChar() != '/') entry._path += '/';
 +			entry._path += name;
 +			entry.setFlags();
++			if (!entry._isValid) { ++ps4ListingRejected; ps4ListingError = errno; }
 +			if (!entry._isValid || (mode == Common::FSNode::kListFilesOnly && entry._isDirectory) ||
 +			    (mode == Common::FSNode::kListDirectoriesOnly && !entry._isDirectory)) continue;
 +			myList.push_back(new POSIXFilesystemNode(entry));
@@ -330,7 +372,7 @@
  	DIR *dirp = opendir(_path.c_str());
  	struct dirent *dp;
  
-@@ -247,9 +355,17 @@
+@@ -247,9 +362,17 @@
  	closedir(dirp);
  
  	return true;
@@ -486,10 +528,10 @@
  		float scalingFactor = 1.0f / magnitude * (magnitude - deadZone) / (JOYAXIS_MAX - deadZone);
  		float speedFactor = computeJoystickMouseSpeedFactor();
 +#ifdef __PS4__
-+		// Quadratic radial response: small deflections retain subpixel precision,
++		// Cubic radial response: small deflections retain subpixel precision,
 +		// full deflection retains the 1.02 maximum. Cap diagonal magnitude.
 +		float amount = MIN(1.0f, (magnitude - deadZone) / (JOYAXIS_MAX - deadZone));
-+		scalingFactor = amount * amount / magnitude;
++		scalingFactor = amount * amount * amount / magnitude;
 +		speedFactor *= 2.0f;
 +#endif
  		_mouseVelocityX = analogX * scalingFactor * speedFactor;
@@ -521,18 +563,22 @@
 +#endif
 --- a/gui/browser.cpp
 +++ b/gui/browser.cpp
-@@ -32,6 +32,10 @@
+@@ -32,6 +32,14 @@
  #endif
  
  #include "common/translation.h"
 +#ifdef __PS4__
 +extern "C" const char *ps4_usb_status_text(void);
 +extern "C" uint32 ps4_pointer_update_hz(void);
++extern "C" uint32 ps4_frame_scale_ms(void);
++extern "C" uint32 ps4_frame_present_ms(void);
++extern "C" unsigned ps4_listing_rejected(void);
++extern "C" int ps4_listing_errno(void);
 +#endif
  
  namespace GUI {
  
-@@ -58,7 +62,7 @@
+@@ -58,7 +66,7 @@
  	_showHidden = false;
  
  	// Headline - TODO: should be customizable during creation time
@@ -541,7 +587,7 @@
  
  	// Current path - TODO: handle long paths ?
  	_currentPath = new EditTextWidget(this, "Browser.Path", Common::U32String(), Common::U32String(), 0, kPathEditedCmd);
-@@ -107,7 +111,11 @@
+@@ -107,7 +115,11 @@
  		_node = Common::FSNode(ConfMan.getPath("browser_lastpath"));
  
  	if (!_node.isDirectory())
@@ -553,7 +599,7 @@
  
  	_showHidden = ConfMan.getBool("gui_browser_show_hidden", Common::ConfigManager::kApplicationDomain);
  	_showHiddenWidget->setState(_showHidden);
-@@ -128,7 +136,7 @@
+@@ -128,7 +140,7 @@
  			// If nothing is selected in the list widget, choose the current dir.
  			// Else, choose the dir that is selected.
  			int selection = _fileList->getSelected();
@@ -562,7 +608,7 @@
  				_choice = _nodeContent[selection];
  			else
  				_choice = _node;
-@@ -136,7 +144,7 @@
+@@ -136,7 +148,7 @@
  			close();
  		} else {
  			int selection = _fileList->getSelected();
@@ -571,7 +617,7 @@
  				break;
  			if (_nodeContent[selection].isDirectory()) {
  				_node = _nodeContent[selection];
-@@ -154,6 +162,8 @@
+@@ -154,6 +166,8 @@
  		break;
  	case kListItemActivatedCmd:
  	case kListItemDoubleClickedCmd:
@@ -580,7 +626,7 @@
  		if (_nodeContent[data].isDirectory()) {
  			_node = _nodeContent[data];
  			updateListing();
-@@ -167,7 +177,7 @@
+@@ -167,7 +181,7 @@
  		// We do not allow selecting directories in directory
  		// browser mode, thus we will invalidate the selection
  		// when the user selects a directory over here.
@@ -589,7 +635,7 @@
  			_fileList->setSelected(-1);
  		break;
  	case kHiddenCmd:
-@@ -199,6 +209,16 @@
+@@ -199,6 +213,19 @@
  		_nodeContent.clear();
  	else
  		Common::sort(_nodeContent.begin(), _nodeContent.end());
@@ -599,9 +645,12 @@
 +		Common::String status(ps4_usb_status_text());
 +		uint32 hz = ps4_pointer_update_hz();
 +		if (hz) status += Common::String::format(" | input %u Hz", hz);
++		status += Common::String::format(" | draw %u/%u ms", ps4_frame_scale_ms(), ps4_frame_present_ms());
 +		_usbHeadline->setLabel(Common::U32String(status));
-+	} else
-+		_usbHeadline->setLabel(_title);
++	} else {
++		Common::String status = Common::String::format("%u entries | unreadable %u | error %d", _nodeContent.size(), ps4_listing_rejected(), ps4_listing_errno());
++		_usbHeadline->setLabel(Common::U32String(status));
++	}
 +#endif
  
  	// Populate the ListWidget
@@ -638,3 +687,44 @@
  	ListWidget		*_fileList;
  	EditTextWidget	*_currentPath;
  	Common::FSNode	_node;
+--- /dev/null
++++ b/backends/graphics/surfacesdl/ps4-framebuffer.h
+@@ -0,0 +1,38 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#ifndef BACKENDS_GRAPHICS_PS4_FRAMEBUFFER_H
++#define BACKENDS_GRAPHICS_PS4_FRAMEBUFFER_H
++#include <stdint.h>
++#include <stddef.h>
++#include <string.h>
++// Opaque RGB565 -> native 32-bit framebuffer, nearest-neighbour scaling.
++// Destination rectangle must be contained in the framebuffer. Pitch is bytes.
++static inline bool ps4Scale565(const void *src, int sw, int sh, int sp,
++                               void *dst, int dw, int dh, int dp,
++                               int vx, int vy, int vw, int vh,
++                               const uint32_t *colors) {
++ if (!src || !dst || !colors || sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0 ||
++     sw > 4096 || sh > 4096 || dw > 4096 || dh > 4096 ||
++     sp < sw*2 || dp < dw*4 || vx < 0 || vy < 0 || vw <= 0 || vh <= 0 ||
++     vx > dw || vy > dh || vw > dw-vx || vh > dh-vy) return false;
++ int columns[4096];
++ for (int x = 0; x < vw; ++x) columns[x] = ((2*x+1)*sw)/(2*vw);
++ int previous = -1;
++ for (int y = 0; y < dh; ++y) {
++  uint8_t *row = static_cast<uint8_t *>(dst) + size_t(y)*dp;
++  if (y < vy || y >= vy+vh) { memset(row, 0, dw*4); continue; }
++  int sy = ((2*(y-vy)+1)*sh)/(2*vh);
++  if (sy == previous) { memcpy(row, row-dp, dw*4); continue; }
++  memset(row, 0, vx*4);
++  memset(row+(vx+vw)*4, 0, (dw-vx-vw)*4);
++  const uint8_t *source = static_cast<const uint8_t *>(src) + size_t(sy)*sp;
++  for (int x = 0; x < vw; ++x) {
++   uint16_t pixel;
++   memcpy(&pixel, source+columns[x]*2, 2);
++   uint32_t color = colors[pixel];
++   memcpy(row+(vx+x)*4, &color, 4);
++  }
++  previous = sy;
++ }
++ return true;
++}
++#endif

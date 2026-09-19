@@ -25,9 +25,18 @@ from the older preview.
   and Ryan to node 8, (466,336), using their directional walking sequences.
   Sequence positions are interpolated along the segment; this is not a claim
   of pixel-identical original path interpolation.
-- Both entries pass their mutual opcode-44 rendezvous. Entry 11 then stops.
-  Entry 1 stops explicitly at **byte 3978, opcode 41**. No unsupported opcode
-  is skipped to make the sequence appear complete.
+- Both entries pass their mutual opcode-44 rendezvous. Exclusive sections
+  (41/42) and same-chapter room changes (34) now run. Room bank selection is
+  **SM02 base 1138 + room + 2**, not base + room.
+- Room 24, bank 1164, displays its 640x317 closeup background. All three text
+  pages play voices 714..716, with original EDITLS tail records selecting the
+  timed face-animation sequences. It then returns to room 0, entry 2.
+- Further room dialogue and walking execute. Ryan's route from (466,336) to
+  (262,314) takes three waypoints across the floor instead of crossing its gap.
+- The sequence requests room 36, bank 1176, which contains no background:
+  its task plays VIN12.MUX and then returns to room 0. Movie verification and
+  the latest exact stop are recorded below. Unsupported commands still stop
+  explicitly rather than being skipped.
 
 The default startup no longer plays the unrelated chant over the room. The
 older image/animation/voice browser remains available through its test controls.
@@ -39,7 +48,7 @@ The maintained sources are `engines/pice/`; `scripts/pice/build.sh` copies them
 into the isolated ScummVM build. Use:
 
 ```sh
-EMULATOR_TIMEOUT=35 scripts/pice/run-emulator.sh
+EMULATOR_TIMEOUT=110 scripts/pice/run-emulator.sh
 ```
 
 The experimental package is
@@ -49,7 +58,7 @@ The stable DOTT-capable PS4 package and USB contents are not changed.
 
 Latest runtime log: `artifacts/pice/emulator.log`. Check for parser self-tests
 PASS, completed walks, scripted-dialogue start/completion and the explicit
-opcode-41 stop. Build diagnostics: `artifacts/pice/build.log`.
+latest explicit unsupported-command stop. Build diagnostics: `artifacts/pice/build.log`.
 
 Synthetic guest tests additionally cover:
 
@@ -62,8 +71,10 @@ Synthetic guest tests additionally cover:
   arguments without resource allocation or PC advancement.
 - Actor waits that invoke an animation once, then resume after completion.
 - Mutual script barriers with staggered arrival and independent task stops.
+- Exclusive scheduling, room-change teardown, multipage lip-track parsing,
+  track dependencies, and transactional movie instruction argument decoding.
 - Raw-word navigation instructions, triangle geometry, nearest floor points
-  and exact segment/triangle interval coverage, including disconnected floors.
+  and exact segment/triangle interval coverage, including disconnected floors and an L-shaped route around a corner.
 
 A locked desktop prevented compositor screenshots of the game. The optional
 `PICE_TESTBENCH`-only configuration key `pice_debug_snapshot_path` writes a
@@ -110,23 +121,20 @@ Original binaries/disassembly remain ignored under `artifacts/pice/`.
 
 ## Remaining work / next exact continuation
 
-1. **Opcode 41** at entry 1 byte 3978 dispatches to 0x2a02 and sets data flag
-   0x11ab. Opcode 42 at 0x2a15 clears it. The scheduler at 0x742..0x757 repeats
-   the current task while this flag is set. Implement bounded exclusive
-   execution, not a silent no-op.
-2. Following commands are 93(1), then **34(2,24)** at byte 3986, then 42.
-   Handler 34 at 0x241f updates chapter/room and tears down tasks. Establish
-   resource-bank selection, persistent/local state and room teardown before
-   supporting it. Bootstrap 34 contains context expressions **46(5),46(4)**;
-   opcode 46 dereferences the pointer table at object-3 0x11ad.
-3. The current walking implementation only accepts a straight segment covered
-   by enabled floor triangles. General graph routes, edge availability,
-   obstacle turns, non-100 scale and arbitrary click destinations are pending.
-   A source outside the floor is projected for segment validation; this is not
-   yet a complete reproduction of original clipping or entry-path behavior.
-4. Dialogue playback currently accepts voiced, single-page text only. Multiple
-   pages, silent dialogue, interruption, simultaneous dialogue owners and full
-   original text timing remain unsupported. Animation is not phoneme lip sync.
+1. The opening now reaches the movie-only bank 1176. Opcode 138 uses a native
+   MUX reader and returns to room 0. Entry 20 now stops at byte 6612, opcode
+   **147(B[60],0,5,30)**. See `PICE-MOVIE-RUNTIME.md` for evidence and the next
+   concurrent animation-trigger implementation.
+2. Bootstrap 34 still contains unsupported context expressions **46(5),46(4)**.
+   Opcode 46 dereferences object-3 pointer table 0x11ad. Context 4/5 are previous
+   room/chapter; 7/8 are current room/chapter. Do not guess the other contexts.
+3. Walking now finds visibility-graph paths through the enabled triangle
+   union. Dynamic edge restrictions, non-100 scale and arbitrary user clicks
+   remain pending. It is not a reproduction of the original path algorithm.
+4. Voiced dialogue advances through all pages. Closeup voices use EDITLS
+   animation tracks; ordinary dialogue uses the original random sequence/pause
+   ranges. Silent dialogue, interruption and simultaneous owners are pending.
+   Font rendering and subtitle layout still use the preview font.
 5. Hotspot records and actions are registered but not dispatched from clicks.
    Hover labels, verb selection, inventory pickup/use, dialogue choices,
    transitions, save/load and a complete playthrough are still required.

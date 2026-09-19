@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/room.h"
+#include <math.h>
 namespace Pice {
 bool RoomNavigation::node(int16 id,int16 x,int16 y,uint16 scale) {
  if (id<0 || uint(id)>=nodes.size()) return false;
@@ -68,6 +69,42 @@ bool RoomNavigation::segment(Common::Point from,Common::Point to) const {
  }
  return false;
 }
+bool RoomNavigation::route(Common::Point from,Common::Point to,Common::Array<Common::Point> &points) const {
+ points.clear();
+ if(region(from)<0 || region(to)<0) return false;
+ if(from==to) return true;
+ if(segment(from,to)) { points.push_back(to); return true; }
+ Common::Array<Common::Point> vertices; vertices.push_back(from); vertices.push_back(to);
+ for(uint i=0;i<nodes.size();++i) if(nodes[i].active) {
+  Common::Point p(nodes[i].x,nodes[i].y); if(region(p)>=0 && p!=from && p!=to) vertices.push_back(p);
+ }
+ // Visibility graph over the original floor vertices. Every edge is checked
+ // against the triangle union, so a shorter path cannot cut through a hole.
+ Common::Array<double> cost; cost.resize(vertices.size(),1e30); cost[0]=0;
+ Common::Array<int> previous; previous.resize(vertices.size(),-1);
+ Common::Array<byte> visited; visited.resize(vertices.size(),0);
+ for(uint visit=0;visit<vertices.size();++visit) {
+  int current=-1;
+  for(uint i=0;i<vertices.size();++i) if(!visited[i] && cost[i]<1e30 && (current<0 || cost[i]<cost[current])) current=i;
+  if(current<0) return false;
+  if(current==1) break;
+  visited[current]=1;
+  for(uint i=0;i<vertices.size();++i) {
+   if(visited[i] || !segment(vertices[current],vertices[i])) continue;
+   double dx=int32(vertices[current].x)-vertices[i].x,dy=int32(vertices[current].y)-vertices[i].y;
+   double candidate=cost[current]+sqrt(dx*dx+dy*dy);
+   if(candidate<cost[i]) { cost[i]=candidate; previous[i]=current; }
+  }
+ }
+ if(previous[1]<0) return false;
+ Common::Array<Common::Point> reverse;
+ for(int i=1;i!=0;i=previous[i]) {
+  if(i<0 || reverse.size()>=vertices.size()) return false;
+  reverse.push_back(vertices[i]);
+ }
+ for(uint i=reverse.size();i>0;--i) points.push_back(reverse[i-1]);
+ return true;
+}
 bool RoomNavigation::nearest(Common::Point point,Common::Point &out) const {
  if(region(point)>=0) { out=point; return true; }
  bool found=false; int64 best=0;
@@ -107,6 +144,18 @@ bool runRoomTests() {
  if(!room.node(3,20,0,100) || !room.node(4,30,0,100) || !room.node(5,20,10,100) ||
     !room.edge(3,3,4,1) || !room.edge(4,4,5,1) || !room.edge(5,5,3,1) || !room.triangle(2,3,4,5,1) ||
     room.segment(Common::Point(1,1),Common::Point(21,1))) return false;
+ Common::Array<Common::Point> route;
+ if(room.route(Common::Point(1,1),Common::Point(21,1),route) || !route.empty()) return false;
+ room.clear();
+ // L-shaped floor: endpoints are inside, their direct segment crosses the
+ // missing upper-left square. A valid route must turn at the inner corner.
+ const int16 xy[][2]={{0,0},{20,0},{20,20},{10,20},{10,10},{0,10}};
+ for(uint i=0;i<6;++i) if(!room.node(i,xy[i][0],xy[i][1],100)) return false;
+ const int16 links[][2]={{0,1},{1,4},{4,0},{4,5},{5,0},{1,2},{2,4},{2,3},{3,4}};
+ for(uint i=0;i<9;++i) if(!room.edge(i,links[i][0],links[i][1],1)) return false;
+ if(!room.triangle(0,0,1,4,1) || !room.triangle(1,0,4,5,1) || !room.triangle(2,1,2,4,1) || !room.triangle(3,2,3,4,1) ||
+    room.segment(Common::Point(2,8),Common::Point(18,18)) || !room.route(Common::Point(2,8),Common::Point(18,18),route) ||
+    route.size()!=2 || route[0]!=Common::Point(10,10) || route[1]!=Common::Point(18,18)) return false;
  room.clear(); return room.region(Common::Point(2,2))==-1 && !room.nearest(Common::Point(),nearest);
 }
 }

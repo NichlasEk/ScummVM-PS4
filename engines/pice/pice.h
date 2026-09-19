@@ -9,6 +9,8 @@
 #include "pice/resource-names.h"
 #include "pice/script.h"
 #include "pice/sprite.h"
+#include "pice/dialogue.h"
+#include "pice/lipsync.h"
 namespace Pice {
 class PiceEngine : public Engine, public ScriptSceneSink {
 public:
@@ -32,16 +34,30 @@ private:
  struct Action { int16 hotspot=-1, verb=-1, item=-1, entry=-1, fallback=0; };
  Common::Array<Hotspot> _hotspots;
  Common::Array<Action> _actions;
- int16 _player=-1;
+ int16 _player=-1,_cameraActor=-1;
  bool createMenu(const Common::String &name,int16 local,int16 &id) override;
  Common::Array<Common::Array<Common::String> > _menus;
  bool createItem(const Common::String &name,int16 local,int16 sequence,int16 &id) override;
- struct RoomActor { SpriteResource sprite; int16 resource=0,sequence=0,node=0; Common::Point feet, labelPosition; bool routeEnabled=false; uint step=0; int32 frameTicks=0; int16 animationMode=0; Common::Point animationOrigin,walkTarget; int32 walkProgress=0,walkDistance=0; int16 walkDirection=0; bool animationPaused=false; };
+ struct RoomActor { SpriteResource sprite; int16 resource=0,sequence=0,node=0; Common::Point feet, labelPosition; bool routeEnabled=false; uint step=0; int32 frameTicks=0; int16 animationMode=0; Common::Point animationOrigin,walkTarget; int32 walkProgress=0,walkDistance=0; int16 walkDirection=0; Common::Array<Common::Point> path; uint pathIndex=0; bool animationPaused=false; };
+ bool startWalkLeg(RoomActor &actor);
  Common::Array<RoomActor> _actors;
  bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) override;
  Common::RandomSource _random{"pice"};
  int16 _dialogueActor=-1,_dialogueMinSequence=0,_dialogueMaxSequence=0,_dialogueMinPause=0,_dialogueMaxPause=0;
  RoomActor _dialogueRestore;
+ bool closeupDialogue(const Common::String &animationName,const Common::String &textName,const Common::String &key,const Common::Array<int16> &args,int16 &actor) override;
+ bool loadDialogue(const Common::String &name,int16 local,const Common::String &key,DialogueLine &line,Common::Array<uint32> &voices);
+ bool startDialoguePage();
+ Common::Array<Common::Array<Common::String> > _dialoguePages;
+ Common::Array<uint32> _dialogueVoices;
+ Common::Array<VoiceAnimation> _closeupAnimations;
+ SpriteResource _closeupSprite;
+ Common::Point _closeupOrigin;
+ uint _dialoguePage=0;
+ uint32 _pageStart=0;
+ bool _closeup=false;
+ byte _textStyles[6][2]={{0,0},{0,0},{32,43},{0,0},{0,0},{0,0}};
+
 
  Common::Array<RoomActor> _items;
  struct WorldItem { int16 item=-1,actor=-1; };
@@ -49,6 +65,11 @@ private:
  ScriptVariables _worldVariables;
  RoomNavigation *_buildingNavigation=nullptr;
  bool showScriptScene();
+ bool loadRoom(uint room);
+ bool playMovie(const Common::String &name,int16 before,int16 after) override;
+ bool changeRoom(int16 chapter,int16 room) override;
+ int16 _pendingRoom=-1;
+ uint _roomBankId=1140;
  bool renderRoom();
  void tickRoom();
  bool actorBusy(int16 actor) const override;
@@ -79,7 +100,7 @@ private:
  int _originX = 0, _originY = 0;
  bool _spriteMode = false;
  byte _backgroundColor = 0;
- struct RoomSound { uint resource=0; byte volume=255; Audio::SoundHandle handle; };
+ struct RoomSound { bool active=false,persistent=false; uint resource=0; byte volume=255; Audio::SoundHandle handle; };
  Common::Array<RoomSound> _sounds;
  bool startSound(uint id,uint loops);
  KroArchive _graphics, _language, _soundArchive;

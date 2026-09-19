@@ -18,6 +18,7 @@ public:
  bool contains(int id,Common::Point p) const;
  int region(Common::Point p) const;
  bool segment(Common::Point from,Common::Point to) const;
+ bool route(Common::Point from,Common::Point to,Common::Array<Common::Point> &points) const;
  bool nearest(Common::Point point,Common::Point &out) const;
  Common::Array<RoomNode> nodes;
  Common::Array<RoomEdge> edges;

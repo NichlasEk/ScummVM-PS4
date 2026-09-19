@@ -97,10 +97,10 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
  case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
- case 56: case 92: case 93: case 100: before=1; return true;
+ case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 58: case 95: before=4; return true;
  case 109: before=5; return true;
- case 135: before=3; return true;
+ case 123: case 135: case 136: before=3; return true;
  case 29: case 133: after=1; return true;
  case 137: after=2; return true;
  case 77: after=4; return true;
@@ -143,6 +143,7 @@ bool ScriptRunner::start(uint index) {
 }
 ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  if (index>=_tasks.size()) return kInvalid;
+ if(exclusiveTask()>=0 && exclusiveTask()!=int(index)) return kWaiting;
  Task &task=_tasks[index];
  if (!task.active) return kStopped;
  if (task.peer>=0) {
@@ -173,6 +174,19 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   next+=2;
  }
  int16 argument;
+ if(opcode==128) {
+  if(!_scene) { task.active=false; return kUnsupported; }
+  next+=2; Common::String animationName,textName,key; Common::Array<int16> args;
+  for(uint i=0;i<2;++i) { if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; } args.push_back(argument); }
+  if(!_bank.string(next,animationName)) { task.active=false; return kInvalid; }
+  for(uint i=0;i<3;++i) { if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; } args.push_back(argument); }
+  if(!_bank.string(next,textName) || !_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+  args.push_back(argument);
+  if(!_bank.string(next,key)) { task.active=false; return kInvalid; }
+  int16 actor;
+  if(!_scene->closeupDialogue(animationName,textName,key,args,actor)) { task.active=false; return kUnsupported; }
+  task.pc=next; task.actor=actor; return kWaiting;
+ }
  if(opcode==129) {
   if(!_scene) { task.active=false; return kUnsupported; }
   next+=2; Common::String textName,key,animationName; Common::Array<int16> args;
@@ -188,7 +202,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if(!_scene->animatedDialogue(textName,key,animationName,args)) { task.active=false; return kUnsupported; }
   task.pc=next; task.actor=args[0]; return kWaiting;
  }
- if(opcode==50 || opcode==51 || opcode==96 || opcode==117) {
+ if(opcode==98 || opcode==123 || opcode==50 || opcode==51 || opcode==96 || opcode==117) {
   uint32 actorPC=next+2; int16 actor;
   if(!_bank.expression(actorPC,actor,_variables) || actor<0) { task.active=false; return kInvalid; }
   if(!value(next,argument)) { task.active=false; return kUnsupported; }
@@ -198,6 +212,37 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  if(opcode==55 || opcode==63 || opcode==66 || invocationShape(opcode,before,after,hasKey)) {
   if(!value(next,argument)) { task.active=false; return kUnsupported; }
   task.pc=next; return kAdvanced;
+ }
+ if(opcode==126 || opcode==127) {
+  // Both original dispatch entries point to 0x1619: advance two bytes,
+  // return zero, with no other effect in this executable.
+  task.pc=next+2; return kAdvanced;
+ }
+ if(opcode==142) {
+  if(!_scene) { task.active=false; return kUnsupported; }
+  next+=2;
+  if(!_bank.expression(next,argument,_variables) || argument<0) { task.active=false; return kInvalid; }
+  Common::Array<int16> args; args.push_back(argument); int16 result;
+  if(!_scene->invoke(opcode,Common::String(),args,Common::String(),result)) { task.active=false; return kUnsupported; }
+  task.pc=next; task.actor=argument; return kWaiting;
+ }
+ if(opcode==138) {
+  next+=2; Common::String name; int16 clearBefore,clearAfter;
+  if(!_bank.string(next,name) || !_bank.expression(next,clearBefore,_variables) || !_bank.expression(next,clearAfter,_variables)) { task.active=false; return kInvalid; }
+  if(!_scene || !_scene->playMovie(name,clearBefore,clearAfter)) { task.active=false; return kUnsupported; }
+  task.pc=next; return kAdvanced;
+ }
+ if(opcode==34) {
+  if(!_scene) { task.active=false; return kUnsupported; }
+  next+=2; int16 chapter,room;
+  if(!_bank.expression(next,chapter,_variables) || !_bank.expression(next,room,_variables)) { task.active=false; return kUnsupported; }
+  if(!_scene->changeRoom(chapter,room)) { task.active=false; return kUnsupported; }
+  task.pc=next;
+  for(uint i=0;i<_tasks.size();++i) _tasks[i].active=false;
+  _exclusiveTask=-1; return kStopped;
+ }
+ if(opcode==41 || opcode==42) {
+  task.pc=next+2; _exclusiveTask=opcode==41 ? int(index) : -1; return kAdvanced;
  }
  if (opcode==44) { // 0x223e / dispatcher states 3 and 8: mutual rendezvous
   next+=2;
@@ -317,7 +362,7 @@ bool runScriptTests() {
  Common::Array<byte> bad=data; WRITE_LE_UINT16(&bad[2],100);
  if (script.load(bad) || script.count()) return false;
  bad=data; WRITE_LE_UINT16(&bad[0],51); if (script.load(bad)) return false;
- bad=data; WRITE_LE_UINT16(&bad[4],138);
+ bad=data; WRITE_LE_UINT16(&bad[4],65535);
  if (!script.load(bad)) return false;
  pc=4; if (script.expression(pc,value) || pc!=4) return false;
  // Verify every supported binary opcode, including signed comparison and
@@ -351,7 +396,7 @@ bool runScriptTests() {
      runner.step(0)!=ScriptRunner::kStopped || runner.running(0) ||
      runner.step(1)!=ScriptRunner::kStopped || runner.running(1)) return false;
  // Unknown commands cannot silently advance into arbitrary scene data.
- WRITE_LE_UINT16(&bytes[4],138);
+ WRITE_LE_UINT16(&bytes[4],65535);
  ScriptResource unknown; if (!unknown.load(bytes)) return false;
  ScriptRunner stopped(unknown); stopped.start(0);
  if (stopped.step(0)!=ScriptRunner::kUnsupported || stopped.running(0) || stopped.position(0)!=4) return false;
@@ -421,7 +466,9 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
-  int backgrounds=0,palettes=0,calls=0;
+  int backgrounds=0,palettes=0,calls=0,roomChanges=0,movies=0;
+  bool playMovie(const Common::String &name,int16 before,int16 after) override { if(name!="clip.mux" || before!=1 || after!=0) return false; ++movies; return true; }
+  bool changeRoom(int16 chapter,int16 room) override { if(chapter!=2 || room!=24) return false; ++roomChanges; return true; }
   bool busy=true;
   bool actorBusy(int16 actor) const override { return actor==2 && busy; }
   bool invoke(uint16 opcode,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) override {
@@ -440,6 +487,24 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // A movie callback owns playback through completion; truncated arguments
+ // must never start it, and rejection leaves the instruction unconsumed.
+ const uint16 movieWords[]={1,138,0x6c63,0x7069,0x6d2e,0x7875,0,20,1,20,0,31,20,0};
+ bytes.resize(sizeof(movieWords));
+ for(uint i=0;i<sizeof(movieWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],movieWords[i]);
+ ScriptResource movieBank; if(!movieBank.load(bytes)) return false;
+ ScriptRunner movieRunner(movieBank,nullptr,&sink); movieRunner.start(0);
+ if(movieRunner.step(0)!=ScriptRunner::kAdvanced || movieRunner.position(0)!=22 || sink.movies!=1 || movieRunner.step(0)!=ScriptRunner::kStopped) return false;
+ for(uint n=4;n<22;++n) {
+  Common::Array<byte> partial=bytes; partial.resize(n);
+  ScriptResource truncatedMovie; if(!truncatedMovie.load(partial)) return false;
+  ScriptRunner truncatedRunner(truncatedMovie,nullptr,&sink); truncatedRunner.start(0);
+  if(truncatedRunner.step(0)!=ScriptRunner::kInvalid || truncatedRunner.position(0)!=2 || sink.movies!=1) return false;
+ }
+ WRITE_LE_UINT16(&bytes[20],2);
+ ScriptResource rejectedMovie; if(!rejectedMovie.load(bytes)) return false;
+ ScriptRunner rejectedMovieRunner(rejectedMovie,nullptr,&sink); rejectedMovieRunner.start(0);
+ if(rejectedMovieRunner.step(0)!=ScriptRunner::kUnsupported || rejectedMovieRunner.position(0)!=2 || sink.movies!=1) return false;
  const uint16 sceneWords[]={1,1,0x3042,0x0030,20,3,20,0,27,0x3042,0x2e30,0x0078,20,4,31,20,0};
  bytes.resize(sizeof(sceneWords));
  for(uint i=0;i<sizeof(sceneWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],sceneWords[i]);
@@ -481,6 +546,40 @@ bool runScriptTests() {
     animationRunner.step(0,100)!=ScriptRunner::kWaiting || animationRunner.position(0)!=12 || sink.calls!=2) return false;
  sink.busy=false;
  if(animationRunner.step(0)!=ScriptRunner::kWaiting || animationRunner.step(0)!=ScriptRunner::kStopped || sink.calls!=2) return false;
+ // Exclusive script sections prevent interleaving, but still yield at the
+ // caller's budget. Ending or faulting the owner releases the scheduler.
+ const uint16 exclusive[]={2,12,41,25,0,20,7,42,31,20,0,20,25,1,20,9,31,20,1};
+ bytes.resize(sizeof(exclusive));
+ for(uint i=0;i<sizeof(exclusive)/2;++i) WRITE_LE_UINT16(&bytes[i*2],exclusive[i]);
+ ScriptResource exclusiveBank; if(!exclusiveBank.load(bytes)) return false;
+ ScriptRunner serial(exclusiveBank); serial.start(0); serial.start(1);
+ if(serial.run(0,1)!=ScriptRunner::kBudgetExhausted || serial.exclusiveTask()!=0 || serial.step(1)!=ScriptRunner::kWaiting ||
+    serial.position(1)!=24 || serial.step(0)!=ScriptRunner::kAdvanced || serial.step(0)!=ScriptRunner::kAdvanced ||
+    serial.exclusiveTask()!=-1 || serial.step(1)!=ScriptRunner::kAdvanced || !serial.variables().read(false,1,value) || value!=9) return false;
+ serial.start(0); serial.step(0); // section entered again
+ WRITE_LE_UINT16(&bytes[4],41); WRITE_LE_UINT16(&bytes[6],65535);
+ ScriptResource faultExclusive; if(!faultExclusive.load(bytes)) return false;
+ ScriptRunner serialFault(faultExclusive); serialFault.start(0);
+ if(serialFault.step(0)!=ScriptRunner::kAdvanced || serialFault.step(0)!=ScriptRunner::kUnsupported || serialFault.exclusiveTask()!=-1) return false;
+ // A validated room-change request stops every old-bank task, including
+ // an exclusive owner, before the engine replaces the bank at a safe point.
+ const uint16 transition[]={2,9,41,34,20,2,20,24,42,25,0,20,99};
+ bytes.resize(sizeof(transition));
+ for(uint i=0;i<sizeof(transition)/2;++i) WRITE_LE_UINT16(&bytes[i*2],transition[i]);
+ ScriptResource transitionBank; if(!transitionBank.load(bytes)) return false;
+ ScriptRunner transfer(transitionBank,nullptr,&sink); transfer.start(0); transfer.start(1);
+ if(transfer.run(0,8)!=ScriptRunner::kStopped || transfer.running(1) || transfer.exclusiveTask()!=-1 || sink.roomChanges!=1 ||
+    !transfer.variables().read(false,0,value) || value!=-1) return false;
+ WRITE_LE_UINT16(&bytes[14],40);
+ ScriptResource deniedTransition; if(!deniedTransition.load(bytes)) return false;
+ ScriptRunner stay(deniedTransition,nullptr,&sink); stay.start(0); stay.start(1);
+ if(stay.run(0,8)!=ScriptRunner::kUnsupported || !stay.running(1) || sink.roomChanges!=1 || stay.position(0)!=6) return false;
+ // Verified no-effect commands consume exactly one opcode each.
+ const uint16 noEffects[]={1,126,127,31,20,0}; bytes.resize(sizeof(noEffects));
+ for(uint i=0;i<sizeof(noEffects)/2;++i) WRITE_LE_UINT16(&bytes[i*2],noEffects[i]);
+ ScriptResource noEffectBank; if(!noEffectBank.load(bytes)) return false;
+ ScriptRunner noEffectRunner(noEffectBank); noEffectRunner.start(0);
+ if(noEffectRunner.run(0,3)!=ScriptRunner::kStopped) return false;
  // Two tasks rendezvous after different delays; neither can pass a barrier
  // until the other reaches the matching instruction.
  const uint16 barrier[]={2,8,44,20,1,31,20,0,22,20,2,44,20,0,31,20,1};

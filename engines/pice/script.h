@@ -39,6 +39,9 @@ public:
  virtual ~ScriptSceneSink() {}
  virtual bool background(const Common::String &name,int16 local,int16 flags)=0;
  virtual bool scenery(const Common::String &name,int16 local) { return false; }
+ virtual bool closeupDialogue(const Common::String &animationName,const Common::String &textName,const Common::String &key,const Common::Array<int16> &args,int16 &actor) { return false; }
+ virtual bool playMovie(const Common::String &name,int16 before,int16 after) { return false; }
+ virtual bool changeRoom(int16 chapter,int16 room) { return false; }
  virtual bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) { return false; }
  virtual bool actorBusy(int16 actor) const { return false; }
  virtual bool createActor(const Common::String &name,int16 local,int16 sequence,int16 node,int16 &id) { return false; }
@@ -55,6 +58,7 @@ public:
  enum Result { kAdvanced, kStopped, kUnsupported, kInvalid, kBudgetExhausted, kWaiting };
  explicit ScriptRunner(const ScriptResource &bank, ScriptVariables *variables=nullptr, ScriptSceneSink *scene=nullptr) : _bank(bank), _variables(variables ? variables : &_ownedVariables), _scene(scene) { _tasks.resize(bank.count()); }
  bool start(uint index);
+ int exclusiveTask() const { return _exclusiveTask>=0 && running(_exclusiveTask) ? _exclusiveTask : -1; }
  bool running(uint index) const { return index<_tasks.size() && _tasks[index].active; }
  uint32 position(uint index) const { return _tasks[index].pc; }
  bool waiting(uint index) const { return running(index) && (_tasks[index].waiting || _tasks[index].actor>=0 || _tasks[index].peer>=0); }
@@ -66,6 +70,7 @@ public:
 private:
  bool value(uint32 &pc,int16 &result);
  struct Task { uint32 pc=0; bool active=false, waiting=false; int16 actor=-1,peer=-1; bool barrierReady=false; int32 remainingTicks=0; };
+ int _exclusiveTask=-1;
  const ScriptResource &_bank;
  Common::Array<Task> _tasks;
  RoomNavigation _navigation;

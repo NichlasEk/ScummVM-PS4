@@ -60,7 +60,19 @@ bool decodeDialogue(const Common::Array<byte> &data,const Common::String &key,Di
  }
  line=decoded; return true;
 }
+Common::String objectDialogueKey(const Common::String &base,int16 context,int16 item,bool genericItem) {
+ // ICE640 object 2 0xdef: ACT/LOOK, otherwise O%02d then OBJ.
+ if(base.empty() || base.size()>3) return Common::String();
+ if(context==-6) return base+"ACT";
+ if(context==-1) return base+"LOOK";
+ if(genericItem) return base+"OBJ";
+ if(item<0 || item>99) return Common::String();
+ return Common::String::format("%sO%02d",base.c_str(),item);
+}
 bool runDialogueTests() {
+ if(objectDialogueKey("D09",-6,-1)!="D09ACT" || objectDialogueKey("D09",-1,-1)!="D09LOOK" ||
+    objectDialogueKey("D09",15,15)!="D09O15" || objectDialogueKey("D09",15,15,true)!="D09OBJ" ||
+    !objectDialogueKey("TOOLONG",-1,-1).empty() || !objectDialogueKey("D09",15,-1).empty()) return false;
  // Original-format synthetic fixture, no game text/audio embedded.
  Common::Array<byte> data; data.resize(32,0);
  memcpy(&data[0],"TEST",4); WRITE_LE_UINT32(&data[7],21);

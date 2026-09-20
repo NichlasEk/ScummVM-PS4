@@ -415,3 +415,9 @@ continuation. The engine is still experimental and not a complete playable game.
 Latest interaction milestone: [native input and inventory](PICE-INPUT-RUNTIME.md).
 
 Fire-puzzle continuation: [dynamic navigation and extinguishing](PICE-FIRE-RUNTIME.md).
+
+## Object responses after the fire (2026-09-20)
+
+Chest use/examine now complete through opcode 111, including text-only pages.
+See [PICE-OBJECT-DIALOGUE.md](PICE-OBJECT-DIALOGUE.md) for evidence and remaining
+generic fallback work.

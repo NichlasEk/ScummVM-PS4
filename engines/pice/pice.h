@@ -59,6 +59,7 @@ private:
  int16 storeActor(const RoomActor &actor);
  bool runActorLifecycleTests();
  Common::Array<RoomActor> _actors;
+ bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) override;
  bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) override;
  Common::RandomSource _random{"pice"};
  int16 _dialogueActor=-1,_dialogueMinSequence=0,_dialogueMaxSequence=0,_dialogueMinPause=0,_dialogueMaxPause=0;

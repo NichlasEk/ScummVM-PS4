@@ -615,9 +615,10 @@ bool PiceEngine::loadDialogue(const Common::String &name,int16 local,const Commo
  if(name.size()<3 || local<0) return false;
  Common::String group=name; group.setChar('E',0); group.setChar('T',2);
  uint32 resource; Common::Array<byte> data;
- if(!_languageNames.resolve(group,local,resource) || !_language.read(resource,data) || !decodeDialogue(data,key,line) || line.voice<0 || line.pages.empty()) return false;
+ if(!_languageNames.resolve(group,local,resource) || !_language.read(resource,data) || !decodeDialogue(data,key,line) || line.pages.empty()) return false;
  voices.clear();
  for(uint i=0;i<line.pages.size();++i) {
+  if(line.voice<0) { voices.push_back(0xffffffff); continue; }
   uint32 voice,offset,size;
   if(!_languageNames.resolve(line.voiceGroup,uint(line.voice)+i,voice) || !_language.read(voice,data) || !voicePayload(data,offset,size)) return false;
   voices.push_back(voice);
@@ -625,7 +626,8 @@ bool PiceEngine::loadDialogue(const Common::String &name,int16 local,const Commo
  return true;
 }
 bool PiceEngine::startDialoguePage() {
- if(_dialoguePage>=_dialogueVoices.size() || _dialoguePage>=_dialoguePages.size() || !playVoice(_dialogueVoices[_dialoguePage])) return false;
+ if(_dialoguePage>=_dialogueVoices.size() || _dialoguePage>=_dialoguePages.size()) return false;
+ if(_dialogueVoices[_dialoguePage]!=0xffffffff && !playVoice(_dialogueVoices[_dialoguePage])) return false;
  _pageStart=_system->getMillis(); _subtitle.clear();
  for(uint i=0;i<_dialoguePages[_dialoguePage].size();++i) { if(i) _subtitle+=' '; _subtitle+=_dialoguePages[_dialoguePage][i]; }
  debug("[pice] dialogue-page=%u/%u voice=%u closeup=%d",_dialoguePage+1,_dialoguePages.size(),_dialogueVoices[_dialoguePage],int(_closeup)); return true;
@@ -645,6 +647,23 @@ bool PiceEngine::closeupDialogue(const Common::String &animationName,const Commo
  if(!startDialoguePage()) { _closeup=false; return false; }
  actor=_cameraActor; _dialogueActor=actor; _dialogueRestore=_actors[actor];
  debug("[pice] closeup-dialogue actor=%d animation=%d key=%s pages=%u",actor,args[2],key.c_str(),line.pages.size()); return true;
+}
+bool PiceEngine::objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &base) {
+ if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || _dialogueActor>=0) return false;
+ Common::String key=objectDialogueKey(base,_actionContext,_selectedItem);
+ DialogueLine line; Common::Array<uint32> voices;
+ if(key.empty() || !loadDialogue(name,local,key,line,voices)) {
+  if(_actionContext==-6 || _actionContext==-1) return false;
+  key=objectDialogueKey(base,_actionContext,_selectedItem,true);
+  if(key.empty() || !loadDialogue(name,local,key,line,voices)) return false;
+ }
+ // 0x4579 attaches ordinary speech to the existing actor. Unlike opcode
+ // 129 this does not replace its sprite with a scripted talking animation.
+ _dialoguePages=line.pages; _dialogueVoices=voices; _dialoguePage=0; _closeup=false;
+ if(!startDialoguePage()) return false;
+ _dialogueRestore=_actors[actor]; _dialogueActor=actor;
+ debug("[pice] object-dialogue actor=%d context=%d key=%s voice=%u",actor,_actionContext,key.c_str(),voices[0]);
+ return true;
 }
 bool PiceEngine::animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) {
  if(args.size()!=7 || _dialogueActor!=-1 || args[0]<0 || uint(args[0])>=_actors.size() || textName.size()<3 ||
@@ -688,7 +707,11 @@ void PiceEngine::tickRoom() {
  // Bounded catch-up retains elapsed time; the next visit handles any backlog.
  if(ticks>10) ticks=10;
  _roomClock+=ticks*10;
- if(_dialogueActor>=0 && !_mixer->isSoundHandleActive(_speechHandle)) {
+ // Text-only entries have no mixer completion signal. Native readable
+ // pacing (not yet the original configurable text-speed formula).
+ bool textPending=_dialogueActor>=0 && _dialogueVoices[_dialoguePage]==0xffffffff &&
+  _system->getMillis()-_pageStart<MAX<uint32>(2000,MIN<uint32>(10000,_subtitle.size()*60));
+ if(_dialogueActor>=0 && !textPending && !_mixer->isSoundHandleActive(_speechHandle)) {
   if(_dialoguePage+1<_dialoguePages.size()) {
    ++_dialoguePage;
    if(!startDialoguePage()) { warning("[pice] Cannot play next dialogue page"); _scenePreview=false; return; }
@@ -777,7 +800,7 @@ void PiceEngine::tickRoom() {
   if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor==-1) {
    const Common::Rect &bounds=_hotspots[target].bounds;
    Common::Point point((bounds.left+bounds.right)/2,(bounds.top+bounds.bottom)/2-40);
-   if(hotspotAt(point)==target && clickRoom(point,false)) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
+   if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
   }
   if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor>=0) {
    const RoomActor &actor=_actors[_hotspots[target].actor];
@@ -787,7 +810,7 @@ void PiceEngine::tickRoom() {
       actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,high,640,400)) {
     for(uint pixel=40*640;pixel<338*640 && !_testClickDone;++pixel) if(low[pixel]==high[pixel]) {
      Common::Point point(pixel%640,pixel/640);
-     if(hotspotAt(point)==target && clickRoom(point,false)) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
+     if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
     }
    }
   }

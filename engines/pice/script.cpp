@@ -207,6 +207,15 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   next+=2;
  }
  int16 argument;
+ if(opcode==111) {
+  next+=2; int16 actor,local; Common::String name,key;
+  if(!_bank.expression(next,actor,_variables,_scene) || actor<0 ||
+     !_bank.string(next,name) || !_bank.expression(next,local,_variables,_scene) || local<0 || !_bank.string(next,key)) {
+   task.active=false; return kInvalid;
+  }
+  if(!_scene || !_scene->objectDialogue(actor,name,local,key)) { task.active=false; return kUnsupported; }
+  task.pc=next; task.actor=actor; return kWaiting;
+ }
  if(opcode==128) {
   if(!_scene) { task.active=false; return kUnsupported; }
   next+=2; Common::String animationName,textName,key; Common::Array<int16> args;
@@ -533,6 +542,8 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
+  int speeches=0;
+  bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) override { if(actor!=2 || name!="F_M02" || local!=3 || key!="D09") return false; ++speeches; return true; }
   int backgrounds=0,palettes=0,calls=0,roomChanges=0,movies=0,saves=0;
   bool context(int16 index,int16 &value) const override { if(index!=9) return false; value=-6; return true; }
   bool requestSave(const Common::String &name,int16 local,const Common::String &key) override { if(name!="G_IceTxt" || local!=2 || key!="SAV00") return false; ++saves; return true; }
@@ -560,6 +571,24 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // Speech must dispatch once, wait for completion, and reject truncated
+ // operands without starting audio or advancing the instruction pointer.
+ const uint16 speechWords[]={1,111,20,2,0x5f46,0x304d,0x0032,20,3,0x3044,0x0039,31,20,0};
+ bytes.resize(sizeof(speechWords));
+ for(uint i=0;i<sizeof(speechWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],speechWords[i]);
+ ScriptResource speechBank; if(!speechBank.load(bytes)) return false;
+ ScriptRunner speechRunner(speechBank,nullptr,&sink); speechRunner.start(0);
+ if(speechRunner.step(0)!=ScriptRunner::kWaiting || speechRunner.position(0)!=22 || sink.speeches!=1 ||
+    speechRunner.step(0)!=ScriptRunner::kWaiting || sink.speeches!=1) return false;
+ sink.busy=false;
+ if(speechRunner.step(0)!=ScriptRunner::kWaiting || speechRunner.step(0)!=ScriptRunner::kStopped) return false;
+ sink.busy=true;
+ for(uint n=4;n<22;++n) {
+  Common::Array<byte> partial=bytes; partial.resize(n); ScriptResource shortSpeech;
+  if(!shortSpeech.load(partial)) return false;
+  ScriptRunner runner(shortSpeech,nullptr,&sink); runner.start(0);
+  if(runner.step(0)!=ScriptRunner::kInvalid || runner.position(0)!=2 || sink.speeches!=1) return false;
+ }
  // Runtime context is a raw index, and works inside nested comparisons.
  const uint16 contextWords[]={1,45,46,9,20,65530};
  bytes.resize(sizeof(contextWords));

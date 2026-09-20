@@ -47,6 +47,7 @@ public:
  virtual bool requestSave(const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool playMovie(const Common::String &name,int16 before,int16 after) { return false; }
  virtual bool changeRoom(int16 chapter,int16 room) { return false; }
+ virtual bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) { return false; }
  virtual bool actorStepReached(int16 actor,int16 step) const { return !actorBusy(actor); }
  virtual bool soundBusy(int16 sound) const { return false; }

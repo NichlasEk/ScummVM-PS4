@@ -11,6 +11,7 @@ struct DialogueLine {
 };
 // Text directory and page decoder, not dialogue scheduling or actor animation.
 bool decodeDialogue(const Common::Array<byte> &data, const Common::String &key, DialogueLine &line);
+Common::String objectDialogueKey(const Common::String &base,int16 context,int16 item,bool genericItem=false);
 bool runDialogueTests();
 }
 #endif

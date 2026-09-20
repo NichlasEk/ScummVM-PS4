@@ -79,6 +79,11 @@ All such hooks are removed from the normal local profile after testing.
 
 ## Next
 
+Update: the chest now completes both object responses; see
+[PICE-OBJECT-DIALOGUE.md](PICE-OBJECT-DIALOGUE.md). Generic fallback remains open.
+
+Historical next step at this milestone:
+
 Implement opcode 111's context-dependent object responses using the original
 language lookup and fallback rules. Then exercise the remaining opening
 objects/dialogue, room exits, and the global death/restart path. Do not treat

@@ -1,5 +1,8 @@
 # Real ScummVM port: emulator milestone, 2026-09-19
 
+Historical initial milestone. For package 1.09's expanded engine selection and
+remaining dependency ports, see [ENGINE-SUPPORT.md](ENGINE-SUPPORT.md).
+
 The actual ScummVM launcher boots in shadPS4 0.18.0. This is the PS4-targeted
 SELF from the same staging directory used to produce its installable PKG.
 It is not the diagnostic application or a native Linux ScummVM executable.

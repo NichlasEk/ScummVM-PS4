@@ -1,6 +1,7 @@
 # ScummVM for PlayStation 4
 
-ScummVM 2.9.1 with the SCUMM engine (including v7/v8), cross-compiled for PS4 and boot-tested
+ScummVM 2.9.1 with all engines supported by the current PS4 build dependencies,
+including SCUMM v7/v8 and Humongous Entertainment, cross-compiled for PS4 and boot-tested
 in shadPS4 0.18.0. The real launcher is visible and the pointer can be
 controlled with keyboard-emulated sticks or a PC mouse. The user has confirmed DOTT running on a real PS4. The latest pointer/storage
 changes still need hardware testing; save/load validation remains pending.
@@ -10,6 +11,8 @@ changes still need hardware testing; save/load validation remains pending.
 The default package contains **no games**. It has the ScummVM icon, a 8× faster
 PS4 pointer, and storage shortcuts for USB and internal game directories.
 See [standalone install and game setup](docs/STANDALONE-PS4.md).
+See [compiled engines and limitations](docs/ENGINE-SUPPORT.md) for the engine
+inventory. Compiled support is not a full PS4 gameplay compatibility claim.
 
 ## Run ScummVM in the emulator
 

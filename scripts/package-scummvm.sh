@@ -39,8 +39,10 @@ cp "$sdk/samples/SDL2/sce_module/"{libc.prx,libSceFios2.prx} "$stage/sce_module/
 cp "$sdk/samples/piglet/sce_sys/about/right.sprx" "$stage/sce_sys/about/"
 cp "$root/assets/icon0.png" "$stage/sce_sys/"
 cp "$source_dir/COPYING" "$stage/data/COPYING"
+cp "$source_dir/COPYRIGHT" "$stage/data/COPYRIGHT"
+cp "$source_dir/common/lua/COPYRIGHT" "$stage/data/lua-COPYRIGHT"
 cp "$source_dir/backends/vkeybd/packs/vkeybd_default.zip" "$stage/data/"
-printf '%s\n' 'Place legally obtained SCUMM game data in subdirectories here.' > "$stage/games/README.txt"
+printf '%s\n' 'Place legally obtained ScummVM game data in subdirectories here.' > "$stage/games/README.txt"
 pkgtool="$sdk/bin/linux/PkgTool.Core"
 sfo="$stage/sce_sys/param.sfo"
 # sfo_new expects a new path.
@@ -49,14 +51,24 @@ if [[ -e "$sfo" ]]; then mv "$sfo" "$sfo.previous"; fi
 for pair in APP_TYPE:1 ATTRIBUTE:0 DOWNLOAD_DATA_SIZE:0 SYSTEM_VER:0; do
  "${pkgtool}" sfo_setentry "$sfo" "${pair%%:*}" --type Integer --maxsize 4 --value "${pair#*:}"
 done
-"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.08
-"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.08
+"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.09
+"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.09
 "$pkgtool" sfo_setentry "$sfo" CATEGORY --type Utf8 --maxsize 4 --value gd
 "$pkgtool" sfo_setentry "$sfo" CONTENT_ID --type Utf8 --maxsize 48 --value "$content_id"
 "$pkgtool" sfo_setentry "$sfo" TITLE_ID --type Utf8 --maxsize 12 --value "$title_id"
 "$pkgtool" sfo_setentry "$sfo" TITLE --type Utf8 --maxsize 128 --value "$app_title"
 package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right.sprx
-    sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING games/README.txt)
+    sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING data/COPYRIGHT
+    data/lua-COPYRIGHT data/vkeybd_default.zip games/README.txt)
+# Use upstream's conditional data manifest for the engines actually compiled.
+# Only these support files are packaged, never arbitrary staged game folders.
+engine_data=$(make -s --no-print-directory -C "$build_dir" \
+    --eval='ps4-engine-data: ; @printf "%s\n" $(DIST_FILES_ENGINEDATA) $(DIST_FILES_ENGINEDATA_BIG)' ps4-engine-data)
+while IFS= read -r resource; do
+    [[ -n "$resource" ]] || continue
+    cp "$resource" "$stage/data/"
+    package_files+=("data/$(basename "$resource")")
+done <<< "$engine_data"
 if [[ -n "$dott_source" ]]; then
     mkdir -p "$stage/games/dott"
     # Include only the full game's data, not DOS executables or unrelated demos.

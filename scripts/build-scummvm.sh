@@ -6,7 +6,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 "$root/scripts/build-ps4-input.sh"
 mkdir -p "$root/artifacts/scummvm" "$root/build/scummvm"
 sdk=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
-fingerprint=$( { sha256sum "$root/scripts/configure-scummvm.sh" "$root/scripts/scummvm-sdl2-config"; printf '%s\n' "$sdk"; } | sha256sum | cut -d ' ' -f 1)
+fingerprint=$( { sha256sum "$root/scripts/configure-scummvm.sh" "$root/scripts/scummvm-sdl2-config"; printf '%s\n' "$sdk" "${SCUMMVM_ENGINES:-all}" "${SCUMMVM_EXTRA_CXXFLAGS:-}"; } | sha256sum | cut -d ' ' -f 1)
 stamp="$root/build/scummvm/.configuration-id"
 if [[ ! -f "$root/build/scummvm/config.mk" || ! -f "$stamp" ]] || [[ $(cat "$stamp") != "$fingerprint" ]]; then
     "$root/scripts/configure-scummvm.sh" 2>&1 | tee "$root/artifacts/scummvm/configure.log"

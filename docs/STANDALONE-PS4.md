@@ -1,9 +1,10 @@
 # ScummVM PS4 without bundled games
 
-This is an unofficial PS4 port of ScummVM 2.9.1, currently built with the
-SCUMM engine only, including the v7/v8 subengine needed by The Dig.
-Package version 1.08 enables this subengine; earlier builds could detect
-The Dig but rejected startup with "SCUMM v7 & v8 support is not compiled in".
+This is an unofficial PS4 port of ScummVM 2.9.1. Package version 1.09 requests
+all engines, including experimental engines, except upstream's test engines.
+Engines requiring unavailable PS4 dependencies are excluded automatically.
+See [the compiled engine inventory and limitations](ENGINE-SUPPORT.md).
+SCUMM v7/v8 (needed by The Dig) and Humongous Entertainment are included.
 Install the updated `dist/ScummVM-PS4-2.9.1.pkg` over the previous package.
 The user has confirmed that the previous DOTT package
 starts and plays on a real PS4. The changes in package version 1.01 require
@@ -38,7 +39,7 @@ Choose **Add Game**, then **Go up** until reaching `/`. Choose **USB 0**
 and choose that directory. The browser checks `/mnt/usb0` through
 `/mnt/usb7` and shows only existing directories. Leave the USB connected
 while playing. USB access on physical hardware still needs verification.
-Do not select an ISO: this SCUMM build uses the extracted game data.
+Do not select an ISO: add the directory containing the game's extracted data.
 
 ## Games on internal storage
 

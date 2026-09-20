@@ -1,5 +1,7 @@
 # Prisoner of Ice engine development
 
+Latest: [scene depth, hover feedback and death recovery](PICE-RECOVERY-AND-LAYERS.md).
+
 ## Objective and current limits
 
 The goal is a native ScummVM engine for Prisoner of Ice, using the PS4 build

@@ -152,8 +152,17 @@ bool SpriteResource::paintFrame(uint frame,int x,int bottom,Common::Array<byte> 
 bool SpriteResource::paint(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const {
  if(frame>=frames.size() || depth>=16 || !budget) return false;
  --budget;
- for(uint i=0;i<frames[frame].parts.size();++i) {
-  const SpritePart &part=frames[frame].parts[i];
+ for(uint i=0;i<frames[frame].parts.size();++i)
+  if(!paintOne(frames[frame].parts[i],x,bottom,canvas,width,height,depth,budget)) return false;
+ return true;
+}
+bool SpriteResource::paintPart(uint frame,uint part,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const {
+ if(frame>=frames.size() || part>=frames[frame].parts.size() || !width || !height || width>4096 || height>4096 || canvas.size()!=uint64(width)*height) return false;
+ Common::Array<byte> result=canvas; uint budget=4096;
+ if(!paintOne(frames[frame].parts[part],x,bottom,result,width,height,0,budget)) return false;
+ canvas=result; return true;
+}
+bool SpriteResource::paintOne(const SpritePart &part,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const {
   if(part.flagsY!=1) return false;
   int px=x+part.x, py=bottom+part.y;
   // 0xb521 distinguishes frame references (kind 0) from bitmaps (kind 1).
@@ -171,9 +180,9 @@ bool SpriteResource::paint(uint frame,int x,int bottom,Common::Array<byte> &canv
     }
    }
   } else return false;
- }
  return true;
 }
+
 bool runSpriteTests() {
  // Two rows: a transparent pixel, two opaque pixels (including palette 0),
  // then a fully transparent row. This fixture is original synthetic data.
@@ -234,7 +243,11 @@ bool runSpriteTests() {
  compound.parts.push_back(reference); parsed.frames.push_back(compound);
  canvas.clear(); canvas.resize(16,9);
  if(!parsed.paintFrame(1,3,-2,canvas,4,4) || canvas[1]!=0 || canvas[2]!=7) return false;
+ Common::Array<byte> partCanvas; partCanvas.resize(16,9);
+ if(!parsed.paintPart(1,0,3,-2,partCanvas,4,4) || partCanvas!=canvas || parsed.paintPart(1,1,3,-2,partCanvas,4,4)) return false;
  parsed.frames[1].parts[0].image=1;
+ if(parsed.paintPart(1,0,3,-2,partCanvas,4,4)) return false;
+ if(partCanvas!=canvas) return false;
  canvas.clear(); canvas.resize(16,9);
  if(parsed.paintFrame(1,3,-2,canvas,4,4)) return false;
  for(uint i=0;i<canvas.size();++i) if(canvas[i]!=9) return false;

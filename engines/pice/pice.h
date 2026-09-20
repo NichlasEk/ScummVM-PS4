@@ -49,6 +49,9 @@ private:
  bool randomValue(int16 bound,int16 &value) const override { if(bound<=0) return false; value=_random.getRandomNumber(0x7fffffff)%bound; return true; }
  uint32 randomState() const override { return _random.getSeed(); }
  void restoreRandomState(uint32 state) const override { _random.setSeed(state); }
+ bool gameOver(int16 reason) override;
+ bool loadLatestSave();
+ bool _gameOver=false;
  bool pollMenu(int16 menu,bool &ready) override;
  bool clickMenu(Common::Point point);
  Common::Array<Common::Array<byte> > _menuEnabled;
@@ -61,6 +64,8 @@ private:
  int16 _actionContext=-1,_actionEntry=-1,_actionHotspot=-1;
  bool _actionWalking=false;
  int _hoverHotspot=-1;
+ bool _hotCursor=false;
+ void updateHover();
  int16 _player=-1,_cameraActor=-1;
  bool createMenu(const Common::String &name,int16 local,int16 &id) override;
  Common::Array<Common::Array<Common::String> > _menus;

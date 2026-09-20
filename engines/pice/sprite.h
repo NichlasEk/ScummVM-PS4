@@ -22,6 +22,7 @@ public:
  bool hasSequence(int index) const { return index>=0 && uint(index)<sequences.size() && !sequences[index].steps.empty(); }
  bool image(uint index, SpriteImage &out) const;
  bool paintFrame(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const;
+ bool paintPart(uint frame,uint part,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const;
  bool frameBounds(uint frame,Common::Rect &bounds) const;
  bool hitFrame(uint frame,int x,int bottom,int px,int py) const;
  Common::Array<SpriteFrame> frames;
@@ -30,6 +31,7 @@ public:
 private:
  bool bounds(uint frame,int x,int y,Common::Rect &out,bool &any,uint depth,uint &budget) const;
  bool hit(uint frame,int x,int bottom,int px,int py,uint depth,uint &budget) const;
+ bool paintOne(const SpritePart &part,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const;
  bool paint(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const;
  Common::Array<byte> _data;
  Common::Array<uint32> _images;

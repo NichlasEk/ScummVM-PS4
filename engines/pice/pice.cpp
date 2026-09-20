@@ -31,6 +31,7 @@ static uint32 hashBytes(const Common::Array<byte> &data) {
  return value;
 }
 void PiceEngine::drawLabels() {
+ updateHover();
  Graphics::Surface *screen = _system->lockScreen();
  const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
  font->drawString(screen, "PICE ENGINE PREVIEW - PARTIAL GAMEPLAY", 8, 6, 624, _textColor);
@@ -38,8 +39,15 @@ void PiceEngine::drawLabels() {
  if (_scenePreview) status=_roomStatus;
  font->drawString(screen, status, 8, 24, 624, _textColor);
  bool hasInventory=false; for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) hasInventory=true;
- if(!hasInventory && _scenePreview && _hoverHotspot>=0 && uint(_hoverHotspot)<_hotspots.size()) font->drawString(screen,_hotspots[_hoverHotspot].label,8,365,624,_textColor);
- else if(!hasInventory) font->drawString(screen, _scenePreview ? "F5: save checkpoint | F7: load checkpoint | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
+ if(!hasInventory) font->drawString(screen, _scenePreview ? "F5: save checkpoint | F7: load checkpoint | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
+ if(_hoverHotspot>=0) {
+  Graphics::Surface label; label.create(320,11,Graphics::PixelFormat::createFormatCLUT8());
+  label.fillRect(Common::Rect(0,0,320,11),0);
+  font->drawString(&label,_hotspots[_hoverHotspot].label,4,1,312,_textColor,Graphics::kTextAlignCenter);
+  for(int y=0;y<22;++y) for(int x=0;x<640;++x)
+   *static_cast<byte *>(screen->getBasePtr(x,338+y))=*static_cast<const byte *>(label.getBasePtr(x/2,y/2));
+  label.free();
+ }
 
  if(!_scenePreview || !hasInventory) font->drawString(screen, _scenePreview ? "Left: act / walk | Right: examine | F5 save | F7 load" : "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
  if (!_subtitle.empty()) {
@@ -74,7 +82,18 @@ void PiceEngine::drawLabels() {
   for(int y=0;y<rows*24 && y+60<400;++y) for(int x=0;x<272;++x)
    *static_cast<byte *>(screen->getBasePtr(360+x,60+y))=*static_cast<const byte *>(menu.getBasePtr(x/2,y/2));
   menu.free();
-  font->drawString(screen,"Right click / Esc: close",364,MIN(384,64+rows*24),264,_textColor);
+  font->drawString(screen,"Click outside / Esc: close",364,MIN(384,64+rows*24),264,_textColor);
+ }
+ if(_gameOver) {
+  screen->fillRect(Common::Rect(176,144,464,274),0);
+  Graphics::Surface menu; menu.create(140,64,Graphics::PixelFormat::createFormatCLUT8());
+  menu.fillRect(Common::Rect(0,0,140,64),0);
+  font->drawString(&menu,"Game over",0,2,140,_textColor,Graphics::kTextAlignCenter);
+  const char *options[]={"Load latest save", "Load autosave", "Load manual save", "Quit"};
+  for(uint i=0;i<4;++i) font->drawString(&menu,options[i],0,17+i*12,140,_textColor,Graphics::kTextAlignCenter);
+  for(int y=0;y<128;++y) for(int x=0;x<280;++x)
+   *static_cast<byte *>(screen->getBasePtr(180+x,144+y))=*static_cast<const byte *>(menu.getBasePtr(x/2,y/2));
+  menu.free();
  }
  _system->unlockScreen();
 }
@@ -581,6 +600,16 @@ bool PiceEngine::changeRoom(int16 chapter,int16 room) {
  _pendingRoom=room;
  debug("[pice] request-room chapter=%d room=%d bank=%d",chapter,room,1140+room); return true;
 }
+bool PiceEngine::gameOver(int16 reason) {
+ if(reason<0 || reason>=50) return false;
+ _menuOpenedAt=_system->getMillis();
+ _gameOver=true; _activeMenu=_menuChoice=-1; _dialogueActor=-1; _subtitle.clear();
+ _actionEntry=-1; _actionWalking=false;
+ _mixer->stopHandle(_speechHandle);
+ for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
+ debug("[pice] game over reason=%d; recovery menu opened",reason);
+ return true;
+}
 bool PiceEngine::enterRoom(const Common::String &name,const Common::Array<int16> &args,int16 &actor) {
  actor=-1;
  if(args.size()!=6) return false;
@@ -647,15 +676,34 @@ bool PiceEngine::renderRoom() {
  _roomCanvas.clear(); _roomCanvas.resize(640*400,0);
  uint height=READ_LE_UINT16(&_scenePixels[2]);
  memcpy(&_roomCanvas[((400-height)/2)*640],&_scenePixels[4],640*height);
- for(uint i=0;i<_actors.size();++i) {
-  const RoomActor &actor=_actors[i];
-  if(!actor.active) continue;
-  uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
-  if (!actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,_roomCanvas,640,400)) return false;
+ // Original 0xb3b6 merges actors (Y at +5) and scenery (Y at +3).
+ // Equal anchors paint scenery first, allowing an actor to stand in front.
+ struct Layer { int y; uint index; bool actor; };
+ Common::Array<Layer> layers;
+ uint sceneryFrame=0;
+ if(_scenery.hasSequence(0)) {
+  sceneryFrame=_scenery.sequences[0].steps[0].frame;
+  if(sceneryFrame>=_scenery.frames.size()) return false;
+  for(uint i=0;i<_scenery.frames[sceneryFrame].parts.size();++i) {
+   Layer layer={_scenery.frames[sceneryFrame].parts[i].y,i,false}; layers.push_back(layer);
+  }
  }
- if (!_scenery.sequences.empty()) {
-  uint frame=_scenery.sequences[0].steps[0].frame;
-  if (!_scenery.paintFrame(frame,0,-40,_roomCanvas,640,400)) return false;
+ for(uint i=0;i<_actors.size();++i) if(_actors[i].active) {
+  Layer layer={_actors[i].feet.y,i,true}; layers.push_back(layer);
+ }
+ // Stable insertion preserves resource/actor order at equal anchors.
+ for(uint i=1;i<layers.size();++i) {
+  Layer layer=layers[i]; uint j=i;
+  while(j && layers[j-1].y>layer.y) { layers[j]=layers[j-1]; --j; }
+  layers[j]=layer;
+ }
+ for(uint i=0;i<layers.size();++i) {
+  const Layer &layer=layers[i];
+  if(layer.actor) {
+   const RoomActor &actor=_actors[layer.index];
+   uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
+   if(!actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,_roomCanvas,640,400)) return false;
+  } else if(!_scenery.paintPart(sceneryFrame,layer.index,0,-40,_roomCanvas,640,400)) return false;
  }
  if(_closeup && _dialogueActor>=0) {
   Common::Array<int16> sequences;
@@ -787,6 +835,16 @@ bool PiceEngine::actorBusy(int16 actor) const {
  return actor>=0 && uint(actor)<_actors.size() && _actors[actor].active && (_dialogueActor==actor || _actors[actor].animationMode!=0);
 }
 void PiceEngine::tickRoom() {
+ if(_gameOver) {
+#ifdef PICE_TESTBENCH
+  if(!_testUseDone && ConfMan.getBool("pice_test_recover_latest") && _system->getMillis()-_menuOpenedAt>=2000) {
+   _testUseDone=true;
+   Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=Common::Point(320,186);
+   _eventMan->pushEvent(event);
+  }
+#endif
+  renderRoom(); return;
+ }
  if(!_scenePreview || !_roomRunner) return;
  uint32 now=_system->getMillis(), ticks=(now-_roomClock)/10;
  if(!ticks) return;
@@ -1180,9 +1238,19 @@ Common::Error PiceEngine::run() {
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
    int change = 0;
+   if(_gameOver) {
+    int choice=-1;
+    if(event.type==Common::EVENT_LBUTTONDOWN && event.mouse.x>=180 && event.mouse.x<460 && event.mouse.y>=174 && event.mouse.y<270) choice=(event.mouse.y-174)/24;
+    if(event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN) choice=0;
+    if(choice==0 && !loadLatestSave()) _roomStatus="No valid save available";
+    if(choice==1 && !readCheckpoint(true)) _roomStatus="No valid autosave available";
+    if(choice==2 && !readCheckpoint(false)) _roomStatus="No valid manual save available";
+    if(choice==3) done=true;
+    continue;
+   }
    if(_activeMenu>=0 && event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) { _menuChoice=-2; continue; }
    if(_activeMenu>=0 && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN)) {
-    if(event.type==Common::EVENT_LBUTTONDOWN) clickMenu(event.mouse); else _menuChoice=-2;
+    if(event.type==Common::EVENT_RBUTTONDOWN || !clickMenu(event.mouse)) _menuChoice=-2;
     continue;
    }
    if(_scenePreview && event.type==Common::EVENT_LBUTTONDOWN && event.mouse.y>=360) {
@@ -1191,7 +1259,7 @@ Common::Error PiceEngine::run() {
     }
     continue;
    }
-   if(_scenePreview && event.type==Common::EVENT_MOUSEMOVE) _hoverHotspot=hotspotAt(event.mouse);
+
    if(_scenePreview && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN) && event.mouse.y>=40 && event.mouse.y<338) {
     clickRoom(event.mouse,event.type==Common::EVENT_RBUTTONDOWN); continue;
    }

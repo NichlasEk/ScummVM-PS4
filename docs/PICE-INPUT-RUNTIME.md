@@ -1,5 +1,7 @@
 # PICE native input and inventory checkpoint (2026-09-20)
 
+Latest: [scene depth, hover feedback and death recovery](PICE-RECOVERY-AND-LAYERS.md).
+
 Continuation: [fire puzzle and navigation updates](PICE-FIRE-RUNTIME.md)
 implements the opcode-102/85 stop described below.
 

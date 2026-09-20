@@ -22,7 +22,7 @@ bool PiceEngine::requestSave(const Common::String &name,int16 local,const Common
  _savePending=true; debug("[pice] queued autosave key=%s",key.c_str()); return true;
 }
 bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
- if(!loading && (_activeMenu>=0 || _actionEntry>=0 || !_scenePreview || !_roomRunner || _dialogueActor>=0 || _closeup || _pendingRoom>=0)) return false;
+ if(!loading && (_gameOver || _activeMenu>=0 || _actionEntry>=0 || !_scenePreview || !_roomRunner || _dialogueActor>=0 || _closeup || _pendingRoom>=0)) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
  int16 previousRoom=_previousRoom;
@@ -179,6 +179,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
  StateIO taskRestore(tasks,true); if(!_roomRunner->syncState(taskRestore)) return false;
  _navigation=rebuilt; _roomRunner->navigation()=rebuilt;
+ _gameOver=false;
  _previousRoom=previousRoom;
  _actors=actors; _items=items; _worldItems=worldItems; _hotspots=hotspots; _actions=actions; _animationSounds=bindings;
  _ownedItems=owned; _selectedItem=selectedItem;
@@ -209,6 +210,12 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
 static Common::String saveName(bool automatic) {
  return ConfMan.getActiveDomainName()+(automatic ? "-pice-autosave.sav" : "-pice-slot0.sav");
 }
+bool PiceEngine::loadLatestSave() {
+ bool automatic=true; // Legacy saves have no ordering marker; prefer autosave.
+ Common::ScopedPtr<Common::InSaveFile> latest(_system->getSavefileManager()->openForLoading(ConfMan.getActiveDomainName()+"-pice-latest"));
+ if(latest && latest->size()==1) automatic=latest->readByte()!='M';
+ return readCheckpoint(automatic) || readCheckpoint(!automatic);
+}
 bool PiceEngine::writeCheckpoint(bool automatic) {
  Common::Array<byte> payload; if(!snapshot(payload,false)) return false;
  // Reparse the full generated state before opening the output file.
@@ -218,6 +225,8 @@ bool PiceEngine::writeCheckpoint(bool automatic) {
  file->write("PICESV01",8); file->writeUint32LE(payload.size()); file->writeUint32LE(checksum(payload));
  file->write(&payload[0],payload.size()); file->finalize(); if(file->err()) return false; file.reset();
  if(!readCheckpoint(automatic,false)) return false;
+ Common::ScopedPtr<Common::OutSaveFile> latest(_system->getSavefileManager()->openForSaving(ConfMan.getActiveDomainName()+"-pice-latest",false));
+ if(latest) { latest->writeByte(automatic ? 'A' : 'M'); latest->finalize(); }
  _roomStatus=automatic ? "Autosaved | F5 save | F7 load" : "Checkpoint saved | F5 save | F7 load";
  debug("[pice] checkpoint saved automatic=%d bytes=%u checksum=%08x",automatic,payload.size(),checksum(payload));
  return true;

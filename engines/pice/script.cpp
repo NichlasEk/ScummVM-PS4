@@ -212,6 +212,13 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   next+=2;
  }
  int16 argument;
+ if(opcode==131) {
+  next+=2;
+  if(!_bank.expression(next,argument,_variables,_scene) || argument<0) { task.active=false; return kInvalid; }
+  if(!_scene || !_scene->gameOver(argument)) { task.active=false; return kUnsupported; }
+  for(uint i=0;i<_tasks.size();++i) _tasks[i].active=false;
+  task.pc=next; _exclusiveTask=-1; return kStopped;
+ }
  if(opcode==62) {
   next+=2;
   if(!_bank.expression(next,argument,_variables,_scene) || argument<0) { task.active=false; return kInvalid; }
@@ -570,6 +577,8 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
+  int deaths=0;
+  bool gameOver(int16 reason) override { if(reason!=3) return false; ++deaths; return true; }
   int speeches=0,itemActions=0,entries=0;
   mutable uint32 rng=0;
   bool randomValue(int16 bound,int16 &value) const override { ++rng; value=bound-1; return true; }
@@ -609,6 +618,15 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // A death transition halts every room task, including an unrelated one.
+ const uint16 deathWords[]={2,8,131,20,3,31,20,0,31,20,1};
+ bytes.resize(sizeof(deathWords));
+ for(uint i=0;i<sizeof(deathWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],deathWords[i]);
+ ScriptResource deathBank; if(!deathBank.load(bytes)) return false;
+ ScriptRunner deathRunner(deathBank,nullptr,&sink); deathRunner.start(0); deathRunner.start(1);
+ if(deathRunner.step(0)!=ScriptRunner::kStopped || sink.deaths!=1 || deathRunner.running(0) || deathRunner.running(1)) return false;
+ ScriptRunner noRecovery(deathBank); noRecovery.start(0);
+ if(noRecovery.step(0)!=ScriptRunner::kUnsupported) return false;
  // An entry task waits for the player, while room initialization continues.
  const uint16 entryWords[]={2,20,79,20,2,20,0,20,28,0x3041,0x0032,20,0,20,3,20,1,31,20,0,31,20,1};
  bytes.resize(sizeof(entryWords));

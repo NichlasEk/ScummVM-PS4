@@ -25,6 +25,8 @@ def main():
             raise SystemExit('A PICE emulator is already running.')
         original = ini.read_bytes()
         checkpoint = save.read_bytes()
+        marker = profile / 'saves/pice-pice-latest'
+        original_marker = marker.read_bytes() if marker.exists() else None
         text = ''.join(line for line in original.decode().splitlines(True)
                        if not line.startswith(('pice_test_', 'pice_restore_')))
         if '[scummvm]' not in text:
@@ -41,6 +43,10 @@ def main():
         finally:
             ini.write_bytes(original)
             save.write_bytes(checkpoint)
+            if original_marker is None:
+                marker.unlink(missing_ok=True)
+            else:
+                marker.write_bytes(original_marker)
         text = log.read_text(errors='replace') if log.exists() else ''
         text = re.sub(r'\x1b\[[0-9;]*m', '', text)
         (out / 'driscoll-check.log').write_text(text)

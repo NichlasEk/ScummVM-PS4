@@ -1,5 +1,7 @@
 # Native PICE save/load checkpoint (2026-09-20)
 
+Latest: [scene depth, hover feedback and death recovery](PICE-RECOVERY-AND-LAYERS.md).
+
 Continuation: [native clicks and inventory](PICE-INPUT-RUNTIME.md) implements
 the first pickup/use path and save payload version 3. Historical limits below
 are superseded where described there.

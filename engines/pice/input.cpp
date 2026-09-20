@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/pice.h"
 #include "common/system.h"
+#include "common/events.h"
+#include "graphics/cursorman.h"
 #include "common/textconsole.h"
 namespace Pice {
 bool PiceEngine::context(int16 index,int16 &value) const {
@@ -43,6 +45,30 @@ int PiceEngine::hotspotAt(Common::Point point) const {
   }
  }
  return -1;
+}
+void PiceEngine::updateHover() {
+ int spot=-1;
+ if(_scenePreview && !_gameOver && _activeMenu<0 && _dialogueActor<0 && !_inputLocks && _actionEntry<0 && _pendingRoom<0) {
+  int hit=hotspotAt(_eventMan->getMousePos());
+  for(uint i=0;i<_actions.size();++i) if(hit>=0 && _actions[i].hotspot==hit) { spot=hit; break; }
+ }
+ _hoverHotspot=spot;
+ bool hot=spot>=0;
+ if(hot==_hotCursor) return;
+ _hotCursor=hot;
+ if(!hot) { CursorMan.setDefaultArrowCursor(false); return; }
+ // Original native pointer artwork: outlined hand, independent of room palette.
+ static const char *rows[]={
+  "     XX         ", "    X22X        ", "    X22X        ", "    X22X        ",
+  "    X22XXXXX    ", "    X22X22X2X   ", "    X22X22X2XX  ", "    X2222222X2X ",
+  " XX X222222222X ", "X22XX222222222X ", "X2222222222222X ", " X222222222222X ",
+  "  X22222222222X ", "  X2222222222X  ", "   X222222222X  ", "    X2222222X   ",
+  "    X3333333X   ", "    X3333333X   ", "     XXXXXXX    "};
+ byte pixels[16*19];
+ for(uint y=0;y<19;++y) for(uint x=0;x<16;++x) pixels[y*16+x]=rows[y][x]=='X' ? 1 : rows[y][x]=='2' ? 2 : rows[y][x]=='3' ? 3 : 0;
+ const byte colors[]={0,0,0, 0,0,0, 255,255,255, 255,220,64};
+ CursorMan.replaceCursorPalette(colors,0,4);
+ CursorMan.replaceCursor(pixels,16,19,5,0,0,false);
 }
 bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  if(!_scenePreview || !_roomRunner || _inputLocks || _dialogueActor>=0 || _pendingRoom>=0 || _actionEntry>=0 ||

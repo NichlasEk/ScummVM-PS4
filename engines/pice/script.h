@@ -24,8 +24,8 @@ public:
  bool load(const Common::Array<byte> &data);
  uint count() const { return _entries.size(); }
  uint32 entry(uint index) const { return _entries[index]; }
- // Decode a side-effect-free expression subset. Unsupported opcodes fail
- // without committing the caller's PC. No scene effects are guessed.
+ // Decode verified expressions, including bounded random values. Failure
+ // restores the caller's PC and RNG state. No scene effects are guessed.
  bool expression(uint32 &pc, int16 &value, const ScriptVariables *variables=nullptr, const ScriptSceneSink *scene=nullptr) const;
  bool string(uint32 &pc, Common::String &value) const;
  bool codeAddress(int64 offset) const;
@@ -40,6 +40,10 @@ private:
 class ScriptSceneSink {
 public:
  virtual ~ScriptSceneSink() {}
+ virtual bool randomValue(int16 bound,int16 &value) const { return false; }
+ virtual uint32 randomState() const { return 0; }
+ virtual void restoreRandomState(uint32 state) const {}
+ virtual bool enterRoom(const Common::String &name,const Common::Array<int16> &args,int16 &actor) { return false; }
  virtual bool context(int16 index,int16 &value) const { return false; }
  virtual bool background(const Common::String &name,int16 local,int16 flags)=0;
  virtual bool scenery(const Common::String &name,int16 local) { return false; }

@@ -427,3 +427,10 @@ See [PICE-OBJECT-DIALOGUE.md](PICE-OBJECT-DIALOGUE.md) for evidence and limitati
 Post-fire exit reaches room 7. Item-specific actions (81) are implemented;
 room initialization still needs entry placement/animation (79) and random
 expressions (38). See [PICE-BRIDGE-RUNTIME.md](PICE-BRIDGE-RUNTIME.md).
+
+### Room entry continuation
+
+Source-room entry animations (79) and positive-bound random expressions (38)
+are implemented. The emulator traverses the arrival/middle scene and reaches
+Driscoll's next dialogue, with a version-6 autosave. Remaining stops are exit
+registration 80 and ordinary dialogue 52; details are in PICE-BRIDGE-RUNTIME.md.

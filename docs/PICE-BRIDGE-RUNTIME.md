@@ -49,3 +49,42 @@ Room task 32 also stops at byte 15054 on an expression containing opcode 38
 inside a wait. Its random-expression behavior needs implementation. No claim
 of completed room-7 initialization, physical PS4 testing or full-game playability.
 Original assets and checkpoints remain local and are not distributed.
+
+## Entry animation and random expressions implemented
+
+Opcode 79 now handles source-room matching, player placement/animation and
+starting the follow-up script task with a wait on the **player actor ID**.
+The return from animation opcode 96 is a sequence ID, so it must not be used
+as the actor to wait for. Room initialization continues independently.
+
+Original 0x1c350 copies current room/chapter into previous room/chapter before
+installing the new room. Native tracking follows this for the supported chapter
+2 transitions. Snapshot payload version 6 retains the previous room, while
+versions 1–5 default it to unknown. Loading an old post-fire checkpoint remains
+supported; leaving that room establishes the source for the next entry.
+
+Opcode 38 (0x2965) evaluates its bound and returns random modulo bound. Native
+support accepts positive bounds and uses the engine RNG, whose seed already
+participates in snapshots. A failed expression restores the RNG seed and PC.
+Original RNG sequence parity and nonpositive divisors are not claimed.
+
+Guest tests cover nested random expressions, zero-bound rejection and failed
+expression rollback, plus entry-task waiting while initialization continues.
+The final PS4 guest run restored the post-fire checkpoint, traversed room 7's
+arrival from room 0 (node 28, player 0, sequence 3, follow-up task 21), entered
+room 9 and returned to room 7 (node 0, sequence 2, follow-up task 38). It wrote
+a version-6 autosave (17207 payload bytes in this run) and played Ryan's next
+scripted dialogue, key 1210 / voice resource 132, through completion.
+
+Local trace: `artifacts/pice/room-entry-verified.log`. This is emulator evidence.
+Room 7 still stops initialization at opcode 80, byte 4460. Task 38 now reaches
+ordinary dialogue opcode 52 at byte 16310. These remain real blockers; the room
+is not yet fully playable. The earlier random-expression stop in task 32 no
+longer occurs in this run.
+
+The autosave is now the newer Driscoll checkpoint. The manual slot remains the
+post-fire checkpoint. Test/restore config overrides are removed after testing.
+
+A fresh emulator process restored the version-6 autosave in bank 1147, played
+key 1210 to completion again and reached the same opcode-52 stop. Local trace:
+`artifacts/pice/room-entry-restore-verified.log`.

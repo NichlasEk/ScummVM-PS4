@@ -45,6 +45,10 @@ private:
  };
  Common::Array<Hotspot> _hotspots;
  Common::Array<Action> _actions;
+ bool enterRoom(const Common::String &name,const Common::Array<int16> &args,int16 &actor) override;
+ bool randomValue(int16 bound,int16 &value) const override { if(bound<=0) return false; value=_random.getRandomNumber(0x7fffffff)%bound; return true; }
+ uint32 randomState() const override { return _random.getSeed(); }
+ void restoreRandomState(uint32 state) const override { _random.setSeed(state); }
  bool context(int16 index,int16 &value) const override;
  int hotspotAt(Common::Point point) const;
  bool clickRoom(Common::Point point,bool rightButton);
@@ -63,7 +67,7 @@ private:
  Common::Array<RoomActor> _actors;
  bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) override;
  bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) override;
- Common::RandomSource _random{"pice"};
+ mutable Common::RandomSource _random{"pice"};
  int16 _dialogueActor=-1,_dialogueMinSequence=0,_dialogueMaxSequence=0,_dialogueMinPause=0,_dialogueMaxPause=0;
  RoomActor _dialogueRestore;
  bool closeupDialogue(const Common::String &animationName,const Common::String &textName,const Common::String &key,const Common::Array<int16> &args,int16 &actor) override;
@@ -93,6 +97,7 @@ private:
  bool changeRoom(int16 chapter,int16 room) override;
  int16 _pendingRoom=-1;
  uint _roomBankId=1140;
+ int16 _previousRoom=-1;
  bool renderRoom();
  void tickRoom();
  bool actorStepReached(int16 actor,int16 step) const override;

@@ -25,6 +25,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  if(!loading && (_actionEntry>=0 || !_scenePreview || !_roomRunner || _dialogueActor>=0 || _closeup || _pendingRoom>=0)) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
+ int16 previousRoom=_previousRoom;
  auto owned=_ownedItems; int16 selectedItem=_selectedItem;
  auto actors=_actors; auto items=_items; auto worldItems=_worldItems;
  auto hotspots=_hotspots; auto actions=_actions; auto bindings=_animationSounds;
@@ -41,7 +42,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=5; io.number(version); if(version<1 || version>5) return false;
+ uint32 version=6; io.number(version); if(version<1 || version>6) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || bankId<1140 || bankId>=1180 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -150,6 +151,8 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   if(version>=5) io.number(actions[i].item); else actions[i].item=-1;
   if(actions[i].item < -1 || actions[i].item>=int(items.size()) || (actions[i].item>=0 && actions[i].verb!=9)) return false;
  }
+ if(version>=6) io.number(previousRoom); else previousRoom=-1;
+ if(previousRoom < -1 || previousRoom>=40) return false;
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
  for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;
@@ -161,6 +164,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
  StateIO taskRestore(tasks,true); if(!_roomRunner->syncState(taskRestore)) return false;
  _navigation=rebuilt; _roomRunner->navigation()=rebuilt;
+ _previousRoom=previousRoom;
  _actors=actors; _items=items; _worldItems=worldItems; _hotspots=hotspots; _actions=actions; _animationSounds=bindings;
  _ownedItems=owned; _selectedItem=selectedItem;
  _menus=menus; _sounds=sounds; _scenery=scenerySprite; _inventoryPanel=panel;

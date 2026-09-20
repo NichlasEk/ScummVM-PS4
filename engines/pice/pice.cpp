@@ -535,9 +535,23 @@ bool PiceEngine::changeRoom(int16 chapter,int16 room) {
  _pendingRoom=room;
  debug("[pice] request-room chapter=%d room=%d bank=%d",chapter,room,1140+room); return true;
 }
+bool PiceEngine::enterRoom(const Common::String &name,const Common::Array<int16> &args,int16 &actor) {
+ actor=-1;
+ if(args.size()!=6) return false;
+ if(args[0]!=2 || args[1]!=_previousRoom) return true;
+ if(_player<0 || uint(_player)>=_actors.size() || !_actors[_player].active) return false;
+ Common::Array<int16> animation;
+ animation.push_back(_player); animation.push_back(args[3]); animation.push_back(args[4]); animation.push_back(args[2]);
+ int16 sequence;
+ if(!invoke(96,name,animation,Common::String(),sequence)) return false;
+ actor=_player;
+ debug("[pice] room-entry from=%d node=%d actor=%d animation=%d sequence=%d task=%d",_previousRoom,args[2],actor,args[3],args[4],args[5]);
+ return true;
+}
 bool PiceEngine::loadRoom(uint room) {
  Common::Array<byte> bytes; ScriptResource bank;
  if(room>=40 || !_graphics.read(1140+room,bytes) || !bank.load(bytes)) return false;
+ _previousRoom=_roomRunner ? int(_roomBankId)-1140 : -1;
  _roomRunner.reset(); _roomBank=bank; _roomBankId=1140+room;
  // Same-chapter teardown preserves inventory, dialogue menus, variables and
  // persistent SFX handles (0x1c4a9 -> 0x15286 with argument zero).

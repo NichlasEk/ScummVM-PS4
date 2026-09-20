@@ -73,7 +73,8 @@ bool ScriptResource::string(uint32 &pc,Common::String &value) const {
 bool ScriptResource::expression(uint32 &pc,int16 &value,const ScriptVariables *variables,const ScriptSceneSink *scene) const {
  uint32 next=pc; uint budget=256; int16 result=0;
  value=0;
- if (!evaluate(next,result,0,budget,variables,scene)) return false;
+ uint32 seed=scene ? scene->randomState() : 0;
+ if (!evaluate(next,result,0,budget,variables,scene)) { if(scene) scene->restoreRandomState(seed); return false; }
  pc=next; value=result; return true;
 }
 bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,const ScriptVariables *variables,const ScriptSceneSink *scene) const {
@@ -95,6 +96,10 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
   uint16 index;
   if(!scene || !word(pc,index) || !scene->context(int16(index),value)) return false;
   pc+=2; return true;
+ }
+ if(op==38) { // 0x2965: random() modulo the evaluated positive bound.
+  int16 bound;
+  return scene && evaluate(pc,bound,depth+1,budget,variables,scene) && bound>0 && scene->randomValue(bound,value);
  }
  // Pure comparisons, eager Boolean operators, and arithmetic only.
  if ((op<7 || op>16) && op!=45) return false;
@@ -207,6 +212,17 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   next+=2;
  }
  int16 argument;
+ if(opcode==79) {
+  next+=2; Common::Array<int16> args; Common::String name;
+  for(uint i=0;i<3;++i) { if(!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; } args.push_back(argument); }
+  if(!_bank.string(next,name)) { task.active=false; return kInvalid; }
+  for(uint i=0;i<3;++i) { if(!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; } args.push_back(argument); }
+  if(args[5]<-1 || args[5]>=int(_tasks.size()) || args[5]==int(index)) { task.active=false; return kInvalid; }
+  int16 actor=-1;
+  if(!_scene || !_scene->enterRoom(name,args,actor)) { task.active=false; return kUnsupported; }
+  if(actor>=0 && args[5]>=0) { start(args[5]); _tasks[args[5]].actor=actor; }
+  task.pc=next; return kAdvanced;
+ }
  if(opcode==111) {
   next+=2; int16 actor,local; Common::String name,key;
   if(!_bank.expression(next,actor,_variables,_scene) || actor<0 ||
@@ -542,7 +558,15 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
-  int speeches=0,itemActions=0;
+  int speeches=0,itemActions=0,entries=0;
+  mutable uint32 rng=0;
+  bool randomValue(int16 bound,int16 &value) const override { ++rng; value=bound-1; return true; }
+  uint32 randomState() const override { return rng; }
+  void restoreRandomState(uint32 state) const override { rng=state; }
+  bool enterRoom(const Common::String &name,const Common::Array<int16> &args,int16 &actor) override {
+   if(name!="A02" || args.size()!=6 || args[0]!=2 || args[1]!=0 || args[2]!=28 || args[3]!=0 || args[4]!=3 || args[5]!=1) return false;
+   ++entries; actor=2; return true;
+  }
   bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) override { if(actor!=2 || name!="F_M02" || local!=3 || key!="D09") return false; ++speeches; return true; }
   int backgrounds=0,palettes=0,calls=0,roomChanges=0,movies=0,saves=0;
   bool context(int16 index,int16 &value) const override { if(index!=9) return false; value=-6; return true; }
@@ -572,6 +596,27 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // An entry task waits for the player, while room initialization continues.
+ const uint16 entryWords[]={2,20,79,20,2,20,0,20,28,0x3041,0x0032,20,0,20,3,20,1,31,20,0,31,20,1};
+ bytes.resize(sizeof(entryWords));
+ for(uint i=0;i<sizeof(entryWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],entryWords[i]);
+ ScriptResource entryBank; if(!entryBank.load(bytes)) return false;
+ ScriptRunner entryRunner(entryBank,nullptr,&sink); entryRunner.start(0);
+ if(entryRunner.step(0)!=ScriptRunner::kAdvanced || sink.entries!=1 || !entryRunner.waiting(1) ||
+    entryRunner.step(0)!=ScriptRunner::kStopped || entryRunner.step(1)!=ScriptRunner::kWaiting) return false;
+ sink.busy=false;
+ if(entryRunner.step(1)!=ScriptRunner::kWaiting || entryRunner.step(1)!=ScriptRunner::kStopped) return false;
+ sink.busy=true;
+ // Nested random expression, positive bounds, and rollback after a bad RHS.
+ const uint16 randomWords[]={1,14,38,20,1000,20,200};
+ bytes.resize(sizeof(randomWords));
+ for(uint i=0;i<sizeof(randomWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],randomWords[i]);
+ ScriptResource randomBank; if(!randomBank.load(bytes)) return false;
+ pc=2; if(!randomBank.expression(pc,value,nullptr,&sink) || value!=1199 || sink.rng!=1) return false;
+ WRITE_LE_UINT16(&bytes[10],65535); if(!randomBank.load(bytes)) return false;
+ pc=2; if(randomBank.expression(pc,value,nullptr,&sink) || pc!=2 || sink.rng!=1) return false;
+ WRITE_LE_UINT16(&bytes[8],0); if(!randomBank.load(bytes)) return false;
+ pc=2; if(randomBank.expression(pc,value,nullptr,&sink) || sink.rng!=1) return false;
  const uint16 itemWords[]={1,81,20,0,20,2,20,65535,20,11,31,20,0};
  bytes.resize(sizeof(itemWords));
  for(uint i=0;i<sizeof(itemWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],itemWords[i]);

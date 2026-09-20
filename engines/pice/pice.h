@@ -49,6 +49,11 @@ private:
  bool randomValue(int16 bound,int16 &value) const override { if(bound<=0) return false; value=_random.getRandomNumber(0x7fffffff)%bound; return true; }
  uint32 randomState() const override { return _random.getSeed(); }
  void restoreRandomState(uint32 state) const override { _random.setSeed(state); }
+ bool pollMenu(int16 menu,bool &ready) override;
+ bool clickMenu(Common::Point point);
+ Common::Array<Common::Array<byte> > _menuEnabled;
+ uint32 _menuOpenedAt=0;
+ int16 _activeMenu=-1,_menuChoice=-1,_lastMenuChoice=-1;
  bool context(int16 index,int16 &value) const override;
  int hotspotAt(Common::Point point) const;
  bool clickRoom(Common::Point point,bool rightButton);

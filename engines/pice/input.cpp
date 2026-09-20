@@ -1,10 +1,34 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/pice.h"
+#include "common/system.h"
 #include "common/textconsole.h"
 namespace Pice {
 bool PiceEngine::context(int16 index,int16 &value) const {
+ if(index==6) { value=_lastMenuChoice; return true; }
  if(index!=9) return false;
  value=_actionContext; return true;
+}
+bool PiceEngine::pollMenu(int16 menu,bool &ready) {
+ ready=false;
+ if(menu<0 || uint(menu)>=_menus.size() || uint(menu)>=_menuEnabled.size() || (_activeMenu>=0 && _activeMenu!=menu)) return false;
+ if(_activeMenu<0) {
+  bool any=false; for(uint i=0;i<_menuEnabled[menu].size();++i) any|=_menuEnabled[menu][i]!=0;
+  if(!any) return false;
+  _activeMenu=menu; _menuChoice=-1; _menuOpenedAt=_system->getMillis();
+  debug("[pice] menu opened id=%d",menu);
+ }
+ if(_menuChoice!=-1) {
+  _lastMenuChoice=_menuChoice>=0 ? _menuChoice : -1; _activeMenu=-1; _menuChoice=-1; ready=true;
+ }
+ return true;
+}
+bool PiceEngine::clickMenu(Common::Point point) {
+ if(_activeMenu<0 || _menuChoice!=-1 || point.x<360 || point.x>=632 || point.y<60) return false;
+ int row=(point.y-60)/24,visible=0;
+ for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) {
+  if(visible++==row) { _menuChoice=i; debug("[pice] menu selected id=%d option=%u",_activeMenu,i); return true; }
+ }
+ return false;
 }
 int PiceEngine::hotspotAt(Common::Point point) const {
  // Room actors use the original 640x480 anchors, offset into our 640x400 view.

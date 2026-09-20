@@ -22,13 +22,14 @@ bool PiceEngine::requestSave(const Common::String &name,int16 local,const Common
  _savePending=true; debug("[pice] queued autosave key=%s",key.c_str()); return true;
 }
 bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
- if(!loading && (_actionEntry>=0 || !_scenePreview || !_roomRunner || _dialogueActor>=0 || _closeup || _pendingRoom>=0)) return false;
+ if(!loading && (_activeMenu>=0 || _actionEntry>=0 || !_scenePreview || !_roomRunner || _dialogueActor>=0 || _closeup || _pendingRoom>=0)) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
  int16 previousRoom=_previousRoom;
  auto owned=_ownedItems; int16 selectedItem=_selectedItem;
  auto actors=_actors; auto items=_items; auto worldItems=_worldItems;
  auto hotspots=_hotspots; auto actions=_actions; auto bindings=_animationSounds;
+ auto menuEnabled=_menuEnabled; int16 lastMenuChoice=_lastMenuChoice;
  auto menus=_menus; auto sounds=_sounds; RoomSound music=_music; auto vars=_worldVariables;
  auto nav=_navigation; auto scenerySprite=_scenery; auto panel=_inventoryPanel;
  auto colors=_scenePalette; auto styles=Common::Array<byte>();
@@ -42,7 +43,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=6; io.number(version); if(version<1 || version>6) return false;
+ uint32 version=7; io.number(version); if(version<1 || version>7) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || bankId<1140 || bankId>=1180 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -153,6 +154,20 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  }
  if(version>=6) io.number(previousRoom); else previousRoom=-1;
  if(previousRoom < -1 || previousRoom>=40) return false;
+ if(version>=7) {
+  if(!io.count(menuEnabled,20) || menuEnabled.size()!=menus.size()) return false;
+  for(uint i=0;i<menuEnabled.size();++i) {
+   io.bytes(menuEnabled[i],200);
+   if(menuEnabled[i].size()!=menus[i].size()) return false;
+   for(uint j=0;j<menuEnabled[i].size();++j) if(menuEnabled[i][j]>1) return false;
+  }
+  io.number(lastMenuChoice);
+  if(lastMenuChoice < -1 || lastMenuChoice>=200) return false;
+ } else {
+  menuEnabled.clear(); menuEnabled.resize(menus.size());
+  for(uint i=0;i<menus.size();++i) menuEnabled[i].resize(menus[i].size(),0);
+  lastMenuChoice=-1;
+ }
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
  for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;
@@ -167,6 +182,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _previousRoom=previousRoom;
  _actors=actors; _items=items; _worldItems=worldItems; _hotspots=hotspots; _actions=actions; _animationSounds=bindings;
  _ownedItems=owned; _selectedItem=selectedItem;
+ _menuEnabled=menuEnabled; _lastMenuChoice=lastMenuChoice; _activeMenu=_menuChoice=-1;
  _menus=menus; _sounds=sounds; _scenery=scenerySprite; _inventoryPanel=panel;
  _sceneBackground=backgroundId; _scenePaletteId=paletteId; _scenePixels=backgroundBytes; _scenePalette=colors;
  _player=player; _cameraActor=camera; _inventorySelection=selection; _inputLocks=locks;

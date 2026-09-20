@@ -65,6 +65,17 @@ void PiceEngine::drawLabels() {
    *static_cast<byte *>(screen->getBasePtr(x,400-height+y))=*static_cast<const byte *>(caption.getBasePtr(x/scale,y/scale));
   caption.free();
  }
+ if(_activeMenu>=0 && _menuChoice==-1) {
+  int rows=0; for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) ++rows;
+  Graphics::Surface menu; menu.create(136,rows*12,Graphics::PixelFormat::createFormatCLUT8()); menu.fillRect(Common::Rect(0,0,136,rows*12),0);
+  int row=0;
+  for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i])
+   font->drawString(&menu,_menus[_activeMenu][i],4,row++*12+2,128,_textColor);
+  for(int y=0;y<rows*24 && y+60<400;++y) for(int x=0;x<272;++x)
+   *static_cast<byte *>(screen->getBasePtr(360+x,60+y))=*static_cast<const byte *>(menu.getBasePtr(x/2,y/2));
+  menu.free();
+  font->drawString(screen,"Right click / Esc: close",364,MIN(384,64+rows*24),264,_textColor);
+ }
  _system->unlockScreen();
 }
 bool PiceEngine::showPicture(uint position) {
@@ -199,6 +210,19 @@ bool PiceEngine::runActorLifecycleTests() {
  args[0]=-1;
  if(!invoke(81,Common::String(),args,Common::String(),result) || result!=-1 || _actions.size()!=1) return false;
  _actions.clear();
+ Common::Array<Common::String> choices; choices.push_back("A"); choices.push_back("hidden"); choices.push_back("C");
+ _menus.push_back(choices); Common::Array<byte> enabled; enabled.resize(3,0); _menuEnabled.push_back(enabled);
+ args.clear(); args.push_back(0); args.push_back(0);
+ if(!invoke(68,Common::String(),args,Common::String(),result)) return false;
+ args[1]=2; if(!invoke(68,Common::String(),args,Common::String(),result)) return false;
+ bool ready=false;
+ if(!pollMenu(0,ready) || ready || clickMenu(Common::Point(359,61)) || clickMenu(Common::Point(370,120)) ||
+    !clickMenu(Common::Point(370,85)) || !pollMenu(0,ready) || !ready || _lastMenuChoice!=2) return false;
+ if(!pollMenu(0,ready) || ready) return false;
+ _menuChoice=-2; if(!pollMenu(0,ready) || !ready || _lastMenuChoice!=-1 || _activeMenu!=-1) return false;
+ if(!invoke(69,Common::String(),args,Common::String(),result) || _menuEnabled[0][2]) return false;
+ args[1]=3; if(invoke(68,Common::String(),args,Common::String(),result)) return false;
+ _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1;
  _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
 }
 bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) {
@@ -417,6 +441,10 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   Hotspot h; h.approach=args[op==59 ? 4 : 1]; if(op==57) h.actor=args[0]; else if(op==61) h.actor=_worldItems[args[0]].actor; else h.bounds=Common::Rect(args[0],args[1],args[2],args[3]); h.label=line.pages[0][0]; result=_hotspots.size(); _hotspots.push_back(h);
   debug("[pice] hotspot=%d actor=%d label=%s",result,h.actor,h.label.c_str()); return true;
  }
+ if(op==68 || op==69) {
+  if(args.size()!=2 || args[0]<0 || uint(args[0])>=_menuEnabled.size() || args[1]<0 || uint(args[1])>=_menuEnabled[args[0]].size()) return false;
+  _menuEnabled[args[0]][args[1]]=op==68; result=args[0]; return true;
+ }
  if(op==58 || op==81) {
   if(args.size()!=4) return false;
   if(args[0]==-1) { result=-1; return true; } // Original optional absent hotspot.
@@ -461,7 +489,7 @@ bool PiceEngine::createMenu(const Common::String &name,int16 local,int16 &id) {
   if(!decodeDialogue(data,key,line) || line.pages.empty() || line.pages[0].empty()) return false;
   choices.push_back(line.pages[0][0]);
  }
- id=_menus.size(); _menus.push_back(choices);
+ id=_menus.size(); _menus.push_back(choices); Common::Array<byte> enabled; enabled.resize(choices.size(),0); _menuEnabled.push_back(enabled);
  debug("[pice] create-menu id=%d resource=%u entries=%u (initially disabled)",id,resource,count); return true;
 }
 bool PiceEngine::createItem(const Common::String &name,int16 local,int16 sequence,int16 &id) {
@@ -486,7 +514,7 @@ bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequen
 bool PiceEngine::showScriptScene() {
  Common::Array<byte> bytes;
  _roomRunner.reset(); _inputLocks=0; _dialogueActor=-1; _pulseOffset=10; _pulseDelta=15;
- _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _ownedItems.clear(); _selectedItem=-1; _actors.clear(); _menus.clear(); _hotspots.clear(); _actions.clear(); _player=-1;
+ _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _ownedItems.clear(); _selectedItem=-1; _actors.clear(); _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1; _hotspots.clear(); _actions.clear(); _player=-1;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
  _sounds.clear(); _animationSounds.clear(); _mixer->stopHandle(_music.handle); _music=RoomSound();
  ScriptResource bootstrap;
@@ -853,6 +881,13 @@ void PiceEngine::tickRoom() {
   }
  }
 #ifdef PICE_TESTBENCH
+ if(!_testUseDone && _activeMenu>=0 && ConfMan.hasKey("pice_test_menu_option") && _system->getMillis()-_menuOpenedAt>=2000) {
+  int wanted=ConfMan.getInt("pice_test_menu_option"),row=0;
+  for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) {
+   if(int(i)==wanted) { _testUseDone=clickMenu(Common::Point(370,60+row*24+12)); break; }
+   ++row;
+  }
+ }
  if(!_testClickDone && ConfMan.hasKey("pice_test_click_hotspot") && !_inputLocks && !actorBusy(_player)) {
   int target=ConfMan.getInt("pice_test_click_hotspot");
   if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor==-1) {
@@ -1145,6 +1180,11 @@ Common::Error PiceEngine::run() {
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
    int change = 0;
+   if(_activeMenu>=0 && event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) { _menuChoice=-2; continue; }
+   if(_activeMenu>=0 && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN)) {
+    if(event.type==Common::EVENT_LBUTTONDOWN) clickMenu(event.mouse); else _menuChoice=-2;
+    continue;
+   }
    if(_scenePreview && event.type==Common::EVENT_LBUTTONDOWN && event.mouse.y>=360) {
     uint slot=0; for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) {
      if(int(slot)==event.mouse.x/50) { _selectedItem=_selectedItem==int(i) ? -1 : int(i); break; } ++slot;

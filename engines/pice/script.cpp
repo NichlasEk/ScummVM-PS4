@@ -126,7 +126,7 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
 static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
- case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
+ case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
  case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 81: case 58: case 95: before=4; return true;
  case 109: before=5; return true;
@@ -212,6 +212,18 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   next+=2;
  }
  int16 argument;
+ if(opcode==62) {
+  next+=2;
+  if(!_bank.expression(next,argument,_variables,_scene) || argument<0) { task.active=false; return kInvalid; }
+  uint16 branch;
+  if(!_bank.word(next,branch) || branch!=4 || !_bank.codeAddress(next+4)) { task.active=false; return kInvalid; }
+  bool ready=false;
+  if(!_scene || !_scene->pollMenu(argument,ready)) { task.active=false; return kUnsupported; }
+  if(!ready) return kWaiting;
+  // Dispatcher state 6 (0x5a7) skips the cancel jump after a selection.
+  int16 choice; if(!_scene->context(6,choice)) { task.active=false; return kInvalid; }
+  task.pc=choice>=0 ? next+4 : next; return kAdvanced;
+ }
  if(opcode==79) {
   next+=2; Common::Array<int16> args; Common::String name;
   for(uint i=0;i<3;++i) { if(!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; } args.push_back(argument); }

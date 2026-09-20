@@ -44,6 +44,7 @@ public:
  virtual uint32 randomState() const { return 0; }
  virtual void restoreRandomState(uint32 state) const {}
  virtual bool enterRoom(const Common::String &name,const Common::Array<int16> &args,int16 &actor) { return false; }
+ virtual bool pollMenu(int16 menu,bool &ready) { return false; }
  virtual bool context(int16 index,int16 &value) const { return false; }
  virtual bool background(const Common::String &name,int16 local,int16 flags)=0;
  virtual bool scenery(const Common::String &name,int16 local) { return false; }

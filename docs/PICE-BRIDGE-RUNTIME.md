@@ -122,3 +122,46 @@ This automates reproducible execution and identifying the next blocker.
 It does not infer missing opcode semantics or prove puzzle correctness,
 complete game coverage, subtitle readability, or hardware behavior. Those
 still need original-code analysis and relevant interaction/visual checks.
+
+## Clickable conversation menu
+
+Opcodes 68/69 enable and disable individual original menu options. Opcode 62
+opens the enabled options and waits for a click. The selected original index
+is exposed through context expression 46/6. Dispatcher state 6 at 0x5a7 skips
+the following four-byte cancel jump after a successful selection; retaining
+that jump incorrectly bypassed the answer branches in the initial test.
+
+The native menu is displayed at the upper right with doubled GUI text. Click
+routing takes priority over room/inventory clicks, including while scripted
+input locks are held. Hidden entries do not shift the returned original index.
+The Driscoll resource has Weapons=1, Hamsun=2 and Lloyd=6.
+
+Startup tests check enable/disable bounds, clicks outside the menu, sparse
+visible rows and the returned original index. Snapshot payload version 7 adds
+option-enabled flags and last selection; versions 1–6 initialize options to
+disabled. Saving while a menu is open is currently refused. Large menus do not
+yet have scrolling, and original font/positioning parity is not claimed.
+
+Local runs reached the menu without the former opcode-68 stop. An automated
+option-2 click exposed the cancel-jump issue, which was then fixed from the
+original dispatcher. The subsequent manual run has no automatic selection and
+no timeout, so the user can choose. Reopening the dialogue through the room's
+Driscoll hotspot still reaches an unsupported expression at bank 1147, entry 1,
+byte 5966 (opcode 91/86 inside conditional 21); that is a separate remaining
+blocker. Room initialization's opcode 80 remains unfinished as before.
+
+The optional testbench key `pice_test_menu_option` selects one original option
+through normal menu hit testing after a two-second display delay. Omit it for
+manual play. The screenshot `artifacts/pice/driscoll-menu-manual.png` is local
+only; no original text/assets are distributed in Git.
+
+The subsequent manual session selected Weapons (1), Hamsun (2) and Lloyd (6).
+Each played its own Ryan/Driscoll exchange through completion and reopened the
+menu: keys 1520/1530, 1240/1250 and 1500/1510 respectively. Repeating Lloyd also
+returned to the menu. The enabled options match the user's original screenshot.
+
+Right click or Escape now cancels the menu instead of quitting the engine.
+Cancellation retains the following jump, while a selection skips it, matching
+original dispatcher state 6. The panel includes a close hint. Startup tests
+verify cancellation clears the active menu and returns selection -1. The manual
+emulator is left open without a timeout or automatic selection for user testing.

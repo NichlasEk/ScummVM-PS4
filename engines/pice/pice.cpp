@@ -38,7 +38,7 @@ void PiceEngine::drawLabels() {
  Common::String status = _spriteMode ? Common::String::format("Sprite %u | sequence %u | step %u/%u | provisional 20 ms/tick", _animationId, _sequence, _step + 1, _animation.sequences[_sequence].steps.size()) : Common::String::format("KSVGA resource %u | image %u/%u", _pictures[_picture], _picture + 1, _pictures.size());
  if (_scenePreview) status=_roomStatus;
  if(!_scenePreview) font->drawString(screen, status, 8, 24, 624, _textColor);
- if(!_scenePreview) font->drawString(screen, _scenePreview ? "F5: save checkpoint | F7: load checkpoint | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
+ if(!_scenePreview) font->drawString(screen, _scenePreview ? "L1/Q: save | R1/U: load | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
  if(_hoverHotspot>=0 || _hoverItem>=0) {
   Graphics::Surface label; label.create(320,11,Graphics::PixelFormat::createFormatCLUT8());
   label.fillRect(Common::Rect(0,0,320,11),0);
@@ -51,7 +51,7 @@ void PiceEngine::drawLabels() {
 
  if(_scenePreview && _hoverHotspot<0 && _hoverItem<0 && (_roomStatus.contains("stopped") || _roomStatus.contains("failed") || _roomStatus.contains("No valid")))
   font->drawString(screen,_roomStatus,8,365,624,_textColor);
- if(!_scenePreview) font->drawString(screen, _scenePreview ? "Left: act / walk | Right: examine | F5 save | F7 load" : "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
+ if(!_scenePreview) font->drawString(screen, _scenePreview ? "Left: act / walk | Right: examine | L1/Q save | R1/U load" : "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
  if (!_subtitle.empty()) {
   // Use a high-contrast, wrapped caption panel. The former one-line GUI
   // label clipped long replies and became tiny when the guest was scaled.
@@ -234,6 +234,8 @@ bool PiceEngine::runActorLifecycleTests() {
  args[1]=1; if(invoke(81,Common::String(),args,Common::String(),result) || _actions.size()!=1) return false;
  args[0]=-1;
  if(!invoke(81,Common::String(),args,Common::String(),result) || result!=-1 || _actions.size()!=1) return false;
+ args.clear(); args.push_back(-1); args.push_back(10);
+ if(!invoke(110,Common::String(),args,Common::String(),result) || result!=-1 || _actions.size()!=1) return false;
  _actions.clear();
  Common::Array<Common::String> choices; choices.push_back("A"); choices.push_back("hidden"); choices.push_back("C");
  _menus.push_back(choices); Common::Array<byte> enabled; enabled.resize(3,0); _menuEnabled.push_back(enabled);
@@ -247,6 +249,10 @@ bool PiceEngine::runActorLifecycleTests() {
  _menuChoice=-2; if(!pollMenu(0,ready) || !ready || _lastMenuChoice!=-1 || _activeMenu!=-1) return false;
  if(!invoke(69,Common::String(),args,Common::String(),result) || _menuEnabled[0][2]) return false;
  args[1]=3; if(invoke(68,Common::String(),args,Common::String(),result)) return false;
+ // Scripted close must cancel the next menu poll instead of reopening it.
+ if(!invoke(99,Common::String(),noArgs,Common::String(),result) || _activeMenu!=-1 || _lastMenuChoice!=-1 ||
+    !pollMenu(0,ready) || !ready || _activeMenu!=-1 || _lastMenuChoice!=-1) return false;
+ if(!pollMenu(0,ready) || ready || _activeMenu!=0) return false;
  _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1;
  int16 ownedValue;
  if(!stateValue(2,0,ownedValue) || !ownedValue || stateValue(2,-1,ownedValue) || stateValue(2,1,ownedValue) || stateValue(3,0,ownedValue)) return false;
@@ -265,6 +271,11 @@ bool PiceEngine::runActorLifecycleTests() {
  _actions.clear(); _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
 }
 bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) {
+ if(op==99) {
+  // 0xd0f -> 0x94da: close menu, clear context 6, wake its waiter.
+  if(!args.empty()) return false;
+  _activeMenu=-1; _menuChoice=-2; _lastMenuChoice=-1; result=0; return true;
+ }
  if(op==124) {
   // ICE640 0x1379 clears the selected inventory ID at 0x15c4.
   if(!args.empty()) return false;
@@ -534,7 +545,10 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   result=_actions.size(); _actions.push_back(action); return true;
  }
  if(op==110) {
-  if(args.size()!=2 || args[0]<0 || uint(args[0])>=_actions.size()) return false;
+  if(args.size()!=2) return false;
+  // 0xddc: absent optional action -1 is a successful no-op.
+  if(args[0]==-1) { result=-1; return true; }
+  if(args[0]<0 || uint(args[0])>=_actions.size()) return false;
   _actions[args[0]].fallback=args[1]; result=args[0]; return true;
  }
  if(op==56 || op==92 || op==135) {
@@ -716,6 +730,10 @@ bool PiceEngine::loadRoom(uint room) {
  for(uint i=0;i<_navigation.edges.size();++i) if(_navigation.edges[i].active) ++edges;
  for(uint i=0;i<_navigation.triangles.size();++i) if(_navigation.triangles[i].active) ++regions;
  _roomStatus=Common::String::format("Room %u | %u nodes, %u regions | initialization result %d",_roomBankId,nodes,regions,int(result));
+ if(result==ScriptRunner::kUnsupported || result==ScriptRunner::kInvalid) {
+  _roomStatus=Common::String::format("Room script 0 stopped: opcode %u at %u",opcode,runner.position(0));
+  warning("[pice] room initialization failed bank=%u pc=%u opcode=%u",_roomBankId,runner.position(0),opcode);
+ }
  debug("[pice] room-navigation nodes=%u edges=%u regions=%u",nodes,edges,regions);
  // A movie-only room (1176) starts a task without loading a background.
  if(_scenePixels.empty() && _scenePalette.empty() && result==ScriptRunner::kStopped) {
@@ -999,22 +1017,39 @@ void PiceEngine::tickRoom() {
  }
 #ifdef PICE_TESTBENCH
  if(ConfMan.getBool("pice_test_medal_ambient")) {
+  if(ConfMan.getBool("pice_test_hamsun_full_inventory") && _activeMenu>=0 && _menuChoice==-1 && now-_menuOpenedAt>=1000 && _testConversationChoices<2) {
+   int choice=_testConversationChoices ? 6 : 2, row=0;
+   for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) {
+    if(int(i)==choice) { if(clickMenu(Common::Point(370,60+row*24+12))) ++_testConversationChoices; break; }
+    ++row;
+   }
+  }
+  if(ConfMan.getBool("pice_test_hamsun_full_inventory") && _testAmbientStep==4 && _testAmbientItem==10 && _roomBankId==1143 && ambientDialogue()) {
+   _testAmbientItem=9; _testAmbientStep=1;
+  }
+  if(ConfMan.getBool("pice_test_hamsun_full_inventory") && _testAmbientStep==4 && _testAmbientItem==9 && _roomBankId==1142 && !_savePending && !_inputLocks && _actionEntry<0 && _roomRunner->exclusiveTask()<0 && !actorBusy(_player)) {
+   if(writeCheckpoint(false)) {
+    _testAmbientStep=5; debug("[pice] test recorder complete and checkpoint saved");
+    _selectedItem=-1;
+    if(clickRoom(Common::Point(30,195),false)) debug("[pice] test exit to bridge clicked");
+   }
+  }
   if(_testAmbientStep==0 && _ownedItems.size()>10 && _ownedItems[10] && _actionEntry<0 && !_inputLocks) {
    if(loadRoom(3)) { _testAmbientStep=1; debug("[pice] test medal collected, entering bunk"); }
   } else if(_testAmbientStep==1 && ambientDialogue() && now-_pageStart>=1000) {
-   int slot=0; for(uint i=0;i<10;++i) if(_ownedItems[i]) ++slot;
+   int slot=0; for(int i=0;i<_testAmbientItem;++i) if(_ownedItems[i]) ++slot;
    Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(slot*50+25,20);
    _eventMan->pushEvent(event); _testAmbientStep=2;
   } else if(_testAmbientStep==2 && ambientDialogue() && inventoryVisible()) {
    Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=_eventMan->getMousePos();
    _eventMan->pushEvent(event); _testAmbientStep=3;
-   debug("[pice] test inventory visible during ambient speech, selecting medal");
-  } else if(_testAmbientStep==3 && _selectedItem==10) {
+   debug("[pice] test inventory visible during ambient speech, selecting item=%d",_testAmbientItem);
+  } else if(_testAmbientStep==3 && _selectedItem==_testAmbientItem) {
    // Exercise item use against Hamsun's actual sprite hotspot.
    for(int y=40;y<338 && _testAmbientStep==3;y+=2) for(int x=0;x<640 && _testAmbientStep==3;x+=2) {
     Common::Point point(x,y);
     if(hotspotAt(point)==1 && clickRoom(point,false)) {
-     _testAmbientStep=4; debug("[pice] test medal used on Hamsun context=%d",_actionContext);
+     _testAmbientStep=4; debug("[pice] test item used on Hamsun item=%d context=%d",_testAmbientItem,_actionContext);
     }
    }
   }
@@ -1089,7 +1124,10 @@ void PiceEngine::tickRoom() {
 #endif
  if(_savePending) {
   _savePending=false;
-  if(!writeCheckpoint(true)) { warning("[pice] Autosave failed; runtime paused"); _scenePreview=false; return; }
+  if(!writeCheckpoint(true)) {
+   warning("[pice] Autosave failed; retaining gameplay view");
+   _roomStatus="Autosave failed | L1/Q: retry saving";
+  }
  }
  if(_pendingRoom>=0) {
   uint room=_pendingRoom;
@@ -1322,6 +1360,23 @@ Common::Error PiceEngine::run() {
  if(ConfMan.getBool("pice_restore_slot0")) restored=readCheckpoint(false);
  else if(ConfMan.getBool("pice_restore_autosave")) restored=readCheckpoint(true);
  if(restored && ConfMan.hasKey("pice_test_room")) restored=loadRoom(ConfMan.getInt("pice_test_room"));
+ if(restored && ConfMan.getBool("pice_test_hamsun_full_inventory")) {
+  // Original pickup commands on room objects; only this isolated fixture
+  // skips walking/clicking. Inventory selection/use below uses real events.
+  if(!loadRoom(26)) return Common::Error(Common::kUnknownError,"Drawer test fixture failed");
+  Common::Array<int16> pickupIds;
+  for(uint i=0;i<_worldItems.size();++i) pickupIds.push_back(_worldItems[i].item);
+  for(uint i=0;i<pickupIds.size();++i) { Common::Array<int16> args; args.push_back(pickupIds[i]); int16 value;
+   if(!invoke(67,Common::String(),args,Common::String(),value)) return Common::Error(Common::kUnknownError,"Drawer pickup failed");
+  }
+  if(!loadRoom(2)) return Common::Error(Common::kUnknownError,"Quarters test fixture failed");
+  for(int id : {10,13}) { Common::Array<int16> args; args.push_back(id); int16 value;
+   if(!invoke(67,Common::String(),args,Common::String(),value)) return Common::Error(Common::kUnknownError,"Quarters pickup failed");
+  }
+  if(!loadRoom(3)) return Common::Error(Common::kUnknownError,"Bunk test fixture failed");
+  _testAmbientStep=1; _testClickDone=true;
+ }
+
 #endif
  if (!restored && !showScriptScene()) { warning("[pice] Room initialization unsupported; staying in background preview"); if (!playDialogueSample()) playSpeech(); }
  bool done = false;

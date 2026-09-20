@@ -142,7 +142,7 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
 static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
- case 124: return true;
+ case 99: case 124: return true;
  case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
  case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 89: case 81: case 58: case 95: before=4; return true;
@@ -278,7 +278,10 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if(args[5]<-1 || args[5]>=int(_tasks.size()) || args[5]==int(index)) { task.active=false; return kInvalid; }
   int16 actor=-1;
   if(!_scene || !_scene->enterRoom(name,args,actor)) { task.active=false; return kUnsupported; }
-  if(actor>=0 && args[5]>=0) { start(args[5]); _tasks[args[5]].actor=actor; }
+  if(actor>=0 && args[5]>=0) {
+   start(args[5]); _tasks[args[5]].actor=actor;
+   _exclusiveTask=args[5]; _entryInitializer=index;
+  }
   task.pc=next; return kAdvanced;
  }
  if(opcode==111 || opcode==52) {
@@ -714,9 +717,9 @@ bool runScriptTests() {
  ScriptResource entryBank; if(!entryBank.load(bytes)) return false;
  ScriptRunner entryRunner(entryBank,nullptr,&sink); entryRunner.start(0);
  if(entryRunner.step(0)!=ScriptRunner::kAdvanced || sink.entries!=1 || !entryRunner.waiting(1) ||
-    entryRunner.step(0)!=ScriptRunner::kStopped || entryRunner.step(1)!=ScriptRunner::kWaiting) return false;
+    entryRunner.step(0)!=ScriptRunner::kStopped || entryRunner.exclusiveTask()!=1 || entryRunner.step(1)!=ScriptRunner::kWaiting) return false;
  sink.busy=false;
- if(entryRunner.step(1)!=ScriptRunner::kWaiting || entryRunner.step(1)!=ScriptRunner::kStopped) return false;
+ if(entryRunner.step(1)!=ScriptRunner::kWaiting || entryRunner.step(1)!=ScriptRunner::kStopped || entryRunner.exclusiveTask()!=-1) return false;
  sink.busy=true;
  // Nested random expression, positive bounds, and rollback after a bad RHS.
  const uint16 randomWords[]={1,14,38,20,1000,20,200};

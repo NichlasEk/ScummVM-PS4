@@ -98,7 +98,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  }
  if(io.count(actions,70)) for(uint i=0;i<actions.size();++i) {
   Action &a=actions[i]; io.number(a.hotspot); io.number(a.verb); io.number(a.approach); io.number(a.entry); io.number(a.fallback);
-  if(a.hotspot<0 || uint(a.hotspot)>=hotspots.size() || a.entry<-1 || (a.entry>=0 && uint(a.entry)>=bank.count()) || a.fallback<0 || uint(a.fallback)>=bank.count()) io.ok=false;
+  if(a.hotspot<0 || uint(a.hotspot)>=hotspots.size() || a.entry<-1 || (a.entry>=0 && uint(a.entry)>=bank.count()) || a.fallback<-1 || (a.fallback>=0 && uint(a.fallback)>=bank.count())) io.ok=false;
  }
  if(io.count(menus,20)) for(uint i=0;i<menus.size();++i) if(io.count(menus[i],200)) for(uint j=0;j<menus[i].size();++j) io.string(menus[i][j]);
  if(!io.ok) { warning("[pice] Invalid snapshot objects/actions"); return false; }
@@ -213,6 +213,9 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _actionExitChapter=_actionExitRoom=-1;
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _random.setSeed(seed); _dialogueActor=-1; _closeup=false; _subtitle.clear(); _savePending=false; _pendingRoom=-1;
+ // Recover the precise partial initializer left after returning with the medal.
+ if(bankId==1142 && _roomRunner->position(0)==1610 && _roomRunner->resumeStoppedAt(0,110))
+  debug("[pice] resumed optional medal action setup");
  // Old bridge previews saved after initialization stopped at exit registration.
  // Continue that exact instruction, never replay initialization over live state.
  if(((version<=7 && bankId==1147) || bankId==1166) && _roomRunner->resumeStoppedAt(0,80))
@@ -226,7 +229,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  if(version<=4 && bankId==1140 && _roomRunner->position(20)==6840 && _roomRunner->resumeStoppedAt(20,101))
   debug("[pice] resumed legacy post-fire music script at byte=6840");
  _buildingNavigation=nullptr; _spriteMode=false; _scenePreview=true; _snapshotPending=false;
- _roomClock=_roomRenderClock=_system->getMillis(); _roomStatus="Checkpoint restored | F5 save | F7 load";
+ _roomClock=_roomRenderClock=_system->getMillis(); _roomStatus="Checkpoint restored | L1/Q save | R1/U load";
  _system->getPaletteManager()->setPalette(&_scenePalette[0],0,256);
  uint brightest=0; for(uint i=0;i<256;++i) {
   uint light=_scenePalette[i*3]+_scenePalette[i*3+1]+_scenePalette[i*3+2];
@@ -276,7 +279,7 @@ bool PiceEngine::writeCheckpoint(bool automatic) {
  if(!readCheckpoint(automatic,false)) return false;
  Common::ScopedPtr<Common::OutSaveFile> latest(_system->getSavefileManager()->openForSaving(ConfMan.getActiveDomainName()+"-pice-latest",false));
  if(latest) { latest->writeByte(automatic ? 'A' : 'M'); latest->finalize(); }
- _roomStatus=automatic ? "Autosaved | F5 save | F7 load" : "Checkpoint saved | F5 save | F7 load";
+ _roomStatus=automatic ? "Autosaved | L1/Q save | R1/U load" : "Checkpoint saved | L1/Q save | R1/U load";
  debug("[pice] checkpoint saved automatic=%d bytes=%u checksum=%08x",automatic,payload.size(),checksum(payload));
  return true;
 }

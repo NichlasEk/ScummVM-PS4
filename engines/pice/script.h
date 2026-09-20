@@ -78,7 +78,12 @@ public:
  bool syncState(StateIO &io);
  bool start(uint index);
  bool resumeStoppedAt(uint index,uint16 expectedOpcode);
- int exclusiveTask() const { return _exclusiveTask>=0 && running(_exclusiveTask) ? _exclusiveTask : -1; }
+ int exclusiveTask() const {
+  // Synchronous initialization completes before the entry continuation owns
+  // the scheduler (original 0x1c728 / 0x6ac).
+  if(_entryInitializer>=0 && running(_entryInitializer)) return _entryInitializer;
+  return _exclusiveTask>=0 && running(_exclusiveTask) ? _exclusiveTask : -1;
+ }
  bool running(uint index) const { return index<_tasks.size() && _tasks[index].active; }
  uint32 position(uint index) const { return _tasks[index].pc; }
  bool waiting(uint index) const { return running(index) && (_tasks[index].waiting || _tasks[index].actor!=-1 || _tasks[index].peer>=0 || _tasks[index].triggerActor>=0 || _tasks[index].locationActor>=0); }
@@ -91,7 +96,7 @@ private:
  bool value(uint32 &pc,int16 &result);
  // actor >= 0 waits for an actor; actor <= -2 encodes sound (-actor-2).
  struct Task { uint32 pc=0; bool active=false, waiting=false; int16 actor=-1,peer=-1,triggerActor=-1,triggerStep=0; bool barrierReady=false; int32 remainingTicks=0; int16 locationActor=-1,locationHotspot=-1; bool locationInside=false; };
- int _exclusiveTask=-1;
+ int _exclusiveTask=-1, _entryInitializer=-1;
  const ScriptResource &_bank;
  Common::Array<Task> _tasks;
  RoomNavigation _navigation;

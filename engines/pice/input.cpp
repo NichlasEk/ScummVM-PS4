@@ -42,6 +42,9 @@ bool PiceEngine::context(int16 index,int16 &value) const {
 bool PiceEngine::pollMenu(int16 menu,bool &ready) {
  ready=false;
  if(menu<0 || uint(menu)>=_menus.size() || uint(menu)>=_menuEnabled.size() || (_activeMenu>=0 && _activeMenu!=menu)) return false;
+ if(_activeMenu<0 && _menuChoice==-2) {
+  _lastMenuChoice=-1; _menuChoice=-1; ready=true; return true;
+ }
  if(_activeMenu<0) {
   bool any=false; for(uint i=0;i<_menuEnabled[menu].size();++i) any|=_menuEnabled[menu][i]!=0;
   if(!any) return false;
@@ -76,7 +79,7 @@ int PiceEngine::hotspotAt(Common::Point point) const {
  return -1;
 }
 bool PiceEngine::inventoryVisible() const {
- return _scenePreview && !_gameOver && _activeMenu<0 && (_dialogueActor<0 || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _eventMan->getMousePos().y<40;
+ return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (_dialogueActor<0 || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _eventMan->getMousePos().y<40;
 }
 int PiceEngine::inventoryAt(Common::Point point) const {
  if(point.y<0 || point.y>=40 || point.x<0 || point.x>=600) return -1;
@@ -154,7 +157,7 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  for(uint i=0;i<_actions.size();++i) {
   const Action &a=_actions[i]; if(a.hotspot!=spot) continue;
   if(a.matches(verb,_selectedItem)) { selected=i; break; }
-  if(a.verb!=verb && a.fallback) fallback=i;
+  if(a.verb!=verb && a.fallback>0) fallback=i;
  }
  bool fallbackUsed=selected<0;
  if(selected<0) selected=fallback;

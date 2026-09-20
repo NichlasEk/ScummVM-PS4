@@ -26,7 +26,7 @@ private:
 #ifdef PICE_TESTBENCH
  bool _testSavePending=false,_testClickDone=false,_testUseDone=false,_testMenuClosed=false;
  uint32 _testSaveAt=0;
- int _testAmbientStep=0;
+ int _testAmbientStep=0, _testAmbientItem=10, _testConversationChoices=0;
 #endif
  bool background(const Common::String &name,int16 local,int16 flags) override;
  bool palette(const Common::String &name,int16 local) override;

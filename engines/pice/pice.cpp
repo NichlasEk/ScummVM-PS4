@@ -34,22 +34,24 @@ void PiceEngine::drawLabels() {
  updateHover();
  Graphics::Surface *screen = _system->lockScreen();
  const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
- font->drawString(screen, "PICE ENGINE PREVIEW - PARTIAL GAMEPLAY", 8, 6, 624, _textColor);
+ if(!_scenePreview) font->drawString(screen, "PICE ENGINE PREVIEW - PARTIAL GAMEPLAY", 8, 6, 624, _textColor);
  Common::String status = _spriteMode ? Common::String::format("Sprite %u | sequence %u | step %u/%u | provisional 20 ms/tick", _animationId, _sequence, _step + 1, _animation.sequences[_sequence].steps.size()) : Common::String::format("KSVGA resource %u | image %u/%u", _pictures[_picture], _picture + 1, _pictures.size());
  if (_scenePreview) status=_roomStatus;
- font->drawString(screen, status, 8, 24, 624, _textColor);
- bool hasInventory=false; for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) hasInventory=true;
- if(!hasInventory) font->drawString(screen, _scenePreview ? "F5: save checkpoint | F7: load checkpoint | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
- if(_hoverHotspot>=0) {
+ if(!_scenePreview) font->drawString(screen, status, 8, 24, 624, _textColor);
+ if(!_scenePreview) font->drawString(screen, _scenePreview ? "F5: save checkpoint | F7: load checkpoint | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
+ if(_hoverHotspot>=0 || _hoverItem>=0) {
   Graphics::Surface label; label.create(320,11,Graphics::PixelFormat::createFormatCLUT8());
   label.fillRect(Common::Rect(0,0,320,11),0);
-  font->drawString(&label,_hotspots[_hoverHotspot].label,4,1,312,_textColor,Graphics::kTextAlignCenter);
+  Common::String name=_hoverItem>=0 ? (uint(_hoverItem)<_itemLabels.size() && !_itemLabels[_hoverItem].empty() ? _itemLabels[_hoverItem] : "Inventory item") : _hotspots[_hoverHotspot].label;
+  font->drawString(&label,name,4,1,312,_textColor,Graphics::kTextAlignCenter);
   for(int y=0;y<22;++y) for(int x=0;x<640;++x)
-   *static_cast<byte *>(screen->getBasePtr(x,338+y))=*static_cast<const byte *>(label.getBasePtr(x/2,y/2));
+   *static_cast<byte *>(screen->getBasePtr(x,360+y))=*static_cast<const byte *>(label.getBasePtr(x/2,y/2));
   label.free();
  }
 
- if(!_scenePreview || !hasInventory) font->drawString(screen, _scenePreview ? "Left: act / walk | Right: examine | F5 save | F7 load" : "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
+ if(_scenePreview && _hoverHotspot<0 && _hoverItem<0 && (_roomStatus.contains("stopped") || _roomStatus.contains("failed") || _roomStatus.contains("No valid")))
+  font->drawString(screen,_roomStatus,8,365,624,_textColor);
+ if(!_scenePreview) font->drawString(screen, _scenePreview ? "Left: act / walk | Right: examine | F5 save | F7 load" : "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
  if (!_subtitle.empty()) {
   // Use a high-contrast, wrapped caption panel. The former one-line GUI
   // label clipped long replies and became tiny when the guest was scaled.
@@ -215,11 +217,12 @@ bool PiceEngine::runActorLifecycleTests() {
  _actors.clear(); _hotspots.clear(); _animationSounds.clear(); _worldItems.clear();
  _actors.push_back(RoomActor()); _items.push_back(RoomActor()); _ownedItems.resize(1,0);
  WorldItem pickup; pickup.actor=0; pickup.item=0; _worldItems.push_back(pickup);
- Hotspot pickupSpot; pickupSpot.actor=0; _hotspots.push_back(pickupSpot);
+ Hotspot pickupSpot; pickupSpot.actor=0; pickupSpot.label="Test key"; _hotspots.push_back(pickupSpot);
  args[0]=0;
  if(!invoke(67,Common::String(),args,Common::String(),result) || result!=0 || !_ownedItems[0] ||
     _actors[0].active || _hotspots[0].active || _worldItems[0].actor!=-1 ||
     !invoke(67,Common::String(),args,Common::String(),result)) return false;
+ if(_itemLabels.size()!=1 || _itemLabels[0]!="Test key") return false;
  args[0]=1; if(invoke(67,Common::String(),args,Common::String(),result) || !_ownedItems[0]) return false;
  _hotspots[0].active=true;
  args.clear(); args.push_back(0); args.push_back(0); args.push_back(-1); args.push_back(11);
@@ -250,6 +253,12 @@ bool PiceEngine::runActorLifecycleTests() {
     _actions.back().exitRoom!=8 || _actions.back().entry!=20 || _actions.back().approach!=26 || _actions.back().verb!=3) return false;
  uint count=_actions.size(); args[4]=40;
  if(invoke(80,Common::String(),args,Common::String(),result) || _actions.size()!=count) return false;
+ args[2]=-1; args[4]=7;
+ if(!invoke(80,Common::String(),args,Common::String(),result) || _actions.back().entry!=-1) return false;
+ _ownedItems.resize(4,0); _ownedItems[0]=1; _ownedItems[3]=1;
+ if(inventoryAt(Common::Point(10,10))!=0 || inventoryAt(Common::Point(60,10))!=3 ||
+    inventoryAt(Common::Point(110,10))!=-1 || inventoryAt(Common::Point(10,40))!=-1 || inventoryAt(Common::Point(-1,10))!=-1) return false;
+ _itemLabels.clear();
  _actions.clear(); _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
 }
 bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) {
@@ -294,6 +303,9 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   // 0x31ea -> 0x87ac: mark owned once, then remove the world actor.
   if(args.size()!=1 || args[0]<0 || uint(args[0])>=_items.size()) return false;
   uint id=args[0];
+  _itemLabels.resize(_items.size());
+  for(uint h=0;h<_hotspots.size();++h) for(uint w=0;w<_worldItems.size();++w)
+   if(_worldItems[w].item==int(id) && _worldItems[w].actor>=0 && _hotspots[h].actor==_worldItems[w].actor) _itemLabels[id]=_hotspots[h].label;
   for(uint i=0;i<_worldItems.size();++i) if(_worldItems[i].item==int(id) && _worldItems[i].actor>=0) {
    Common::Array<int16> remove; remove.push_back(_worldItems[i].actor); int16 ignored;
    if(!invoke(83,Common::String(),remove,Common::String(),ignored)) return false;
@@ -420,6 +432,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   const RoomNavigation *nav=_buildingNavigation ? _buildingNavigation : (_roomRunner ? &_roomRunner->navigation() : nullptr);
   if(args.size()!=2 || args[0]<0 || uint(args[0])>=_items.size() || !nav || _worldItems.size()>=10 ||
      args[1]<0 || uint(args[1])>=nav->nodes.size() || !nav->nodes[args[1]].active) return false;
+  if(uint(args[0])<_ownedItems.size() && _ownedItems[args[0]]) { result=-1; return true; } // Original 0x3032 skips owned objects.
   RoomActor actor=_items[args[0]]; actor.sequence+=2;
   const RoomNode &node=nav->nodes[args[1]];
   if(!actor.sprite.hasSequence(actor.sequence) || node.scale!=100) return false;
@@ -475,7 +488,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==80) {
   // 0x34e8 -> 0x83cb: exit hotspot, approach, script, chapter, room.
   if(args.size()!=5 || args[0]<0 || uint(args[0])>=_hotspots.size() || args[1]<-1 || args[1]>=50 ||
-     args[2]<0 || args[2]>=50 || args[3]!=2 || args[4]<0 || args[4]>=40 || _actions.size()>=70) return false;
+     args[2]<-1 || args[2]>=50 || args[3]!=2 || args[4]<0 || args[4]>=40 || _actions.size()>=70) return false;
   Action action; action.hotspot=args[0]; action.verb=3; action.approach=args[1]; action.entry=args[2];
   action.exitChapter=args[3]; action.exitRoom=args[4]; _actions.push_back(action); result=0; return true;
  }
@@ -548,7 +561,7 @@ bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequen
 bool PiceEngine::showScriptScene() {
  Common::Array<byte> bytes;
  _roomRunner.reset(); _inputLocks=0; _dialogueActor=-1; _pulseOffset=10; _pulseDelta=15;
- _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _ownedItems.clear(); _selectedItem=-1; _actors.clear(); _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1; _hotspots.clear(); _actions.clear(); _player=-1;
+ _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _ownedItems.clear(); _itemLabels.clear(); _selectedItem=-1; _actors.clear(); _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1; _hotspots.clear(); _actions.clear(); _player=-1;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
  _sounds.clear(); _animationSounds.clear(); _mixer->stopHandle(_music.handle); _music=RoomSound();
  ScriptResource bootstrap;
@@ -730,7 +743,7 @@ bool PiceEngine::renderRoom() {
   }
  }
  uint inventorySlot=0;
- for(uint i=0;i<_ownedItems.size() && inventorySlot<12;++i) if(_ownedItems[i]) {
+ for(uint i=0;inventoryVisible() && i<_ownedItems.size() && inventorySlot<12;++i) if(_ownedItems[i]) {
   const RoomActor &item=_items[i];
   if(item.sprite.hasSequence(item.sequence)) {
    uint frame=item.sprite.sequences[item.sequence].steps[0].frame; Common::Rect bounds;
@@ -739,11 +752,11 @@ bool PiceEngine::renderRoom() {
     if(item.sprite.paintFrame(frame,-bounds.left,-bounds.top,icon,bounds.width(),bounds.height())) {
      uint w=MIN<uint>(40,bounds.width()),h=MIN<uint>(34,bounds.height());
      for(uint y=0;y<h;++y) for(uint x=0;x<w;++x)
-      _roomCanvas[(362+y)*640+inventorySlot*50+5+x]=icon[(y*bounds.height()/h)*bounds.width()+x*bounds.width()/w];
+      _roomCanvas[(2+y)*640+inventorySlot*50+5+x]=icon[(y*bounds.height()/h)*bounds.width()+x*bounds.width()/w];
     }
    }
   }
-  if(_selectedItem==int(i)) for(uint x=inventorySlot*50+4;x<inventorySlot*50+49;++x) _roomCanvas[399*640+x]=_textColor;
+  if(_selectedItem==int(i)) for(uint x=inventorySlot*50+4;x<inventorySlot*50+49;++x) _roomCanvas[38*640+x]=_textColor;
   ++inventorySlot;
  }
  _system->copyRectToScreen(&_roomCanvas[0],640,0,0,640,400);
@@ -1272,14 +1285,13 @@ Common::Error PiceEngine::run() {
     if(event.type==Common::EVENT_RBUTTONDOWN || !clickMenu(event.mouse)) _menuChoice=-2;
     continue;
    }
-   if(_scenePreview && event.type==Common::EVENT_LBUTTONDOWN && event.mouse.y>=360) {
-    uint slot=0; for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) {
-     if(int(slot)==event.mouse.x/50) { _selectedItem=_selectedItem==int(i) ? -1 : int(i); break; } ++slot;
-    }
+   if(_scenePreview && event.type==Common::EVENT_LBUTTONDOWN && event.mouse.y>=0 && event.mouse.y<40) {
+    int item=inventoryVisible() ? inventoryAt(event.mouse) : -1;
+    if(item>=0) _selectedItem=_selectedItem==item ? -1 : item;
     continue;
    }
 
-   if(_scenePreview && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN) && event.mouse.y>=40 && event.mouse.y<338) {
+   if(_scenePreview && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN) && event.mouse.y>=(_player<0 ? 0 : 40) && event.mouse.y<(_player<0 ? 400 : 338)) {
     clickRoom(event.mouse,event.type==Common::EVENT_RBUTTONDOWN); continue;
    }
    if (event.type == Common::EVENT_RBUTTONDOWN && !_scenePreview) change = -1;

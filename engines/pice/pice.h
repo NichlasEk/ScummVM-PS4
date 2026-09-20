@@ -65,7 +65,9 @@ private:
  int16 _actionExitChapter=-1,_actionExitRoom=-1;
  int16 _actionContext=-1,_actionEntry=-1,_actionHotspot=-1;
  bool _actionWalking=false;
- int _hoverHotspot=-1;
+ int _hoverHotspot=-1,_hoverItem=-1;
+ bool inventoryVisible() const;
+ int inventoryAt(Common::Point point) const;
  bool _hotCursor=false;
  void updateHover();
  int16 _player=-1,_cameraActor=-1;
@@ -99,6 +101,7 @@ private:
 
  Common::Array<RoomActor> _items;
  Common::Array<byte> _ownedItems;
+ Common::Array<Common::String> _itemLabels;
  int16 _selectedItem=-1;
  struct WorldItem { int16 item=-1,actor=-1; };
  Common::Array<WorldItem> _worldItems;

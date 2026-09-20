@@ -1,5 +1,7 @@
 # Native PICE save/load checkpoint (2026-09-20)
 
+Latest: [drawer objects, hover inventory and music recovery](PICE-DRAWER-RUNTIME.md).
+
 Latest: [scene depth, hover feedback and death recovery](PICE-RECOVERY-AND-LAYERS.md).
 
 Continuation: [native clicks and inventory](PICE-INPUT-RUNTIME.md) implements

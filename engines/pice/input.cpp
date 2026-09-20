@@ -39,7 +39,7 @@ bool PiceEngine::clickMenu(Common::Point point) {
 }
 int PiceEngine::hotspotAt(Common::Point point) const {
  // Room actors use the original 640x480 anchors, offset into our 640x400 view.
- if(point.y<40 || point.y>=338) return -1;
+ if(point.y<(_player<0 ? 0 : 40) || point.y>=(_player<0 ? 400 : 338)) return -1;
  for(uint i=0;i<_hotspots.size();++i) {
   const Hotspot &h=_hotspots[i]; if(!h.active) continue;
   if(h.actor==-1) { if(h.bounds.contains(point.x,point.y+40)) return i; }
@@ -51,14 +51,27 @@ int PiceEngine::hotspotAt(Common::Point point) const {
  }
  return -1;
 }
+bool PiceEngine::inventoryVisible() const {
+ return _scenePreview && !_gameOver && _activeMenu<0 && _dialogueActor<0 && !_inputLocks && _actionEntry<0 && _eventMan->getMousePos().y<40;
+}
+int PiceEngine::inventoryAt(Common::Point point) const {
+ if(point.y<0 || point.y>=40 || point.x<0 || point.x>=600) return -1;
+ uint slot=0;
+ for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) {
+  if(int(slot++)==point.x/50) return i;
+ }
+ return -1;
+}
 void PiceEngine::updateHover() {
- int spot=-1;
+ int spot=-1; _hoverItem=-1;
  if(_scenePreview && !_gameOver && _activeMenu<0 && _dialogueActor<0 && !_inputLocks && _actionEntry<0 && _pendingRoom<0) {
-  int hit=hotspotAt(_eventMan->getMousePos());
+  Common::Point point=_eventMan->getMousePos();
+  if(point.y<40) _hoverItem=inventoryAt(point);
+  int hit=point.y<40 ? -1 : hotspotAt(point);
   for(uint i=0;i<_actions.size();++i) if(hit>=0 && _actions[i].hotspot==hit) { spot=hit; break; }
  }
  _hoverHotspot=spot;
- bool hot=spot>=0;
+ bool hot=spot>=0 || _hoverItem>=0;
  if(hot==_hotCursor) return;
  _hotCursor=hot;
  if(!hot) { CursorMan.setDefaultArrowCursor(false); return; }
@@ -77,7 +90,7 @@ void PiceEngine::updateHover() {
 }
 bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  if(!_scenePreview || !_roomRunner || _inputLocks || _dialogueActor>=0 || _pendingRoom>=0 || _actionEntry>=0 ||
-    _roomRunner->exclusiveTask()>=0 || _player<0 || uint(_player)>=_actors.size() || actorBusy(_player)) return false;
+    _roomRunner->exclusiveTask()>=0 || (_player>=0 && (uint(_player)>=_actors.size() || actorBusy(_player)))) return false;
  if(rightButton && _selectedItem>=0) { _selectedItem=-1; return true; }
  const int spot=hotspotAt(point);
  // Original input 0x1a128 / 0x1a188 selects verb 1 / 6. Exit hotspots
@@ -93,7 +106,7 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  bool fallbackUsed=selected<0;
  if(selected<0) selected=fallback;
  if(selected<0) {
-  if(spot>=0 || point.y<40 || point.y>=338) return false;
+  if(_player<0 || spot>=0 || point.y<40 || point.y>=338) return false;
   Common::Point target; if(!_navigation.nearest(Common::Point(point.x,point.y+40),target)) return false;
   if(target==_actors[_player].feet) return true;
   Common::Array<int16> args; args.push_back(_player); args.push_back(target.x); args.push_back(target.y); int16 result;
@@ -101,8 +114,10 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  }
  const Action &action=_actions[selected];
  int16 entry=fallbackUsed ? action.fallback : action.entry;
+ if(entry==-1 && !fallbackUsed && action.exitChapter>=0 && action.approach==-1) return changeRoom(action.exitChapter,action.exitRoom);
  if(entry<0 || uint(entry)>=_roomBank.count() || _roomRunner->running(entry)) return false;
  if(action.approach>=0) {
+  if(_player<0) return false;
   if(uint(action.approach)>=_navigation.nodes.size() || !_navigation.nodes[action.approach].active) return false;
   const RoomNode &node=_navigation.nodes[action.approach];
   if(_actors[_player].feet!=Common::Point(node.x,node.y)) {

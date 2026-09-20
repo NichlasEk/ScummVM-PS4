@@ -450,3 +450,26 @@ and resumes. Evidence: artifacts/pice/sblood-check3.log. Earlier check/check2
 failed during investigation; they are not passing evidence. Native decoder
 check also passes VIN12 (73 frames). The doctor interaction after the film
 still needs manual replay. Original Q save preserved; test profile is separate.
+
+
+## Hover inventory after returning from surgery (2026-09-20)
+
+User Q in bank1196 restores four owned items, valid icon sequences, input
+unlocked and no exclusive task, but inventoryEnabled=false. Entry0 sets
+opcode149(0) at1124; the return from surgery uses entry79 without continuation,
+whereas other entrances run task25 which enables it. This was not missing
+artwork: the preview hid the entire bar but still exposed item hover labels.
+
+The preview's explicitly hovered toolbar now follows player-control guards
+instead of the original automatic-panel flag. This is an intentional preview
+UI adaptation: opcode149 state is retained in saves, but does not suppress
+manual hover access while control is available. Script locks, exclusive tasks,
+dialogue, menus, pending transitions and combinations still block the bar.
+Hover labels now require the same visibility check as selection.
+
+shadPS4 self-tests PASS. Copied user Q: bank1196/native-enabled=0, toolbar
+visible, item13 selected successfully. Screenshot inspected: all four icons
+are present. Evidence artifacts/pice/inventory-check2.log and inventory-check.png.
+The opt-in pice_test_inventory hook moves to slot3 and selects through the
+normal inventory method; manual profile has no hook and its Q is unchanged.
+Using the selected item on the map remains for user playtesting.

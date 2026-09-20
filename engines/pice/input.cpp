@@ -128,8 +128,10 @@ void PiceEngine::tickCombination(uint ticks) {
  if(!active) { _combinationRunner.reset(); debug("[pice] inventory combination finished failed=%d",int(_combinationFailed)); }
 }
 bool PiceEngine::inventoryVisible() const {
- if(!_inventoryEnabled || _combinationRunner || _combinationFailed) return false;
- return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _eventMan->getMousePos().y<40;
+ // Opcode 149 controls the original automatic panel. The preview uses an
+ // explicitly hovered toolbar, available whenever player input is available.
+ if(_combinationRunner || _combinationFailed) return false;
+ return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _pendingRoom<0 && _eventMan->getMousePos().y>=0 && _eventMan->getMousePos().y<40;
 }
 int PiceEngine::inventoryAt(Common::Point point) const {
  if(point.y<0 || point.y>=40 || point.x<0 || point.x>=600) return -1;
@@ -143,7 +145,7 @@ void PiceEngine::updateHover() {
  int spot=-1; _hoverItem=-1;
  if(!_combinationRunner && !_combinationFailed && _scenePreview && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _pendingRoom<0) {
   Common::Point point=_eventMan->getMousePos();
-  if(point.y<40) _hoverItem=inventoryAt(point);
+  if(inventoryVisible()) _hoverItem=inventoryAt(point);
   int hit=point.y<40 ? -1 : hotspotAt(point);
   for(uint i=0;i<_actions.size();++i) if(hit>=0 && _actions[i].hotspot==hit && (_actions[i].entry>=0 || _actions[i].fallback>0 || _actions[i].exitChapter>=0)) { spot=hit; break; }
  }

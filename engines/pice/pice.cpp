@@ -1285,6 +1285,17 @@ void PiceEngine::tickRoom() {
   }
  }
 #ifdef PICE_TESTBENCH
+ if(ConfMan.getBool("pice_test_inventory") && !_testUseDone) {
+  Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(125,20);
+  _eventMan->pushEvent(event);
+  _system->warpMouse(125,20);
+  if(inventoryVisible()) {
+   int item=inventoryAt(Common::Point(125,20));
+   bool selected=item>=0 && selectInventoryItem(item);
+   debug("[pice] inventory hover test bank=%u native-enabled=%d visible=1 item=%d selected=%d",_roomBankId,_inventoryEnabled,item,selected);
+   _snapshotPending=true; _testUseDone=true;
+  }
+ }
  if(ConfMan.getBool("pice_test_combine") && !_testUseDone && !_itemPairs.empty() && !_inputLocks && _actionEntry<0 && !dialogueActive()) {
   // Isolated fixture: give the registered components, then use normal UI selection.
   const ItemPair pair=_itemPairs[0]; Common::Array<int16> a; int16 result;

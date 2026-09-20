@@ -24,7 +24,7 @@ private:
  bool readCheckpoint(bool automatic,bool apply=true);
  bool _savePending=false;
 #ifdef PICE_TESTBENCH
- bool _testMovieDone=false,_testCheckpointDone=false,_testSavePending=false,_testClickDone=false,_testUseDone=false,_testMenuClosed=false;
+ bool _testMovieDone=false,_testCheckpointDone=false,_testSavePending=false,_testClickDone=false,_testUseDone=false,_testMenuClosed=false,_testMenuChoiceDone=false;
  uint32 _testSaveAt=0;
  int _testAmbientStep=0, _testAmbientItem=10, _testConversationChoices=0;
 #endif
@@ -139,6 +139,7 @@ private:
  int16 _previousRoom=-1;
  bool renderRoom();
  void tickRoom();
+ bool actorCoordinate(int16 actor,bool vertical,int16 &value) const override;
  bool actorInsideHotspot(int16 actor,int16 hotspot,bool &inside) const override;
  bool actorStepReached(int16 actor,int16 step) const override;
  bool actorBusy(int16 actor) const override;

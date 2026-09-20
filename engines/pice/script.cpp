@@ -112,6 +112,11 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
   if(!evaluate(pc,operand,depth+1,budget,variables,scene)) return false;
   value=operand==0; return true;
  }
+ // Original 0x32c8/0x32f4 read the actor anchor, not screen coordinates.
+ if(op==73 || op==74) {
+  int16 actor;
+  return scene && evaluate(pc,actor,depth+1,budget,variables,scene) && scene->actorCoordinate(actor,op==74,value);
+ }
  if(op==86) { // 0x8af: two evaluated operands select a runtime state table.
   int16 kind,id;
   return scene && evaluate(pc,kind,depth+1,budget,variables,scene) &&

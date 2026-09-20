@@ -26,6 +26,10 @@ void PiceEngine::finishDialogue() {
  _dialogueActor=-1; _narration=false; _subtitle.clear(); _closeup=false;
 }
 
+bool PiceEngine::actorCoordinate(int16 actor,bool vertical,int16 &value) const {
+ if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active) return false;
+ value=vertical ? _actors[actor].feet.y : _actors[actor].feet.x; return true;
+}
 bool PiceEngine::actorInsideHotspot(int16 actor,int16 hotspot,bool &inside) const {
  if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || hotspot<0 || uint(hotspot)>=_hotspots.size()) return false;
  const Common::Rect &rect=_hotspots[hotspot].bounds; const Common::Point &p=_actors[actor].feet;

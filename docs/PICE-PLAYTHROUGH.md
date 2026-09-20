@@ -310,3 +310,20 @@ is not proof of the entire elevator sequence. A separate elevator-click probe
 restored the save but did not activate the exit hotspot within its test window.
 Player save backed up under `.tools/pice-save-backup-ward-1789919522`; manual
 profile retains that save and has no automated click or room override.
+
+
+## Doctor reception coordinate predicate (2026-09-20)
+
+Bank 1196 task 20 byte 3320 compares opcode 73(A0) with 300. Added actor X/Y
+expression reads (73/74), matching original handlers 0x32c8/0x32f4 and their
+anchor fields +3/+5. These are room coordinates, independent of the camera.
+Invalid/inactive actor references fail safely. Tests cover both axes, signed
+coordinates, invalid actors and nested greater-than expressions.
+
+Built package and replayed the player's bank-1196 Q save in shadPS4: self-tests
+PASS. Automated hotspot 1 and dialog option 11 reproduce the reported route;
+actor 1 walks to nodes 7/12, becomes Miss Trend, then returns to node 8 without
+the task-20 stop. Evidence: `artifacts/pice/doctor-check2.log`. Added an opt-in,
+one-shot `pice_test_menu_choice` hook that validates menu bounds/enabled state.
+Manual profile does not enable it. Later doctor interactions remain unverified.
+Save backup: `.tools/pice-save-backup-doctor-1789921352`.

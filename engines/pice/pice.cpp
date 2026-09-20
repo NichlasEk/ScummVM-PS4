@@ -218,6 +218,18 @@ bool PiceEngine::runActorLifecycleTests() {
  // associations and permit reuse without increasing the 20-actor limit.
  for(uint i=0;i<20;++i) { RoomActor actor; actor.feet.x=i; if(storeActor(actor)!=int(i)) return false; }
  if(storeActor(RoomActor())!=-1) return false;
+ int16 coordinate;
+ _actors[0].feet=Common::Point(-12,345);
+ if(!actorCoordinate(0,false,coordinate) || coordinate!=-12 || !actorCoordinate(0,true,coordinate) || coordinate!=345 ||
+    actorCoordinate(-1,false,coordinate) || actorCoordinate(20,false,coordinate)) return false;
+ _actors[0].active=false; if(actorCoordinate(0,false,coordinate)) return false; _actors[0].active=true;
+ const uint16 coordinateWords[]={1,9,73,20,0,20,300,9,74,20,0,20,300};
+ Common::Array<byte> coordinateBytes; coordinateBytes.resize(sizeof(coordinateWords));
+ for(uint i=0;i<sizeof(coordinateWords)/sizeof(coordinateWords[0]);++i) WRITE_LE_UINT16(&coordinateBytes[i*2],coordinateWords[i]);
+ ScriptResource coordinateScript; uint32 coordinatePC=2;
+ if(!coordinateScript.load(coordinateBytes) || !coordinateScript.expression(coordinatePC,coordinate,nullptr,this) || coordinate || coordinatePC!=14 ||
+    !coordinateScript.expression(coordinatePC,coordinate,nullptr,this) || coordinate!=1 || coordinatePC!=sizeof(coordinateWords)) return false;
+
  Hotspot spot; spot.actor=7; _hotspots.push_back(spot);
  AnimationSound binding; binding.actor=7; _animationSounds.push_back(binding);
  binding.actor=8; _animationSounds.push_back(binding);
@@ -1306,6 +1318,12 @@ void PiceEngine::tickRoom() {
    const Common::Rect &bounds=_hotspots[10].bounds;
    Common::Point point((bounds.left+bounds.right)/2,(bounds.top+bounds.bottom)/2-40);
    if(writeCheckpoint(false) && clickRoom(point,false)) { _testUseDone=true; debug("[pice] test use inventory item=%u on fire",item); }
+  }
+ }
+ if(!_testMenuChoiceDone && ConfMan.hasKey("pice_test_menu_choice") && _activeMenu>=0 && _menuChoice==-1 && now-_menuOpenedAt>1000) {
+  int choice=ConfMan.getInt("pice_test_menu_choice");
+  if(choice>=0 && uint(_activeMenu)<_menuEnabled.size() && uint(choice)<_menuEnabled[_activeMenu].size() && _menuEnabled[_activeMenu][choice]) {
+   _menuChoice=choice; _testMenuChoiceDone=true; debug("[pice] test menu choice=%d",choice);
   }
  }
  if(ConfMan.getBool("pice_test_dismiss_menu") && _activeMenu>=0 && _menuChoice==-1 && now-_menuOpenedAt>1000) _menuChoice=-2;

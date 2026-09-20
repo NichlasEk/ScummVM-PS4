@@ -62,6 +62,7 @@ public:
  virtual bool speakDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) { return false; }
+ virtual bool actorCoordinate(int16 actor,bool vertical,int16 &value) const { return false; }
  virtual bool actorInsideHotspot(int16 actor,int16 hotspot,bool &inside) const { return false; }
  virtual bool actorStepReached(int16 actor,int16 step) const { return !actorBusy(actor); }
  virtual bool soundBusy(int16 sound) const { return false; }

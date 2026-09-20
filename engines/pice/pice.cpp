@@ -808,18 +808,18 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  if((before!=0 && before!=1) || (after!=0 && after!=1) || name.empty()) return false;
  for(uint i=0;i<name.size();++i) if(name[i]=='/' || name[i]=='\\' || name[i]==':') return false;
  Common::File file;
- if(!file.open(Common::Path("E_VIDEO").join(name))) return false;
+ if(!file.open(Common::Path("E_VIDEO").join(name))) { warning("[pice] movie open failed: %s",name.c_str()); return false; }
  if(file.size()<32 || file.size()>64*1024*1024) return false;
  Common::Array<byte> bytes; bytes.resize(file.size());
  if(file.read(&bytes[0],bytes.size())!=bytes.size()) return false;
  MovieResource movie;
- if(!movie.load(bytes)) return false;
+ if(!movie.load(bytes)) { warning("[pice] movie container failed: %s",name.c_str()); return false; }
  // Validate every compressed frame before playing any audio or advancing
  // the script. No malformed movie is mistaken for a normal end marker.
  while(movie.nextFrame()) {}
- if(movie.failed || !movie.frame) return false;
+ if(movie.failed || !movie.frame) { warning("[pice] movie frame failed: %s after %u frames",name.c_str(),movie.frame); return false; }
  debug("[pice] movie validated name=%s frames=%u audio=%u final-fnv=%08x",name.c_str(),movie.frame,movie.audio.size(),hashBytes(movie.pixels));
- if(!movie.load(bytes)) return false;
+ if(!movie.load(bytes)) { warning("[pice] movie container failed: %s",name.c_str()); return false; }
  // Original movie entry 0x1644b/0x16450 suspends music and room sounds;
  // 0x16548/0x1654d restores only the previously playing channels afterward.
  Common::Array<Audio::SoundHandle> paused;
@@ -847,7 +847,18 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  while(!shouldQuit() && movie.nextFrame()) {
   waitForFrame(movie.frame-1);
   if(shouldQuit()) break;
-  for(uint y=0;y<400;++y) for(uint x=0;x<640;++x) screen[y*640+x]=movie.pixels[(y/2)*320+x/2];
+  // Fit the decoded image to the preview canvas, preserving its aspect ratio.
+  uint width=640,height=400;
+  if(movie.width*height>movie.height*width) height=width*movie.height/movie.width;
+  else width=height*movie.width/movie.height;
+  uint black=0,brightness=766;
+  for(uint i=0;i<256;++i) {
+   uint sum=movie.palette[i*3]+movie.palette[i*3+1]+movie.palette[i*3+2];
+   if(sum<brightness) { brightness=sum; black=i; }
+  }
+  for(uint i=0;i<screen.size();++i) screen[i]=black;
+  for(uint y=0;y<height;++y) for(uint x=0;x<width;++x)
+   screen[(y+(400-height)/2)*640+x+(640-width)/2]=movie.pixels[(y*movie.height/height)*movie.width+x*movie.width/width];
   _system->getPaletteManager()->setPalette(&movie.palette[0],0,256);
   _system->copyRectToScreen(&screen[0],640,0,0,640,400); _system->updateScreen();
  }
@@ -1690,6 +1701,10 @@ Common::Error PiceEngine::run() {
 
 #endif
  if (!restored && !showScriptScene()) { warning("[pice] Room initialization unsupported; staying in background preview"); if (!playDialogueSample()) playSpeech(); }
+#ifdef PICE_TESTBENCH
+ if(ConfMan.hasKey("pice_test_movie") && !playMovie(ConfMan.get("pice_test_movie"),1,1))
+  return Common::Error(Common::kUnknownError,"Movie test failed");
+#endif
  bool done = false;
  while (!shouldQuit() && !done) {
   Common::Event event;

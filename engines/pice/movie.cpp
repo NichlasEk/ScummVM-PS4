@@ -25,12 +25,20 @@ struct Reader {
 bool decodeMovieFrame(const Common::Array<byte> &data,Common::Array<byte> &pixels) {
  // ICE640 0x22ff5/0x2300c expand control + literal streams. 0x230e5
  // then applies run lengths and (flag 2) unchanged-pixel spans.
- if(data.size()<13 || (data[0]!=4 && data[0]!=6) || pixels.empty()) return false;
+ if(data.size()<13 || (data[0]!=0 && data[0]!=2 && data[0]!=4 && data[0]!=6) || pixels.empty()) return false;
  uint32 offset=READ_LE_UINT32(&data[1]),control=READ_LE_UINT32(&data[5]),literal=READ_LE_UINT32(&data[9]);
  uint64 total=uint64(control)+literal;
- if(offset>pixels.size() || !control || !literal || total>4*1024*1024) return false;
+ if(offset>pixels.size() || !control || total>4*1024*1024) return false;
  Common::Array<byte> expanded;
  Reader source{data,13,data.size()};
+ // Original 0x22ff5: bit 4 selects LZ expansion; otherwise the two
+ // streams are stored verbatim (SBLOOD mixes raw and compressed frames).
+ if(!(data[0]&4)) {
+  if(total!=data.size()-13) return false;
+  expanded.resize(total);
+  for(uint i=0;i<total;++i) expanded[i]=data[13+i];
+  source.pos=data.size();
+ }
  uint32 flags=0;
  while(expanded.size()<total) {
   // Stage one uses a sentinel bit, unlike stage two's full 32-bit words.
@@ -96,9 +104,8 @@ bool MovieResource::load(const Common::Array<byte> &data) {
  if(data.size()<32 || data.size()>64*1024*1024 || READ_LE_UINT32(&data[0])!=0xaa07) return false;
  uint header=READ_LE_UINT16(&data[4]);
  width=READ_LE_UINT16(&data[28]); height=READ_LE_UINT16(&data[30]); divisor=READ_LE_UINT16(&data[12]);
- // Verified 8-bit mono PCM and 320x200 video variant. Other variants must
- // be decoded from their own headers before accepting them.
- if(width!=320 || height!=200 || !divisor || READ_LE_UINT16(&data[14])!=22050 || READ_LE_UINT16(&data[26])!=8 || header<32 || header>data.size()) return false;
+ // Verified 8-bit mono PCM variants, including the 640x480 SBLOOD clip.
+ if(!((width==320 && height==200) || (width==640 && height==480)) || !divisor || READ_LE_UINT16(&data[14])!=22050 || READ_LE_UINT16(&data[26])!=8 || header<32 || header>data.size()) return false;
  Common::Array<Chunk> chunks; Common::Array<byte> pcm;
  uint pos=header; bool ended=false;
  while(pos<data.size()) {
@@ -158,6 +165,19 @@ bool runMovieTests() {
  if(!decodeMovieFrame(delta,pixels) || pixels[4]!=77 || pixels[5]!=9) return false;
  delta[22]=0xf0; Common::Array<byte> unchanged=pixels;
  if(decodeMovieFrame(delta,pixels) || pixels!=unchanged) return false;
+ // Raw control/literal streams have identical stage-two semantics.
+ Common::Array<byte> raw; raw.resize(18,0);
+ WRITE_LE_UINT32(&raw[5],4); WRITE_LE_UINT32(&raw[9],1); raw[17]=42;
+ for(uint mode=0;mode<=2;mode+=2) {
+  raw[0]=mode; pixels.clear(); pixels.resize(8,9);
+  if(!decodeMovieFrame(raw,pixels) || pixels[0]!=42 || pixels[1]!=9) return false;
+  Common::Array<byte> truncated=raw; truncated.resize(17);
+  if(decodeMovieFrame(truncated,pixels)) return false;
+ }
+ // A delta frame with no literal pixels leaves the image unchanged.
+ raw[0]=2; raw.resize(17); WRITE_LE_UINT32(&raw[9],0);
+ unchanged=pixels;
+ if(!decodeMovieFrame(raw,pixels) || pixels!=unchanged) return false;
  // Minimal complete container, plus corrupt chunk lengths and all prefixes.
  Common::Array<byte> container; container.resize(32,0);
  WRITE_LE_UINT32(&container[0],0xaa07); WRITE_LE_UINT16(&container[4],32);
@@ -175,6 +195,11 @@ bool runMovieTests() {
   Common::Array<byte> partial=container; partial.resize(n);
   if(movie.load(partial)) return false;
  }
+ WRITE_LE_UINT16(&container[28],640); WRITE_LE_UINT16(&container[30],480);
+ if(!movie.load(container) || movie.pixels.size()!=640*480 || !movie.nextFrame() || movie.pixels[0]!=42 || movie.nextFrame() || movie.failed) return false;
+ WRITE_LE_UINT16(&container[28],0xffff);
+ if(movie.load(container)) return false;
+ WRITE_LE_UINT16(&container[28],640);
  WRITE_LE_UINT32(&container[34],0xffffffff);
  if(movie.load(container)) return false;
  return true;

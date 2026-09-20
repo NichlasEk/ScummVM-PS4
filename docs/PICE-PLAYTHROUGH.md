@@ -427,3 +427,26 @@ and uses normal selection dispatch. Log confirms entry 4 plays sound 142,
 removes items 16/17, adds item 18 and finishes with failed=0. Evidence:
 `artifacts/pice/combine-check.log`. No commercial data added to Git. Manual
 save remains untouched; backup `.tools/pice-save-backup-combine-1789928294`.
+
+
+## Doctor blood-test movie (2026-09-20)
+
+Bank 1197 task 22 PC 6234 opcode 138 requests SBLOOD.MUX. Its 640x480
+header was rejected by the 320x200-only player. The clip additionally mixes
+LZ frames (flags 4/6) with raw control/literal streams (flag 2), including
+frames with no new literal pixels. Original decoder 0x22ff5 bypasses LZ when
+bit 4 is clear; these frames now preserve/update pixels through the same
+second stage. Unknown flags and malformed sizes still fail.
+
+Playback fits 640x480 into the 640x400 canvas with side bars, preserving aspect;
+320x200 retains its existing 2x rendering. Added self-tests for raw streams,
+empty-literal deltas, truncation and accepted/rejected dimensions. Movie errors
+now identify open/container/frame failure; opt-in pice_test_movie plays a named
+clip in an isolated test profile.
+
+Final shadPS4 test: parser self-tests PASS; SBLOOD completes all 188 frames,
+423360 audio bytes, final pixel FNV 829f93bd, failed=0. Background audio pauses
+and resumes. Evidence: artifacts/pice/sblood-check3.log. Earlier check/check2
+failed during investigation; they are not passing evidence. Native decoder
+check also passes VIN12 (73 frames). The doctor interaction after the film
+still needs manual replay. Original Q save preserved; test profile is separate.

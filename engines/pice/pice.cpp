@@ -42,10 +42,28 @@ void PiceEngine::drawLabels() {
  else if(!hasInventory) font->drawString(screen, _scenePreview ? "F5: save checkpoint | F7: load checkpoint | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
 
  if(!_scenePreview || !hasInventory) font->drawString(screen, _scenePreview ? "Left: act / walk | Right: examine | F5 save | F7 load" : "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
- screen->fillRect(Common::Rect(0,338,640,360),0);
  if (!_subtitle.empty()) {
-  if(_closeup) font->drawString(screen,_subtitle,9,342,624,_textStyles[2][1],Graphics::kTextAlignCenter);
-  font->drawString(screen,_subtitle,8,341,624,_closeup ? _textStyles[2][0] : _textColor,Graphics::kTextAlignCenter);
+  // Use a high-contrast, wrapped caption panel. The former one-line GUI
+  // label clipped long replies and became tiny when the guest was scaled.
+  Common::Array<Common::String> lines;
+  int scale=2;
+  font->wordWrapText(_subtitle,304,lines);
+  if(lines.size()>5) { scale=1; lines.clear(); font->wordWrapText(_subtitle,608,lines); }
+  int height=MIN<int>(320,int(lines.size())*font->getFontHeight()*scale+16);
+  byte dark=0,light=_textColor; uint lowest=766,highest=0;
+  byte palette[768]; _system->getPaletteManager()->grabPalette(palette,0,256);
+  for(uint i=0;i<256;++i) {
+   uint sum=palette[i*3]+palette[i*3+1]+palette[i*3+2];
+   if(sum<lowest) { lowest=sum; dark=i; }
+   if(sum>highest) { highest=sum; light=i; }
+  }
+  Graphics::Surface caption; caption.create(640/scale,height/scale,Graphics::PixelFormat::createFormatCLUT8());
+  caption.fillRect(Common::Rect(0,0,caption.w,caption.h),dark);
+  for(uint i=0;i<lines.size();++i)
+   font->drawString(&caption,lines[i],8/scale,8/scale+i*font->getFontHeight(),caption.w-16/scale,light,Graphics::kTextAlignCenter);
+  for(int y=0;y<height;++y) for(int x=0;x<640;++x)
+   *static_cast<byte *>(screen->getBasePtr(x,400-height+y))=*static_cast<const byte *>(caption.getBasePtr(x/scale,y/scale));
+  caption.free();
  }
  _system->unlockScreen();
 }
@@ -692,14 +710,17 @@ bool PiceEngine::objectDialogue(int16 actor,const Common::String &name,int16 loc
      !genericDialogueKey(data,_actionContext,_random.getRandomNumber(0x7fffffff),key)) return false;
   debug("[pice] object-dialogue fallback group=%s key=%s",group.c_str(),key.c_str());
  }
+ return speakDialogue(actor,group,local,key);
+}
+bool PiceEngine::speakDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) {
+ if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || _dialogueActor>=0) return false;
  DialogueLine line; Common::Array<uint32> voices;
- if(!loadDialogue(group,local,key,line,voices)) return false;
- // 0x4579 attaches ordinary speech to the existing actor. Unlike opcode
- // 129 this does not replace its sprite with a scripted talking animation.
+ if(!loadDialogue(name,local,key,line,voices)) return false;
+ // Both 52 and 111 use 0x4579: ordinary speech on the existing actor.
  _dialoguePages=line.pages; _dialogueVoices=voices; _dialoguePage=0; _closeup=false;
  if(!startDialoguePage()) return false;
  _dialogueRestore=_actors[actor]; _dialogueActor=actor;
- debug("[pice] object-dialogue actor=%d context=%d key=%s voice=%u",actor,_actionContext,key.c_str(),voices[0]);
+ debug("[pice] actor-dialogue actor=%d key=%s voice=%u",actor,key.c_str(),voices[0]);
  return true;
 }
 bool PiceEngine::animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) {

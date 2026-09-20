@@ -434,3 +434,7 @@ Source-room entry animations (79) and positive-bound random expressions (38)
 are implemented. The emulator traverses the arrival/middle scene and reaches
 Driscoll's next dialogue, with a version-6 autosave. Remaining stops are exit
 registration 80 and ordinary dialogue 52; details are in PICE-BRIDGE-RUNTIME.md.
+
+Ordinary speech (52) now advances the Driscoll exchange to opcode 68. Dialogue
+subtitles wrap at a larger size. `scripts/pice/check-driscoll.py` automates
+replay and stop reporting from the local room-7 autosave.

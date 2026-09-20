@@ -88,3 +88,37 @@ post-fire checkpoint. Test/restore config overrides are removed after testing.
 A fresh emulator process restored the version-6 autosave in bank 1147, played
 key 1210 to completion again and reached the same opcode-52 stop. Local trace:
 `artifacts/pice/room-entry-restore-verified.log`.
+
+## Driscoll replies, subtitles and repeatable checking
+
+Ordinary actor speech (opcode 52, original handler 0x2cff) is implemented.
+It shares the page/audio player with object responses (111); both original
+handlers call 0x4579. The script waits for the actor's reply before continuing.
+Guest tests cover ordinary speech dispatch-once and waiting behavior.
+
+Restoring the Driscoll checkpoint now plays the exchange through Driscoll's
+keys 1220 and 1235, with both completions observed. Task 38 next stops at
+byte 16416, opcode 68. Room initialization's opcode 80 remains unfinished;
+this dialogue milestone does not make room 7 fully playable.
+
+Dialogue captions now wrap and normally render at twice GUI-font size on a
+high-contrast panel at the bottom. Long pages use the smaller font to fit more
+lines. Palette contrast is chosen from the current screen palette. Voiced
+pages remain tied to mixer completion; text-only replies retain their reading
+time. This is native subtitle presentation, not original font/layout parity.
+The Driscoll subtitle was visually checked in shadPS4; local screenshot:
+`artifacts/pice/subtitles-driscoll.png`. Movie-caption support is not part of
+this change.
+
+Run `python3 scripts/pice/check-driscoll.py` with the local room-7 autosave.
+It builds and runs a bounded 40-second emulator session, checks startup tests,
+checkpoint restoration and completion of both Driscoll replies, and writes
+`artifacts/pice/driscoll-check.json` plus logs. The report lists script stops
+separately from the observed dialogue checks. It restores the previous config
+and autosave on exit and refuses to overlap an already-running PICE emulator.
+No saves, game text, audio or screenshots are committed.
+
+This automates reproducible execution and identifying the next blocker.
+It does not infer missing opcode semantics or prove puzzle correctness,
+complete game coverage, subtitle readability, or hardware behavior. Those
+still need original-code analysis and relevant interaction/visual checks.

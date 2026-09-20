@@ -233,3 +233,18 @@ mandatory conversation, where saving is intentionally unavailable. No successful
 checkpoint was reported. Preserve the original player's saves; a local backup
 exists at `.tools/pice-save-backup-before-chapter3`. Manual handoff returns to
 the player's torpedo-room save, not the chapter-start test fixture.
+
+
+## Letter description, chapter 3 (2026-09-20)
+
+Bank 1206 task 1 byte 656 calls opcode 125 with anchor 320,240, F_M03/4,
+base B01. Original 0x138e chooses ACT/LOOK/item keys and generic fallback,
+then 0x45e7 starts independent narration (state 5). Added the opcode with
+blocking/resume semantics, sharing object key resolution with actor speech.
+Regression checks cover dialogue ownership and waiting without replaying text.
+
+shadPS4 isolated letter replay: self-tests PASS; left click selected B01ACT,
+right click selected B01LOOK, both displayed text-only narration and completed
+entry 1. Evidence `artifacts/pice/letter-check.log`. Original player save remains
+separate; manual handoff still restores the torpedo-room slot unless the player
+saves later progress. No timed or automatic clicks in the manual profile.

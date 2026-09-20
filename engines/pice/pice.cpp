@@ -998,21 +998,34 @@ bool PiceEngine::closeupDialogue(const Common::String &animationName,const Commo
 }
 bool PiceEngine::objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &base) {
  if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || dialogueActive()) return false;
- if(name.size()<3 || local<0) return false;
- Common::String group=name,key; group.setChar('E',0); group.setChar('T',2);
+ Common::String group=name,key;
+ if(!resolveObjectDescription(group,local,base,key)) return false;
+ return speakDialogue(actor,group,local,key);
+}
+bool PiceEngine::resolveObjectDescription(Common::String &group,int16 &local,const Common::String &base,Common::String &key) {
+ if(group.size()<3 || local<0) return false;
+ group.setChar('E',0); group.setChar('T',2);
  uint32 resource; Common::Array<byte> data;
  if(!_languageNames.resolve(group,local,resource) || !_language.read(resource,data) ||
     !selectObjectDialogueKey(data,base,_actionContext,_selectedItem,key)) return false;
  if(key.empty()) {
-  // 0xee8 reads F_ICETXT.PAK from data[0x156a]; 0x3ffd replaces the
-  // language letter and 0x4008 replaces character 2 with T, local index 1.
   group="E_TCETXT"; local=1;
   if(!_languageNames.resolve(group,local,resource) || !_language.read(resource,data) ||
      !genericDialogueKey(data,_actionContext,_random.getRandomNumber(0x7fffffff),key)) return false;
   debug("[pice] object-dialogue fallback group=%s key=%s",group.c_str(),key.c_str());
  }
- return speakDialogue(actor,group,local,key);
+ return true;
 }
+bool PiceEngine::describeObject(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &base) {
+ // 0x138e selects the same LOOK/USE/item-dependent key as actor object speech,
+ // then 0x45e7 uses independent narration (script state 5).
+ if(dialogueActive()) return false;
+ Common::String group=name,key;
+ if(!resolveObjectDescription(group,local,base,key)) return false;
+ debug("[pice] describe-object base=%s key=%s context=%d",base.c_str(),key.c_str(),_actionContext);
+ return narrate(x,y,group,local,key);
+}
+
 bool PiceEngine::narrate(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) {
  if(dialogueActive()) return false;
  DialogueLine line; Common::Array<uint32> voices;

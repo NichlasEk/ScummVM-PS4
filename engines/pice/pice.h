@@ -95,6 +95,8 @@ private:
  bool _narration=false;
  bool dialogueActive() const { return _dialogueActor>=0 || _narration; }
  bool narrationBusy() const override { return _narration; }
+ bool resolveObjectDescription(Common::String &group,int16 &local,const Common::String &base,Common::String &key);
+ bool describeObject(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) override;
  bool narrate(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) override;
  int16 _dialogueActor=-1,_dialogueMinSequence=0,_dialogueMaxSequence=0,_dialogueMinPause=0,_dialogueMaxPause=0;
  RoomActor _dialogueRestore;

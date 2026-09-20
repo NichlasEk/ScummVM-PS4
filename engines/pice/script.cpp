@@ -255,7 +255,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  }
  // Speech contention is a scheduler wait, not an unsupported instruction.
  // Keep the PC and all operands untouched until the speech channel is free.
- if((opcode==52 || opcode==111 || opcode==122 || opcode==128 || opcode==129) && _scene && _scene->dialogueBlocked(index)) return kWaiting;
+ if((opcode==52 || opcode==111 || opcode==122 || opcode==125 || opcode==128 || opcode==129) && _scene && _scene->dialogueBlocked(index)) return kWaiting;
  int16 argument;
  if(opcode==112) {
   next+=2; int16 mode,actor,hotspot; bool inside;
@@ -297,7 +297,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   }
   task.pc=next; return kAdvanced;
  }
- if(opcode==122) {
+ if(opcode==122 || opcode==125) {
   // 0x12a8: position, text resource and key; state 5 waits for text/voice.
   // Unlike actor speech this must not replace or restore an actor animation.
   next+=2; int16 x,y,local; Common::String name,key;
@@ -305,7 +305,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
      !_bank.string(next,name) || !_bank.expression(next,local,_variables,_scene) || local<0 || !_bank.string(next,key)) {
    task.active=false; return kInvalid;
   }
-  if(!_scene || !_scene->narrate(x,y,name,local,key)) { task.active=false; return kUnsupported; }
+  if(!_scene || !(opcode==125 ? _scene->describeObject(x,y,name,local,key) : _scene->narrate(x,y,name,local,key))) { task.active=false; return kUnsupported; }
   task.pc=next; task.actor=-27; return kWaiting;
  }
  if(opcode==111 || opcode==52) {
@@ -679,6 +679,7 @@ bool runScriptTests() {
    if(x!=160 || y!=100 || name!="F_M02" || local!=8 || key!="1320") return false;
    ++narrationCalls; narrationPlaying=true; return true;
   }
+  bool describeObject(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) override { return narrate(x,y,name,local,key); }
   bool speechBlocked=false;
   bool dialogueBlocked(uint task) const override { return speechBlocked; }
   bool inside=false;
@@ -728,7 +729,7 @@ bool runScriptTests() {
  } sink;
  // A competing line waits without consuming its operands or killing its task.
  for(uint i=0;i<5;++i) {
-  const uint16 ops[]={52,111,122,128,129};
+  const uint16 ops[]={52,111,122,125,128,129};
   bytes.resize(4); WRITE_LE_UINT16(&bytes[0],1); WRITE_LE_UINT16(&bytes[2],ops[i]);
   ScriptResource speechBank; if(!speechBank.load(bytes)) return false;
   ScriptRunner speechRunner(speechBank,nullptr,&sink); speechRunner.start(0); sink.speechBlocked=true;
@@ -745,6 +746,14 @@ bool runScriptTests() {
     narrationRunner.step(0)!=ScriptRunner::kWaiting || !narrationRunner.waiting(0) || sink.narrationCalls!=1) return false;
  sink.narrationPlaying=false;
  if(narrationRunner.step(0)!=ScriptRunner::kWaiting || narrationRunner.step(0)!=ScriptRunner::kStopped || sink.narrationCalls!=1) return false;
+ WRITE_LE_UINT16(&bytes[2],125);
+ ScriptResource descriptionBank; if(!descriptionBank.load(bytes)) return false;
+ ScriptRunner descriptionRunner(descriptionBank,nullptr,&sink); descriptionRunner.start(0);
+ if(descriptionRunner.step(0)!=ScriptRunner::kWaiting || descriptionRunner.position(0)!=28 || sink.narrationCalls!=2 ||
+    descriptionRunner.step(0)!=ScriptRunner::kWaiting || sink.narrationCalls!=2) return false;
+ sink.narrationPlaying=false;
+ if(descriptionRunner.step(0)!=ScriptRunner::kWaiting || descriptionRunner.step(0)!=ScriptRunner::kStopped) return false;
+
  // A region wait yields, survives a checkpoint, then releases on entry.
  const uint16 regionWords[]={1,112,20,0,20,2,20,3,25,4,20,42,31,20,0};
  bytes.resize(sizeof(regionWords)); for(uint i=0;i<sizeof(regionWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],regionWords[i]);

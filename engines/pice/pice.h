@@ -48,6 +48,7 @@ private:
  };
  Common::Array<Hotspot> _hotspots;
  Common::Array<Action> _actions;
+ int storeAction(const Action &action);
  bool enterRoom(const Common::String &name,const Common::Array<int16> &args,int16 &actor) override;
  bool randomValue(int16 bound,int16 &value) const override { if(bound<=0) return false; value=_random.getRandomNumber(0x7fffffff)%bound; return true; }
  uint32 randomState() const override { return _random.getSeed(); }

@@ -98,7 +98,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  }
  if(io.count(actions,70)) for(uint i=0;i<actions.size();++i) {
   Action &a=actions[i]; io.number(a.hotspot); io.number(a.verb); io.number(a.approach); io.number(a.entry); io.number(a.fallback);
-  if(a.hotspot<0 || a.hotspot>=50 || a.entry<-1 || (a.entry>=0 && uint(a.entry)>=bank.count()) || a.fallback<-1 || (a.fallback>=0 && uint(a.fallback)>=bank.count())) io.ok=false;
+  if(a.hotspot<-1 || (a.hotspot==-1 && (a.verb!=-1 || a.approach!=-1 || a.entry!=-1 || a.fallback!=0)) || a.hotspot>=50 || a.entry<-1 || (a.entry>=0 && uint(a.entry)>=bank.count()) || a.fallback<-1 || (a.fallback>=0 && uint(a.fallback)>=bank.count())) io.ok=false;
  }
  if(io.count(menus,20)) for(uint i=0;i<menus.size();++i) if(io.count(menus[i],200)) for(uint j=0;j<menus[i].size();++j) io.string(menus[i][j]);
  if(!io.ok) { warning("[pice] Invalid snapshot objects/actions"); return false; }

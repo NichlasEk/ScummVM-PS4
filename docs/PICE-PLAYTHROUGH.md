@@ -162,3 +162,17 @@ left the room before the automatic use. Do not count absence of a script stop
 there as progression evidence. Manual testing resumed without timeout or test
 hooks from the player's room-1141 save (`.tools/xdg-pice-bridge-manual`).
 Evidence: `artifacts/pice/winch-check.log`, `artifacts/pice/winch-manual.log`.
+
+
+## Winch action replacement (2026-09-20)
+
+User passed the archive-name stop and reached task 21 byte 7378, opcode 84.
+Original handler 0x7cb evaluates an action ID and calls 0x84d7, clearing its
+active word. The following script creates a replacement action via opcode 58
+and sets its fallback with 110. Implemented stable inactive action slots and
+first-free allocation (original 0x83cb), with save validation allowing the
+canonical inactive record. Click dispatch skips inactive slots. Regression
+checks cover removal, invalid IDs, preserved adjacent IDs and slot reuse.
+
+Rebuilt PS4 package; handoff is the normal untimed manual profile. Full winch
+completion remains pending player replay. Log: `artifacts/pice/winch-action-manual.log`.

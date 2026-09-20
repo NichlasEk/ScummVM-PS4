@@ -157,7 +157,7 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  for(uint i=0;i<_actions.size();++i) if(_selectedItem<0 && _actions[i].hotspot==spot && _actions[i].verb==3) { verb=3; break; }
  int selected=-1,fallback=-1;
  for(uint i=0;i<_actions.size();++i) {
-  const Action &a=_actions[i]; if(a.hotspot!=spot) continue;
+  const Action &a=_actions[i]; if(a.hotspot<0 || a.hotspot!=spot) continue;
   if(a.matches(verb,_selectedItem)) { selected=i; break; }
   if(a.verb!=verb && a.fallback>0) fallback=i;
  }

@@ -258,6 +258,13 @@ bool PiceEngine::runActorLifecycleTests() {
     _actions.size()!=2 || _hotspots.size()!=1 || _actions[1].hotspot!=49) return false;
  args[0]=50; if(invoke(58,Common::String(),args,Common::String(),result) || _actions.size()!=2) return false;
  args[0]=-2; if(invoke(58,Common::String(),args,Common::String(),result) || _actions.size()!=2) return false;
+ args.clear(); args.push_back(0);
+ if(!invoke(84,Common::String(),args,Common::String(),result) || result!=0 || _actions.size()!=2 ||
+    _actions[0].hotspot!=-1 || _actions[1].hotspot!=49) return false;
+ args[0]=2; if(invoke(84,Common::String(),args,Common::String(),result)) return false;
+ args.clear(); args.push_back(1); args.push_back(6); args.push_back(-1); args.push_back(13);
+ if(!invoke(58,Common::String(),args,Common::String(),result) || result!=0 || _actions.size()!=2 ||
+    _actions[0].entry!=13 || _actions[1].hotspot!=49) return false;
  _actions.clear();
  Common::Array<Common::String> choices; choices.push_back("A"); choices.push_back("hidden"); choices.push_back("C");
  _menus.push_back(choices); Common::Array<byte> enabled; enabled.resize(3,0); _menuEnabled.push_back(enabled);
@@ -291,6 +298,12 @@ bool PiceEngine::runActorLifecycleTests() {
     inventoryAt(Common::Point(110,10))!=-1 || inventoryAt(Common::Point(10,40))!=-1 || inventoryAt(Common::Point(-1,10))!=-1) return false;
  _itemLabels.clear();
  _actions.clear(); _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
+}
+int PiceEngine::storeAction(const Action &action) {
+ // Original 0x83cb reuses the first inactive slot, preserving all other IDs.
+ for(uint i=0;i<_actions.size();++i) if(_actions[i].hotspot==-1) { _actions[i]=action; return i; }
+ if(_actions.size()>=70) return -1;
+ _actions.push_back(action); return _actions.size()-1;
 }
 bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) {
  if(op==99) {
@@ -571,9 +584,9 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==80) {
   // 0x34e8 -> 0x83cb: exit hotspot, approach, script, chapter, room.
   if(args.size()!=5 || args[0]<0 || uint(args[0])>=_hotspots.size() || args[1]<-1 || args[1]>=50 ||
-     args[2]<-1 || args[2]>=50 || args[3]!=2 || args[4]<0 || args[4]>=40 || _actions.size()>=70) return false;
+     args[2]<-1 || args[2]>=50 || args[3]!=2 || args[4]<0 || args[4]>=40) return false;
   Action action; action.hotspot=args[0]; action.verb=3; action.approach=args[1]; action.entry=args[2];
-  action.exitChapter=args[3]; action.exitRoom=args[4]; _actions.push_back(action); result=0; return true;
+  action.exitChapter=args[3]; action.exitRoom=args[4]; if(storeAction(action)<0) return false; result=0; return true;
  }
  if(op==58 || op==81) {
   if(args.size()!=4) return false;
@@ -582,9 +595,15 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   // 0x83cb stores a slot in the fixed 50-hotspot table, even when the
   // slot is currently inactive. Bridge re-entry registers Wayne's action
   // without recreating his hotspot; no hit test can select that empty slot.
-  if(args[0]<0 || args[0]>=50 || args[3]<-1 || args[3]>=50 || _actions.size()>=70) return false;
+  if(args[0]<0 || args[0]>=50 || args[3]<-1 || args[3]>=50) return false;
   Action action; action.hotspot=args[0]; action.verb=op==81 ? 9 : args[1]; action.item=op==81 ? args[1] : -1; action.approach=args[2]; action.entry=args[3];
-  result=_actions.size(); _actions.push_back(action); return true;
+  result=storeAction(action); return result>=0;
+ }
+ if(op==84) {
+  // 0x7cb -> 0x84d7 clears one action slot without compacting the table.
+  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_actions.size()) return false;
+  _actions[args[0]]=Action(); result=args[0];
+  debug("[pice] remove-action id=%d",result); return true;
  }
  if(op==110) {
   if(args.size()!=2) return false;

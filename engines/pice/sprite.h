@@ -13,7 +13,7 @@ bool decodeSprite(const byte *data, uint32 size, SpriteImage &out);
 struct SpritePart { uint16 image; int16 x, y; byte flagsX, flagsY; };
 struct SpriteFrame { Common::Array<SpritePart> parts; };
 struct SequenceStep { uint16 frame, ticks; int16 x, y; };
-struct SpriteSequence { Common::Array<SequenceStep> steps; };
+struct SpriteSequence { Common::Array<SequenceStep> steps; bool valid = true; };
 class SpriteResource {
 public:
  bool load(const Common::Array<byte> &data,int32 archiveId=-1);
@@ -21,7 +21,7 @@ public:
  uint32 fingerprint=0;
  bool paintScaledFrame(uint frame,int x,int bottom,uint scale,Common::Array<byte> &canvas,uint width,uint height) const;
  bool hitScaledFrame(uint frame,int x,int bottom,uint scale,int px,int py) const;
- bool hasSequence(int index) const { return index>=0 && uint(index)<sequences.size() && !sequences[index].steps.empty(); }
+ bool hasSequence(int index) const { return index>=0 && uint(index)<sequences.size() && sequences[index].valid && !sequences[index].steps.empty(); }
  bool image(uint index, SpriteImage &out) const;
  bool paintFrame(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const;
  bool paintPart(uint frame,uint part,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const;

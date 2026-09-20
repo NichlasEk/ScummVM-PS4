@@ -248,3 +248,29 @@ right click selected B01LOOK, both displayed text-only narration and completed
 entry 1. Evidence `artifacts/pice/letter-check.log`. Original player save remains
 separate; manual handoff still restores the torpedo-room slot unless the player
 saves later progress. No timed or automatic clicks in the manual profile.
+
+
+## Chapter 3 hallway actor resource (2026-09-20)
+
+Bank 1186 entry 0 byte 934 failed inside the discarded assignment expression
+(opcode 6), when creating A03/88 sequence 1 at node 15. Resource 267 has 70
+frames, but unused sequence 3 ends with frame 70. Previously this rejected the
+whole resource, including its valid sequence 1. Structurally valid sequence
+records are now preserved with per-sequence validity; selecting a sequence with
+an invalid frame is rejected through hasSequence. No invented frame or skipped
+script operation. Scenery loading also checks sequence validity before indexing.
+Synthetic regression covers an invalid sibling followed by a valid sequence;
+existing malformed/truncated container and rendering checks remain enabled.
+
+shadPS4 hall replay: parser self-tests PASS; initialization advances past 934 to
+2388 (wait opcode 93), without initialization failure. Evidence:
+`artifacts/pice/hall-check2.log`. The invalid sequence itself is not implemented
+or repaired; this does not prove all interactions or later rooms are playable.
+
+The user had continued playing in the letter-check profile. Its newest Q slot
+(version 12, bank 1199) was backed up alongside the older manual saves under
+`.tools/pice-save-backup-hall-1789917105` and copied to the normal manual profile.
+Loading that checkpoint succeeded in shadPS4. This supersedes the earlier note
+that version-12 checkpoint restore was unverified. The isolated hall test uses
+chapter/room overrides; those are absent from the manual profile, which resumes
+the user's bank-1199 save, with no timed shutdown or automatic test inputs.

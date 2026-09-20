@@ -89,7 +89,9 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId) {
    SequenceStep step;
    step.frame = READ_LE_UINT16(r); step.ticks = READ_LE_UINT16(r+2);
    step.x = int16(READ_LE_UINT16(r+4)); step.y = int16(READ_LE_UINT16(r+6));
-   if (step.frame >= parsed.frames.size()) return false;
+   // A03/88 has an out-of-range frame in unused sequence 3. Keep
+   // valid sibling sequences usable, but reject selecting this sequence.
+   if (step.frame >= parsed.frames.size()) seq.valid = false;
    seq.steps.push_back(step);
   }
   parsed.sequences.push_back(seq);
@@ -304,13 +306,29 @@ bool runSpriteTests() {
       !parsed.palette.empty() || parsed.image(0, image)) return false;
  }
  // Bad header/order, offset tables, reserved padding, references and counts.
- const uint32 positions[] = {0,4,8,12,16,20,24,28,29,32,b,b+4,c,c+4,c+5,c+6};
+ const uint32 positions[] = {0,4,8,12,16,20,24,28,29,32,b,b+4,c,c+4,c+5};
  for (uint i = 0; i < sizeof(positions)/sizeof(positions[0]); ++i) {
   Common::Array<byte> corrupted = resource;
   corrupted[positions[i]] ^= 0x80;
   if (!parsed.load(resource) || parsed.load(corrupted) || !parsed.frames.empty() ||
       !parsed.sequences.empty() || !parsed.palette.empty()) return false;
  }
+ // A malformed frame reference in a sibling sequence must not prevent
+ // loading/selecting a valid sequence. Preserve indices and reject the bad one.
+ Common::Array<byte> sibling = resource;
+ for (uint i=0;i<18;++i) sibling.insert_at(c,0);
+ WRITE_LE_UINT32(&sibling[c],8);
+ WRITE_LE_UINT32(&sibling[c+4],18);
+ sibling[c+9]=1;
+ WRITE_LE_UINT16(&sibling[c+10],1); // only frame 0 exists
+ // Original sequence record moves from c+4 to c+22; place it at c+18.
+ for(uint i=0;i<10;++i) sibling[c+18+i]=resource[c+4+i];
+ sibling.resize(sibling.size()-4);
+ for(uint i=0;i<768;++i) sibling[p+14+i]=resource[p+i];
+ WRITE_LE_UINT32(&sibling[16],p+14);
+ WRITE_LE_UINT32(&sibling[20],sibling.size());
+ if(!parsed.load(sibling) || parsed.hasSequence(0) || !parsed.hasSequence(1) ||
+    parsed.hasSequence(2) || !parsed.paintFrame(parsed.sequences[1].steps[0].frame,3,-2,canvas,4,4)) return false;
  // An unused empty sequence is legal in a resource, but cannot be selected.
  Common::Array<byte> empty = resource;
  for (uint i = 0; i < 8; ++i) empty.remove_at(c+6);

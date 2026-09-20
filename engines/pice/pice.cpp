@@ -148,7 +148,7 @@ bool PiceEngine::palette(const Common::String &name,int16 local) {
 bool PiceEngine::scenery(const Common::String &name,int16 local) {
  uint32 resource; if (!resolveChapterGraphics(name,local,resource)) return false;
  Common::Array<byte> data; SpriteResource candidate;
- if (!_graphics.read(resource,data) || !candidate.load(data,resource) || candidate.sequences.size()!=1 ||
+ if (!_graphics.read(resource,data) || !candidate.load(data,resource) || !candidate.hasSequence(0) || candidate.sequences.size()!=1 ||
      candidate.sequences[0].steps.size()!=1) return false;
  _scenery=candidate;
  debug("[pice] scenery resource=%u frame=%u parts=%u fnv=%08x",resource,candidate.sequences[0].steps[0].frame,

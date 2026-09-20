@@ -4,6 +4,8 @@
 #include "common/array.h"
 #include "common/str.h"
 namespace Pice {
+// Script references may include the original .PAK archive suffix.
+bool matchesResourceGroup(const Common::String &name,const Common::String &group);
 struct ResourceName { Common::String name; uint32 base; };
 // Supported English CD language-index variant: length, chained XOR payload,
 // trailing zero; payload is count followed by 8-byte names and uint32 bases.

@@ -2,6 +2,9 @@
 #include "pice/resource-names.h"
 #include "common/endian.h"
 namespace Pice {
+bool matchesResourceGroup(const Common::String &name,const Common::String &group) {
+ return name.equalsIgnoreCase(group) || name.equalsIgnoreCase(group+".PAK");
+}
 bool ResourceNames::load(const Common::Array<byte> &encoded, uint32 archiveCount) {
  _entries.clear(); _archiveCount = 0;
  if (!archiveCount || encoded.size() < 9 || encoded.size() > 1024*1024) return false;
@@ -52,6 +55,9 @@ static Common::Array<byte> encodeFixture(const Common::Array<byte> &plain) {
  return result;
 }
 bool runResourceNameTests() {
+ if(!matchesResourceGroup("A02","A02") || !matchesResourceGroup("a02.Pak","A02") ||
+    matchesResourceGroup("A03.PAK","A02") || matchesResourceGroup("A02.PAK.extra","A02") ||
+    matchesResourceGroup("dir/A02.PAK","A02")) return false;
  Common::Array<byte> plain; plain.resize(28,0);
  WRITE_LE_UINT32(&plain[0],2);
  memcpy(&plain[4],"ROOM_A",6); WRITE_LE_UINT32(&plain[12],3);

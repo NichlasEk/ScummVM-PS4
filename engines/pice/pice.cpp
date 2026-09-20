@@ -459,7 +459,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
    if(actor.animationMode==3 || args[1]<0 || !actor.sprite.hasSequence(args[1])) return false;
    actor.sequence=args[1];
   } else {
-   if(!name.equalsIgnoreCase("A02") || args[1]<0 || args[1]>=179 || args[2]<0) return false;
+   if(!matchesResourceGroup(name,"A02") || args[1]<0 || args[1]>=179 || args[2]<0) return false;
    Common::Array<byte> data;
    if(!_graphics.read(args[1],data) || !actor.sprite.load(data,args[1]) || !actor.sprite.hasSequence(args[2])) return false;
    actor.resource=args[1]; actor.sequence=args[2];
@@ -540,7 +540,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==130) {
   // 0x18a1: independent random idle animation, no dialogue or task wait.
   if(args.size()!=6 || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active ||
-     !name.equalsIgnoreCase("A02") || args[1]<0 || args[1]>=179 || args[2]<0 || args[3]<args[2] || args[4]<0 || args[5]<args[4]) return false;
+     !matchesResourceGroup(name,"A02") || args[1]<0 || args[1]>=179 || args[2]<0 || args[3]<args[2] || args[4]<0 || args[5]<args[4]) return false;
   Common::Array<byte> data; RoomActor actor=_actors[args[0]];
   if(!_graphics.read(args[1],data) || !actor.sprite.load(data,args[1])) return false;
   for(int i=args[2];i<=args[3];++i) if(!actor.sprite.hasSequence(i)) return false;
@@ -600,7 +600,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   result=args[0]; return true;
  }
  if(op==77) {
-  if(args.size()!=4 || !name.equalsIgnoreCase("A02") || args[0]<0 || args[0]>=179 || args[1]<0) return false;
+  if(args.size()!=4 || !matchesResourceGroup(name,"A02") || args[0]<0 || args[0]>=179 || args[1]<0) return false;
   Common::Array<byte> data; RoomActor actor;
   if(!_graphics.read(args[0],data) || !actor.sprite.load(data,args[0]) || !actor.sprite.hasSequence(args[1])) return false;
   actor.resource=args[0]; actor.sequence=args[1]; actor.node=-1; actor.feet=Common::Point(args[2],args[3]);
@@ -637,7 +637,7 @@ bool PiceEngine::createItem(const Common::String &name,int16 local,int16 sequenc
 }
 bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequence,int16 node,int16 &id) {
  const RoomNavigation *nav=_buildingNavigation ? _buildingNavigation : (_roomRunner ? &_roomRunner->navigation() : nullptr);
- if (!name.equalsIgnoreCase("A02") || local<0 || local>=179 || !nav ||
+ if (!matchesResourceGroup(name,"A02") || local<0 || local>=179 || !nav ||
      node<0 || uint(node)>=nav->nodes.size() || !nav->nodes[node].active) return false;
  RoomActor actor; Common::Array<byte> data;
  if (!_graphics.read(local,data) || !actor.sprite.load(data,local) || sequence<0 || !actor.sprite.hasSequence(sequence)) return false;
@@ -893,7 +893,7 @@ bool PiceEngine::startDialoguePage() {
  debug("[pice] dialogue-page=%u/%u voice=%u closeup=%d",_dialoguePage+1,_dialoguePages.size(),_dialogueVoices[_dialoguePage],int(_closeup)); return true;
 }
 bool PiceEngine::closeupDialogue(const Common::String &animationName,const Common::String &textName,const Common::String &key,const Common::Array<int16> &args,int16 &actor) {
- if(args.size()!=6 || dialogueActive() || !animationName.equalsIgnoreCase("A02") ||
+ if(args.size()!=6 || dialogueActive() || !matchesResourceGroup(animationName,"A02") ||
     args[2]<0 || args[2]>=179) return false;
  DialogueLine line; Common::Array<uint32> voices; Common::Array<byte> data; SpriteResource sprite; Common::Array<VoiceAnimation> animations;
  if(!loadDialogue(textName,args[5],key,line,voices) || !_graphics.read(args[2],data) || !sprite.load(data,args[2]) || !sprite.hasSequence(0)) return false;
@@ -953,7 +953,7 @@ bool PiceEngine::speakDialogue(int16 actor,const Common::String &name,int16 loca
 }
 bool PiceEngine::animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) {
  if(args.size()!=7 || dialogueActive() || args[0]<0 || uint(args[0])>=_actors.size() || textName.size()<3 ||
-    args[1]<0 || !animationName.equalsIgnoreCase("A02") || args[2]<0 || args[2]>=179 ||
+    args[1]<0 || !matchesResourceGroup(animationName,"A02") || args[2]<0 || args[2]>=179 ||
     args[3]<0 || args[4]<args[3] || args[5]<0 || args[6]<args[5]) return false;
  DialogueLine line; Common::Array<uint32> voices; Common::Array<byte> data;
  if(!loadDialogue(textName,args[1],key,line,voices)) return false;

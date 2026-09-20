@@ -146,3 +146,19 @@ Ignored evidence: `artifacts/pice/intercom-label-check.log`,
 profile is `.tools/xdg-pice-bridge-manual`, now containing the player's own
 post-movie bridge save. Preserve it. Remaining early-recorder race and later
 chapter limitations above still apply.
+
+
+## Winch archive spelling (2026-09-20)
+
+Hold task 21 stops at byte 6868, opcode 117, with actor A129, archive
+`A02.Pak`, local 28, sequence 0, position 0,0. The existing actor animation
+handler rejected the suffixed spelling. Animation group matching now accepts
+both `A02` and case-insensitive `A02.PAK`, retaining index/sequence validation
+and rejecting paths, other groups and extra suffixes. Name regression tests
+passed in shadPS4, and the PS4 package was rebuilt.
+
+The timed replay did not verify the winch: manual interactions during the test
+left the room before the automatic use. Do not count absence of a script stop
+there as progression evidence. Manual testing resumed without timeout or test
+hooks from the player's room-1141 save (`.tools/xdg-pice-bridge-manual`).
+Evidence: `artifacts/pice/winch-check.log`, `artifacts/pice/winch-manual.log`.

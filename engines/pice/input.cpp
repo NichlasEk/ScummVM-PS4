@@ -32,6 +32,12 @@ bool PiceEngine::actorInsideHotspot(int16 actor,int16 hotspot,bool &inside) cons
  inside=p.x>rect.left && p.x<rect.right && p.y>rect.top && p.y<rect.bottom; return true;
 }
 bool PiceEngine::stateValue(int16 kind,int16 id,int16 &value) const {
+ // Original 0x916 reads the current script bank's task-active byte.
+ // Waiting tasks remain active; this query does not advance the scheduler.
+ if(kind==3) {
+  if(!_roomRunner || id<0 || uint(id)>=_roomBank.count()) return false;
+  value=_roomRunner->running(id) ? 1 : 0; return true;
+ }
  // Opcode 86 kind 2: inventory record status byte == 1 (0x8fa).
  if(kind!=2 || id<0 || uint(id)>=_ownedItems.size()) return false;
  value=_ownedItems[id]!=0; return true;

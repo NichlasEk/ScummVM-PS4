@@ -274,3 +274,20 @@ Loading that checkpoint succeeded in shadPS4. This supersedes the earlier note
 that version-12 checkpoint restore was unverified. The isolated hall test uses
 chapter/room overrides; those are absent from the manual profile, which resumes
 the user's bank-1199 save, with no timed shutdown or automatic test inputs.
+
+
+## Office exit after the safe, chapter 3 (2026-09-20)
+
+Bank 1184 task 26 byte 9018 tests opcode 86 kind 3, task 27, against zero.
+Original handler 0x916 reads the current script bank's task-active byte (28-byte
+records). Added this predicate against the room runner; waiting tasks count as
+active, stopped tasks do not. Invalid task IDs and missing runners are rejected.
+Regression checks cover inactive/start/wait/completion and invalid indices.
+
+Built PS4 package and ran shadPS4 from a copy of the player's Q save (bank 1184,
+8 actors). Self-tests PASS. Automated click on exit hotspot 1 ran task 26 and
+transitioned to hallway bank 1186 with no repeat of the 9018 failure. Evidence:
+`artifacts/pice/office-exit-check2.log`. This verifies the saved exit route, not
+all subsequent chapter interactions. Player saves backed up under
+`.tools/pice-save-backup-office-exit-1789918444`. Manual restart uses the original
+Q save, with no test click or timed shutdown.

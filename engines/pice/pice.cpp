@@ -303,6 +303,19 @@ bool PiceEngine::runActorLifecycleTests() {
  int16 ownedValue;
  if(!stateValue(2,0,ownedValue) || !ownedValue || stateValue(2,-1,ownedValue) || stateValue(2,1,ownedValue) || stateValue(3,0,ownedValue)) return false;
  _ownedItems[0]=0; if(!stateValue(2,0,ownedValue) || ownedValue) return false;
+ // Task-state predicates distinguish inactive, waiting and finished tasks.
+ const uint16 taskWords[]={1,22,20,1,31,20,0};
+ Common::Array<byte> taskBytes; taskBytes.resize(sizeof(taskWords));
+ for(uint i=0;i<sizeof(taskWords)/sizeof(taskWords[0]);++i) WRITE_LE_UINT16(&taskBytes[i*2],taskWords[i]);
+ if(!_roomBank.load(taskBytes)) return false;
+ _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
+ if(!stateValue(3,0,ownedValue) || ownedValue || stateValue(3,-1,ownedValue) || stateValue(3,1,ownedValue) ||
+    !_roomRunner->start(0) || !stateValue(3,0,ownedValue) || ownedValue!=1 ||
+    _roomRunner->step(0)!=ScriptRunner::kWaiting || !stateValue(3,0,ownedValue) || ownedValue!=1) return false;
+ _roomRunner->step(0,2);
+ if(_roomRunner->step(0)!=ScriptRunner::kStopped || !stateValue(3,0,ownedValue) || ownedValue) return false;
+ _roomRunner.reset(); _roomBank=ScriptResource();
+
  args.clear(); args.push_back(0); args.push_back(26); args.push_back(20); args.push_back(2); args.push_back(8);
  if(!invoke(80,Common::String(),args,Common::String(),result) || result!=0 || _actions.back().exitChapter!=2 ||
     _actions.back().exitRoom!=8 || _actions.back().entry!=20 || _actions.back().approach!=26 || _actions.back().verb!=3) return false;

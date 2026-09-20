@@ -82,6 +82,7 @@ private:
  Common::Array<Common::Array<Common::String> > _menus;
  bool createItem(const Common::String &name,int16 local,int16 sequence,int16 &id) override;
  struct RoomActor { bool active=true; SpriteResource sprite; int16 resource=0,sequence=0,node=0; Common::Point feet, labelPosition; bool routeEnabled=false; uint step=0; int32 frameTicks=0; int16 animationMode=0; Common::Point animationOrigin,walkTarget; int32 walkProgress=0,walkDistance=0; int16 walkDirection=0; Common::Array<Common::Point> path; uint pathIndex=0; bool animationPaused=false; int16 idleMin=0,idleMax=0,idlePauseMin=0,idlePauseMax=0; };
+ uint actorScale(const RoomActor &actor) const;
  bool startWalkLeg(RoomActor &actor);
  int16 storeActor(const RoomActor &actor);
  bool runActorLifecycleTests();

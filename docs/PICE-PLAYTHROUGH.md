@@ -114,3 +114,35 @@ mouse capture. The original player profile and source checkpoint are preserved.
 Next: observe the player's next segment, verify a returned-bridge checkpoint,
 close the early-input race, then extend the replay beyond this submarine event.
 Whole-game completion remains unverified and later-chapter support remains work.
+
+
+## Intercom and hold follow-up (2026-09-20)
+
+- Bridge bank 1147, entry 4 byte 10198: opcode 23 increments B111 before
+  examining the intercom. Opcodes 23/24 now implement signed 16-bit variable
+  increment/decrement, including returned values and wraparound (original
+  handlers 0xa38/0xaa2). Startup regression fixtures cover both variable tables,
+  both operations, expression assignment and invalid indices.
+- Hold bank 1141 byte 764: the initializer failed inside actor creation because
+  node 0 requests scale 60. This prevented subsequent actors, including Stanley,
+  from being created. Node-based actors and world objects now render at the
+  requested percentage; picking uses the same pixel mapping. Moving actors
+  interpolate node scales over floor triangles/links without changing saves.
+  This interpolation is an implementation approximation; exact original
+  perspective interpolation and scaled animation stride still need comparison.
+- Sprite checks cover shrink/enlarge, negative placement, clipping, transparent
+  pixels and opaque palette zero. Compound frames are composed before scaling.
+- shadPS4 hold probe: parser self-tests PASS, initializer progresses beyond
+  byte 764 to its scripted wait at 3368; Stanley is created as actor 1/resource 7,
+  hotspot label Stanley, and speaks key 504/voice 13. No room-script failure
+  occurred in the 40-second run. User reports this room now works better.
+- Corrected intercom replay finds the hotspot by label (`An intercom`), since
+  post-movie numeric IDs differ. Right-click queued hotspot 7/verb 1/entry 4,
+  emitted D02LOOK and completed. An earlier numeric-ID probe entered the hold
+  instead; it was not evidence of a successful intercom examination.
+
+Ignored evidence: `artifacts/pice/intercom-label-check.log`,
+`artifacts/pice/hold-scale-check.log`. The test profiles are isolated; the manual
+profile is `.tools/xdg-pice-bridge-manual`, now containing the player's own
+post-movie bridge save. Preserve it. Remaining early-recorder race and later
+chapter limitations above still apply.

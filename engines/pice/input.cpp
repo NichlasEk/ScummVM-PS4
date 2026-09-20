@@ -75,7 +75,7 @@ int PiceEngine::hotspotAt(Common::Point point) const {
   else if(h.actor>=0 && uint(h.actor)<_actors.size()) {
    const RoomActor &a=_actors[h.actor];
    if(a.active && a.sprite.hasSequence(a.sequence) && a.step<a.sprite.sequences[a.sequence].steps.size() &&
-      a.sprite.hitFrame(a.sprite.sequences[a.sequence].steps[a.step].frame,a.feet.x,a.feet.y-40,point.x,point.y)) return i;
+      a.sprite.hitScaledFrame(a.sprite.sequences[a.sequence].steps[a.step].frame,a.feet.x,a.feet.y-40,actorScale(a),point.x,point.y)) return i;
   }
  }
  return -1;

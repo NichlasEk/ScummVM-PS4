@@ -161,9 +161,18 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
 }
 bool ScriptRunner::value(uint32 &pc,int16 &result) {
  if (_bank.expression(pc,result,_variables,_scene)) return true;
- if (!_scene) return false;
  uint32 next=pc; uint16 op;
  if (!_bank.word(next,op)) return false;
+ if(op==23 || op==24) {
+  // Original 0xa38/0xaa2: prefix INC/DEC of a raw A/B variable reference.
+  uint16 table,index; int16 previous;
+  if(!_bank.word(next+2,table) || (table!=5 && table!=19) || !_bank.word(next+4,index) ||
+     !_variables->read(table==19,int16(index),previous)) return false;
+  result=int16(uint16(int32(previous)+(op==23 ? 1 : -1)));
+  if(!_variables->write(table==19,int16(index),result)) return false;
+  pc=next+6; return true;
+ }
+ if (!_scene) return false;
  uint before,after; bool hasKey;
  if(invocationShape(op,before,after,hasKey)) {
   next+=2; Common::String name,key; Common::Array<int16> args; int16 arg;
@@ -343,7 +352,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   task.pc=next; task.actor=actor; return kWaiting;
  }
  uint before,after; bool hasKey;
- if(opcode==55 || opcode==63 || opcode==66 || invocationShape(opcode,before,after,hasKey)) {
+ if(opcode==23 || opcode==24 || opcode==55 || opcode==63 || opcode==66 || invocationShape(opcode,before,after,hasKey)) {
   if(!value(next,argument)) { task.active=false; return kUnsupported; }
   task.pc=next; return kAdvanced;
  }
@@ -517,6 +526,23 @@ ScriptRunner::Result ScriptRunner::run(uint index,uint instructionBudget) {
  return kBudgetExhausted;
 }
 bool runScriptTests() {
+ // Prefix updates preserve 16-bit wraparound and return the new value.
+ for(uint table : {5U,19U}) for(uint op : {23U,24U}) {
+  const uint16 update[]={1,25,2,uint16(op),uint16(table),1,31,20,0};
+  Common::Array<byte> bytes; bytes.resize(sizeof(update));
+  for(uint i=0;i<sizeof(update)/2;++i) WRITE_LE_UINT16(&bytes[i*2],update[i]);
+  ScriptResource bank; if(!bank.load(bytes)) return false;
+  ScriptRunner runner(bank); runner.variables().write(table==19,1,op==23 ? 32767 : -32768); runner.start(0);
+  int16 changed,result;
+  if(runner.step(0)!=ScriptRunner::kAdvanced || runner.position(0)!=12 ||
+     !runner.variables().read(table==19,1,changed) || changed!=(op==23 ? -32768 : 32767) ||
+     !runner.variables().read(false,2,result) || result!=changed || runner.step(0)!=ScriptRunner::kStopped) return false;
+  WRITE_LE_UINT16(&bytes[10],65535);
+  ScriptResource invalid; if(!invalid.load(bytes)) return false;
+  ScriptRunner rejected(invalid); rejected.start(0);
+  if(rejected.step(0)!=ScriptRunner::kInvalid || rejected.position(0)!=2 ||
+     !rejected.variables().read(false,2,result) || result!=0) return false;
+ }
  // Two entries. Entry 0: (3 + -5) * 7; entry 1: literal 9.
  const uint16 words[]={2,10,16,14,20,3,20,0xfffb,20,7,20,9};
  Common::Array<byte> data; data.resize(sizeof(words));

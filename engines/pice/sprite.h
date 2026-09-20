@@ -19,6 +19,8 @@ public:
  bool load(const Common::Array<byte> &data,int32 archiveId=-1);
  int32 archiveId=-1;
  uint32 fingerprint=0;
+ bool paintScaledFrame(uint frame,int x,int bottom,uint scale,Common::Array<byte> &canvas,uint width,uint height) const;
+ bool hitScaledFrame(uint frame,int x,int bottom,uint scale,int px,int py) const;
  bool hasSequence(int index) const { return index>=0 && uint(index)<sequences.size() && !sequences[index].steps.empty(); }
  bool image(uint index, SpriteImage &out) const;
  bool paintFrame(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const;

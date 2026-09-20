@@ -149,6 +149,38 @@ bool SpriteResource::paintFrame(uint frame,int x,int bottom,Common::Array<byte> 
  if (!paint(frame,x,bottom,result,width,height,0,budget)) return false;
  canvas=result; return true;
 }
+// Map destination pixel coordinates around the feet anchor, including negative
+// offsets. Painting and picking deliberately share the same inverse mapping.
+static int scaleFloor(int value,int divisor) {
+ return value>=0 ? value/divisor : -((-value+divisor-1)/divisor);
+}
+bool SpriteResource::hitScaledFrame(uint frame,int x,int bottom,uint scale,int px,int py) const {
+ if(!scale || scale>400) return false;
+ return hitFrame(frame,0,0,scaleFloor((px-x)*100,scale),scaleFloor((py-bottom)*100,scale));
+}
+bool SpriteResource::paintScaledFrame(uint frame,int x,int bottom,uint scale,Common::Array<byte> &canvas,uint width,uint height) const {
+ if(scale==100) return paintFrame(frame,x,bottom,canvas,width,height);
+ if(!scale || scale>400 || !width || !height || width>4096 || height>4096 || canvas.size()!=uint64(width)*height) return false;
+ Common::Rect bounds; bool any=false; uint budget=4096;
+ if(!this->bounds(frame,0,0,bounds,any,0,budget)) return false;
+ if(!any || bounds.isEmpty()) return true;
+ if(bounds.width()>4096 || bounds.height()>4096) return false;
+ // Two backgrounds recover coverage without treating opaque palette zero as
+ // transparency, and compose compound frames before resampling their edges.
+ Common::Array<byte> low,high; low.resize(bounds.width()*bounds.height(),0); high.resize(low.size(),255);
+ if(!paintFrame(frame,-bounds.left,-bounds.top,low,bounds.width(),bounds.height()) ||
+    !paintFrame(frame,-bounds.left,-bounds.top,high,bounds.width(),bounds.height())) return false;
+ int left=MAX(0,x-scaleFloor(-bounds.left*int(scale),100));
+ int right=MIN(int(width),x-scaleFloor(-bounds.right*int(scale),100));
+ int top=MAX(0,bottom-scaleFloor(-bounds.top*int(scale),100));
+ int end=MIN(int(height),bottom-scaleFloor(-bounds.bottom*int(scale),100));
+ for(int py=top;py<end;++py) for(int px=left;px<right;++px) {
+  int sx=scaleFloor((px-x)*100,scale)-bounds.left,sy=scaleFloor((py-bottom)*100,scale)-bounds.top;
+  uint offset=sy*bounds.width()+sx;
+  if(low[offset]==high[offset]) canvas[py*width+px]=low[offset];
+ }
+ return true;
+}
 bool SpriteResource::paint(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const {
  if(frame>=frames.size() || depth>=16 || !budget) return false;
  --budget;
@@ -236,6 +268,17 @@ bool runSpriteTests() {
  Common::Rect frameRect; if(!parsed.frameBounds(0,frameRect) || frameRect!=Common::Rect(-3,2,0,4)) return false;
  if(!parsed.hitFrame(0,3,-2,1,0) || !parsed.hitFrame(0,3,-2,2,0) ||
     parsed.hitFrame(0,3,-2,0,0) || parsed.hitFrame(0,3,-2,1,1) || parsed.hitFrame(5,3,-2,1,0)) return false;
+ // Scaled rendering agrees with picking at every pixel, including clipped
+ // negative offsets, opaque zero, shrinking and enlargement.
+ const uint scales[]={60,100,150,200};
+ for(uint n=0;n<4;++n) {
+  Common::Array<byte> scaled; scaled.resize(64,9);
+  if(!parsed.paintScaledFrame(0,4,-1,scales[n],scaled,8,8)) return false;
+  for(int y=0;y<8;++y) for(int x=0;x<8;++x)
+   if((scaled[y*8+x]!=9)!=parsed.hitScaledFrame(0,4,-1,scales[n],x,y)) return false;
+ }
+ Common::Array<byte> doubled; doubled.resize(64,9);
+ if(!parsed.paintScaledFrame(0,6,-4,200,doubled,8,8) || doubled[0]!=9 || doubled[2]!=0 || doubled[3]!=0 || doubled[4]!=7 || doubled[5]!=7 || doubled[10]!=0 || doubled[18]!=9) return false;
  // Compound frame references use the same anchor; recursive cycles fail
  // transactionally instead of leaving a partially painted destination.
  SpriteFrame compound; SpritePart reference;

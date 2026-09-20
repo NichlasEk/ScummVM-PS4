@@ -47,6 +47,27 @@ int RoomNavigation::region(Common::Point p) const {
  for(uint i=0;i<triangles.size();++i) if(contains(i,p)) return i;
  return -1;
 }
+uint RoomNavigation::scaleAt(Common::Point p) const {
+ for(uint i=0;i<nodes.size();++i) if(nodes[i].active && p==Common::Point(nodes[i].x,nodes[i].y)) return nodes[i].scale;
+ int r=region(p);
+ if(r>=0) {
+  const RoomTriangle &t=triangles[r];
+  const RoomNode &a=nodes[t.a], &b=nodes[t.b], &c=nodes[t.c];
+  int64 total=side(a,b,Common::Point(c.x,c.y));
+  return (side(b,c,p)*a.scale+side(c,a,p)*b.scale+side(a,b,p)*c.scale)/total;
+ }
+ // Explicit links may extend beyond the walkable triangles.
+ int64 best=-1; uint scale=100;
+ for(uint i=0;i<edges.size();++i) if(edges[i].active && edges[i].enabled) {
+  const RoomNode &a=nodes[edges[i].a], &b=nodes[edges[i].b];
+  int64 dx=int(b.x)-a.x,dy=int(b.y)-a.y,den=dx*dx+dy*dy;
+  if(!den) continue;
+  int64 n=MAX<int64>(0,MIN<int64>(den,(int(p.x)-a.x)*dx+(int(p.y)-a.y)*dy));
+  int64 ex=int(p.x)-a.x-dx*n/den,ey=int(p.y)-a.y-dy*n/den,d=ex*ex+ey*ey;
+  if(best<0 || d<best) { best=d; scale=a.scale+(int(b.scale)-a.scale)*n/den; }
+ }
+ return scale;
+}
 bool RoomNavigation::segment(Common::Point from,Common::Point to) const {
  // Clip the segment against each convex triangle, then check that the union
  // of covered intervals has no gaps. This avoids walking through a wall
@@ -162,6 +183,9 @@ bool runRoomTests() {
  Common::Point nearest;
  if(!room.segment(Common::Point(1,1),Common::Point(5,4)) || room.segment(Common::Point(1,1),Common::Point(8,8)) ||
     !room.nearest(Common::Point(-3,5),nearest) || nearest!=Common::Point(0,5)) return false;
+ room.nodes[0].scale=60;
+ if(room.scaleAt(Common::Point(0,0))!=60 || room.scaleAt(Common::Point(5,0))!=80 || room.scaleAt(Common::Point(2,2))!=76) return false;
+ room.nodes[0].scale=100;
  // Disconnected floor islands must not create a traversable shortcut.
  if(!room.node(3,20,0,100) || !room.node(4,30,0,100) || !room.node(5,20,10,100) ||
     !room.edge(3,3,4,1) || !room.edge(4,4,5,1) || !room.edge(5,5,3,1) || !room.triangle(2,3,4,5,1) ||

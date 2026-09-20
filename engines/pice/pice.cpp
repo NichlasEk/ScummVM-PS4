@@ -150,6 +150,11 @@ bool PiceEngine::scenery(const Common::String &name,int16 local) {
        candidate.frames[candidate.sequences[0].steps[0].frame].parts.size(),hashBytes(data));
  return true;
 }
+uint PiceEngine::actorScale(const RoomActor &actor) const {
+ if(actor.animationMode==4 || actor.routeEnabled) return _navigation.scaleAt(actor.feet);
+ if(actor.node>=0 && uint(actor.node)<_navigation.nodes.size() && _navigation.nodes[actor.node].active) return _navigation.nodes[actor.node].scale;
+ return 100;
+}
 bool PiceEngine::startWalkLeg(RoomActor &actor) {
  if(actor.pathIndex>=actor.path.size()) { actor.animationMode=0; return true; }
  Common::Point target=actor.path[actor.pathIndex];
@@ -418,7 +423,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if((op==50 || op==123) && args.size()==(op==50 ? 2U : 3U) && _player>=0 && args[0]==_player && !_playerMovement) { result=args[0]; return true; }
  if(op==50 || op==123) {
   if(args.size()!=(op==50 ? 2U : 3U) || args[0]<0 || uint(args[0])>=_actors.size() || (op==50 && (args[1]<0 || uint(args[1])>=_navigation.nodes.size() ||
-     !_navigation.nodes[args[1]].active || _navigation.nodes[args[1]].scale!=100))) return false;
+     !_navigation.nodes[args[1]].active || !_navigation.nodes[args[1]].scale || _navigation.nodes[args[1]].scale>400))) return false;
   RoomActor actor=_actors[args[0]];
   if(!actor.routeEnabled) return false;
   Common::Point target=op==50 ? Common::Point(_navigation.nodes[args[1]].x,_navigation.nodes[args[1]].y) : Common::Point(args[1],args[2]);
@@ -461,7 +466,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
    if(op==117) { actor.node=-1; actor.feet=Common::Point(args[3],args[4]); }
    else if(args[3]!=-1) {
     const RoomNavigation &nav=_roomRunner ? _roomRunner->navigation() : _navigation;
-    if(args[3]<0 || uint(args[3])>=nav.nodes.size() || !nav.nodes[args[3]].active || nav.nodes[args[3]].scale!=100) return false;
+    if(args[3]<0 || uint(args[3])>=nav.nodes.size() || !nav.nodes[args[3]].active || !nav.nodes[args[3]].scale || nav.nodes[args[3]].scale>400) return false;
     actor.node=args[3]; actor.feet=Common::Point(nav.nodes[args[3]].x,nav.nodes[args[3]].y);
    }
   }
@@ -476,7 +481,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(uint(args[0])<_ownedItems.size() && _ownedItems[args[0]]) { result=-1; return true; } // Original 0x3032 skips owned objects.
   RoomActor actor=_items[args[0]]; actor.sequence+=2;
   const RoomNode &node=nav->nodes[args[1]];
-  if(!actor.sprite.hasSequence(actor.sequence) || node.scale!=100) return false;
+  if(!actor.sprite.hasSequence(actor.sequence) || !node.scale || node.scale>400) return false;
   actor.node=args[1]; actor.feet=Common::Point(node.x,node.y);
   WorldItem item; item.item=args[0];
   result=_worldItems.size(); actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); item.actor=storeActor(actor); if(item.actor<0) return false; _worldItems.push_back(item); return true;
@@ -637,7 +642,7 @@ bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequen
  RoomActor actor; Common::Array<byte> data;
  if (!_graphics.read(local,data) || !actor.sprite.load(data,local) || sequence<0 || !actor.sprite.hasSequence(sequence)) return false;
  const RoomNode &position=nav->nodes[node];
- if (position.scale!=100) return false;
+ if (!position.scale || position.scale>400) return false;
  actor.resource=local; actor.sequence=sequence; actor.node=node; actor.feet=Common::Point(position.x,position.y);
  actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); id=storeActor(actor); if(id<0) return false;
  debug("[pice] create-actor id=%d resource=%d sequence=%d node=%d x=%d y=%d",id,local,sequence,node,position.x,position.y); return true;
@@ -834,7 +839,7 @@ bool PiceEngine::renderRoom() {
   if(layer.actor) {
    const RoomActor &actor=_actors[layer.index];
    uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
-   if(!actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,_roomCanvas,640,400)) return false;
+   if(!actor.sprite.paintScaledFrame(frame,actor.feet.x,actor.feet.y-40,actorScale(actor),_roomCanvas,640,400)) return false;
   } else if(!_scenery.paintPart(sceneryFrame,layer.index,0,-40,_roomCanvas,640,400)) return false;
  }
  if(_closeup && dialogueActive()) {
@@ -1139,8 +1144,12 @@ void PiceEngine::tickRoom() {
    ++row;
   }
  }
- if(!_testClickDone && ConfMan.hasKey("pice_test_click_hotspot") && !_inputLocks && !actorBusy(_player)) {
-  int target=ConfMan.getInt("pice_test_click_hotspot");
+ if(!_testClickDone && (ConfMan.hasKey("pice_test_click_hotspot") || ConfMan.hasKey("pice_test_click_label")) && !_inputLocks && !actorBusy(_player)) {
+  int target=ConfMan.hasKey("pice_test_click_hotspot") ? ConfMan.getInt("pice_test_click_hotspot") : -1;
+  if(ConfMan.hasKey("pice_test_click_label")) {
+   target=-1;
+   for(uint i=0;i<_hotspots.size();++i) if(_hotspots[i].active && _hotspots[i].label.equalsIgnoreCase(ConfMan.get("pice_test_click_label"))) { target=i; break; }
+  }
   if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor==-1) {
    const Common::Rect &bounds=_hotspots[target].bounds;
    Common::Point point((bounds.left+bounds.right)/2,(bounds.top+bounds.bottom)/2-40);
@@ -1151,8 +1160,8 @@ void PiceEngine::tickRoom() {
    Common::Array<byte> low,high; low.resize(640*400,0); high.resize(640*400,255);
    if(actor.active && actor.sprite.hasSequence(actor.sequence) && actor.step<actor.sprite.sequences[actor.sequence].steps.size()) {
     uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
-    if(actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,low,640,400) &&
-       actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,high,640,400)) {
+    if(actor.sprite.paintScaledFrame(frame,actor.feet.x,actor.feet.y-40,actorScale(actor),low,640,400) &&
+       actor.sprite.paintScaledFrame(frame,actor.feet.x,actor.feet.y-40,actorScale(actor),high,640,400)) {
      for(uint pixel=40*640;pixel<338*640 && !_testClickDone;++pixel) if(low[pixel]==high[pixel]) {
       Common::Point point(pixel%640,pixel/640);
       if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }

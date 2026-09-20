@@ -18,11 +18,11 @@ static uint32 checksum(const Common::Array<byte> &bytes) {
 bool PiceEngine::requestSave(const Common::String &name,int16 local,const Common::String &key) {
  // Original 0x20cf -> main loop 0x18f9c -> 0xe504. Queue the request;
  // serialize only after the requesting task has advanced its PC.
- if(_savePending || !name.equalsIgnoreCase("G_IceTxt") || local!=2 || key!="SAV00" || _dialogueActor>=0 || _pendingRoom>=0) return false;
+ if(_savePending || !name.equalsIgnoreCase("G_IceTxt") || local!=2 || key!="SAV00" || dialogueActive() || _pendingRoom>=0) return false;
  _savePending=true; debug("[pice] queued autosave key=%s",key.c_str()); return true;
 }
 bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
- if(!loading && (_gameOver || _activeMenu>=0 || _actionEntry>=0 || !_scenePreview || !_roomRunner || _dialogueActor>=0 || _closeup || _pendingRoom>=0)) return false;
+ if(!loading && (_fadeLevel>=0 || _gameOver || _activeMenu>=0 || _actionEntry>=0 || !_scenePreview || !_roomRunner || dialogueActive() || _closeup || _pendingRoom>=0)) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
  bool playerMovement=_playerMovement;
@@ -98,7 +98,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  }
  if(io.count(actions,70)) for(uint i=0;i<actions.size();++i) {
   Action &a=actions[i]; io.number(a.hotspot); io.number(a.verb); io.number(a.approach); io.number(a.entry); io.number(a.fallback);
-  if(a.hotspot<0 || uint(a.hotspot)>=hotspots.size() || a.entry<-1 || (a.entry>=0 && uint(a.entry)>=bank.count()) || a.fallback<-1 || (a.fallback>=0 && uint(a.fallback)>=bank.count())) io.ok=false;
+  if(a.hotspot<0 || a.hotspot>=50 || a.entry<-1 || (a.entry>=0 && uint(a.entry)>=bank.count()) || a.fallback<-1 || (a.fallback>=0 && uint(a.fallback)>=bank.count())) io.ok=false;
  }
  if(io.count(menus,20)) for(uint i=0;i<menus.size();++i) if(io.count(menus[i],200)) for(uint j=0;j<menus[i].size();++j) io.string(menus[i][j]);
  if(!io.ok) { warning("[pice] Invalid snapshot objects/actions"); return false; }
@@ -137,6 +137,10 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  }
  if(io.count(bindings,30)) for(uint i=0;i<bindings.size();++i) {
   AnimationSound &b=bindings[i]; io.number(b.actor); io.number(b.sound); io.number(b.volume); io.number(b.sequence); io.number(b.step); io.number(b.fired);
+  if(b.actor==-1) {
+   if(b.sound!=-1 || b.sequence!=-1 || b.step!=-1 || b.fired) io.ok=false;
+   continue;
+  }
   if(!validActor(b.actor) || b.sound<0 || uint(b.sound)>=sounds.size() || !sounds[b.sound].active || b.volume<0 || b.volume>100 || b.sequence < -1 || b.step<0) io.ok=false;
  }
  if(!io.ok) { warning("[pice] Invalid snapshot sound bindings"); return false; }
@@ -197,6 +201,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _mixer->stopHandle(_speechHandle); _mixer->stopHandle(_music.handle); _music=music; _music.handle=Audio::SoundHandle(); _roomRunner.reset(); _roomBank=bank; _roomBankId=bankId; _worldVariables=vars;
  _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
  StateIO taskRestore(tasks,true); if(!_roomRunner->syncState(taskRestore)) return false;
+ _roomRunner->prioritizeInitialization();
  _navigation=rebuilt; _roomRunner->navigation()=rebuilt;
  _gameOver=false;
  _previousRoom=previousRoom;
@@ -208,11 +213,11 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _menus=menus; _sounds=sounds; _scenery=scenerySprite; _inventoryPanel=panel;
  _sceneBackground=backgroundId; _scenePaletteId=paletteId; _scenePixels=backgroundBytes; _scenePalette=colors;
  _player=player; _cameraActor=camera; _inventorySelection=selection; _inputLocks=locks;
- _palettePulse=pulse; _pulsePeriod=period; _pulseRemaining=remaining; _pulseOffset=offset; _pulseDelta=delta;
+ _fadeLevel=-1; _palettePulse=pulse; _pulsePeriod=period; _pulseRemaining=remaining; _pulseOffset=offset; _pulseDelta=delta;
  for(uint i=0;i<12;++i) _textStyles[i/2][i%2]=styles[i];
  _actionExitChapter=_actionExitRoom=-1;
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
- _random.setSeed(seed); _dialogueActor=-1; _closeup=false; _subtitle.clear(); _savePending=false; _pendingRoom=-1;
+ _random.setSeed(seed); _dialogueActor=-1; _narration=false; _closeup=false; _subtitle.clear(); _savePending=false; _pendingRoom=-1;
  // Recover the precise partial initializer left after returning with the medal.
  if(bankId==1142 && _roomRunner->position(0)==1610 && _roomRunner->resumeStoppedAt(0,110))
   debug("[pice] resumed optional medal action setup");

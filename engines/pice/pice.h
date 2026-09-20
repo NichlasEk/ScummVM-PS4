@@ -24,7 +24,7 @@ private:
  bool readCheckpoint(bool automatic,bool apply=true);
  bool _savePending=false;
 #ifdef PICE_TESTBENCH
- bool _testSavePending=false,_testClickDone=false,_testUseDone=false,_testMenuClosed=false;
+ bool _testMovieDone=false,_testCheckpointDone=false,_testSavePending=false,_testClickDone=false,_testUseDone=false,_testMenuClosed=false;
  uint32 _testSaveAt=0;
  int _testAmbientStep=0, _testAmbientItem=10, _testConversationChoices=0;
 #endif
@@ -40,6 +40,7 @@ private:
  Common::Array<AnimationSound> _animationSounds;
  SpriteResource _inventoryPanel;
  int16 _inventorySelection=0;
+ int _fadeLevel=-1,_fadeStep=1,_fadePeriod=1,_fadeRemaining=1;
  bool _palettePulse=false;
  int16 _pulsePeriod=5,_pulseRemaining=5,_pulseOffset=10,_pulseDelta=15;
  struct Action { int16 hotspot=-1, verb=-1, approach=-1, entry=-1, fallback=0, item=-1, exitChapter=-1, exitRoom=-1;
@@ -89,6 +90,10 @@ private:
  bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) override;
  bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) override;
  mutable Common::RandomSource _random{"pice"};
+ bool _narration=false;
+ bool dialogueActive() const { return _dialogueActor>=0 || _narration; }
+ bool narrationBusy() const override { return _narration; }
+ bool narrate(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) override;
  int16 _dialogueActor=-1,_dialogueMinSequence=0,_dialogueMaxSequence=0,_dialogueMinPause=0,_dialogueMaxPause=0;
  RoomActor _dialogueRestore;
  bool closeupDialogue(const Common::String &animationName,const Common::String &textName,const Common::String &key,const Common::Array<int16> &args,int16 &actor) override;

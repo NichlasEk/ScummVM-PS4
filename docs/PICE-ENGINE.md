@@ -1,5 +1,7 @@
 # Prisoner of Ice engine development
 
+Current continuation: [playthrough and regression ledger](PICE-PLAYTHROUGH.md).
+
 Latest: [Hamsun inventory, medal use and Nordic text](PICE-HAMSUN-INPUT.md).
 
 Latest: [medal pickup and sleeping-quarters tasks](PICE-MEDAL-RUNTIME.md).

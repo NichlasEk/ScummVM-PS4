@@ -54,6 +54,8 @@ public:
  virtual bool requestSave(const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool playMovie(const Common::String &name,int16 before,int16 after) { return false; }
  virtual bool changeRoom(int16 chapter,int16 room) { return false; }
+ virtual bool narrationBusy() const { return false; }
+ virtual bool narrate(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool dialogueBlocked(uint task) const { return false; }
  virtual bool speakDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) { return false; }
@@ -78,6 +80,7 @@ public:
  bool syncState(StateIO &io);
  bool start(uint index);
  bool resumeStoppedAt(uint index,uint16 expectedOpcode);
+ void prioritizeInitialization() { _entryInitializer=0; }
  int exclusiveTask() const {
   // Synchronous initialization completes before the entry continuation owns
   // the scheduler (original 0x1c728 / 0x6ac).

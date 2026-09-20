@@ -22,7 +22,7 @@ bool ScriptRunner::syncState(StateIO &io) {
   else { t.locationActor=t.locationHotspot=-1; t.locationInside=false; }
   if(t.locationActor < -1 || t.locationActor>=20 || t.locationHotspot < -1 || t.locationHotspot>=50 ||
      ((t.locationActor==-1)!=(t.locationHotspot==-1))) return false;
-  if(!io.ok || (t.active && !_bank.codeAddress(t.pc)) || t.actor < -26 || t.actor>=20 ||
+  if(!io.ok || (t.active && !_bank.codeAddress(t.pc)) || t.actor < -27 || t.actor>=20 ||
      t.peer < -1 || t.peer>=int(count) || t.peer==int(i) || t.triggerActor < -1 || t.triggerActor>=20 || t.triggerStep<0) return false;
  }
  if(io.loading) { _tasks=tasks; _exclusiveTask=exclusive; }
@@ -144,7 +144,7 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  switch(op) {
  case 99: case 124: return true;
  case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
- case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
+ case 115: case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 89: case 81: case 58: case 95: before=4; return true;
  case 80: case 109: before=5; return true;
  case 123: case 135: case 136: before=3; return true;
@@ -211,6 +211,10 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   }
   return kWaiting;
  }
+ if(task.actor==-27) {
+  if(!_scene || !_scene->narrationBusy()) task.actor=-1;
+  return kWaiting;
+ }
  if(task.actor<=-2) {
   if(!_scene || !_scene->soundBusy(-task.actor-2)) task.actor=-1;
   return kWaiting;
@@ -242,7 +246,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  }
  // Speech contention is a scheduler wait, not an unsupported instruction.
  // Keep the PC and all operands untouched until the speech channel is free.
- if((opcode==52 || opcode==111 || opcode==128 || opcode==129) && _scene && _scene->dialogueBlocked(index)) return kWaiting;
+ if((opcode==52 || opcode==111 || opcode==122 || opcode==128 || opcode==129) && _scene && _scene->dialogueBlocked(index)) return kWaiting;
  int16 argument;
  if(opcode==112) {
   next+=2; int16 mode,actor,hotspot; bool inside;
@@ -283,6 +287,17 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
    _exclusiveTask=args[5]; _entryInitializer=index;
   }
   task.pc=next; return kAdvanced;
+ }
+ if(opcode==122) {
+  // 0x12a8: position, text resource and key; state 5 waits for text/voice.
+  // Unlike actor speech this must not replace or restore an actor animation.
+  next+=2; int16 x,y,local; Common::String name,key;
+  if(!_bank.expression(next,x,_variables,_scene) || !_bank.expression(next,y,_variables,_scene) ||
+     !_bank.string(next,name) || !_bank.expression(next,local,_variables,_scene) || local<0 || !_bank.string(next,key)) {
+   task.active=false; return kInvalid;
+  }
+  if(!_scene || !_scene->narrate(x,y,name,local,key)) { task.active=false; return kUnsupported; }
+  task.pc=next; task.actor=-27; return kWaiting;
  }
  if(opcode==111 || opcode==52) {
   next+=2; int16 actor,local; Common::String name,key;
@@ -619,6 +634,12 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
+  bool narrationPlaying=false; uint narrationCalls=0;
+  bool narrationBusy() const override { return narrationPlaying; }
+  bool narrate(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) override {
+   if(x!=160 || y!=100 || name!="F_M02" || local!=8 || key!="1320") return false;
+   ++narrationCalls; narrationPlaying=true; return true;
+  }
   bool speechBlocked=false;
   bool dialogueBlocked(uint task) const override { return speechBlocked; }
   bool inside=false;
@@ -667,8 +688,8 @@ bool runScriptTests() {
   }
  } sink;
  // A competing line waits without consuming its operands or killing its task.
- for(uint i=0;i<4;++i) {
-  const uint16 ops[]={52,111,128,129};
+ for(uint i=0;i<5;++i) {
+  const uint16 ops[]={52,111,122,128,129};
   bytes.resize(4); WRITE_LE_UINT16(&bytes[0],1); WRITE_LE_UINT16(&bytes[2],ops[i]);
   ScriptResource speechBank; if(!speechBank.load(bytes)) return false;
   ScriptRunner speechRunner(speechBank,nullptr,&sink); speechRunner.start(0); sink.speechBlocked=true;
@@ -676,6 +697,15 @@ bool runScriptTests() {
   sink.speechBlocked=false;
   if(speechRunner.step(0)!=ScriptRunner::kInvalid || speechRunner.running(0)) return false;
  }
+ // Narration waits for the text/voice channel, not an actor animation.
+ const uint16 narrationWords[]={1,122,20,160,20,100,0x5f46,0x304d,0x0032,20,8,0x3331,0x3032,0,31,20,0};
+ bytes.resize(sizeof(narrationWords)); for(uint i=0;i<sizeof(narrationWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],narrationWords[i]);
+ ScriptResource narrationBank; if(!narrationBank.load(bytes)) return false;
+ ScriptRunner narrationRunner(narrationBank,nullptr,&sink); narrationRunner.start(0);
+ if(narrationRunner.step(0)!=ScriptRunner::kWaiting || narrationRunner.position(0)!=28 || sink.narrationCalls!=1 ||
+    narrationRunner.step(0)!=ScriptRunner::kWaiting || !narrationRunner.waiting(0) || sink.narrationCalls!=1) return false;
+ sink.narrationPlaying=false;
+ if(narrationRunner.step(0)!=ScriptRunner::kWaiting || narrationRunner.step(0)!=ScriptRunner::kStopped || sink.narrationCalls!=1) return false;
  // A region wait yields, survives a checkpoint, then releases on entry.
  const uint16 regionWords[]={1,112,20,0,20,2,20,3,25,4,20,42,31,20,0};
  bytes.resize(sizeof(regionWords)); for(uint i=0;i<sizeof(regionWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],regionWords[i]);
@@ -901,6 +931,17 @@ bool runScriptTests() {
  ScriptResource selfTrigger; if(!selfTrigger.load(bytes)) return false;
  ScriptRunner selfTriggerRunner(selfTrigger,nullptr,&sink); selfTriggerRunner.start(0);
  if(selfTriggerRunner.step(0)!=ScriptRunner::kInvalid || sink.triggerCalls!=1 || selfTriggerRunner.position(0)!=4) return false;
+ // Room initialization remains foreground across waits, before entry tasks
+ // can unlock input or inspect partially-created actors/hotspots.
+ const uint16 initializing[]={2,7,22,20,1,31,20,0,25,1,20,99,31,20,1};
+ // Entry 1 starts at word 8 (the assignment), not the initializer's argument.
+ bytes.resize(sizeof(initializing)); for(uint i=0;i<sizeof(initializing)/2;++i) WRITE_LE_UINT16(&bytes[i*2],initializing[i]);
+ WRITE_LE_UINT16(&bytes[2],8);
+ ScriptResource initBank; if(!initBank.load(bytes)) return false;
+ ScriptRunner initRunner(initBank); initRunner.prioritizeInitialization(); initRunner.start(0); initRunner.start(1);
+ if(initRunner.step(0)!=ScriptRunner::kWaiting || initRunner.exclusiveTask()!=0 || initRunner.step(1)!=ScriptRunner::kWaiting ||
+    initRunner.step(0,1)!=ScriptRunner::kWaiting || initRunner.step(0)!=ScriptRunner::kStopped ||
+    initRunner.exclusiveTask()!=-1 || initRunner.step(1)!=ScriptRunner::kAdvanced) return false;
  // Exclusive script sections prevent interleaving, but still yield at the
  // caller's budget. Ending or faulting the owner releases the scheduler.
  const uint16 exclusive[]={2,12,41,25,0,20,7,42,31,20,0,20,25,1,20,9,31,20,1};

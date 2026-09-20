@@ -215,10 +215,21 @@ bool PiceEngine::runActorLifecycleTests() {
  Common::Array<int16> args; args.push_back(7); int16 result;
  if(!invoke(83,Common::String(),args,Common::String(),result) || result!=7 || _actors.size()!=20 ||
     _actors[7].active || _actors[8].feet.x!=8 || _hotspots[0].active || _worldItems[0].actor!=-1 ||
-    _animationSounds.size()!=1 || _animationSounds[0].actor!=8 || _player!=-1 || actorBusy(7) ||
+    _animationSounds.size()!=2 || _animationSounds[0].actor!=-1 || _animationSounds[1].actor!=8 || _player!=-1 || actorBusy(7) ||
     invoke(83,Common::String(),args,Common::String(),result) || storeActor(RoomActor())!=7) return false;
+ args[0]=0;
+ if(!invoke(115,Common::String(),args,Common::String(),result) || result!=0 || _animationSounds[1].actor!=8) return false;
+ args[0]=2; if(invoke(115,Common::String(),args,Common::String(),result)) return false;
+ args[0]=1;
+ if(!invoke(115,Common::String(),args,Common::String(),result) || _animationSounds.size()!=2 || _animationSounds[1].actor!=-1) return false;
+ _sounds.push_back(RoomSound());
+ args.clear(); args.push_back(8); args.push_back(0); args.push_back(100); args.push_back(-1); args.push_back(0);
+ if(!invoke(109,Common::String(),args,Common::String(),result) || result!=0 || _animationSounds.size()!=2) return false;
+ if(!invoke(109,Common::String(),args,Common::String(),result) || result!=1 || _animationSounds.size()!=2) return false;
+ _sounds.clear();
  _actors.clear(); _hotspots.clear(); _animationSounds.clear(); _worldItems.clear();
  _actors.push_back(RoomActor()); _items.push_back(RoomActor()); _ownedItems.resize(1,0);
+ args.clear(); args.push_back(0);
  WorldItem pickup; pickup.actor=0; pickup.item=0; _worldItems.push_back(pickup);
  Hotspot pickupSpot; pickupSpot.actor=0; pickupSpot.label="Test key"; _hotspots.push_back(pickupSpot);
  args[0]=0;
@@ -236,6 +247,12 @@ bool PiceEngine::runActorLifecycleTests() {
  if(!invoke(81,Common::String(),args,Common::String(),result) || result!=-1 || _actions.size()!=1) return false;
  args.clear(); args.push_back(-1); args.push_back(10);
  if(!invoke(110,Common::String(),args,Common::String(),result) || result!=-1 || _actions.size()!=1) return false;
+ // Fixed-capacity hotspot references may be dormant, but never out of range.
+ args.clear(); args.push_back(49); args.push_back(6); args.push_back(-1); args.push_back(1);
+ if(!invoke(58,Common::String(),args,Common::String(),result) || result!=1 ||
+    _actions.size()!=2 || _hotspots.size()!=1 || _actions[1].hotspot!=49) return false;
+ args[0]=50; if(invoke(58,Common::String(),args,Common::String(),result) || _actions.size()!=2) return false;
+ args[0]=-2; if(invoke(58,Common::String(),args,Common::String(),result) || _actions.size()!=2) return false;
  _actions.clear();
  Common::Array<Common::String> choices; choices.push_back("A"); choices.push_back("hidden"); choices.push_back("C");
  _menus.push_back(choices); Common::Array<byte> enabled; enabled.resize(3,0); _menuEnabled.push_back(enabled);
@@ -288,7 +305,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==83) {
   if(args.size()!=1 || _dialogueActor==args[0]) return false;
   int16 id=args[0];
-  for(uint i=_animationSounds.size();i>0;--i) if(_animationSounds[i-1].actor==id) _animationSounds.remove_at(i-1);
+  for(uint i=_animationSounds.size();i>0;--i) if(_animationSounds[i-1].actor==id) _animationSounds[i-1]=AnimationSound();
   for(uint i=0;i<_hotspots.size();++i) if(_hotspots[i].actor==id) _hotspots[i].active=false;
   for(uint i=0;i<_worldItems.size();++i) if(_worldItems[i].actor==id) _worldItems[i].actor=-1;
   _actors[id]=RoomActor(); _actors[id].active=false;
@@ -372,7 +389,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==101) {
   if(args.size()!=1 || args[0]<0 || uint(args[0])>=_sounds.size() || !_sounds[args[0]].active) return false;
   _mixer->stopHandle(_sounds[args[0]].handle); _sounds[args[0]]=RoomSound();
-  for(uint i=_animationSounds.size();i>0;--i) if(_animationSounds[i-1].sound==args[0]) _animationSounds.remove_at(i-1);
+  for(uint i=_animationSounds.size();i>0;--i) if(_animationSounds[i-1].sound==args[0]) _animationSounds[i-1]=AnimationSound();
   result=args[0]; debug("[pice] release-sound id=%d",args[0]); return true;
  }
  if(op==114 || op==100) {
@@ -466,6 +483,15 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  }
  if(op==61 && args.size()==3 && args[0]==-1) { result=-1; return true; }
  if(op==95) {
+  // Original 0x7536 dispatch entries 1,2,5,6 return directly at 0x76bf.
+  if(args.size()==4 && (args[0]==1 || args[0]==2 || args[0]==5 || args[0]==6)) { result=args[0]; return true; }
+  // 0x75bf/0x7873: asynchronous palette interpolation. This scene uses
+  // mode 7, RGB target black, duration 200; update only palette entries 0..239.
+  if(args.size()==4 && args[0]==7 && args[1]==0 && args[2]==0 && args[3]>0) {
+   _fadeLevel=0; _fadeStep=args[3]>255 ? 1 : 255/args[3];
+   _fadePeriod=args[3]>255 ? args[3]/255 : 1; _fadeRemaining=_fadePeriod;
+   _palettePulse=false; result=7; debug("[pice] palette fade-to-black started ticks=%d",args[3]); return true;
+  }
   // 0x755e modes 3/4 enable/disable the room's green/blue palette pulse.
   // Other palette transitions remain unsupported rather than being skipped.
   if(args.size()!=4 || (args[0]!=3 && args[0]!=4) || args[1]!=0 || args[2]!=0 || args[3]<=0) return false;
@@ -482,9 +508,17 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==109) {
   // 0xd69 -> 0xb8ea: 30 bindings, each actor/sound/sequence/step/volume.
   if(args.size()!=5 || args[0]<0 || uint(args[0])>=_actors.size() || args[1]<0 || uint(args[1])>=_sounds.size() ||
-     args[2]<0 || args[2]>100 || args[3]<-1 || args[4]<0 || _animationSounds.size()>=30) return false;
+     args[2]<0 || args[2]>100 || args[3]<-1 || args[4]<0) return false;
   AnimationSound binding; binding.actor=args[0]; binding.sound=args[1]; binding.volume=args[2]; binding.sequence=args[3]; binding.step=args[4];
-  result=_animationSounds.size(); _animationSounds.push_back(binding); return true;
+  uint slot=0; while(slot<_animationSounds.size() && _animationSounds[slot].actor>=0) ++slot;
+  if(slot>=30) return false;
+  if(slot==_animationSounds.size()) _animationSounds.push_back(binding); else _animationSounds[slot]=binding;
+  result=slot; return true;
+ }
+ if(op==115) {
+  // 0x10fd -> 0xb940: free a binding slot without renumbering other IDs.
+  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_animationSounds.size()) return false;
+  _animationSounds[args[0]]=AnimationSound(); result=0; return true;
  }
  if(op==137) {
   if(args.size()!=2 || !name.equalsIgnoreCase("OBJECT") || args[0]<0 || args[0]>=9 || args[1]<0) return false;
@@ -540,7 +574,10 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(args.size()!=4) return false;
   if(args[0]==-1) { result=-1; return true; } // Original optional absent hotspot.
   if(op==81 && (args[1]<0 || uint(args[1])>=_items.size())) return false;
-  if(args[0]<0 || uint(args[0])>=_hotspots.size() || args[3]<-1 || args[3]>=50 || _actions.size()>=70) return false;
+  // 0x83cb stores a slot in the fixed 50-hotspot table, even when the
+  // slot is currently inactive. Bridge re-entry registers Wayne's action
+  // without recreating his hotspot; no hit test can select that empty slot.
+  if(args[0]<0 || args[0]>=50 || args[3]<-1 || args[3]>=50 || _actions.size()>=70) return false;
   Action action; action.hotspot=args[0]; action.verb=op==81 ? 9 : args[1]; action.item=op==81 ? args[1] : -1; action.approach=args[2]; action.entry=args[3];
   result=_actions.size(); _actions.push_back(action); return true;
  }
@@ -607,7 +644,7 @@ bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequen
 }
 bool PiceEngine::showScriptScene() {
  Common::Array<byte> bytes;
- _roomRunner.reset(); _inputLocks=0; _dialogueActor=-1; _pulseOffset=10; _pulseDelta=15;
+ _roomRunner.reset(); _inputLocks=0; _dialogueActor=-1; _narration=false; _pulseOffset=10; _pulseDelta=15;
  _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _ownedItems.clear(); _itemLabels.clear(); _selectedItem=-1; _actors.clear(); _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1; _hotspots.clear(); _actions.clear(); _player=-1;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
  _sounds.clear(); _animationSounds.clear(); _mixer->stopHandle(_music.handle); _music=RoomSound();
@@ -636,6 +673,15 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  if(movie.failed || !movie.frame) return false;
  debug("[pice] movie validated name=%s frames=%u audio=%u final-fnv=%08x",name.c_str(),movie.frame,movie.audio.size(),hashBytes(movie.pixels));
  if(!movie.load(bytes)) return false;
+ // Original movie entry 0x1644b/0x16450 suspends music and room sounds;
+ // 0x16548/0x1654d restores only the previously playing channels afterward.
+ Common::Array<Audio::SoundHandle> paused;
+ auto pause=[&](Audio::SoundHandle sound) {
+  if(_mixer->isSoundHandleActive(sound)) { _mixer->pauseHandle(sound,true); paused.push_back(sound); }
+ };
+ pause(_music.handle); pause(_speechHandle);
+ for(uint i=0;i<_sounds.size();++i) if(_sounds[i].active) pause(_sounds[i].handle);
+ debug("[pice] movie background audio paused channels=%u",paused.size());
  Audio::SoundHandle handle;
  _mixer->playStream(Audio::Mixer::kSFXSoundType,&handle,Audio::makeRawStream(&movie.audio[0],movie.audio.size(),22050,Audio::FLAG_UNSIGNED,DisposeAfterUse::NO));
  Common::Array<byte> screen; screen.resize(640*400,0);
@@ -660,9 +706,14 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  }
  if(!movie.failed && !shouldQuit()) waitForFrame(movie.frame);
  _mixer->stopHandle(handle);
+ for(uint i=0;i<paused.size();++i) _mixer->pauseHandle(paused[i],false);
+ debug("[pice] movie background audio resumed channels=%u",paused.size());
  if(after) _system->fillScreen(0);
  _system->getPaletteManager()->setPalette(&_scenePalette[0],0,256);
  _roomClock=_system->getMillis(); _roomRenderClock=_roomClock;
+#ifdef PICE_TESTBENCH
+ _testMovieDone=!movie.failed && !shouldQuit();
+#endif
  debug("[pice] movie completed name=%s frames=%u failed=%d",name.c_str(),movie.frame,movie.failed);
  return !movie.failed && !shouldQuit();
 }
@@ -678,7 +729,7 @@ bool PiceEngine::changeRoom(int16 chapter,int16 room) {
 bool PiceEngine::gameOver(int16 reason) {
  if(reason<0 || reason>=50) return false;
  _menuOpenedAt=_system->getMillis();
- _gameOver=true; _activeMenu=_menuChoice=-1; _dialogueActor=-1; _subtitle.clear();
+ _gameOver=true; _activeMenu=_menuChoice=-1; _dialogueActor=-1; _narration=false; _subtitle.clear();
  _actionEntry=-1; _actionWalking=false;
  _mixer->stopHandle(_speechHandle);
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
@@ -711,13 +762,14 @@ bool PiceEngine::loadRoom(uint room) {
  _actors.clear(); _worldItems.clear(); _hotspots.clear(); _actions.clear(); _animationSounds.clear();
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _playerMovement=true; _cursorItem=-2;
- _scenery=SpriteResource(); _navigation.clear(); _player=-1; _cameraActor=-1; _inputLocks=0; _palettePulse=false; _dialogueActor=-1; _closeup=false;
+ _scenery=SpriteResource(); _navigation.clear(); _player=-1; _cameraActor=-1; _inputLocks=0; _palettePulse=false; _fadeLevel=-1; _dialogueActor=-1; _narration=false; _closeup=false;
  _mixer->stopHandle(_speechHandle); _subtitle.clear(); _pendingRoom=-1;
 
  _scenePixels.clear(); _scenePalette.clear();
   _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
  ScriptRunner &runner=*_roomRunner;
  _buildingNavigation=&runner.navigation();
+ runner.prioritizeInitialization();
  if (!runner.start(0)) return false;
  ScriptRunner::Result result=runner.run(0,512); uint16 opcode=0;
  bank.word(runner.position(0),opcode);
@@ -785,7 +837,7 @@ bool PiceEngine::renderRoom() {
    if(!actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,_roomCanvas,640,400)) return false;
   } else if(!_scenery.paintPart(sceneryFrame,layer.index,0,-40,_roomCanvas,640,400)) return false;
  }
- if(_closeup && _dialogueActor>=0) {
+ if(_closeup && dialogueActive()) {
   Common::Array<int16> sequences;
   if(!_closeupAnimations[_dialoguePage].sample((_system->getMillis()-_pageStart)/10,sequences) ||
      !_closeupSprite.paintFrame(_closeupSprite.sequences[0].steps[0].frame,_closeupOrigin.x,_closeupOrigin.y-40,_roomCanvas,640,400)) return false;
@@ -836,8 +888,8 @@ bool PiceEngine::startDialoguePage() {
  debug("[pice] dialogue-page=%u/%u voice=%u closeup=%d",_dialoguePage+1,_dialoguePages.size(),_dialogueVoices[_dialoguePage],int(_closeup)); return true;
 }
 bool PiceEngine::closeupDialogue(const Common::String &animationName,const Common::String &textName,const Common::String &key,const Common::Array<int16> &args,int16 &actor) {
- if(args.size()!=6 || _dialogueActor>=0 || _cameraActor<0 || uint(_cameraActor)>=_actors.size() || !animationName.equalsIgnoreCase("A02") ||
-    args[2]<0 || args[2]>=179 || args[3]!=320 || args[4]!=480) return false;
+ if(args.size()!=6 || dialogueActive() || !animationName.equalsIgnoreCase("A02") ||
+    args[2]<0 || args[2]>=179) return false;
  DialogueLine line; Common::Array<uint32> voices; Common::Array<byte> data; SpriteResource sprite; Common::Array<VoiceAnimation> animations;
  if(!loadDialogue(textName,args[5],key,line,voices) || !_graphics.read(args[2],data) || !sprite.load(data,args[2]) || !sprite.hasSequence(0)) return false;
  for(uint i=0;i<voices.size();++i) {
@@ -848,11 +900,13 @@ bool PiceEngine::closeupDialogue(const Common::String &animationName,const Commo
  _dialoguePages=line.pages; _dialogueVoices=voices; _dialoguePage=0; _closeup=true;
  _closeupAnimations=animations; _closeupSprite=sprite; _closeupOrigin=Common::Point(args[0],args[1]);
  if(!startDialoguePage()) { _closeup=false; return false; }
- actor=_cameraActor; _dialogueActor=actor; _dialogueRestore=_actors[actor];
+ // Original 0x16bb uses the independent text channel (state 5), not
+ // a camera actor. args[3:5] are text anchors, not required dimensions.
+ actor=-27; _narration=true;
  debug("[pice] closeup-dialogue actor=%d animation=%d key=%s pages=%u",actor,args[2],key.c_str(),line.pages.size()); return true;
 }
 bool PiceEngine::objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &base) {
- if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || _dialogueActor>=0) return false;
+ if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || dialogueActive()) return false;
  if(name.size()<3 || local<0) return false;
  Common::String group=name,key; group.setChar('E',0); group.setChar('T',2);
  uint32 resource; Common::Array<byte> data;
@@ -868,8 +922,21 @@ bool PiceEngine::objectDialogue(int16 actor,const Common::String &name,int16 loc
  }
  return speakDialogue(actor,group,local,key);
 }
+bool PiceEngine::narrate(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) {
+ if(dialogueActive()) return false;
+ DialogueLine line; Common::Array<uint32> voices;
+ if(!loadDialogue(name,local,key,line,voices)) return false;
+ _dialoguePages=line.pages; _dialogueVoices=voices; _dialoguePage=0; _closeup=false;
+ if(!startDialoguePage()) return false;
+ _narration=true;
+ // Coordinates are original text anchors; the native caption panel currently
+ // uses the same readable placement for actor speech and recorded voices.
+ debug("[pice] narration key=%s voice=%u anchor=%d,%d",key.c_str(),voices[0],x,y);
+ return true;
+}
+
 bool PiceEngine::speakDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) {
- if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || _dialogueActor>=0) return false;
+ if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || dialogueActive()) return false;
  DialogueLine line; Common::Array<uint32> voices;
  if(!loadDialogue(name,local,key,line,voices)) return false;
  // Both 52 and 111 use 0x4579: ordinary speech on the existing actor.
@@ -880,7 +947,7 @@ bool PiceEngine::speakDialogue(int16 actor,const Common::String &name,int16 loca
  return true;
 }
 bool PiceEngine::animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) {
- if(args.size()!=7 || _dialogueActor!=-1 || args[0]<0 || uint(args[0])>=_actors.size() || textName.size()<3 ||
+ if(args.size()!=7 || dialogueActive() || args[0]<0 || uint(args[0])>=_actors.size() || textName.size()<3 ||
     args[1]<0 || !animationName.equalsIgnoreCase("A02") || args[2]<0 || args[2]>=179 ||
     args[3]<0 || args[4]<args[3] || args[5]<0 || args[6]<args[5]) return false;
  DialogueLine line; Common::Array<uint32> voices; Common::Array<byte> data;
@@ -933,9 +1000,9 @@ void PiceEngine::tickRoom() {
  _roomClock+=ticks*10;
  // Text-only entries have no mixer completion signal. Native readable
  // pacing (not yet the original configurable text-speed formula).
- bool textPending=_dialogueActor>=0 && _dialogueVoices[_dialoguePage]==0xffffffff &&
+ bool textPending=dialogueActive() && _dialogueVoices[_dialoguePage]==0xffffffff &&
   _system->getMillis()-_pageStart<MAX<uint32>(2000,MIN<uint32>(10000,_subtitle.size()*60));
- if(_dialogueActor>=0 && !textPending && !_mixer->isSoundHandleActive(_speechHandle)) {
+ if(dialogueActive() && !textPending && !_mixer->isSoundHandleActive(_speechHandle)) {
   if(_dialoguePage+1<_dialoguePages.size()) {
    ++_dialoguePage;
    if(!startDialoguePage()) { warning("[pice] Cannot play next dialogue page"); _scenePreview=false; return; }
@@ -990,6 +1057,7 @@ void PiceEngine::tickRoom() {
  }
  for(uint i=0;i<_animationSounds.size();++i) {
   AnimationSound &binding=_animationSounds[i];
+  if(binding.actor<0) continue;
   const RoomActor &actor=_actors[binding.actor];
   bool match=(binding.sequence==-1 || binding.sequence==actor.sequence) && binding.step==int(actor.step);
   if(match && !binding.fired) {
@@ -1010,7 +1078,7 @@ void PiceEngine::tickRoom() {
     _roomStatus=Common::String::format("Room script %u stopped: opcode %u at %u",i,opcode,before);
     if(_actionEntry==int(i)) { _actionEntry=-1; _actionHotspot=-1; _actionContext=-1; _actionWalking=false; }
     _snapshotPending=true;
-    warning("[pice] room-task=%u result=%d pc=%u opcode=%u",i,int(result),before,opcode);
+    warning("[pice] room-task=%u result=%d pc=%u opcode=%u bank=%u",i,int(result),before,opcode,_roomBankId);
    }
    if(_roomRunner->exclusiveTask()!=int(i) || result!=ScriptRunner::kAdvanced) break;
   }
@@ -1093,9 +1161,11 @@ void PiceEngine::tickRoom() {
    }
   }
  }
- if(_testClickDone && !_testUseDone && ConfMan.hasKey("pice_test_use_hotspot") && _actionEntry<0 && !_inputLocks && !actorBusy(_player)) {
+ if(_testClickDone && !_testUseDone && ConfMan.hasKey("pice_test_use_hotspot") && (!ConfMan.hasKey("pice_test_use_room") || _roomBankId==uint(1140+ConfMan.getInt("pice_test_use_room"))) && _actionEntry<0 && !_inputLocks && !actorBusy(_player)) {
+  int readySpot=ConfMan.hasKey("pice_test_use_ready_hotspot") ? ConfMan.getInt("pice_test_use_ready_hotspot") : -1;
+  bool ready=readySpot<0 || (uint(readySpot)<_hotspots.size() && _hotspots[readySpot].active);
   int target=ConfMan.getInt("pice_test_use_hotspot");
-  for(uint item=0;item<_ownedItems.size() && !_testUseDone;++item) if(_ownedItems[item]) {
+  for(uint item=0;ready && item<_ownedItems.size() && !_testUseDone;++item) if(_ownedItems[item] && (!ConfMan.hasKey("pice_test_use_item") || item==uint(ConfMan.getInt("pice_test_use_item")))) {
    for(int y=40;y<338 && !_testUseDone;y+=2) for(int x=0;x<640 && !_testUseDone;x+=2) {
     Common::Point point(x,y);
     if(target>=0 && hotspotAt(point)==target) {
@@ -1117,6 +1187,12 @@ void PiceEngine::tickRoom() {
    if(writeCheckpoint(false) && clickRoom(point,false)) { _testUseDone=true; debug("[pice] test use inventory item=%u on fire",item); }
   }
  }
+ if(_testMovieDone && !_testCheckpointDone && ConfMan.hasKey("pice_test_checkpoint_room") &&
+    _roomBankId==uint(1140+ConfMan.getInt("pice_test_checkpoint_room")) && !_roomRunner->running(0) &&
+    !_savePending && !_inputLocks && _actionEntry<0 && !dialogueActive() && _pendingRoom<0 &&
+    _fadeLevel<0 && _roomRunner->exclusiveTask()<0 && !actorBusy(_player)) {
+  if(writeCheckpoint(false)) { _testCheckpointDone=true; debug("[pice] test progression checkpoint bank=%u",_roomBankId); }
+ }
  if(_testSavePending && int32(_system->getMillis()-_testSaveAt)>=0) {
   _testSavePending=false;
   if(!writeCheckpoint(false)) warning("[pice] Test music checkpoint failed");
@@ -1133,6 +1209,16 @@ void PiceEngine::tickRoom() {
   uint room=_pendingRoom;
   if(!loadRoom(room)) { warning("[pice] Cannot initialize room %u",room); _scenePreview=false; }
   return;
+ }
+ if(_fadeLevel>=0 && _fadeLevel<255 && _scenePalette.size()==768) {
+  _fadeRemaining-=ticks;
+  while(_fadeRemaining<=0 && _fadeLevel<255) {
+   _fadeRemaining+=_fadePeriod; _fadeLevel=MIN(255,_fadeLevel+_fadeStep);
+  }
+  Common::Array<byte> colors=_scenePalette;
+  for(uint i=0;i<240*3;++i) colors[i]=int(colors[i])*(256-_fadeLevel)/256;
+  _system->getPaletteManager()->setPalette(&colors[0],0,256);
+  if(_fadeLevel==255) debug("[pice] palette fade-to-black complete");
  }
  if(_palettePulse && _scenePalette.size()==768) {
   _pulseRemaining-=ticks;

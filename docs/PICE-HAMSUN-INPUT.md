@@ -98,3 +98,7 @@ special-cases -1; do not silently accept arbitrary invalid hotspot IDs. Next
 step is to reconstruct original room teardown/handle invalidation semantics.
 Evidence: ignored `artifacts/pice/hamsun-full-result.log` and `hamsun-check.log`.
 This is not a clean full-regression pass or a full-game compatibility claim.
+
+Follow-up: the bridge registration stop and subsequent opcode 115/122/128
+failures are addressed in [the playthrough ledger](PICE-PLAYTHROUGH.md), with
+a focused bridge/movie replay and its current validation limits.

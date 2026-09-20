@@ -176,3 +176,15 @@ checks cover removal, invalid IDs, preserved adjacent IDs and slot reuse.
 
 Rebuilt PS4 package; handoff is the normal untimed manual profile. Full winch
 completion remains pending player replay. Log: `artifacts/pice/winch-action-manual.log`.
+
+
+## Icy hold sound binding update (2026-09-20)
+
+User reached bank 1152 task 11 byte 4372, opcode 116, after saving. Original
+0x1114 evaluates three arguments; 0xb99e updates sound ID at binding offset +2
+and volume at +8. Either -1 preserves that field. Actor, sequence, frame and
+fired latch are untouched. Added the invocation and atomic validation, with
+regression checks for both replacements, preserve sentinels and invalid values.
+Rebuilt PS4 package and reopened the user's normal manual profile with no test
+hooks/timeout. Full continuation beyond the icy hold remains a playtest boundary.
+Evidence: `artifacts/pice/ice-sound-manual.log`.

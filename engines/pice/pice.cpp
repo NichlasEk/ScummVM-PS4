@@ -231,6 +231,18 @@ bool PiceEngine::runActorLifecycleTests() {
  args.clear(); args.push_back(8); args.push_back(0); args.push_back(100); args.push_back(-1); args.push_back(0);
  if(!invoke(109,Common::String(),args,Common::String(),result) || result!=0 || _animationSounds.size()!=2) return false;
  if(!invoke(109,Common::String(),args,Common::String(),result) || result!=1 || _animationSounds.size()!=2) return false;
+ _sounds.push_back(RoomSound()); _animationSounds[0].fired=true;
+ args.clear(); args.push_back(0); args.push_back(1); args.push_back(50);
+ if(!invoke(116,Common::String(),args,Common::String(),result) || result!=0 ||
+    _animationSounds[0].sound!=1 || _animationSounds[0].volume!=50 || !_animationSounds[0].fired ||
+    _animationSounds[0].actor!=8 || _animationSounds[0].sequence!=-1 || _animationSounds[0].step!=0 ||
+    _animationSounds[1].sound!=0) return false;
+ args[1]=-1; args[2]=-1;
+ if(!invoke(116,Common::String(),args,Common::String(),result) || _animationSounds[0].sound!=1 || _animationSounds[0].volume!=50) return false;
+ args[1]=0; args[2]=101;
+ if(invoke(116,Common::String(),args,Common::String(),result) || _animationSounds[0].sound!=1) return false;
+ args[1]=2; args[2]=25;
+ if(invoke(116,Common::String(),args,Common::String(),result) || _animationSounds[0].volume!=50) return false;
  _sounds.clear();
  _actors.clear(); _hotspots.clear(); _animationSounds.clear(); _worldItems.clear();
  _actors.push_back(RoomActor()); _items.push_back(RoomActor()); _ownedItems.resize(1,0);
@@ -532,6 +544,17 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(slot>=30) return false;
   if(slot==_animationSounds.size()) _animationSounds.push_back(binding); else _animationSounds[slot]=binding;
   result=slot; return true;
+ }
+ if(op==116) {
+  // 0x1114 -> 0xb99e updates sound (+2) and volume (+8) only;
+  // -1 preserves either field, including the existing fired latch.
+  if(args.size()!=3 || args[0]<0 || uint(args[0])>=_animationSounds.size() ||
+     _animationSounds[args[0]].actor<0 || args[1]<-1 ||
+     (args[1]>=0 && uint(args[1])>=_sounds.size()) || args[2]<-1 || args[2]>100) return false;
+  AnimationSound &binding=_animationSounds[args[0]];
+  if(args[1]!=-1) binding.sound=args[1];
+  if(args[2]!=-1) binding.volume=args[2];
+  result=0; debug("[pice] update-animation-sound id=%d sound=%d volume=%d",args[0],binding.sound,binding.volume); return true;
  }
  if(op==115) {
   // 0x10fd -> 0xb940: free a binding slot without renumbering other IDs.

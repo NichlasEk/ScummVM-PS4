@@ -10,11 +10,12 @@ class ScriptSceneSink;
 // Two 16-bit tables: sizes established by save/load routines at 0xbe8d/0xcf49.
 class ScriptVariables {
 public:
- ScriptVariables() { _a.resize(250,0); _a[0]=-1; _b.resize(300,-1); }
+ explicit ScriptVariables(ScriptVariables *shared=nullptr) : _shared(shared) { _a.resize(250,0); _a[0]=-1; _b.resize(300,-1); }
  bool syncState(StateIO &io);
  bool read(bool second, int16 index, int16 &value) const;
  bool write(bool second, int16 index, int16 value);
 private:
+ ScriptVariables *_shared=nullptr;
  Common::Array<int16> _a, _b;
 };
 // Entry addresses are uint16 word offsets; entry zero is also the table size.

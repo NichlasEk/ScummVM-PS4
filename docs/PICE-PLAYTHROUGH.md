@@ -407,3 +407,23 @@ script errors. Evidence `artifacts/pice/cable-interrupt-check.log`. This resolve
 the previously recorded 140 stop. Whether the two visible reactions match the
 original has not been established; no full chapter completion claim. Manual
 restart returns to the untouched Q save without automated actions.
+
+
+## Inventory combination dispatch (2026-09-20)
+
+Inventory clicks previously only changed selection although opcode 64 had
+registered chapter-3 items 16+17 -> global bank 1180 entry 4. Clicking one owned
+component then the other now starts that script, in either order. Same-item
+click deselects; an unregistered pair selects the new item as before.
+A separate runner and local A table preserve room locals; global B reads/writes
+are shared with the world. Room scripts and user input pause during combination;
+saving is unavailable until completion. Errors report the inventory script/PC
+and require reload rather than silently treating partial execution as success.
+Other global-script operations beyond the tested pair remain unverified.
+
+Self-tests PASS, including isolated local/shared global variable behavior.
+shadPS4 isolated fixture grants the registered components in a copied profile
+and uses normal selection dispatch. Log confirms entry 4 plays sound 142,
+removes items 16/17, adds item 18 and finishes with failed=0. Evidence:
+`artifacts/pice/combine-check.log`. No commercial data added to Git. Manual
+save remains untouched; backup `.tools/pice-save-backup-combine-1789928294`.

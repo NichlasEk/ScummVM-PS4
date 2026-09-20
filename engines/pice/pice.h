@@ -68,6 +68,12 @@ private:
  void finishDialogue();
  bool dialogueBlocked(uint task) const override;
  void tickAction();
+ bool selectInventoryItem(int item);
+ void tickCombination(uint ticks);
+ ScriptResource _combinationBank;
+ ScriptVariables _combinationVariables;
+ Common::ScopedPtr<ScriptRunner> _combinationRunner;
+ bool _combinationFailed=false;
  void releaseActionInput(uint task);
  int16 _actionExitChapter=-1,_actionExitRoom=-1;
  int16 _actionContext=-1,_actionEntry=-1,_actionHotspot=-1;

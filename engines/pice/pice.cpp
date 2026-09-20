@@ -208,6 +208,11 @@ int16 PiceEngine::storeActor(const RoomActor &actor) {
  _actors.push_back(actor); return _actors.size()-1;
 }
 bool PiceEngine::runActorLifecycleTests() {
+ ScriptVariables shared,local(&shared); int16 v;
+ if(!shared.write(false,96,77) || !shared.write(true,17,16) || !local.read(true,17,v) || v!=16 ||
+    !local.write(false,96,2) || !shared.read(false,96,v) || v!=77 ||
+    !local.write(true,18,17) || !shared.read(true,18,v) || v!=17) return false;
+
  Common::Array<int16> closeupEntry;
  closeupEntry.push_back(_chapter); closeupEntry.push_back(_previousRoom); closeupEntry.push_back(3);
  closeupEntry.push_back(0); closeupEntry.push_back(2); closeupEntry.push_back(-1);
@@ -921,6 +926,7 @@ bool PiceEngine::loadRoom(uint room) {
  for(uint i=0;i<_sounds.size();++i) if(_sounds[i].active && !_sounds[i].persistent) {
   _mixer->stopHandle(_sounds[i].handle); _sounds[i]=RoomSound();
  }
+ _combinationRunner.reset(); _combinationFailed=false;
  _interruptedAction=InterruptedAction();
  _actors.clear(); _worldItems.clear(); _hotspots.clear(); _actions.clear(); _animationSounds.clear(); _inventoryEnabled=true; _advanceRequested=false;
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
@@ -1246,8 +1252,9 @@ void PiceEngine::tickRoom() {
   }
   binding.fired=match;
  }
+ tickCombination(ticks);
  tickAction();
- for(uint i=0;i<_roomBank.count();++i) {
+ for(uint i=0;!_combinationRunner && !_combinationFailed && i<_roomBank.count();++i) {
   if(!_roomRunner->running(i)) continue;
   if(_roomRunner->exclusiveTask()>=0 && _roomRunner->exclusiveTask()!=int(i)) continue;
   for(uint budget=0;budget<64;++budget) {
@@ -1267,6 +1274,14 @@ void PiceEngine::tickRoom() {
   }
  }
 #ifdef PICE_TESTBENCH
+ if(ConfMan.getBool("pice_test_combine") && !_testUseDone && !_itemPairs.empty() && !_inputLocks && _actionEntry<0 && !dialogueActive()) {
+  // Isolated fixture: give the registered components, then use normal UI selection.
+  const ItemPair pair=_itemPairs[0]; Common::Array<int16> a; int16 result;
+  a.push_back(pair.first); bool ok=invoke(67,Common::String(),a,Common::String(),result);
+  a[0]=pair.second; ok=ok && invoke(67,Common::String(),a,Common::String(),result);
+  _testUseDone=true; _selectedItem=-1;
+  if(ok && selectInventoryItem(pair.first) && selectInventoryItem(pair.second)) debug("[pice] test combination through inventory selection started");
+ }
  if(ConfMan.getBool("pice_test_medal_ambient")) {
   if(ConfMan.getBool("pice_test_hamsun_full_inventory") && _activeMenu>=0 && _menuChoice==-1 && now-_menuOpenedAt>=1000 && _testConversationChoices<2) {
    int choice=_testConversationChoices ? 6 : 2, row=0;
@@ -1700,7 +1715,7 @@ Common::Error PiceEngine::run() {
       (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN)) finishDialogue();
    if(_scenePreview && event.type==Common::EVENT_LBUTTONDOWN && event.mouse.y>=0 && event.mouse.y<40) {
     int item=inventoryVisible() ? inventoryAt(event.mouse) : -1;
-    if(item>=0) _selectedItem=_selectedItem==item ? -1 : item;
+    if(item>=0) selectInventoryItem(item);
     continue;
    }
 

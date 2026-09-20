@@ -29,12 +29,14 @@ bool ScriptRunner::syncState(StateIO &io) {
  return true;
 }
 bool ScriptVariables::read(bool second,int16 index,int16 &value) const {
+ if(second && _shared) return _shared->read(true,index,value);
  value=0;
  const Common::Array<int16> &table=second ? _b : _a;
  if (index<0 || uint(index)>=table.size()) return false;
  value=table[index]; return true;
 }
 bool ScriptVariables::write(bool second,int16 index,int16 value) {
+ if(second && _shared) return _shared->write(true,index,value);
  Common::Array<int16> &table=second ? _b : _a;
  if (index<0 || uint(index)>=table.size()) return false;
  table[index]=value; return true;

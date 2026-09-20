@@ -93,8 +93,42 @@ int PiceEngine::hotspotAt(Common::Point point) const {
  }
  return -1;
 }
+bool PiceEngine::selectInventoryItem(int item) {
+ if(_combinationRunner || _combinationFailed || item<0 || uint(item)>=_ownedItems.size() || !_ownedItems[item]) return false;
+ if(_selectedItem>=0 && _selectedItem!=item && uint(_selectedItem)<_ownedItems.size() && _ownedItems[_selectedItem]) {
+  for(uint i=0;i<_itemPairs.size();++i) {
+   const ItemPair &p=_itemPairs[i];
+   if(!((p.first==_selectedItem && p.second==item) || (p.second==_selectedItem && p.first==item))) continue;
+   Common::Array<byte> bytes;
+   if(!_graphics.read(_chapter==2 ? 1138 : 1180,bytes) || !_combinationBank.load(bytes) || uint(p.entry)>=_combinationBank.count()) return false;
+   _combinationVariables=ScriptVariables(&_worldVariables);
+   _combinationRunner.reset(new ScriptRunner(_combinationBank,&_combinationVariables,this));
+   _combinationRunner->start(p.entry); _selectedItem=-1;
+   debug("[pice] inventory combination first=%d second=%d entry=%d",p.first,p.second,p.entry); return true;
+  }
+ }
+ _selectedItem=_selectedItem==item ? -1 : item; return true;
+}
+void PiceEngine::tickCombination(uint ticks) {
+ if(!_combinationRunner) return;
+ bool active=false;
+ for(uint i=0;i<_combinationBank.count();++i) {
+  for(uint budget=0;budget<64 && _combinationRunner->running(i);++budget) {
+   uint pc=_combinationRunner->position(i);
+   ScriptRunner::Result r=_combinationRunner->step(i,budget ? 0 : ticks);
+   if(r==ScriptRunner::kInvalid || r==ScriptRunner::kUnsupported) {
+    uint16 op=0; _combinationBank.word(pc,op);
+    _roomStatus=Common::String::format("Inventory script %u stopped: opcode %u at %u",i,op,pc);
+    warning("[pice] %s",_roomStatus.c_str()); _combinationFailed=true;
+   }
+   if(r!=ScriptRunner::kAdvanced) break;
+  }
+  active|=_combinationRunner->running(i);
+ }
+ if(!active) { _combinationRunner.reset(); debug("[pice] inventory combination finished failed=%d",int(_combinationFailed)); }
+}
 bool PiceEngine::inventoryVisible() const {
- if(!_inventoryEnabled) return false;
+ if(!_inventoryEnabled || _combinationRunner || _combinationFailed) return false;
  return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _eventMan->getMousePos().y<40;
 }
 int PiceEngine::inventoryAt(Common::Point point) const {
@@ -107,7 +141,7 @@ int PiceEngine::inventoryAt(Common::Point point) const {
 }
 void PiceEngine::updateHover() {
  int spot=-1; _hoverItem=-1;
- if(_scenePreview && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _pendingRoom<0) {
+ if(!_combinationRunner && !_combinationFailed && _scenePreview && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _pendingRoom<0) {
   Common::Point point=_eventMan->getMousePos();
   if(point.y<40) _hoverItem=inventoryAt(point);
   int hit=point.y<40 ? -1 : hotspotAt(point);
@@ -161,7 +195,7 @@ void PiceEngine::updateHover() {
 }
 bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  if(ambientDialogue()) finishDialogue();
- if(!_scenePreview || !_roomRunner || _inputLocks || dialogueActive() || _pendingRoom>=0 || _actionEntry>=0 ||
+ if(_combinationRunner || _combinationFailed || !_scenePreview || !_roomRunner || _inputLocks || dialogueActive() || _pendingRoom>=0 || _actionEntry>=0 ||
     _roomRunner->exclusiveTask()>=0 || (_player>=0 && (uint(_player)>=_actors.size() || actorBusy(_player)))) return false;
  if(rightButton && _selectedItem>=0) { _selectedItem=-1; return true; }
  const int spot=hotspotAt(point);

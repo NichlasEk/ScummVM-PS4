@@ -242,7 +242,15 @@ bool PiceEngine::runActorLifecycleTests() {
  if(!invoke(69,Common::String(),args,Common::String(),result) || _menuEnabled[0][2]) return false;
  args[1]=3; if(invoke(68,Common::String(),args,Common::String(),result)) return false;
  _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1;
- _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
+ int16 ownedValue;
+ if(!stateValue(2,0,ownedValue) || !ownedValue || stateValue(2,-1,ownedValue) || stateValue(2,1,ownedValue) || stateValue(3,0,ownedValue)) return false;
+ _ownedItems[0]=0; if(!stateValue(2,0,ownedValue) || ownedValue) return false;
+ args.clear(); args.push_back(0); args.push_back(26); args.push_back(20); args.push_back(2); args.push_back(8);
+ if(!invoke(80,Common::String(),args,Common::String(),result) || result!=0 || _actions.back().exitChapter!=2 ||
+    _actions.back().exitRoom!=8 || _actions.back().entry!=20 || _actions.back().approach!=26 || _actions.back().verb!=3) return false;
+ uint count=_actions.size(); args[4]=40;
+ if(invoke(80,Common::String(),args,Common::String(),result) || _actions.size()!=count) return false;
+ _actions.clear(); _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
 }
 bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) {
  result=-1;
@@ -463,6 +471,13 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==68 || op==69) {
   if(args.size()!=2 || args[0]<0 || uint(args[0])>=_menuEnabled.size() || args[1]<0 || uint(args[1])>=_menuEnabled[args[0]].size()) return false;
   _menuEnabled[args[0]][args[1]]=op==68; result=args[0]; return true;
+ }
+ if(op==80) {
+  // 0x34e8 -> 0x83cb: exit hotspot, approach, script, chapter, room.
+  if(args.size()!=5 || args[0]<0 || uint(args[0])>=_hotspots.size() || args[1]<-1 || args[1]>=50 ||
+     args[2]<0 || args[2]>=50 || args[3]!=2 || args[4]<0 || args[4]>=40 || _actions.size()>=70) return false;
+  Action action; action.hotspot=args[0]; action.verb=3; action.approach=args[1]; action.entry=args[2];
+  action.exitChapter=args[3]; action.exitRoom=args[4]; _actions.push_back(action); result=0; return true;
  }
  if(op==58 || op==81) {
   if(args.size()!=4) return false;
@@ -939,6 +954,10 @@ void PiceEngine::tickRoom() {
   }
  }
 #ifdef PICE_TESTBENCH
+ if(!_testMenuClosed && _activeMenu>=0 && ConfMan.getBool("pice_test_close_menu") && _system->getMillis()-_menuOpenedAt>=2000) {
+  _testMenuClosed=true;
+  Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=Common::Point(0,0); _eventMan->pushEvent(event);
+ }
  if(!_testUseDone && _activeMenu>=0 && ConfMan.hasKey("pice_test_menu_option") && _system->getMillis()-_menuOpenedAt>=2000) {
   int wanted=ConfMan.getInt("pice_test_menu_option"),row=0;
   for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) {

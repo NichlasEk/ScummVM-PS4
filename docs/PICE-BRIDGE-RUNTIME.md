@@ -165,3 +165,41 @@ Cancellation retains the following jump, while a selection skips it, matching
 original dispatcher state 6. The panel includes a close hint. Startup tests
 verify cancellation clears the active menu and returns selection -1. The manual
 emulator is left open without a timeout or automatic selection for user testing.
+
+## Reopening Driscoll and completing bridge initialization
+
+The conditional at byte 5966 is now decoded rather than skipped. Opcode 91
+(handler 0xb1a) is Boolean NOT. Opcode 86 (0x8af), kind 2, tests inventory
+record status == 1; native ownership mirrors that state. Other state-table
+kinds remain explicitly unsupported. Tests cover present/absent items, nested
+predicates, missing state providers and invalid IDs without advancing the PC.
+
+Opcode 80 (0x34e8) registers an exit action with hotspot, approach node, script,
+chapter and destination room. The former stop at byte 4460 prevented later
+hotspots from being registered: the drawer, radio, intercom, ladder, periscope
+and electrical box. These now exist on a fresh visit. This repairs interaction
+registration; it does not add guessed artwork to the background.
+
+Exit actions retain their destinations (snapshot version 8; versions 1–7
+remain readable). After successful completion of the selected exit script,
+the native action dispatcher requests the destination. A failed script does
+not transition. The registered exits have not all been played through; their
+remaining script instructions can still stop safely as unsupported.
+
+When loading a version 1–7 bank-1147 snapshot whose inactive initializer is
+still positioned on opcode 80, the loader resumes that exact instruction.
+It does not restart the initializer or overwrite the player's variables.
+Existing initialized scenes are not replayed. This recovers the local older
+autosave without requiring the player to redo the opening.
+
+Validation: new-room initialization registers the drawer and other missing
+hotspots. The old room-7 autosave resumes initialization at byte 4460, plays
+both Driscoll replies, opens the menu, accepts an outside click to close it,
+and reopens the menu after a new click on Driscoll. No room-script stop occurs
+in that bounded replay (`artifacts/pice/reopen-verified.json`). Startup tests
+pass, including inventory ownership, exit metadata/bounds and guarded resume.
+
+`python3 scripts/pice/check-driscoll.py --reopen` reproduces the close/reclick
+flow with a 55-second limit. The test-only `pice_test_close_menu` injects one
+outside click after two seconds. Omit it and all `pice_test_*` keys for manual
+play. Full-game completion and physical-PS4 validation are still pending.

@@ -43,7 +43,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=7; io.number(version); if(version<1 || version>7) return false;
+ uint32 version=8; io.number(version); if(version<1 || version>8) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || bankId<1140 || bankId>=1180 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -168,6 +168,12 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   for(uint i=0;i<menus.size();++i) menuEnabled[i].resize(menus[i].size(),0);
   lastMenuChoice=-1;
  }
+ for(uint i=0;i<actions.size();++i) {
+  if(version>=8) { io.number(actions[i].exitChapter); io.number(actions[i].exitRoom); }
+  else actions[i].exitChapter=actions[i].exitRoom=-1;
+  if(actions[i].exitChapter==-1) { if(actions[i].exitRoom!=-1) return false; }
+  else if(actions[i].verb!=3 || actions[i].exitChapter!=2 || actions[i].exitRoom<0 || actions[i].exitRoom>=40) return false;
+ }
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
  for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;
@@ -189,8 +195,13 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _player=player; _cameraActor=camera; _inventorySelection=selection; _inputLocks=locks;
  _palettePulse=pulse; _pulsePeriod=period; _pulseRemaining=remaining; _pulseOffset=offset; _pulseDelta=delta;
  for(uint i=0;i<12;++i) _textStyles[i/2][i%2]=styles[i];
+ _actionExitChapter=_actionExitRoom=-1;
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _random.setSeed(seed); _dialogueActor=-1; _closeup=false; _subtitle.clear(); _savePending=false; _pendingRoom=-1;
+ // Old bridge previews saved after initialization stopped at exit registration.
+ // Continue that exact instruction, never replay initialization over live state.
+ if(version<=7 && bankId==1147 && _roomRunner->resumeStoppedAt(0,80))
+  debug("[pice] resumed legacy bridge initialization at byte=%u",_roomRunner->position(0));
  _buildingNavigation=nullptr; _spriteMode=false; _scenePreview=true; _snapshotPending=false;
  _roomClock=_roomRenderClock=_system->getMillis(); _roomStatus="Checkpoint restored | F5 save | F7 load";
  _system->getPaletteManager()->setPalette(&_scenePalette[0],0,256);

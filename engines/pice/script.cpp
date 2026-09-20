@@ -101,6 +101,16 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
   int16 bound;
   return scene && evaluate(pc,bound,depth+1,budget,variables,scene) && bound>0 && scene->randomValue(bound,value);
  }
+ if(op==91) { // 0xb1a: Boolean NOT, not bitwise complement.
+  int16 operand;
+  if(!evaluate(pc,operand,depth+1,budget,variables,scene)) return false;
+  value=operand==0; return true;
+ }
+ if(op==86) { // 0x8af: two evaluated operands select a runtime state table.
+  int16 kind,id;
+  return scene && evaluate(pc,kind,depth+1,budget,variables,scene) &&
+   evaluate(pc,id,depth+1,budget,variables,scene) && scene->stateValue(kind,id,value);
+ }
  // Pure comparisons, eager Boolean operators, and arithmetic only.
  if ((op<7 || op>16) && op!=45) return false;
  int16 a,b;
@@ -129,7 +139,7 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
  case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 81: case 58: case 95: before=4; return true;
- case 109: before=5; return true;
+ case 80: case 109: before=5; return true;
  case 123: case 135: case 136: before=3; return true;
  case 32: case 29: case 133: after=1; return true;
  case 137: after=2; return true;
@@ -166,6 +176,11 @@ bool ScriptRunner::value(uint32 &pc,int16 &result) {
  bool ok=op==55 ? _scene->createActor(name,local,sequence,node,result) : op==63 ? _scene->createItem(name,local,sequence,result) : _scene->createMenu(name,local,result);
  if (!ok) return false;
  pc=next; return true;
+}
+bool ScriptRunner::resumeStoppedAt(uint index,uint16 expectedOpcode) {
+ uint16 opcode;
+ if(index>=_tasks.size() || _tasks[index].active || !_bank.word(_tasks[index].pc,opcode) || opcode!=expectedOpcode) return false;
+ _tasks[index].active=true; return true;
 }
 bool ScriptRunner::start(uint index) {
  if (index>=_tasks.size()) return false;
@@ -577,6 +592,8 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
+  bool owned=false;
+  bool stateValue(int16 kind,int16 id,int16 &value) const override { if(kind!=2 || id!=12) return false; value=owned; return true; }
   int deaths=0;
   bool gameOver(int16 reason) override { if(reason!=3) return false; ++deaths; return true; }
   int speeches=0,itemActions=0,entries=0;
@@ -618,6 +635,18 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // Nested NOT/inventory predicates must change when the item is picked up.
+ const uint16 inventoryPredicate[]={1,12,91,86,20,2,20,12,45,20,1,20,1};
+ bytes.resize(sizeof(inventoryPredicate));
+ for(uint i=0;i<sizeof(inventoryPredicate)/2;++i) WRITE_LE_UINT16(&bytes[i*2],inventoryPredicate[i]);
+ ScriptResource predicateBank; if(!predicateBank.load(bytes)) return false;
+ pc=2; if(!predicateBank.expression(pc,value,nullptr,&sink) || value!=1 || pc!=sizeof(inventoryPredicate)) return false;
+ sink.owned=true; pc=2;
+ if(!predicateBank.expression(pc,value,nullptr,&sink) || value!=0) return false;
+ sink.owned=false; pc=2;
+ if(predicateBank.expression(pc,value) || pc!=2) return false;
+ WRITE_LE_UINT16(&bytes[14],65535); if(!predicateBank.load(bytes)) return false;
+ pc=2; if(predicateBank.expression(pc,value,nullptr,&sink) || pc!=2) return false;
  // A death transition halts every room task, including an unrelated one.
  const uint16 deathWords[]={2,8,131,20,3,31,20,0,31,20,1};
  bytes.resize(sizeof(deathWords));
@@ -626,7 +655,9 @@ bool runScriptTests() {
  ScriptRunner deathRunner(deathBank,nullptr,&sink); deathRunner.start(0); deathRunner.start(1);
  if(deathRunner.step(0)!=ScriptRunner::kStopped || sink.deaths!=1 || deathRunner.running(0) || deathRunner.running(1)) return false;
  ScriptRunner noRecovery(deathBank); noRecovery.start(0);
- if(noRecovery.step(0)!=ScriptRunner::kUnsupported) return false;
+ if(noRecovery.step(0)!=ScriptRunner::kUnsupported || noRecovery.resumeStoppedAt(0,80) ||
+    !noRecovery.resumeStoppedAt(0,131) || noRecovery.resumeStoppedAt(0,131) ||
+    noRecovery.step(0)!=ScriptRunner::kUnsupported) return false;
  // An entry task waits for the player, while room initialization continues.
  const uint16 entryWords[]={2,20,79,20,2,20,0,20,28,0x3041,0x0032,20,0,20,3,20,1,31,20,0,31,20,1};
  bytes.resize(sizeof(entryWords));

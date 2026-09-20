@@ -46,6 +46,7 @@ public:
  virtual bool enterRoom(const Common::String &name,const Common::Array<int16> &args,int16 &actor) { return false; }
  virtual bool gameOver(int16 reason) { return false; }
  virtual bool pollMenu(int16 menu,bool &ready) { return false; }
+ virtual bool stateValue(int16 kind,int16 id,int16 &value) const { return false; }
  virtual bool context(int16 index,int16 &value) const { return false; }
  virtual bool background(const Common::String &name,int16 local,int16 flags)=0;
  virtual bool scenery(const Common::String &name,int16 local) { return false; }
@@ -74,6 +75,7 @@ public:
  explicit ScriptRunner(const ScriptResource &bank, ScriptVariables *variables=nullptr, ScriptSceneSink *scene=nullptr) : _bank(bank), _variables(variables ? variables : &_ownedVariables), _scene(scene) { _tasks.resize(bank.count()); }
  bool syncState(StateIO &io);
  bool start(uint index);
+ bool resumeStoppedAt(uint index,uint16 expectedOpcode);
  int exclusiveTask() const { return _exclusiveTask>=0 && running(_exclusiveTask) ? _exclusiveTask : -1; }
  bool running(uint index) const { return index<_tasks.size() && _tasks[index].active; }
  uint32 position(uint index) const { return _tasks[index].pc; }

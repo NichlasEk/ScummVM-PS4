@@ -24,7 +24,7 @@ private:
  bool readCheckpoint(bool automatic,bool apply=true);
  bool _savePending=false;
 #ifdef PICE_TESTBENCH
- bool _testSavePending=false,_testClickDone=false,_testUseDone=false;
+ bool _testSavePending=false,_testClickDone=false,_testUseDone=false,_testMenuClosed=false;
  uint32 _testSaveAt=0;
 #endif
  bool background(const Common::String &name,int16 local,int16 flags) override;
@@ -32,6 +32,7 @@ private:
  bool scenery(const Common::String &name,int16 local) override;
  bool volume(int16 handle,int16 value) override;
  bool createActor(const Common::String &name,int16 local,int16 sequence,int16 node,int16 &id) override;
+ bool stateValue(int16 kind,int16 id,int16 &value) const override;
  bool invoke(uint16 opcode,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) override;
  struct Hotspot { bool active=true; int16 actor=-1,approach=-1; Common::Rect bounds; Common::String label; };
  struct AnimationSound { int16 actor=-1,sound=-1,volume=100,sequence=-1,step=-1; bool fired=false; };
@@ -40,7 +41,7 @@ private:
  int16 _inventorySelection=0;
  bool _palettePulse=false;
  int16 _pulsePeriod=5,_pulseRemaining=5,_pulseOffset=10,_pulseDelta=15;
- struct Action { int16 hotspot=-1, verb=-1, approach=-1, entry=-1, fallback=0, item=-1;
+ struct Action { int16 hotspot=-1, verb=-1, approach=-1, entry=-1, fallback=0, item=-1, exitChapter=-1, exitRoom=-1;
   bool matches(int16 requestedVerb,int16 selectedItem) const { return verb==requestedVerb && (verb!=9 || item==selectedItem); }
  };
  Common::Array<Hotspot> _hotspots;
@@ -61,6 +62,7 @@ private:
  int hotspotAt(Common::Point point) const;
  bool clickRoom(Common::Point point,bool rightButton);
  void tickAction();
+ int16 _actionExitChapter=-1,_actionExitRoom=-1;
  int16 _actionContext=-1,_actionEntry=-1,_actionHotspot=-1;
  bool _actionWalking=false;
  int _hoverHotspot=-1;

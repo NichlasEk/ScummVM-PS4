@@ -5,6 +5,11 @@
 #include "graphics/cursorman.h"
 #include "common/textconsole.h"
 namespace Pice {
+bool PiceEngine::stateValue(int16 kind,int16 id,int16 &value) const {
+ // Opcode 86 kind 2: inventory record status byte == 1 (0x8fa).
+ if(kind!=2 || id<0 || uint(id)>=_ownedItems.size()) return false;
+ value=_ownedItems[id]!=0; return true;
+}
 bool PiceEngine::context(int16 index,int16 &value) const {
  if(index==6) { value=_lastMenuChoice; return true; }
  if(index!=9) return false;
@@ -105,6 +110,7 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
    if(!invoke(50,Common::String(),args,Common::String(),result)) return false;
   }
  }
+ _actionExitChapter=fallbackUsed ? -1 : action.exitChapter; _actionExitRoom=fallbackUsed ? -1 : action.exitRoom;
  _actionEntry=entry; _actionHotspot=spot; _actionContext=fallbackUsed ? (verb==9 ? _selectedItem : -verb) : -1; _actionWalking=true;
  debug("[pice] action queued hotspot=%d verb=%d entry=%d context=%d approach=%d",spot,verb,entry,_actionContext,action.approach);
  tickAction(); return true;
@@ -120,6 +126,11 @@ void PiceEngine::tickAction() {
   debug("[pice] action started entry=%d context=%d",_actionEntry,_actionContext);
  } else if(!_roomRunner->running(_actionEntry)) {
   debug("[pice] action finished entry=%d",_actionEntry);
+  // Original 0x7c59 stages the destination before running the exit script;
+  // 0x1c586 applies it once the bank's tasks finish. Never follow a failed action.
+  if(_actionExitChapter>=0 && !_gameOver && _pendingRoom<0 && !changeRoom(_actionExitChapter,_actionExitRoom))
+   _roomStatus="Exit destination is not supported yet";
+  _actionExitChapter=_actionExitRoom=-1;
   _actionEntry=-1; _actionContext=-1; _actionHotspot=-1;
  }
 }

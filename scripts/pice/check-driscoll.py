@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Replay the local Driscoll checkpoint and report bounded emulator evidence."""
+import argparse
 import fcntl
 import json
 import os
@@ -10,6 +11,9 @@ import subprocess
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--reopen', action='store_true', help='Close the first menu and click Driscoll again.')
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     out = root / 'artifacts/pice'
     out.mkdir(parents=True, exist_ok=True)
@@ -31,12 +35,15 @@ def main():
                        if not line.startswith(('pice_test_', 'pice_restore_')))
         if '[scummvm]' not in text:
             raise SystemExit('Missing scummvm config section.')
-        env = dict(os.environ, EMULATOR_TIMEOUT='40')
+        env = dict(os.environ, EMULATOR_TIMEOUT='55' if args.reopen else '40')
         log = out / 'emulator.log'
         if log.exists():
             log.rename(out / 'before-driscoll-check.log')
         try:
-            ini.write_text(text.replace('[scummvm]', '[scummvm]\npice_restore_autosave=true'))
+            hooks = '[scummvm]\npice_restore_autosave=true'
+            if args.reopen:
+                hooks += '\npice_test_close_menu=true\npice_test_click_hotspot=1'
+            ini.write_text(text.replace('[scummvm]', hooks))
             with (out / 'driscoll-check-build.log').open('w') as build:
                 result = subprocess.run([str(root / 'scripts/pice/run-emulator.sh')],
                                         cwd=root, env=env, stdout=build, stderr=subprocess.STDOUT)
@@ -61,6 +68,15 @@ def main():
         }
         stops = [dict(task=int(t), result=int(r), pc=int(p), opcode=int(o))
                  for t, r, p, o in re.findall(r'room-task=(\d+) result=(\d+) pc=(\d+) opcode=(\d+)', text)]
+        if args.reopen:
+            runtime = text.split('checkpoint restored bank=1147', 1)[-1]
+            checks.update({
+                'clicked_driscoll_again': 'action queued hotspot=1' in runtime,
+                'menu_reopened': runtime.count('menu opened id=0') >= 2,
+                'no_room_script_stops': not stops,
+            })
+            if 'resumed legacy bridge initialization' in text:
+                checks['drawer_registered'] = 'label=A drawer' in runtime
         report = dict(checks=checks, checks_passed=all(checks.values()), stops=stops,
                       scope='Bounded Driscoll dialogue regression, not full-game playability')
         (out / 'driscoll-check.json').write_text(json.dumps(report, indent=2) + '\n')

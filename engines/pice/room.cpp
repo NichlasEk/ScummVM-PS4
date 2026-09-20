@@ -30,6 +30,13 @@ bool RoomNavigation::triangle(int16 id,int16 a,int16 b,int16 c,byte enabled) {
  }
  RoomTriangle t; t.active=true; t.a=a; t.b=b; t.c=c; t.enabled=enabled; triangles[id]=t; return true;
 }
+bool RoomNavigation::setEnabled(int16 kind,int16 id,int16 enabled) {
+ if(id<0 || (enabled!=0 && enabled!=1)) return false;
+ if(kind==0) { if(uint(id)>=edges.size() || !edges[id].active) return false; edges[id].enabled=enabled; }
+ else if(kind==1) { if(uint(id)>=triangles.size() || !triangles[id].active) return false; triangles[id].enabled=enabled; }
+ else return false;
+ return true;
+}
 bool RoomNavigation::contains(int id,Common::Point p) const {
  if(id<0 || uint(id)>=triangles.size() || !triangles[id].active || !triangles[id].enabled) return false;
  const RoomTriangle &t=triangles[id];
@@ -71,15 +78,30 @@ bool RoomNavigation::segment(Common::Point from,Common::Point to) const {
 }
 bool RoomNavigation::route(Common::Point from,Common::Point to,Common::Array<Common::Point> &points) const {
  points.clear();
- if(region(from)<0 || region(to)<0) return false;
+ auto nodeAt=[&](Common::Point p) {
+  for(uint i=0;i<nodes.size();++i) if(nodes[i].active && p==Common::Point(nodes[i].x,nodes[i].y)) return int(i);
+  return -1;
+ };
+ auto connected=[&](Common::Point a,Common::Point b) {
+  int na=nodeAt(a),nb=nodeAt(b);
+  if(na>=0 && nb>=0) {
+   // Original 0x5957 never generates a replacement for an existing link,
+   // including a disabled one. Explicit links may leave the triangle floor.
+   for(uint i=0;i<edges.size();++i) if(edges[i].active &&
+      ((edges[i].a==na && edges[i].b==nb) || (edges[i].a==nb && edges[i].b==na))) return edges[i].enabled!=0;
+   if(!generatedEnabled) return false;
+  }
+  return segment(a,b);
+ };
+ if((region(from)<0 && nodeAt(from)<0) || (region(to)<0 && nodeAt(to)<0)) return false;
  if(from==to) return true;
- if(segment(from,to)) { points.push_back(to); return true; }
+ if(connected(from,to)) { points.push_back(to); return true; }
  Common::Array<Common::Point> vertices; vertices.push_back(from); vertices.push_back(to);
  for(uint i=0;i<nodes.size();++i) if(nodes[i].active) {
-  Common::Point p(nodes[i].x,nodes[i].y); if(region(p)>=0 && p!=from && p!=to) vertices.push_back(p);
+  Common::Point p(nodes[i].x,nodes[i].y); if(p!=from && p!=to) vertices.push_back(p);
  }
- // Visibility graph over the original floor vertices. Every edge is checked
- // against the triangle union, so a shorter path cannot cut through a hole.
+ // Explicit room links plus generated floor visibility. Generated links
+ // cannot cross holes or override an explicitly disabled link.
  Common::Array<double> cost; cost.resize(vertices.size(),1e30); cost[0]=0;
  Common::Array<int> previous; previous.resize(vertices.size(),-1);
  Common::Array<byte> visited; visited.resize(vertices.size(),0);
@@ -90,7 +112,7 @@ bool RoomNavigation::route(Common::Point from,Common::Point to,Common::Array<Com
   if(current==1) break;
   visited[current]=1;
   for(uint i=0;i<vertices.size();++i) {
-   if(visited[i] || !segment(vertices[current],vertices[i])) continue;
+   if(visited[i] || !connected(vertices[current],vertices[i])) continue;
    double dx=int32(vertices[current].x)-vertices[i].x,dy=int32(vertices[current].y)-vertices[i].y;
    double candidate=cost[current]+sqrt(dx*dx+dy*dy);
    if(candidate<cost[i]) { cost[i]=candidate; previous[i]=current; }
@@ -156,6 +178,17 @@ bool runRoomTests() {
  if(!room.triangle(0,0,1,4,1) || !room.triangle(1,0,4,5,1) || !room.triangle(2,1,2,4,1) || !room.triangle(3,2,3,4,1) ||
     room.segment(Common::Point(2,8),Common::Point(18,18)) || !room.route(Common::Point(2,8),Common::Point(18,18),route) ||
     route.size()!=2 || route[0]!=Common::Point(10,10) || route[1]!=Common::Point(18,18)) return false;
- room.clear(); return room.region(Common::Point(2,2))==-1 && !room.nearest(Common::Point(),nearest);
+ // A room object outside the floor is reached only through enabled links.
+ if(!room.node(6,40,20,100) || !room.edge(9,2,6,0) ||
+    room.route(Common::Point(18,18),Common::Point(40,20),route) ||
+    !room.setEnabled(0,9,1) || !room.route(Common::Point(18,18),Common::Point(40,20),route) ||
+    route.back()!=Common::Point(40,20) || !room.setEnabled(0,9,0) ||
+    room.route(Common::Point(18,18),Common::Point(40,20),route) ||
+    room.setEnabled(0,449,1) || room.setEnabled(2,0,1) || room.setEnabled(1,0,2)) return false;
+ // Disabling a region removes its interior from walkable floor immediately.
+ if(!room.setEnabled(1,3,0) || room.region(Common::Point(12,19))>=0 || !room.setEnabled(1,3,1)) return false;
+ room.generatedEnabled=false;
+ if(!room.route(Common::Point(0,0),Common::Point(20,20),route) || route.size()<2) return false;
+ room.clear(); return room.generatedEnabled && room.region(Common::Point(2,2))==-1 && !room.nearest(Common::Point(),nearest);
 }
 }

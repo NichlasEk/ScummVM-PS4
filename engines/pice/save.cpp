@@ -41,7 +41,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=3; io.number(version); if(version<1 || version>3) return false;
+ uint32 version=4; io.number(version); if(version<1 || version>4) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || bankId<1140 || bankId>=1180 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -92,7 +92,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  }
  if(io.count(menus,20)) for(uint i=0;i<menus.size();++i) if(io.count(menus[i],200)) for(uint j=0;j<menus[i].size();++j) io.string(menus[i][j]);
  if(!io.ok) { warning("[pice] Invalid snapshot objects/actions"); return false; }
- RoomNavigation rebuilt;
+ RoomNavigation rebuilt; rebuilt.generatedEnabled=loading ? true : nav.generatedEnabled;
  for(uint i=0;i<nav.nodes.size();++i) {
   auto &n=nav.nodes[i]; io.number(n.active); io.number(n.x); io.number(n.y); io.number(n.scale);
   if(n.active && !rebuilt.node(i,n.x,n.y,n.scale)) io.ok=false;
@@ -145,6 +145,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  } else { music=RoomSound(); musicPlaying=false; musicElapsed=0; }
  if(version>=3) { io.bytes(owned,100); io.number(selectedItem); }
  else { owned.clear(); owned.resize(items.size(),0); selectedItem=-1; }
+ if(version>=4) io.number(rebuilt.generatedEnabled);
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
  for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;
@@ -174,6 +175,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  }
  for(uint i=0;i<_sounds.size();++i) { _sounds[i].handle=Audio::SoundHandle(); if(playing[i] && !startSound(i,_sounds[i].loops,elapsed[i])) warning("[pice] Cannot restore sound %u",i); }
  uint ownedCount=0; for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) ++ownedCount;
+ debug("[pice] restored navigation generated=%d edge51=%d edge52=%d",_navigation.generatedEnabled,_navigation.edges[51].enabled,_navigation.edges[52].enabled);
  debug("[pice] restored inventory owned=%u selected=%d",ownedCount,_selectedItem);
  debug("[pice] restored music active=%d playing=%d elapsed=%u",_music.active,musicPlaying,musicElapsed);
  if(musicPlaying && !startSample(_music,_music.loops,musicElapsed,true)) warning("[pice] Cannot restore music");

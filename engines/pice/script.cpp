@@ -122,7 +122,7 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
  case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
- case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
+ case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 58: case 95: before=4; return true;
  case 109: before=5; return true;
  case 123: case 135: case 136: before=3; return true;
@@ -311,6 +311,18 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if (!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; }
   task.pc=next; task.remainingTicks=argument; task.waiting=true;
   return kWaiting;
+ }
+ if(opcode==102 || opcode==85) {
+  next+=2; int16 kind,id,enabled;
+  if(!_bank.expression(next,kind,_variables,_scene)) { task.active=false; return kInvalid; }
+  if(opcode==102) {
+   if(kind!=0 && kind!=1) { task.active=false; return kInvalid; }
+   _navigation.generatedEnabled=kind==0;
+  } else {
+   if(!_bank.expression(next,id,_variables,_scene) || !_bank.expression(next,enabled,_variables,_scene) ||
+      !_navigation.setEnabled(kind,id,enabled)) { task.active=false; return kInvalid; }
+  }
+  task.pc=next; return kAdvanced;
  }
  if (opcode==47 || opcode==48 || opcode==49) {
   uint16 args[5]; uint count=opcode==49 ? 5 : 4; next+=2;
@@ -736,6 +748,20 @@ bool runScriptTests() {
  ScriptRunner nodeRunner(nodeBank); nodeRunner.start(0);
  if(nodeRunner.run(0,10)!=ScriptRunner::kStopped || !nodeRunner.navigation().nodes[2].active ||
     nodeRunner.navigation().nodes[2].x!=-5 || nodeRunner.navigation().nodes[2].y!=7) return false;
+ // Navigation transactions retain explicit link edits while generated
+ // visibility links are disabled, then rebuild on demand when resumed.
+ const uint16 editProgram[]={1,102,20,1,85,20,0,20,0,20,1,102,20,0,31,20,0};
+ bytes.resize(sizeof(editProgram)); for(uint i=0;i<sizeof(editProgram)/2;++i) WRITE_LE_UINT16(&bytes[i*2],editProgram[i]);
+ ScriptResource editBank; if(!editBank.load(bytes)) return false;
+ ScriptRunner editor(editBank); editor.navigation().node(0,0,0,100); editor.navigation().node(1,10,0,100); editor.navigation().edge(0,0,1,0); editor.start(0);
+ if(editor.step(0)!=ScriptRunner::kAdvanced || editor.navigation().generatedEnabled ||
+    editor.step(0)!=ScriptRunner::kAdvanced || !editor.navigation().edges[0].enabled ||
+    editor.step(0)!=ScriptRunner::kAdvanced || !editor.navigation().generatedEnabled || editor.step(0)!=ScriptRunner::kStopped) return false;
+ for(uint n=10;n<22;++n) {
+  Common::Array<byte> partial=bytes; partial.resize(n); ScriptResource shortEdit; if(!shortEdit.load(partial)) return false;
+  ScriptRunner rejectedEdit(shortEdit); rejectedEdit.navigation().node(0,0,0,100); rejectedEdit.navigation().node(1,10,0,100); rejectedEdit.navigation().edge(0,0,1,0); rejectedEdit.start(0);
+  if(rejectedEdit.step(0)!=ScriptRunner::kAdvanced || rejectedEdit.step(0)!=ScriptRunner::kInvalid || rejectedEdit.position(0)!=8 || rejectedEdit.navigation().edges[0].enabled) return false;
+ }
  // Terminator without its required alignment byte is truncated.
  bytes.resize(5); WRITE_LE_UINT16(&bytes[0],1); bytes[2]='A'; bytes[3]='B'; bytes[4]=0;
  ScriptResource shortString; if (!shortString.load(bytes)) return false;

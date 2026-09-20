@@ -1,5 +1,8 @@
 # PICE native input and inventory checkpoint (2026-09-20)
 
+Continuation: [fire puzzle and navigation updates](PICE-FIRE-RUNTIME.md)
+implements the opcode-102/85 stop described below.
+
 The opening room now accepts clicks through its original hotspot/action records.
 This is partial gameplay, not a complete playable opening or game. The broad
 ScummVM 1.09 release remains separate from the PICE experimental package.

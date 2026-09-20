@@ -195,6 +195,20 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(!invoke(51,name,animation,key,result)) return false;
   debug("[pice] animation-trigger actor=%d sequence=%d step=%d task=%d",args[0],args[1],args[2],args[3]); return true;
  }
+ if(op==105) {
+  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_sounds.size() || !_sounds[args[0]].active) return false;
+  _mixer->stopHandle(_sounds[args[0]].handle); result=args[0]; return true;
+ }
+ if(op==90) {
+  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_hotspots.size()) return false;
+  _hotspots[args[0]].active=false; result=args[0];
+  debug("[pice] disabled hotspot=%d",args[0]); return true;
+ }
+ if(op==82) {
+  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_ownedItems.size()) return false;
+  _ownedItems[args[0]]=0; if(_selectedItem==args[0]) _selectedItem=-1;
+  result=args[0]; debug("[pice] inventory removed item=%d",args[0]); return true;
+ }
  if(op==67) {
   // 0x31ea -> 0x87ac: mark owned once, then remove the world actor.
   if(args.size()!=1 || args[0]<0 || uint(args[0])>=_items.size()) return false;
@@ -275,7 +289,11 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(!actor.routeEnabled) return false;
   Common::Point target=op==50 ? Common::Point(_navigation.nodes[args[1]].x,_navigation.nodes[args[1]].y) : Common::Point(args[1],args[2]);
   Common::Point floorStart;
-  if(!_navigation.nearest(actor.feet,floorStart) || !_navigation.route(floorStart,target,actor.path)) return false;
+  bool atNode=false;
+  for(uint i=0;i<_navigation.nodes.size();++i) if(_navigation.nodes[i].active && actor.feet==Common::Point(_navigation.nodes[i].x,_navigation.nodes[i].y)) atNode=true;
+  if(atNode) floorStart=actor.feet;
+  else if(!_navigation.nearest(actor.feet,floorStart)) return false;
+  if(!_navigation.route(floorStart,target,actor.path)) return false;
   if(actor.feet!=floorStart) actor.path.insert_at(0,floorStart);
   actor.pathIndex=0; actor.node=op==50 ? args[1] : -1;
   RoomActor validation=actor;
@@ -742,6 +760,7 @@ void PiceEngine::tickRoom() {
   for(uint budget=0;budget<64;++budget) {
    uint32 before=_roomRunner->position(i);
    ScriptRunner::Result result=_roomRunner->step(i,budget ? 0 : ticks);
+   _navigation=_roomRunner->navigation();
    if(result==ScriptRunner::kInvalid || result==ScriptRunner::kUnsupported) {
     uint16 opcode=0; _roomBank.word(before,opcode);
     _roomStatus=Common::String::format("Room script %u stopped: opcode %u at %u",i,opcode,before);
@@ -772,6 +791,10 @@ void PiceEngine::tickRoom() {
     }
    }
   }
+ }
+ if(_testClickDone && !_testUseDone && ConfMan.getBool("pice_test_save_after_fire") && _actionEntry<0 && !_inputLocks && !actorBusy(_player) &&
+    _hotspots.size()>11 && !_hotspots[10].active && !_hotspots[11].active && _navigation.edges[51].enabled && _navigation.edges[52].enabled) {
+  if(writeCheckpoint(false)) { _testUseDone=true; debug("[pice] fire solved checkpoint: edges51/52 enabled, hotspots10/11 disabled"); }
  }
  if(_testClickDone && !_testUseDone && ConfMan.getBool("pice_test_use_fire") && _actionEntry<0 && !_inputLocks && !actorBusy(_player)) {
   for(uint item=0;item<_ownedItems.size() && !_testUseDone;++item) if(_ownedItems[item] && _hotspots.size()>10) {

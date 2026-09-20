@@ -413,3 +413,5 @@ controls, fresh-process restoration with music, and the next input/death-flow
 continuation. The engine is still experimental and not a complete playable game.
 
 Latest interaction milestone: [native input and inventory](PICE-INPUT-RUNTIME.md).
+
+Fire-puzzle continuation: [dynamic navigation and extinguishing](PICE-FIRE-RUNTIME.md).

@@ -11,10 +11,12 @@ struct RoomTriangle { bool active=false; uint16 a=0,b=0,c=0; byte enabled=0; };
 class RoomNavigation {
 public:
  RoomNavigation() { clear(); }
- void clear() { nodes.clear(); nodes.resize(50); edges.clear(); edges.resize(450); triangles.clear(); triangles.resize(50); }
+ bool generatedEnabled=true;
+ void clear() { generatedEnabled=true; nodes.clear(); nodes.resize(50); edges.clear(); edges.resize(450); triangles.clear(); triangles.resize(50); }
  bool node(int16 id,int16 x,int16 y,uint16 scale);
  bool edge(int16 id,int16 a,int16 b,byte enabled);
  bool triangle(int16 id,int16 a,int16 b,int16 c,byte enabled);
+ bool setEnabled(int16 kind,int16 id,int16 enabled);
  bool contains(int id,Common::Point p) const;
  int region(Common::Point p) const;
  bool segment(Common::Point from,Common::Point to) const;

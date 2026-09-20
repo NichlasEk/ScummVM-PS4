@@ -1,7 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/script.h"
+#include "pice/state.h"
 #include "common/endian.h"
 namespace Pice {
+bool ScriptVariables::syncState(StateIO &io) {
+ for(uint i=0;i<_a.size();++i) io.number(_a[i]);
+ for(uint i=0;i<_b.size();++i) io.number(_b[i]);
+ return io.ok;
+}
+bool ScriptRunner::syncState(StateIO &io) {
+ Common::Array<Task> tasks=_tasks; int exclusive=_exclusiveTask;
+ uint count=tasks.size(); io.number(count); io.number(exclusive);
+ if(!io.ok || count!=_tasks.size() || exclusive < -1 || exclusive>=int(count)) return false;
+ for(uint i=0;i<count;++i) {
+  Task &t=tasks[i]; io.number(t.pc); io.number(t.active); io.number(t.waiting);
+  io.number(t.actor); io.number(t.peer); io.number(t.triggerActor); io.number(t.triggerStep);
+  io.number(t.barrierReady); io.number(t.remainingTicks);
+  if(!io.ok || (t.active && !_bank.codeAddress(t.pc)) || t.actor < -26 || t.actor>=20 ||
+     t.peer < -1 || t.peer>=int(count) || t.peer==int(i) || t.triggerActor < -1 || t.triggerActor>=20 || t.triggerStep<0) return false;
+ }
+ if(io.loading) { _tasks=tasks; _exclusiveTask=exclusive; }
+ return true;
+}
 bool ScriptVariables::read(bool second,int16 index,int16 &value) const {
  value=0;
  const Common::Array<int16> &table=second ? _b : _a;
@@ -96,12 +116,12 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
 static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
- case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
- case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
+ case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
+ case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 58: case 95: before=4; return true;
  case 109: before=5; return true;
  case 123: case 135: case 136: before=3; return true;
- case 29: case 133: after=1; return true;
+ case 32: case 29: case 133: after=1; return true;
  case 137: after=2; return true;
  case 77: after=4; return true;
  case 96: before=1; after=3; return true;
@@ -156,6 +176,10 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
    Task &peer=_tasks[task.peer];
    if(peer.active && peer.peer==int(index) && !peer.barrierReady) task.barrierReady=peer.barrierReady=true;
   }
+  return kWaiting;
+ }
+ if(task.actor<=-2) {
+  if(!_scene || !_scene->soundBusy(-task.actor-2)) task.actor=-1;
   return kWaiting;
  }
  if (task.actor>=0) {
@@ -222,6 +246,13 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   // return zero, with no other effect in this executable.
   task.pc=next+2; return kAdvanced;
  }
+ if(opcode==134) {
+  next+=2;
+  if(!_bank.expression(next,argument,_variables) || argument<0 || argument>=25) { task.active=false; return kInvalid; }
+  Common::Array<int16> args; args.push_back(argument); int16 result;
+  if(!_scene || !_scene->invoke(100,Common::String(),args,Common::String(),result)) { task.active=false; return kUnsupported; }
+  task.pc=next; task.actor=-argument-2; return kWaiting;
+ }
  if(opcode==147) {
   next+=2; Common::Array<int16> args;
   for(uint n=0;n<4;++n) { if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; } args.push_back(argument); }
@@ -238,6 +269,12 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   Common::Array<int16> args; args.push_back(argument); int16 result;
   if(!_scene->invoke(opcode,Common::String(),args,Common::String(),result)) { task.active=false; return kUnsupported; }
   task.pc=next; task.actor=argument; return kWaiting;
+ }
+ if(opcode==152) {
+  next+=2; Common::String name,key; int16 local;
+  if(!_bank.string(next,name) || !_bank.expression(next,local,_variables) || !_bank.string(next,key)) { task.active=false; return kInvalid; }
+  if(!_scene || !_scene->requestSave(name,local,key)) { task.active=false; return kUnsupported; }
+  task.pc=next; return kAdvanced;
  }
  if(opcode==138) {
   next+=2; Common::String name; int16 clearBefore,clearAfter;
@@ -479,13 +516,16 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
-  int backgrounds=0,palettes=0,calls=0,roomChanges=0,movies=0;
+  int backgrounds=0,palettes=0,calls=0,roomChanges=0,movies=0,saves=0;
+  bool requestSave(const Common::String &name,int16 local,const Common::String &key) override { if(name!="G_IceTxt" || local!=2 || key!="SAV00") return false; ++saves; return true; }
   bool playMovie(const Common::String &name,int16 before,int16 after) override { if(name!="clip.mux" || before!=1 || after!=0) return false; ++movies; return true; }
   bool changeRoom(int16 chapter,int16 room) override { if(chapter!=2 || room!=24) return false; ++roomChanges; return true; }
-  bool busy=true; int animationStep=0,triggerCalls=0;
+  bool busy=true,soundPlaying=true; int animationStep=0,triggerCalls=0,soundCalls=0;
+  bool soundBusy(int16 sound) const override { return sound==3 && soundPlaying; }
   bool actorStepReached(int16 actor,int16 target) const override { return !actorBusy(actor) || animationStep>=target; }
   bool actorBusy(int16 actor) const override { return actor==2 && busy; }
   bool invoke(uint16 opcode,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) override {
+   if(opcode==100 && args.size()==1 && args[0]==3) { ++soundCalls; result=3; return true; }
    if(opcode==147 && args.size()==4 && args[0]==2 && args[1]==3 && args[2]==5 && args[3]==1) { ++triggerCalls; result=2; return true; }
    if(opcode==109 && args.size()==5 && args[0]==2 && args[1]==3 && args[2]==75 && args[3]==8 && args[4]==1 && name.empty() && key.empty()) {
     ++calls; result=17; return true;
@@ -502,6 +542,19 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // Saving is requested once, after decoding all arguments; the caller's
+ // PC advances before the engine performs the deferred write.
+ const uint16 saveWords[]={1,152,0x5f47,0x6349,0x5465,0x7478,0,20,2,0x4153,0x3056,0x0030,31,20,0};
+ bytes.resize(sizeof(saveWords));
+ for(uint i=0;i<sizeof(saveWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],saveWords[i]);
+ ScriptResource saveBank; if(!saveBank.load(bytes)) return false;
+ ScriptRunner saveRunner(saveBank,nullptr,&sink); saveRunner.start(0);
+ if(saveRunner.step(0)!=ScriptRunner::kAdvanced || saveRunner.position(0)!=24 || sink.saves!=1 || saveRunner.step(0)!=ScriptRunner::kStopped) return false;
+ for(uint n=4;n<24;++n) {
+  Common::Array<byte> partial=bytes; partial.resize(n); ScriptResource shortSave; if(!shortSave.load(partial)) return false;
+  ScriptRunner shortRunner(shortSave,nullptr,&sink); shortRunner.start(0);
+  if(shortRunner.step(0)!=ScriptRunner::kInvalid || shortRunner.position(0)!=2 || sink.saves!=1) return false;
+ }
  // A movie callback owns playback through completion; truncated arguments
  // must never start it, and rejection leaves the instruction unconsumed.
  const uint16 movieWords[]={1,138,0x6c63,0x7069,0x6d2e,0x7875,0,20,1,20,0,31,20,0};
@@ -561,6 +614,21 @@ bool runScriptTests() {
     animationRunner.step(0,100)!=ScriptRunner::kWaiting || animationRunner.position(0)!=12 || sink.calls!=2) return false;
  sink.busy=false;
  if(animationRunner.step(0)!=ScriptRunner::kWaiting || animationRunner.step(0)!=ScriptRunner::kStopped || sink.calls!=2) return false;
+ // Play-and-wait invokes the sound once and survives a snapshot while
+ // waiting for the mixer to finish, without replaying it on restoration.
+ const uint16 soundWords[]={1,134,20,3,31,20,0};
+ bytes.resize(sizeof(soundWords));
+ for(uint i=0;i<sizeof(soundWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],soundWords[i]);
+ ScriptResource soundBank; if(!soundBank.load(bytes)) return false;
+ ScriptRunner soundRunner(soundBank,nullptr,&sink); soundRunner.start(0);
+ if(soundRunner.step(0)!=ScriptRunner::kWaiting || soundRunner.position(0)!=8 || sink.soundCalls!=1 ||
+    soundRunner.step(0)!=ScriptRunner::kWaiting || sink.soundCalls!=1) return false;
+ Common::Array<byte> soundState; StateIO soundWriter(soundState,false);
+ if(!soundRunner.syncState(soundWriter)) return false;
+ ScriptRunner soundRestore(soundBank,nullptr,&sink); StateIO soundReader(soundState,true);
+ if(!soundRestore.syncState(soundReader) || !soundRestore.waiting(0)) return false;
+ sink.soundPlaying=false;
+ if(soundRestore.step(0)!=ScriptRunner::kWaiting || soundRestore.step(0)!=ScriptRunner::kStopped || sink.soundCalls!=1) return false;
  // A concurrent task starts only when its actor reaches the requested
  // step, including a catch-up jump over that step. The caller waits longer.
  const uint16 triggered[]={2,14,147,20,2,20,3,20,5,20,1,31,20,0,25,1,20,99,31,20,1};
@@ -570,6 +638,22 @@ bool runScriptTests() {
  ScriptRunner triggerRunner(triggerBank,nullptr,&sink); triggerRunner.start(0); sink.busy=true; sink.animationStep=0;
  if(triggerRunner.step(0)!=ScriptRunner::kWaiting || sink.triggerCalls!=1 || !triggerRunner.running(1) ||
     triggerRunner.step(1)!=ScriptRunner::kWaiting || triggerRunner.position(1)!=28) return false;
+ // A save taken while both tasks wait restores the same scheduler state.
+ Common::Array<byte> savedTasks; StateIO taskWriter(savedTasks,false);
+ if(!triggerRunner.syncState(taskWriter)) return false;
+ ScriptVariables restoredVars=triggerRunner.variables(); ScriptRunner restoredRunner(triggerBank,&restoredVars,&sink);
+ StateIO taskReader(savedTasks,true); if(!restoredRunner.syncState(taskReader) || !taskReader.finished()) return false;
+ Common::Array<byte> roundTrip; StateIO roundWriter(roundTrip,false);
+ if(!restoredRunner.syncState(roundWriter) || roundTrip!=savedTasks) return false;
+ for(uint n=0;n<savedTasks.size();++n) {
+  Common::Array<byte> partial=savedTasks; partial.resize(n); StateIO partialReader(partial,true);
+  if(restoredRunner.syncState(partialReader)) return false;
+  StateIO unchangedWriter(roundTrip,false);
+  if(!restoredRunner.syncState(unchangedWriter) || roundTrip!=savedTasks) return false;
+ }
+ sink.animationStep=6;
+ if(restoredRunner.step(1)!=ScriptRunner::kWaiting || restoredRunner.step(1)!=ScriptRunner::kAdvanced ||
+    !restoredVars.read(false,1,value) || value!=99 || restoredRunner.step(0)!=ScriptRunner::kWaiting) return false;
  sink.animationStep=6;
  if(triggerRunner.step(1)!=ScriptRunner::kWaiting || triggerRunner.step(1)!=ScriptRunner::kAdvanced ||
     !triggerRunner.variables().read(false,1,value) || value!=99 || triggerRunner.step(0)!=ScriptRunner::kWaiting) return false;

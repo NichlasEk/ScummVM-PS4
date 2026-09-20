@@ -18,6 +18,15 @@ public:
  Common::Error run() override;
 private:
  bool showPicture(uint position);
+ bool requestSave(const Common::String &name,int16 local,const Common::String &key) override;
+ bool snapshot(Common::Array<byte> &bytes,bool loading,bool apply=true);
+ bool writeCheckpoint(bool automatic);
+ bool readCheckpoint(bool automatic,bool apply=true);
+ bool _savePending=false;
+#ifdef PICE_TESTBENCH
+ bool _testSavePending=false;
+ uint32 _testSaveAt=0;
+#endif
  bool background(const Common::String &name,int16 local,int16 flags) override;
  bool palette(const Common::String &name,int16 local) override;
  bool scenery(const Common::String &name,int16 local) override;
@@ -31,7 +40,7 @@ private:
  int16 _inventorySelection=0;
  bool _palettePulse=false;
  int16 _pulsePeriod=5,_pulseRemaining=5,_pulseOffset=10,_pulseDelta=15;
- struct Action { int16 hotspot=-1, verb=-1, item=-1, entry=-1, fallback=0; };
+ struct Action { int16 hotspot=-1, verb=-1, approach=-1, entry=-1, fallback=0; };
  Common::Array<Hotspot> _hotspots;
  Common::Array<Action> _actions;
  int16 _player=-1,_cameraActor=-1;
@@ -76,6 +85,7 @@ private:
  void tickRoom();
  bool actorStepReached(int16 actor,int16 step) const override;
  bool actorBusy(int16 actor) const override;
+ bool soundBusy(int16 sound) const override;
  ScriptResource _roomBank;
  Common::ScopedPtr<ScriptRunner> _roomRunner;
  uint32 _roomClock=0,_roomRenderClock=0;
@@ -103,9 +113,11 @@ private:
  int _originX = 0, _originY = 0;
  bool _spriteMode = false;
  byte _backgroundColor = 0;
- struct RoomSound { bool active=false,persistent=false; uint resource=0; byte volume=255; Audio::SoundHandle handle; };
+ struct RoomSound { bool active=false,persistent=false; uint resource=0,loops=1; uint32 elapsedBase=0; byte volume=255; Audio::SoundHandle handle; };
+ RoomSound _music;
+ bool startSample(RoomSound &sound,uint loops,uint32 elapsed,bool music);
  Common::Array<RoomSound> _sounds;
- bool startSound(uint id,uint loops);
+ bool startSound(uint id,uint loops,uint32 elapsed=0);
  KroArchive _graphics, _language, _soundArchive;
  Common::Array<uint> _pictures;
  uint _picture, _speech;

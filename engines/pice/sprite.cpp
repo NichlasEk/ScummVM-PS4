@@ -50,7 +50,9 @@ static bool table(const Common::Array<byte> &data, uint32 start, uint32 end,
  out.push_back(end);
  return true;
 }
-bool SpriteResource::load(const Common::Array<byte> &data) {
+bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId) {
+ archiveId=sourceId; fingerprint=2166136261U;
+ for(uint i=0;i<data.size();++i) fingerprint=(fingerprint^data[i])*16777619U;
  frames.clear(); sequences.clear(); palette.clear(); _data.clear(); _images.clear();
  if (data.size() < 24 || READ_LE_UINT32(&data[0]) != 24) return false;
  uint32 b = READ_LE_UINT32(&data[4]), c = READ_LE_UINT32(&data[8]);
@@ -61,7 +63,7 @@ bool SpriteResource::load(const Common::Array<byte> &data) {
  Common::Array<uint32> frameOffsets, imageOffsets, sequenceOffsets;
  if (!table(data, 24, b, 0, frameOffsets) || !table(data, b, c, 2, imageOffsets) ||
      !table(data, c, p, 0, sequenceOffsets)) return false;
- SpriteResource parsed;
+ SpriteResource parsed; parsed.archiveId=sourceId; parsed.fingerprint=fingerprint;
  for (uint i = 0; i + 1 < frameOffsets.size(); ++i) {
   uint32 start = frameOffsets[i], length = frameOffsets[i+1] - start;
   if (length < 2 || data[start] || length != 2U + 8U*data[start+1]) return false;

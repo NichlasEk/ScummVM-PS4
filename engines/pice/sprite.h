@@ -15,7 +15,9 @@ struct SequenceStep { uint16 frame, ticks; int16 x, y; };
 struct SpriteSequence { Common::Array<SequenceStep> steps; };
 class SpriteResource {
 public:
- bool load(const Common::Array<byte> &data);
+ bool load(const Common::Array<byte> &data,int32 archiveId=-1);
+ int32 archiveId=-1;
+ uint32 fingerprint=0;
  bool hasSequence(int index) const { return index>=0 && uint(index)<sequences.size() && !sequences[index].steps.empty(); }
  bool image(uint index, SpriteImage &out) const;
  bool paintFrame(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const;

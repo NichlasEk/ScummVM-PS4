@@ -1,5 +1,9 @@
 # Native PICE movie checkpoint
 
+**Continuation update:** autosave and native checkpoint restoration are now
+implemented. See [PICE-SAVE-RUNTIME.md](PICE-SAVE-RUNTIME.md) for the latest
+verified state and exact continuation. The earlier stop below is historical.
+
 The experimental engine implements the DOS MUX variant used by `VIN12.MUX`.
 This is part of the opening sequence, not a complete playable-game release.
 The original movie stays in the user's external game directory, `E_VIDEO/`.
@@ -96,7 +100,7 @@ not shift. New actors can reuse vacant slots. Synthetic tests cover the
 scheduler tests cover delayed trigger release, crossing the target step,
 independent caller waiting and rejection of a task that would replace itself.
 
-**Current exact stop: bank 1140, entry 20, byte 6718, opcode 152.** This requests
+**Historical stop, now implemented: bank 1140, entry 20, byte 6718, opcode 152.** This requests
 the original autosave (`G_IceTxt`,2,`SAV00`). Do not silently skip it or create an
 empty save file. Implement native state serialization and restoration first:
 A/B variables, room/script PCs and waits, actor slots and animation/path state,

@@ -405,3 +405,9 @@ The background-only checkpoint above has been superseded. See
 script-driven entrance and captain's dialogue, concurrent actor walks, guest
 tests, remaining limitations and the exact next opcode. The full game is
 still not playable.
+
+## 2026-09-20: native checkpoint restoration and post-intro progress
+
+See [PICE-SAVE-RUNTIME.md](PICE-SAVE-RUNTIME.md) for autosave, F5/F7 checkpoint
+controls, fresh-process restoration with music, and the next input/death-flow
+continuation. The engine is still experimental and not a complete playable game.

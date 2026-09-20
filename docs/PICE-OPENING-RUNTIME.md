@@ -123,8 +123,10 @@ Original binaries/disassembly remain ignored under `artifacts/pice/`.
 
 1. The opening now reaches the movie-only bank 1176. Opcode 138 uses a native
    MUX reader and returns to room 0. Entry 20 now passes animation-trigger
-   opcode 147 and actor removal 83, then stops at byte 6718, **opcode 152**
-   (autosave). See `PICE-MOVIE-RUNTIME.md` for evidence and continuation.
+   opcode 147 and actor removal 83. Autosave, restoration, music and later
+   actor creation are now implemented; without input the timed sequence stops
+   at task 28, byte 8462, opcode 131. See `PICE-SAVE-RUNTIME.md` for the current
+   continuation and verification.
 2. Bootstrap 34 still contains unsupported context expressions **46(5),46(4)**.
    Opcode 46 dereferences object-3 pointer table 0x11ad. Context 4/5 are previous
    room/chapter; 7/8 are current room/chapter. Do not guess the other contexts.
@@ -137,7 +139,9 @@ Original binaries/disassembly remain ignored under `artifacts/pice/`.
    Font rendering and subtitle layout still use the preview font.
 5. Hotspot records and actions are registered but not dispatched from clicks.
    Hover labels, verb selection, inventory pickup/use, dialogue choices,
-   transitions, save/load and a complete playthrough are still required.
+   transitions and a complete playthrough are still required. Native checkpoint
+   save/load is implemented; full save-slot UI and saving during dialogue remain
+   pending.
 6. Foreground is composited after actors; general depth sorting is pending.
    Frame-triggered sounds are checked on runtime visits; catch-up that crosses
    multiple steps can miss an event. Renderer image caching and performance

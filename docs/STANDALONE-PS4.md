@@ -1,7 +1,11 @@
 # ScummVM PS4 without bundled games
 
 This is an unofficial PS4 port of ScummVM 2.9.1, currently built with the
-SCUMM engine only. The user has confirmed that the previous DOTT package
+SCUMM engine only, including the v7/v8 subengine needed by The Dig.
+Package version 1.08 enables this subengine; earlier builds could detect
+The Dig but rejected startup with "SCUMM v7 & v8 support is not compiled in".
+Install the updated `dist/ScummVM-PS4-2.9.1.pkg` over the previous package.
+The user has confirmed that the previous DOTT package
 starts and plays on a real PS4. The changes in package version 1.01 require
 another hardware test.
 

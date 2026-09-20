@@ -121,32 +121,37 @@ bool PiceEngine::showPicture(uint position) {
  debug("[pice] image=%u width=%u height=%u pixel-fnv=%08x palette-fnv=%08x", resource, w, h, hashBytes(pixels), hashBytes(palette));
  return true;
 }
+bool PiceEngine::loadAnimation(const Common::String &name,int local,SpriteResource &sprite) {
+ uint32 id; Common::Array<byte> bytes;
+ return (matchesResourceGroup(name,"A02") || matchesResourceGroup(name,"A03")) &&
+  resolveChapterGraphics(name,local,id) && _graphics.read(id,bytes) && sprite.load(bytes,id);
+}
 bool PiceEngine::background(const Common::String &name,int16 local,int16 flags) {
  // Explicit English EU subset: original name resolution prefixes S; SB02
  // spans 815..881. Other groups and nonzero flags await implementation.
- if (!name.equalsIgnoreCase("B02") || local<0 || local>=67 || flags) return false;
+ uint32 resource; if (!resolveChapterGraphics(name,local,resource) || flags) return false;
  Common::Array<byte> pixels; uint16 w,h;
- uint resource=815+uint(local);
- if (!_graphics.read(resource,pixels) || !decodeImageHeader(pixels,w,h) || w!=640 || h>320) return false;
+
+ if (!_graphics.read(resource,pixels) || !decodeImageHeader(pixels,w,h) || w<640 || w>2048 || h>320) return false;
  _scenePixels=pixels; _sceneBackground=resource;
  debug("[pice] script-background name=%s local=%d flags=%d resource=%u fnv=%08x",name.c_str(),local,flags,resource,hashBytes(pixels));
  return true;
 }
 bool PiceEngine::palette(const Common::String &name,int16 local) {
- if (!name.equalsIgnoreCase("B02") || local<0 || local>=67) return false;
- Common::Array<byte> colors; uint resource=815+uint(local);
+ uint32 resource; if (!resolveChapterGraphics(name,local,resource)) return false;
+ Common::Array<byte> colors;
  if (!_graphics.read(resource,colors) || colors.size()!=768) return false;
  _scenePalette=colors; _scenePaletteId=resource;
  debug("[pice] script-palette name=%s local=%d resource=%u fnv=%08x",name.c_str(),local,resource,hashBytes(colors));
  return true;
 }
 bool PiceEngine::scenery(const Common::String &name,int16 local) {
- if (!name.equalsIgnoreCase("B02") || local<0 || local>=67) return false;
+ uint32 resource; if (!resolveChapterGraphics(name,local,resource)) return false;
  Common::Array<byte> data; SpriteResource candidate;
- if (!_graphics.read(815+uint(local),data) || !candidate.load(data,815+local) || candidate.sequences.size()!=1 ||
+ if (!_graphics.read(resource,data) || !candidate.load(data,resource) || candidate.sequences.size()!=1 ||
      candidate.sequences[0].steps.size()!=1) return false;
  _scenery=candidate;
- debug("[pice] scenery resource=%u frame=%u parts=%u fnv=%08x",815+uint(local),candidate.sequences[0].steps[0].frame,
+ debug("[pice] scenery resource=%u frame=%u parts=%u fnv=%08x",resource,candidate.sequences[0].steps[0].frame,
        candidate.frames[candidate.sequences[0].steps[0].frame].parts.size(),hashBytes(data));
  return true;
 }
@@ -387,10 +392,11 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==32) {
   // Original PCM music path 0x1594e changes MUS02 to WUS02, base 308.
   // The CD includes rendered music as well as HMP tracks; use its PCM path.
-  if(args.size()!=1 || !name.equalsIgnoreCase("MUS02") || args[0]<0 || args[0]>=6) return false;
+  int base=name.equalsIgnoreCase("MUS02") ? 308 : name.equalsIgnoreCase("MUS03") ? 314 : -1;
+  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==308 ? 6 : 17)) return false;
   Common::Array<byte> data; uint32 offset,size;
-  if(!_soundArchive.read(308+args[0],data) || !voicePayload(data,offset,size)) return false;
-  _mixer->stopHandle(_music.handle); _music=RoomSound(); _music.active=true; _music.persistent=true; _music.resource=308+args[0];
+  if(!_soundArchive.read(base+args[0],data) || !voicePayload(data,offset,size)) return false;
+  _mixer->stopHandle(_music.handle); _music=RoomSound(); _music.active=true; _music.persistent=true; _music.resource=base+args[0];
   result=0; debug("[pice] load-music resource=%u",_music.resource); return true;
  }
  if(op==118 || op==33) {
@@ -406,13 +412,29 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   } else { _music.volume=(uint(args[1])*255+50)/100; _mixer->setChannelVolume(_music.handle,_music.volume); }
   result=op==33 ? args[1] : args[0]; return true;
  }
+ if(op==149) {
+  if(args.size()!=1 || (args[0]!=0 && args[0]!=1)) return false;
+  _inventoryEnabled=args[0]!=0; result=0; return true;
+ }
+ if(op==64) {
+  if(args.size()!=3 || args[0]<0 || args[1]<0 || uint(args[0])>=_items.size() || uint(args[1])>=_items.size() || args[2]<0 || _itemPairs.size()>=10) return false;
+  ItemPair pair; pair.first=args[0]; pair.second=args[1]; pair.entry=args[2];
+  result=_itemPairs.size(); _itemPairs.push_back(pair); return true;
+ }
+ if(op==30) {
+  // 0x2615 -> 0x14f6a: update sample volume and return the percentage.
+  if(args.size()!=2 || args[0]<0 || uint(args[0])>=_sounds.size() || !_sounds[args[0]].active || args[1]<0 || args[1]>100) return false;
+  RoomSound &sound=_sounds[args[0]]; sound.volume=(uint(args[1])*255+50)/100;
+  _mixer->setChannelVolume(sound.handle,sound.volume); result=args[1]; return true;
+ }
  if(op==133 || op==29) {
-  if(args.size()!=1 || !name.equalsIgnoreCase("SMP02") || args[0]<0 || args[0]>=68) return false;
+  int base=name.equalsIgnoreCase("SMP02") ? 45 : name.equalsIgnoreCase("SMP03") ? 113 : -1;
+  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==45 ? 68 : 52)) return false;
   uint slot=0; while(slot<_sounds.size() && _sounds[slot].active) ++slot;
   if(slot>=25) return false;
   Common::Array<byte> data; uint32 offset,size;
-  if(!_soundArchive.read(45+args[0],data) || !voicePayload(data,offset,size)) return false;
-  RoomSound sound; sound.active=true; sound.persistent=op==133; sound.resource=45+args[0]; result=slot;
+  if(!_soundArchive.read(base+args[0],data) || !voicePayload(data,offset,size)) return false;
+  RoomSound sound; sound.active=true; sound.persistent=op==133; sound.resource=base+args[0]; result=slot;
   if(slot==_sounds.size()) _sounds.push_back(sound); else _sounds[slot]=sound;
   debug("[pice] load-sound id=%d resource=%u",result,sound.resource); return true;
  }
@@ -484,10 +506,10 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
    if(actor.animationMode==3 || args[1]<0 || !actor.sprite.hasSequence(args[1])) return false;
    actor.sequence=args[1];
   } else {
-   if(!matchesResourceGroup(name,"A02") || args[1]<0 || args[1]>=179 || args[2]<0) return false;
+   if(args[1]<0 || args[2]<0) return false;
    Common::Array<byte> data;
-   if(!_graphics.read(args[1],data) || !actor.sprite.load(data,args[1]) || !actor.sprite.hasSequence(args[2])) return false;
-   actor.resource=args[1]; actor.sequence=args[2];
+   if(!loadAnimation(name,args[1],actor.sprite) || !actor.sprite.hasSequence(args[2])) return false;
+   actor.resource=actor.sprite.archiveId; actor.sequence=args[2];
    if(op==117) { actor.node=-1; actor.feet=Common::Point(args[3],args[4]); }
    else if(args[3]!=-1) {
     const RoomNavigation &nav=_roomRunner ? _roomRunner->navigation() : _navigation;
@@ -517,8 +539,8 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(args.size()==4 && (args[0]==1 || args[0]==2 || args[0]==5 || args[0]==6)) { result=args[0]; return true; }
   // 0x75bf/0x7873: asynchronous palette interpolation. This scene uses
   // mode 7, RGB target black, duration 200; update only palette entries 0..239.
-  if(args.size()==4 && args[0]==7 && args[1]==0 && args[2]==0 && args[3]>0) {
-   _fadeLevel=0; _fadeStep=args[3]>255 ? 1 : 255/args[3];
+  if(args.size()==4 && args[0]==7 && args[1]==0 && (args[2]==0 || args[2]==1) && args[3]>0) {
+   _fadeIn=args[2]==1; _fadeLevel=0; _fadeStep=args[3]>255 ? 1 : 255/args[3];
    _fadePeriod=args[3]>255 ? args[3]/255 : 1; _fadeRemaining=_fadePeriod;
    _palettePulse=false; result=7; debug("[pice] palette fade-to-black started ticks=%d",args[3]); return true;
   }
@@ -576,11 +598,11 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==130) {
   // 0x18a1: independent random idle animation, no dialogue or task wait.
   if(args.size()!=6 || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active ||
-     !matchesResourceGroup(name,"A02") || args[1]<0 || args[1]>=179 || args[2]<0 || args[3]<args[2] || args[4]<0 || args[5]<args[4]) return false;
+     args[1]<0 || args[2]<0 || args[3]<args[2] || args[4]<0 || args[5]<args[4]) return false;
   Common::Array<byte> data; RoomActor actor=_actors[args[0]];
-  if(!_graphics.read(args[1],data) || !actor.sprite.load(data,args[1])) return false;
+  if(!loadAnimation(name,args[1],actor.sprite)) return false;
   for(int i=args[2];i<=args[3];++i) if(!actor.sprite.hasSequence(i)) return false;
-  actor.resource=args[1]; actor.idleMin=args[2]; actor.idleMax=args[3]; actor.idlePauseMin=args[4]; actor.idlePauseMax=args[5];
+  actor.resource=actor.sprite.archiveId; actor.idleMin=args[2]; actor.idleMax=args[3]; actor.idlePauseMin=args[4]; actor.idlePauseMax=args[5];
   actor.sequence=_random.getRandomNumberRng(actor.idleMin,actor.idleMax); actor.step=0; actor.animationMode=5;
   actor.animationPaused=false; actor.animationOrigin=actor.feet;
   actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks);
@@ -607,7 +629,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==80) {
   // 0x34e8 -> 0x83cb: exit hotspot, approach, script, chapter, room.
   if(args.size()!=5 || args[0]<0 || uint(args[0])>=_hotspots.size() || args[1]<-1 || args[1]>=50 ||
-     args[2]<-1 || args[2]>=50 || args[3]!=2 || args[4]<0 || args[4]>=40) return false;
+     args[2]<-1 || args[2]>=50 || (args[3]!=2 && args[3]!=3) || args[4]<0 || args[4]>=(args[3]==2 ? 40 : 52)) return false;
   Action action; action.hotspot=args[0]; action.verb=3; action.approach=args[1]; action.entry=args[2];
   action.exitChapter=args[3]; action.exitRoom=args[4]; if(storeAction(action)<0) return false; result=0; return true;
  }
@@ -642,10 +664,10 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   result=args[0]; return true;
  }
  if(op==77) {
-  if(args.size()!=4 || !matchesResourceGroup(name,"A02") || args[0]<0 || args[0]>=179 || args[1]<0) return false;
+  if(args.size()!=4 || args[0]<0 || args[1]<0) return false;
   Common::Array<byte> data; RoomActor actor;
-  if(!_graphics.read(args[0],data) || !actor.sprite.load(data,args[0]) || !actor.sprite.hasSequence(args[1])) return false;
-  actor.resource=args[0]; actor.sequence=args[1]; actor.node=-1; actor.feet=Common::Point(args[2],args[3]);
+  if(!loadAnimation(name,args[0],actor.sprite) || !actor.sprite.hasSequence(args[1])) return false;
+  actor.resource=actor.sprite.archiveId; actor.sequence=args[1]; actor.node=-1; actor.feet=Common::Point(args[2],args[3]);
   actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); result=storeActor(actor); return result>=0;
  }
  return false;
@@ -679,13 +701,13 @@ bool PiceEngine::createItem(const Common::String &name,int16 local,int16 sequenc
 }
 bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequence,int16 node,int16 &id) {
  const RoomNavigation *nav=_buildingNavigation ? _buildingNavigation : (_roomRunner ? &_roomRunner->navigation() : nullptr);
- if (!matchesResourceGroup(name,"A02") || local<0 || local>=179 || !nav ||
+ if (local<0 || !nav ||
      node<0 || uint(node)>=nav->nodes.size() || !nav->nodes[node].active) return false;
  RoomActor actor; Common::Array<byte> data;
- if (!_graphics.read(local,data) || !actor.sprite.load(data,local) || sequence<0 || !actor.sprite.hasSequence(sequence)) return false;
+ if (!loadAnimation(name,local,actor.sprite) || sequence<0 || !actor.sprite.hasSequence(sequence)) return false;
  const RoomNode &position=nav->nodes[node];
  if (!position.scale || position.scale>400) return false;
- actor.resource=local; actor.sequence=sequence; actor.node=node; actor.feet=Common::Point(position.x,position.y);
+ actor.resource=actor.sprite.archiveId; actor.sequence=sequence; actor.node=node; actor.feet=Common::Point(position.x,position.y);
  actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); id=storeActor(actor); if(id<0) return false;
  debug("[pice] create-actor id=%d resource=%d sequence=%d node=%d x=%d y=%d",id,local,sequence,node,position.x,position.y); return true;
 }
@@ -764,14 +786,31 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  debug("[pice] movie completed name=%s frames=%u failed=%d",name.c_str(),movie.frame,movie.failed);
  return !movie.failed && !shouldQuit();
 }
+bool PiceEngine::loadChapter(int16 chapter,uint room) {
+ if(chapter!=3 || room>=52) return false;
+ // Chapter-local definitions must be recreated before any destination room.
+ _roomRunner.reset(); _actors.clear(); _hotspots.clear(); _actions.clear(); _worldItems.clear();
+ _items.clear(); _ownedItems.clear(); _itemLabels.clear(); _menus.clear(); _menuEnabled.clear();
+ _animationSounds.clear(); _selectedItem=-1; _activeMenu=_menuChoice=-1; _inputLocks=0;
+ for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
+ _sounds.clear(); _mixer->stopHandle(_music.handle); _music=RoomSound();
+ _chapter=chapter; _roomBankId=1182+room; _itemPairs.clear(); _pendingChapter=chapter; _pendingRoom=-1; _previousRoom=-1;
+ Common::Array<byte> bytes; ScriptResource bootstrap;
+ if(!_graphics.read(1181,bytes) || !bootstrap.load(bytes)) return false;
+ ScriptRunner init(bootstrap,&_worldVariables,this); init.start(0);
+ ScriptRunner::Result result=init.run(0,4096); uint16 op=0; bootstrap.word(init.position(0),op);
+ debug("[pice] chapter bootstrap chapter=%d result=%d pc=%u opcode=%u",chapter,int(result),init.position(0),op);
+ if(result!=ScriptRunner::kStopped) return false;
+ return loadRoom(room);
+}
 bool PiceEngine::changeRoom(int16 chapter,int16 room) {
  // 0x1c232 passes room+2 to the SMxx script group. SM02 begins at 1138;
  // bootstrap occupies slot 1, so room 0 is 1140 and room 24 is 1164.
- if(chapter!=2 || room<0 || room>=40 || _pendingRoom>=0) return false;
+ if((chapter!=2 && chapter!=3) || room<0 || room>=(chapter==2 ? 40 : 52) || _pendingRoom>=0) return false;
  Common::Array<byte> bytes; ScriptResource bank;
- if(!_graphics.read(1140+room,bytes) || !bank.load(bytes)) return false;
- _pendingRoom=room;
- debug("[pice] request-room chapter=%d room=%d bank=%d",chapter,room,1140+room); return true;
+ if(!_graphics.read((chapter==2 ? 1140 : 1182)+room,bytes) || !bank.load(bytes)) return false;
+ _pendingRoom=room; _pendingChapter=chapter;
+ debug("[pice] request-room chapter=%d room=%d bank=%d",chapter,room,(chapter==2 ? 1140 : 1182)+room); return true;
 }
 bool PiceEngine::gameOver(int16 reason) {
  if(reason<0 || reason>=50) return false;
@@ -786,7 +825,7 @@ bool PiceEngine::gameOver(int16 reason) {
 bool PiceEngine::enterRoom(const Common::String &name,const Common::Array<int16> &args,int16 &actor) {
  actor=-1;
  if(args.size()!=6) return false;
- if(args[0]!=2 || args[1]!=_previousRoom) return true;
+ if(args[0]!=_chapter || args[1]!=_previousRoom) return true;
  if(_player<0 || uint(_player)>=_actors.size() || !_actors[_player].active) return false;
  Common::Array<int16> animation;
  animation.push_back(_player); animation.push_back(args[3]); animation.push_back(args[4]); animation.push_back(args[2]);
@@ -798,15 +837,15 @@ bool PiceEngine::enterRoom(const Common::String &name,const Common::Array<int16>
 }
 bool PiceEngine::loadRoom(uint room) {
  Common::Array<byte> bytes; ScriptResource bank;
- if(room>=40 || !_graphics.read(1140+room,bytes) || !bank.load(bytes)) return false;
- _previousRoom=_roomRunner ? int(_roomBankId)-1140 : -1;
- _roomRunner.reset(); _roomBank=bank; _roomBankId=1140+room;
+ if(room>=uint(_chapter==2 ? 40 : 52) || !_graphics.read((_chapter==2 ? 1140 : 1182)+room,bytes) || !bank.load(bytes)) return false;
+ _previousRoom=_roomRunner ? int(_roomBankId)-(_chapter==2 ? 1140 : 1182) : -1;
+ _roomRunner.reset(); _roomBank=bank; _roomBankId=(_chapter==2 ? 1140 : 1182)+room;
  // Same-chapter teardown preserves inventory, dialogue menus, variables and
  // persistent SFX handles (0x1c4a9 -> 0x15286 with argument zero).
  for(uint i=0;i<_sounds.size();++i) if(_sounds[i].active && !_sounds[i].persistent) {
   _mixer->stopHandle(_sounds[i].handle); _sounds[i]=RoomSound();
  }
- _actors.clear(); _worldItems.clear(); _hotspots.clear(); _actions.clear(); _animationSounds.clear();
+ _actors.clear(); _worldItems.clear(); _hotspots.clear(); _actions.clear(); _animationSounds.clear(); _inventoryEnabled=true; _advanceRequested=false;
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _playerMovement=true; _cursorItem=-2;
  _scenery=SpriteResource(); _navigation.clear(); _player=-1; _cameraActor=-1; _inputLocks=0; _palettePulse=false; _fadeLevel=-1; _dialogueActor=-1; _narration=false; _closeup=false;
@@ -850,11 +889,16 @@ bool PiceEngine::loadRoom(uint room) {
  _roomClock=_system->getMillis(); _roomRenderClock=_roomClock;
  return renderRoom();
 }
+int PiceEngine::cameraX() const {
+ if(_scenePixels.size()<4 || _cameraActor<0 || uint(_cameraActor)>=_actors.size()) return 0;
+ return MAX(0,MIN(int(READ_LE_UINT16(&_scenePixels[0]))-640,int(_actors[_cameraActor].feet.x)-320));
+}
 bool PiceEngine::renderRoom() {
  _system->fillScreen(0);
  _roomCanvas.clear(); _roomCanvas.resize(640*400,0);
  uint height=READ_LE_UINT16(&_scenePixels[2]);
- memcpy(&_roomCanvas[((400-height)/2)*640],&_scenePixels[4],640*height);
+ uint width=READ_LE_UINT16(&_scenePixels[0]); int viewX=cameraX();
+ for(uint y=0;y<height;++y) memcpy(&_roomCanvas[((400-height)/2+y)*640],&_scenePixels[4+y*width+viewX],640);
  // Original 0xb3b6 merges actors (Y at +5) and scenery (Y at +3).
  // Equal anchors paint scenery first, allowing an actor to stand in front.
  struct Layer { int y; uint index; bool actor; };
@@ -881,8 +925,8 @@ bool PiceEngine::renderRoom() {
   if(layer.actor) {
    const RoomActor &actor=_actors[layer.index];
    uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
-   if(!actor.sprite.paintScaledFrame(frame,actor.feet.x,actor.feet.y-40,actorScale(actor),_roomCanvas,640,400)) return false;
-  } else if(!_scenery.paintPart(sceneryFrame,layer.index,0,-40,_roomCanvas,640,400)) return false;
+   if(!actor.sprite.paintScaledFrame(frame,actor.feet.x-viewX,actor.feet.y-40,actorScale(actor),_roomCanvas,640,400)) return false;
+  } else if(!_scenery.paintPart(sceneryFrame,layer.index,-viewX,-40,_roomCanvas,640,400)) return false;
  }
  if(_closeup && dialogueActive()) {
   Common::Array<int16> sequences;
@@ -935,10 +979,10 @@ bool PiceEngine::startDialoguePage() {
  debug("[pice] dialogue-page=%u/%u voice=%u closeup=%d",_dialoguePage+1,_dialoguePages.size(),_dialogueVoices[_dialoguePage],int(_closeup)); return true;
 }
 bool PiceEngine::closeupDialogue(const Common::String &animationName,const Common::String &textName,const Common::String &key,const Common::Array<int16> &args,int16 &actor) {
- if(args.size()!=6 || dialogueActive() || !matchesResourceGroup(animationName,"A02") ||
-    args[2]<0 || args[2]>=179) return false;
+ if(args.size()!=6 || dialogueActive() ||
+    args[2]<0) return false;
  DialogueLine line; Common::Array<uint32> voices; Common::Array<byte> data; SpriteResource sprite; Common::Array<VoiceAnimation> animations;
- if(!loadDialogue(textName,args[5],key,line,voices) || !_graphics.read(args[2],data) || !sprite.load(data,args[2]) || !sprite.hasSequence(0)) return false;
+ if(!loadDialogue(textName,args[5],key,line,voices) || !loadAnimation(animationName,args[2],sprite) || !sprite.hasSequence(0)) return false;
  for(uint i=0;i<voices.size();++i) {
   VoiceAnimation animation;
   if(!_language.read(voices[i],data) || !animation.load(data)) return false;
@@ -995,17 +1039,17 @@ bool PiceEngine::speakDialogue(int16 actor,const Common::String &name,int16 loca
 }
 bool PiceEngine::animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) {
  if(args.size()!=7 || dialogueActive() || args[0]<0 || uint(args[0])>=_actors.size() || textName.size()<3 ||
-    args[1]<0 || !matchesResourceGroup(animationName,"A02") || args[2]<0 || args[2]>=179 ||
+    args[1]<0 || args[2]<0 ||
     args[3]<0 || args[4]<args[3] || args[5]<0 || args[6]<args[5]) return false;
  DialogueLine line; Common::Array<uint32> voices; Common::Array<byte> data;
  if(!loadDialogue(textName,args[1],key,line,voices)) return false;
  RoomActor actor=_actors[args[0]];
- if(!_graphics.read(args[2],data) || !actor.sprite.load(data,args[2]) || uint(args[4])>=actor.sprite.sequences.size()) return false;
+ if(!loadAnimation(animationName,args[2],actor.sprite) || uint(args[4])>=actor.sprite.sequences.size()) return false;
  for(int sequence=args[3];sequence<=args[4];++sequence) if(!actor.sprite.hasSequence(sequence)) return false;
  // 0x1704 / 0x1ab30: speech owns a temporary animation resource, choosing
  // sequences and pauses inside the script's inclusive ranges. State 10
  // restores the previous resource/sequence when the dialogue finishes.
- actor.resource=args[2]; actor.sequence=_random.getRandomNumberRng(args[3],args[4]); actor.step=0;
+ actor.resource=actor.sprite.archiveId; actor.sequence=_random.getRandomNumberRng(args[3],args[4]); actor.step=0;
  actor.animationMode=3; actor.animationOrigin=actor.feet; actor.animationPaused=false;
  actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks);
  _dialoguePages=line.pages; _dialogueVoices=voices; _dialoguePage=0; _closeup=false;
@@ -1238,8 +1282,9 @@ void PiceEngine::tickRoom() {
    if(writeCheckpoint(false) && clickRoom(point,false)) { _testUseDone=true; debug("[pice] test use inventory item=%u on fire",item); }
   }
  }
- if(_testMovieDone && !_testCheckpointDone && ConfMan.hasKey("pice_test_checkpoint_room") &&
-    _roomBankId==uint(1140+ConfMan.getInt("pice_test_checkpoint_room")) && !_roomRunner->running(0) &&
+ if(ConfMan.getBool("pice_test_dismiss_menu") && _activeMenu>=0 && _menuChoice==-1 && now-_menuOpenedAt>1000) _menuChoice=-2;
+ if(((_testMovieDone && ConfMan.hasKey("pice_test_checkpoint_room")) || ConfMan.hasKey("pice_test_checkpoint_bank")) && !_testCheckpointDone &&
+    _roomBankId==uint(ConfMan.hasKey("pice_test_checkpoint_bank") ? ConfMan.getInt("pice_test_checkpoint_bank") : 1140+ConfMan.getInt("pice_test_checkpoint_room")) && !_roomRunner->running(0) &&
     !_savePending && !_inputLocks && _actionEntry<0 && !dialogueActive() && _pendingRoom<0 &&
     _fadeLevel<0 && _roomRunner->exclusiveTask()<0 && !actorBusy(_player)) {
   if(writeCheckpoint(false)) { _testCheckpointDone=true; debug("[pice] test progression checkpoint bank=%u",_roomBankId); }
@@ -1258,7 +1303,7 @@ void PiceEngine::tickRoom() {
  }
  if(_pendingRoom>=0) {
   uint room=_pendingRoom;
-  if(!loadRoom(room)) { warning("[pice] Cannot initialize room %u",room); _scenePreview=false; }
+  if(!(_pendingChapter==_chapter ? loadRoom(room) : loadChapter(_pendingChapter,room))) { warning("[pice] Cannot initialize room %u",room); _scenePreview=false; }
   return;
  }
  if(_fadeLevel>=0 && _fadeLevel<255 && _scenePalette.size()==768) {
@@ -1267,9 +1312,9 @@ void PiceEngine::tickRoom() {
    _fadeRemaining+=_fadePeriod; _fadeLevel=MIN(255,_fadeLevel+_fadeStep);
   }
   Common::Array<byte> colors=_scenePalette;
-  for(uint i=0;i<240*3;++i) colors[i]=int(colors[i])*(256-_fadeLevel)/256;
+  for(uint i=0;i<240*3;++i) colors[i]=int(colors[i])*(_fadeIn ? _fadeLevel : 256-_fadeLevel)/256;
   _system->getPaletteManager()->setPalette(&colors[0],0,256);
-  if(_fadeLevel==255) debug("[pice] palette fade-to-black complete");
+  if(_fadeLevel==255) { if(_fadeIn) { _system->getPaletteManager()->setPalette(&_scenePalette[0],0,256); _fadeLevel=-1; } debug("[pice] palette fade complete"); }
  }
  if(_palettePulse && _scenePalette.size()==768) {
   _pulseRemaining-=ticks;
@@ -1496,6 +1541,7 @@ Common::Error PiceEngine::run() {
 #ifdef PICE_TESTBENCH
  if(ConfMan.getBool("pice_restore_slot0")) restored=readCheckpoint(false);
  else if(ConfMan.getBool("pice_restore_autosave")) restored=readCheckpoint(true);
+ if(restored && ConfMan.hasKey("pice_test_chapter") && !loadChapter(ConfMan.getInt("pice_test_chapter"),0)) return Common::Error(Common::kUnknownError,"Chapter test initialization failed");
  if(restored && ConfMan.hasKey("pice_test_room")) restored=loadRoom(ConfMan.getInt("pice_test_room"));
  if(restored && ConfMan.getBool("pice_test_hamsun_full_inventory")) {
   // Original pickup commands on room objects; only this isolated fixture
@@ -1520,6 +1566,7 @@ Common::Error PiceEngine::run() {
  while (!shouldQuit() && !done) {
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
+   if(event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN || event.type==Common::EVENT_KEYDOWN) _advanceRequested=true;
    int change = 0;
    if(_gameOver) {
     int choice=-1;
@@ -1582,7 +1629,7 @@ Common::Error PiceEngine::run() {
     if (!showPicture(next)) { _mixer->stopHandle(_speechHandle); CursorMan.popCursor(); return Common::Error(Common::kReadingFailed); }
    }
   }
-  tickRoom();
+  tickRoom(); _advanceRequested=false;
   advanceAnimation();
   _system->updateScreen(); _system->delayMillis(10);
  }

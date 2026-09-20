@@ -32,11 +32,11 @@ def main():
     payload = bytearray(data[16:])
     if (data[:8] != b'PICESV01' or len(payload) < 2228 or
             struct.unpack_from('<II', data, 8) != (len(payload), checksum(payload)) or
-            not 1 <= struct.unpack_from('<I', payload)[0] <= 11 or
+            not 1 <= struct.unpack_from('<I', payload)[0] <= 12 or
             struct.unpack_from('<I', payload, 4)[0] != 1147):
-        raise SystemExit('Requires a valid local bridge autosave (bank 1147, version 1..11).')
+        raise SystemExit('Requires a valid local bridge autosave (bank 1147, version 1..12).')
     # Isolated fixture: Wayne has left, Hamsun has not received the medal.
-    # Scalar world tables have the same layout in snapshot versions 1..11.
+    # Scalar world tables have the same layout in snapshot versions 1..12.
     for index, value in [(92, 0 if args.full_inventory else 1), (94, 0), (118, 0)]:
         struct.pack_into('<i', payload, 28 + (250 + index) * 4, value)
     target = root / '.tools/xdg-pice-hamsun-check/shadPS4'

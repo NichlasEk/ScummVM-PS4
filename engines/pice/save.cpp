@@ -28,6 +28,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  bool playerMovement=_playerMovement;
  int16 previousRoom=_previousRoom;
  auto labels=_itemLabels; labels.resize(_items.size());
+ auto pairs=_itemPairs; bool inventoryEnabled=_inventoryEnabled;
  auto owned=_ownedItems; int16 selectedItem=_selectedItem;
  auto actors=_actors; auto items=_items; auto worldItems=_worldItems;
  auto hotspots=_hotspots; auto actions=_actions; auto bindings=_animationSounds;
@@ -45,14 +46,14 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=11; io.number(version); if(version<1 || version>11) return false;
+ uint32 version=12; io.number(version); if(version<1 || version>12) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
- if(!io.ok || bankId<1140 || bankId>=1180 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
+ if(!io.ok || bankId<1140 || bankId>=1234 || (bankId>=1180 && bankId<1182) || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
  uint32 bankHash=checksum(bankBytes),backgroundHash=checksum(backgroundBytes),expectedBank=bankHash,expectedBackground=backgroundHash;
  io.number(expectedBank); io.number(expectedBackground);
  uint16 width,height;
- if(!io.ok || bankHash!=expectedBank || backgroundHash!=expectedBackground || !decodeImageHeader(backgroundBytes,width,height) || width!=640 || height>320) return false;
+ if(!io.ok || bankHash!=expectedBank || backgroundHash!=expectedBackground || !decodeImageHeader(backgroundBytes,width,height) || width<640 || width>2048 || height>320) return false;
  ScriptResource bank; if(!bank.load(bankBytes) || !vars.syncState(io)) return false;
  io.bytes(tasks,16384); if(!io.ok) return false;
  ScriptRunner candidate(bank,&vars,this); StateIO taskInput(tasks,true);
@@ -154,7 +155,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   io.number(musicPlaying); io.number(musicElapsed);
   if(music.active) {
    Common::Array<byte> raw; uint32 start,size;
-   if(music.resource<308 || music.resource>=314 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
+   if(music.resource<308 || music.resource>=331 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
   } else if(musicPlaying) io.ok=false;
  } else { music=RoomSound(); musicPlaying=false; musicElapsed=0; }
  if(version>=3) { io.bytes(owned,100); io.number(selectedItem); }
@@ -165,7 +166,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   if(actions[i].item < -1 || actions[i].item>=int(items.size()) || (actions[i].item>=0 && actions[i].verb!=9)) return false;
  }
  if(version>=6) io.number(previousRoom); else previousRoom=-1;
- if(previousRoom < -1 || previousRoom>=40) return false;
+ if(previousRoom < -1 || previousRoom>=(bankId>=1182 ? 52 : 40)) return false;
  if(version>=7) {
   if(!io.count(menuEnabled,20) || menuEnabled.size()!=menus.size()) return false;
   for(uint i=0;i<menuEnabled.size();++i) {
@@ -184,13 +185,20 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   if(version>=8) { io.number(actions[i].exitChapter); io.number(actions[i].exitRoom); }
   else actions[i].exitChapter=actions[i].exitRoom=-1;
   if(actions[i].exitChapter==-1) { if(actions[i].exitRoom!=-1) return false; }
-  else if(actions[i].verb!=3 || actions[i].exitChapter!=2 || actions[i].exitRoom<0 || actions[i].exitRoom>=40) return false;
+  else if(actions[i].verb!=3 || (actions[i].exitChapter!=2 && actions[i].exitChapter!=3) || actions[i].exitRoom<0 || actions[i].exitRoom>=(actions[i].exitChapter==2 ? 40 : 52)) return false;
  }
  if(version>=9) {
   if(!io.count(labels,100) || labels.size()!=items.size()) return false;
   for(uint i=0;i<labels.size();++i) io.string(labels[i]);
  } else { labels.clear(); labels.resize(items.size()); }
  if(version>=10) io.number(playerMovement); else playerMovement=true;
+ if(version>=12) {
+  io.number(inventoryEnabled);
+  if(!io.count(pairs,10)) return false;
+  for(uint i=0;i<pairs.size();++i) { io.number(pairs[i].first); io.number(pairs[i].second); io.number(pairs[i].entry);
+   if(pairs[i].first<0 || uint(pairs[i].first)>=items.size() || pairs[i].second<0 || uint(pairs[i].second)>=items.size() || pairs[i].entry<0) return false;
+  }
+ } else { pairs.clear(); inventoryEnabled=true; }
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
  for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;
@@ -198,7 +206,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
     (camera!=-1 && !validActor(camera)) || period<=0 || offset<0 || offset>255 || delta < -255 || delta>255) return false;
  if(!loading || !apply) return true;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
- _mixer->stopHandle(_speechHandle); _mixer->stopHandle(_music.handle); _music=music; _music.handle=Audio::SoundHandle(); _roomRunner.reset(); _roomBank=bank; _roomBankId=bankId; _worldVariables=vars;
+ _mixer->stopHandle(_speechHandle); _mixer->stopHandle(_music.handle); _music=music; _music.handle=Audio::SoundHandle(); _roomRunner.reset(); _roomBank=bank; _roomBankId=bankId; _chapter=bankId>=1182 ? 3 : 2; _pendingChapter=_chapter; _worldVariables=vars; _itemPairs=pairs; _inventoryEnabled=inventoryEnabled;
  _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
  StateIO taskRestore(tasks,true); if(!_roomRunner->syncState(taskRestore)) return false;
  _roomRunner->prioritizeInitialization();

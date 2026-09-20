@@ -37,6 +37,8 @@ bool PiceEngine::stateValue(int16 kind,int16 id,int16 &value) const {
  value=_ownedItems[id]!=0; return true;
 }
 bool PiceEngine::context(int16 index,int16 &value) const {
+ if(index==5) { value=_chapter; return true; }
+ if(index==4) { value=int(_roomBankId)-(_chapter==2 ? 1140 : 1182); return true; }
  if(index==6) { value=_lastMenuChoice; return true; }
  if(index!=9) return false;
  value=_actionContext; return true;
@@ -67,6 +69,7 @@ bool PiceEngine::clickMenu(Common::Point point) {
  return false;
 }
 int PiceEngine::hotspotAt(Common::Point point) const {
+ point.x+=cameraX();
  // Room actors use the original 640x480 anchors, offset into our 640x400 view.
  if(point.y<(!_playerMovement || _player<0 ? 0 : 40) || point.y>=(!_playerMovement || _player<0 ? 400 : 338)) return -1;
  for(uint i=0;i<_hotspots.size();++i) {
@@ -81,6 +84,7 @@ int PiceEngine::hotspotAt(Common::Point point) const {
  return -1;
 }
 bool PiceEngine::inventoryVisible() const {
+ if(!_inventoryEnabled) return false;
  return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _eventMan->getMousePos().y<40;
 }
 int PiceEngine::inventoryAt(Common::Point point) const {
@@ -165,7 +169,7 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  if(selected<0) selected=fallback;
  if(selected<0) {
   if(!_playerMovement || _player<0 || spot>=0 || point.y<40 || point.y>=338) return false;
-  Common::Point target; if(!_navigation.nearest(Common::Point(point.x,point.y+40),target)) return false;
+  Common::Point target; if(!_navigation.nearest(Common::Point(point.x+cameraX(),point.y+40),target)) return false;
   if(target==_actors[_player].feet) return true;
   Common::Array<int16> args; args.push_back(_player); args.push_back(target.x); args.push_back(target.y); int16 result;
   return invoke(123,Common::String(),args,Common::String(),result);

@@ -27,8 +27,9 @@ reproduction code belong in Git; commercial data and local snapshots do not.
 | Remaining submarine sequence | Not yet verified end to end | Continue from bridge replay |
 | Later chapters and ending | Script tables indexed, gameplay unverified | Chapter loading, resources, puzzle paths, recovery and final sequence |
 
-The current runtime still restricts room transitions/snapshots to chapter 2 and
-several resource operations to A02/B02. Later chapters need real bootstrap,
+The original runtime restricted room transitions/snapshots to chapter 2 and
+several resource operations to A02/B02. The chapter-3 follow-up below extends
+that boundary. Further chapters still need real bootstrap,
 resource-group and persistent-state support. Merely enabling more opcodes will
 not make the whole game playable. The existing 155-bank/1,499-entry index audit
 and isolated prefix probes are discovery tools, not a playthrough.
@@ -188,3 +189,47 @@ regression checks for both replacements, preserve sentinels and invalid values.
 Rebuilt PS4 package and reopened the user's normal manual profile with no test
 hooks/timeout. Full continuation beyond the icy hold remains a playtest boundary.
 Evidence: `artifacts/pice/ice-sound-manual.log`.
+
+
+## Chapter 3 transition after torpedo movie (2026-09-20)
+
+Bank 1157 task 7 byte 1310 already decodes opcode 34 correctly: it requests
+chapter 3, room 0. The engine's chapter-2-only guard rejected it. Added a
+separate chapter-bootstrap path (1181), then room 0 (1182). References now
+resolve A03 (179..379), B03 (882..1000), SMP03 (113..164), and rendered WUS03
+music (314..330). Existing A02/B02 bounds are preserved. These numeric bounds
+come from the English CD executable's group directory; game assets stay external.
+
+The introductory scene uses a 1280-pixel background. Rendering now respects
+source row stride and draws a 640-pixel viewport; actor/scenery positions and
+picking share the camera offset. Camera tracking is currently a simple clamped
+actor-centered viewport, not a verified reproduction of original camera easing.
+
+Additional instructions required by startup:
+- 30: sample volume, verified handler 0x2615 -> 0x14f6a.
+- 64: register paired inventory objects and global script entry (0x314b ->
+  0x8680). The registrations are preserved in saves; dispatching combinations
+  through the separate global script bank still needs implementation.
+- 36: hold the script PC until fresh keyboard/mouse input (0x236c); no-op
+  skipping would incorrectly remove the pause. Regression tests cover wait/resume.
+- 149: inventory availability flag (0x1fc3, referenced by original inventory
+  drawing/input paths); restored as part of save state.
+- Fade-in counterpart to the existing black palette fade is supported.
+
+Snapshot version 12 adds inventory visibility and pair registrations. Old saves
+remain readable. New chapter bank IDs and music references are validated;
+chapter is derived from the bank on restore. Later chapters remain rejected.
+
+shadPS4 startup tests PASS. Isolated chapter-start replay reached banks 1182,
+1214, 1184 and closeup 1205 without a room-script failure after these changes.
+This fixture enters chapter 3 from a copy of the player's save; it is not an
+end-to-end replay of the torpedo movie, and does not establish full chapter
+playability. Evidence: `artifacts/pice/chapter3-check3.log`,
+`artifacts/pice/chapter3-save-check.log`. Test profile:
+`.tools/xdg-pice-chapter3-check`; the player's profile remains separate.
+
+The version-12 write/reload probe remains unverified: its target is still in a
+mandatory conversation, where saving is intentionally unavailable. No successful
+checkpoint was reported. Preserve the original player's saves; a local backup
+exists at `.tools/pice-save-backup-before-chapter3`. Manual handoff returns to
+the player's torpedo-room save, not the chapter-start test fixture.

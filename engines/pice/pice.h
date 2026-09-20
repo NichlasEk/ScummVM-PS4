@@ -125,6 +125,14 @@ private:
  bool playMovie(const Common::String &name,int16 before,int16 after) override;
  bool changeRoom(int16 chapter,int16 room) override;
  int16 _pendingRoom=-1;
+ int16 _chapter=2, _pendingChapter=2;
+ struct ItemPair { int16 first=-1,second=-1,entry=-1; };
+ Common::Array<ItemPair> _itemPairs;
+ int cameraX() const;
+ bool _fadeIn=false, _advanceRequested=false, _inventoryEnabled=true;
+ bool advanceRequested() const override { return _advanceRequested; }
+ bool loadChapter(int16 chapter,uint room);
+ bool loadAnimation(const Common::String &name,int local,SpriteResource &sprite);
  uint _roomBankId=1140;
  int16 _previousRoom=-1;
  bool renderRoom();

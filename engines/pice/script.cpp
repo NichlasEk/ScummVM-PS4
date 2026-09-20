@@ -143,11 +143,11 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
  case 99: case 124: return true;
- case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
- case 115: case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 84: case 98: case 56: case 92: case 93: case 100: before=1; return true;
+ case 30: case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
+ case 149: case 115: case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 84: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 89: case 81: case 58: case 95: before=4; return true;
  case 80: case 109: before=5; return true;
- case 116: case 123: case 135: case 136: before=3; return true;
+ case 64: case 116: case 123: case 135: case 136: before=3; return true;
  case 32: case 29: case 133: after=1; return true;
  case 137: after=2; return true;
  case 77: after=4; return true;
@@ -397,6 +397,10 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if(!_scene || !_scene->playMovie(name,clearBefore,clearAfter)) { task.active=false; return kUnsupported; }
   task.pc=next; return kAdvanced;
  }
+ if(opcode==36) {
+  if(!_scene || !_scene->advanceRequested()) return kWaiting;
+  task.pc+=2; return kAdvanced;
+ }
  if(opcode==34) {
   if(!_scene) { task.active=false; return kUnsupported; }
   next+=2; int16 chapter,room;
@@ -526,6 +530,15 @@ ScriptRunner::Result ScriptRunner::run(uint index,uint instructionBudget) {
  return kBudgetExhausted;
 }
 bool runScriptTests() {
+ struct AdvanceSink : ScriptSceneSink { bool background(const Common::String &,int16,int16) override { return false; } bool palette(const Common::String &,int16) override { return false; } bool pressed=false; bool advanceRequested() const override { return pressed; } } advance;
+ const uint16 waiting[]={1,36,31,20,0}; Common::Array<byte> waitingBytes; waitingBytes.resize(sizeof(waiting));
+ for(uint i=0;i<sizeof(waiting)/2;++i) WRITE_LE_UINT16(&waitingBytes[i*2],waiting[i]);
+ ScriptResource waitingBank; if(!waitingBank.load(waitingBytes)) return false;
+ ScriptRunner waiter(waitingBank,nullptr,&advance); waiter.start(0);
+ if(waiter.step(0)!=ScriptRunner::kWaiting || waiter.position(0)!=2 || waiter.step(0)!=ScriptRunner::kWaiting) return false;
+ advance.pressed=true;
+ if(waiter.step(0)!=ScriptRunner::kAdvanced || waiter.position(0)!=4 || waiter.step(0)!=ScriptRunner::kStopped) return false;
+
  // Prefix updates preserve 16-bit wraparound and return the new value.
  for(uint table : {5U,19U}) for(uint op : {23U,24U}) {
   const uint16 update[]={1,25,2,uint16(op),uint16(table),1,31,20,0};

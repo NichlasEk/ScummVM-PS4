@@ -5,6 +5,16 @@ namespace Pice {
 bool matchesResourceGroup(const Common::String &name,const Common::String &group) {
  return name.equalsIgnoreCase(group) || name.equalsIgnoreCase(group+".PAK");
 }
+bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) {
+ // English CD graphics group boundaries from its original resource directory.
+ struct Group { const char *name; uint base,count; };
+ static const Group groups[]={{"A02",0,179},{"A03",179,201},{"B02",815,67},{"B03",882,119}};
+ for(uint i=0;i<4;++i) if(matchesResourceGroup(name,groups[i].name)) {
+  if(local<0 || uint(local)>=groups[i].count) return false;
+  resource=groups[i].base+local; return true;
+ }
+ return false;
+}
 bool ResourceNames::load(const Common::Array<byte> &encoded, uint32 archiveCount) {
  _entries.clear(); _archiveCount = 0;
  if (!archiveCount || encoded.size() < 9 || encoded.size() > 1024*1024) return false;
@@ -55,6 +65,10 @@ static Common::Array<byte> encodeFixture(const Common::Array<byte> &plain) {
  return result;
 }
 bool runResourceNameTests() {
+ uint32 id=0;
+ if(!resolveChapterGraphics("A03.Pak",0,id) || id!=179 || !resolveChapterGraphics("A03",200,id) || id!=379 ||
+    resolveChapterGraphics("A03",201,id) || resolveChapterGraphics("A02",179,id) || resolveChapterGraphics("A03",-1,id) ||
+    !resolveChapterGraphics("B03",44,id) || id!=926 || resolveChapterGraphics("A04",0,id)) return false;
  if(!matchesResourceGroup("A02","A02") || !matchesResourceGroup("a02.Pak","A02") ||
     matchesResourceGroup("A03.PAK","A02") || matchesResourceGroup("A02.PAK.extra","A02") ||
     matchesResourceGroup("dir/A02.PAK","A02")) return false;

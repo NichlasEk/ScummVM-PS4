@@ -1,5 +1,9 @@
 # Native PICE save/load checkpoint (2026-09-20)
 
+Continuation: [native clicks and inventory](PICE-INPUT-RUNTIME.md) implements
+the first pickup/use path and save payload version 3. Historical limits below
+are superseded where described there.
+
 The experimental PS4 runtime implements the opening's autosave, a manual
 checkpoint, and restoration into a fresh emulator process. This is a native
 preview format, not an import/export implementation of the original DOS saves.

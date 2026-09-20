@@ -33,12 +33,15 @@ static uint32 hashBytes(const Common::Array<byte> &data) {
 void PiceEngine::drawLabels() {
  Graphics::Surface *screen = _system->lockScreen();
  const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
- font->drawString(screen, "PICE ENGINE PREVIEW - GAMEPLAY NOT IMPLEMENTED", 8, 6, 624, _textColor);
+ font->drawString(screen, "PICE ENGINE PREVIEW - PARTIAL GAMEPLAY", 8, 6, 624, _textColor);
  Common::String status = _spriteMode ? Common::String::format("Sprite %u | sequence %u | step %u/%u | provisional 20 ms/tick", _animationId, _sequence, _step + 1, _animation.sequences[_sequence].steps.size()) : Common::String::format("KSVGA resource %u | image %u/%u", _pictures[_picture], _picture + 1, _pictures.size());
  if (_scenePreview) status=_roomStatus;
  font->drawString(screen, status, 8, 24, 624, _textColor);
- font->drawString(screen, _scenePreview ? "F5: save checkpoint | F7: load checkpoint | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
- font->drawString(screen, "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
+ bool hasInventory=false; for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) hasInventory=true;
+ if(!hasInventory && _scenePreview && _hoverHotspot>=0 && uint(_hoverHotspot)<_hotspots.size()) font->drawString(screen,_hotspots[_hoverHotspot].label,8,365,624,_textColor);
+ else if(!hasInventory) font->drawString(screen, _scenePreview ? "F5: save checkpoint | F7: load checkpoint | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
+
+ if(!_scenePreview || !hasInventory) font->drawString(screen, _scenePreview ? "Left: act / walk | Right: examine | F5 save | F7 load" : "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
  screen->fillRect(Common::Rect(0,338,640,360),0);
  if (!_subtitle.empty()) {
   if(_closeup) font->drawString(screen,_subtitle,9,342,624,_textStyles[2][1],Graphics::kTextAlignCenter);
@@ -157,7 +160,16 @@ bool PiceEngine::runActorLifecycleTests() {
     _actors[7].active || _actors[8].feet.x!=8 || _hotspots[0].active || _worldItems[0].actor!=-1 ||
     _animationSounds.size()!=1 || _animationSounds[0].actor!=8 || _player!=-1 || actorBusy(7) ||
     invoke(83,Common::String(),args,Common::String(),result) || storeActor(RoomActor())!=7) return false;
- _actors.clear(); _hotspots.clear(); _animationSounds.clear(); _worldItems.clear(); return true;
+ _actors.clear(); _hotspots.clear(); _animationSounds.clear(); _worldItems.clear();
+ _actors.push_back(RoomActor()); _items.push_back(RoomActor()); _ownedItems.resize(1,0);
+ WorldItem pickup; pickup.actor=0; pickup.item=0; _worldItems.push_back(pickup);
+ Hotspot pickupSpot; pickupSpot.actor=0; _hotspots.push_back(pickupSpot);
+ args[0]=0;
+ if(!invoke(67,Common::String(),args,Common::String(),result) || result!=0 || !_ownedItems[0] ||
+    _actors[0].active || _hotspots[0].active || _worldItems[0].actor!=-1 ||
+    !invoke(67,Common::String(),args,Common::String(),result)) return false;
+ args[0]=1; if(invoke(67,Common::String(),args,Common::String(),result) || !_ownedItems[0]) return false;
+ _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
 }
 bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) {
  result=-1;
@@ -182,6 +194,17 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   Common::Array<int16> animation; animation.push_back(args[0]); animation.push_back(args[1]);
   if(!invoke(51,name,animation,key,result)) return false;
   debug("[pice] animation-trigger actor=%d sequence=%d step=%d task=%d",args[0],args[1],args[2],args[3]); return true;
+ }
+ if(op==67) {
+  // 0x31ea -> 0x87ac: mark owned once, then remove the world actor.
+  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_items.size()) return false;
+  uint id=args[0];
+  for(uint i=0;i<_worldItems.size();++i) if(_worldItems[i].item==int(id) && _worldItems[i].actor>=0) {
+   Common::Array<int16> remove; remove.push_back(_worldItems[i].actor); int16 ignored;
+   if(!invoke(83,Common::String(),remove,Common::String(),ignored)) return false;
+  }
+  _ownedItems.resize(_items.size(),0); _ownedItems[id]=1; result=id;
+  debug("[pice] inventory pickup item=%u",id); return true;
  }
  if(op==104) {
   if(args.size()!=1 || (args[0]!=-2 && args[0]!=0)) return false;
@@ -394,7 +417,7 @@ bool PiceEngine::createItem(const Common::String &name,int16 local,int16 sequenc
  if (!name.equalsIgnoreCase("OBJECT") || local<0 || local>=9 || _items.size()>=50) return false;
  RoomActor item; Common::Array<byte> data;
  if (!_graphics.read(1306+local,data) || !item.sprite.load(data,1306+local) || sequence<0 || !item.sprite.hasSequence(sequence)) return false;
- item.resource=1306+local; item.sequence=sequence; id=_items.size(); _items.push_back(item);
+ item.resource=1306+local; item.sequence=sequence; id=_items.size(); _items.push_back(item); _ownedItems.resize(_items.size(),0);
  debug("[pice] create-item id=%d resource=%d sequence=%d",id,item.resource,sequence); return true;
 }
 bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequence,int16 node,int16 &id) {
@@ -412,7 +435,7 @@ bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequen
 bool PiceEngine::showScriptScene() {
  Common::Array<byte> bytes;
  _roomRunner.reset(); _inputLocks=0; _dialogueActor=-1; _pulseOffset=10; _pulseDelta=15;
- _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _actors.clear(); _menus.clear(); _hotspots.clear(); _actions.clear(); _player=-1;
+ _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _ownedItems.clear(); _selectedItem=-1; _actors.clear(); _menus.clear(); _hotspots.clear(); _actions.clear(); _player=-1;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
  _sounds.clear(); _animationSounds.clear(); _mixer->stopHandle(_music.handle); _music=RoomSound();
  ScriptResource bootstrap;
@@ -489,6 +512,7 @@ bool PiceEngine::loadRoom(uint room) {
   _mixer->stopHandle(_sounds[i].handle); _sounds[i]=RoomSound();
  }
  _actors.clear(); _worldItems.clear(); _hotspots.clear(); _actions.clear(); _animationSounds.clear();
+ _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _scenery=SpriteResource(); _navigation.clear(); _player=-1; _cameraActor=-1; _inputLocks=0; _palettePulse=false; _dialogueActor=-1; _closeup=false;
  _mixer->stopHandle(_speechHandle); _subtitle.clear(); _pendingRoom=-1;
 
@@ -548,6 +572,23 @@ bool PiceEngine::renderRoom() {
    if(!_closeupSprite.hasSequence(sequences[i]) || !_closeupSprite.paintFrame(_closeupSprite.sequences[sequences[i]].steps[0].frame,
        _closeupOrigin.x,_closeupOrigin.y-40,_roomCanvas,640,400)) return false;
   }
+ }
+ uint inventorySlot=0;
+ for(uint i=0;i<_ownedItems.size() && inventorySlot<12;++i) if(_ownedItems[i]) {
+  const RoomActor &item=_items[i];
+  if(item.sprite.hasSequence(item.sequence)) {
+   uint frame=item.sprite.sequences[item.sequence].steps[0].frame; Common::Rect bounds;
+   if(item.sprite.frameBounds(frame,bounds) && bounds.width()>0 && bounds.height()>0 && bounds.width()<=512 && bounds.height()<=512) {
+    Common::Array<byte> icon; icon.resize(bounds.width()*bounds.height(),0);
+    if(item.sprite.paintFrame(frame,-bounds.left,-bounds.top,icon,bounds.width(),bounds.height())) {
+     uint w=MIN<uint>(40,bounds.width()),h=MIN<uint>(34,bounds.height());
+     for(uint y=0;y<h;++y) for(uint x=0;x<w;++x)
+      _roomCanvas[(362+y)*640+inventorySlot*50+5+x]=icon[(y*bounds.height()/h)*bounds.width()+x*bounds.width()/w];
+    }
+   }
+  }
+  if(_selectedItem==int(i)) for(uint x=inventorySlot*50+4;x<inventorySlot*50+49;++x) _roomCanvas[399*640+x]=_textColor;
+  ++inventorySlot;
  }
  _system->copyRectToScreen(&_roomCanvas[0],640,0,0,640,400);
  drawLabels(); _system->updateScreen(); return true;
@@ -694,6 +735,7 @@ void PiceEngine::tickRoom() {
   }
   binding.fired=match;
  }
+ tickAction();
  for(uint i=0;i<_roomBank.count();++i) {
   if(!_roomRunner->running(i)) continue;
   if(_roomRunner->exclusiveTask()>=0 && _roomRunner->exclusiveTask()!=int(i)) continue;
@@ -703,6 +745,7 @@ void PiceEngine::tickRoom() {
    if(result==ScriptRunner::kInvalid || result==ScriptRunner::kUnsupported) {
     uint16 opcode=0; _roomBank.word(before,opcode);
     _roomStatus=Common::String::format("Room script %u stopped: opcode %u at %u",i,opcode,before);
+    if(_actionEntry==int(i)) { _actionEntry=-1; _actionHotspot=-1; _actionContext=-1; _actionWalking=false; }
     _snapshotPending=true;
     warning("[pice] room-task=%u result=%d pc=%u opcode=%u",i,int(result),before,opcode);
    }
@@ -710,6 +753,34 @@ void PiceEngine::tickRoom() {
   }
  }
 #ifdef PICE_TESTBENCH
+ if(!_testClickDone && ConfMan.hasKey("pice_test_click_hotspot") && !_inputLocks && !actorBusy(_player)) {
+  int target=ConfMan.getInt("pice_test_click_hotspot");
+  if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor==-1) {
+   const Common::Rect &bounds=_hotspots[target].bounds;
+   Common::Point point((bounds.left+bounds.right)/2,(bounds.top+bounds.bottom)/2-40);
+   if(hotspotAt(point)==target && clickRoom(point,false)) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
+  }
+  if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor>=0) {
+   const RoomActor &actor=_actors[_hotspots[target].actor];
+   Common::Array<byte> low,high; low.resize(640*400,0); high.resize(640*400,255);
+   uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
+   if(actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,low,640,400) &&
+      actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,high,640,400)) {
+    for(uint pixel=40*640;pixel<338*640 && !_testClickDone;++pixel) if(low[pixel]==high[pixel]) {
+     Common::Point point(pixel%640,pixel/640);
+     if(hotspotAt(point)==target && clickRoom(point,false)) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
+    }
+   }
+  }
+ }
+ if(_testClickDone && !_testUseDone && ConfMan.getBool("pice_test_use_fire") && _actionEntry<0 && !_inputLocks && !actorBusy(_player)) {
+  for(uint item=0;item<_ownedItems.size() && !_testUseDone;++item) if(_ownedItems[item] && _hotspots.size()>10) {
+   _selectedItem=item;
+   const Common::Rect &bounds=_hotspots[10].bounds;
+   Common::Point point((bounds.left+bounds.right)/2,(bounds.top+bounds.bottom)/2-40);
+   if(writeCheckpoint(false) && clickRoom(point,false)) { _testUseDone=true; debug("[pice] test use inventory item=%u on fire",item); }
+  }
+ }
  if(_testSavePending && int32(_system->getMillis()-_testSaveAt)>=0) {
   _testSavePending=false;
   if(!writeCheckpoint(false)) warning("[pice] Test music checkpoint failed");
@@ -956,9 +1027,19 @@ Common::Error PiceEngine::run() {
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
    int change = 0;
+   if(_scenePreview && event.type==Common::EVENT_LBUTTONDOWN && event.mouse.y>=360) {
+    uint slot=0; for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) {
+     if(int(slot)==event.mouse.x/50) { _selectedItem=_selectedItem==int(i) ? -1 : int(i); break; } ++slot;
+    }
+    continue;
+   }
+   if(_scenePreview && event.type==Common::EVENT_MOUSEMOVE) _hoverHotspot=hotspotAt(event.mouse);
+   if(_scenePreview && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN) && event.mouse.y>=40 && event.mouse.y<338) {
+    clickRoom(event.mouse,event.type==Common::EVENT_RBUTTONDOWN); continue;
+   }
    if (event.type == Common::EVENT_RBUTTONDOWN && !_scenePreview) change = -1;
-   if (event.type == Common::EVENT_MBUTTONDOWN) playSpeech();
-   if (event.type == Common::EVENT_LBUTTONDOWN) {
+   if (event.type == Common::EVENT_MBUTTONDOWN && !_scenePreview) playSpeech();
+   if (event.type == Common::EVENT_LBUTTONDOWN && !_scenePreview) {
     if (event.mouse.y < 40) {
      if (_spriteMode) showPicture(_picture);
      else if (!showAnimation(0)) warning("[pice] Cannot open animation 0");
@@ -973,10 +1054,10 @@ Common::Error PiceEngine::run() {
     if (event.kbd.keycode == Common::KEYCODE_F5 && !writeCheckpoint(false)) warning("[pice] Save unavailable or failed");
     if (event.kbd.keycode == Common::KEYCODE_F7 && !readCheckpoint(false) && !readCheckpoint(true)) warning("[pice] No valid checkpoint to load");
     if (event.kbd.keycode == Common::KEYCODE_ESCAPE) done = true;
-    if (event.kbd.keycode == Common::KEYCODE_RIGHT) change = 1;
-    if (event.kbd.keycode == Common::KEYCODE_LEFT) change = -1;
-    if (event.kbd.keycode == Common::KEYCODE_SPACE) playSpeech();
-    if (event.kbd.keycode == Common::KEYCODE_c) playDialogueSample();
+    if (!_scenePreview && event.kbd.keycode == Common::KEYCODE_RIGHT) change = 1;
+    if (!_scenePreview && event.kbd.keycode == Common::KEYCODE_LEFT) change = -1;
+    if (!_scenePreview && event.kbd.keycode == Common::KEYCODE_SPACE) playSpeech();
+    if (!_scenePreview && event.kbd.keycode == Common::KEYCODE_c) playDialogueSample();
    }
    if (change && _spriteMode) {
     int next = int(_sequence) + change;

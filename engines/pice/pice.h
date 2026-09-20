@@ -24,7 +24,7 @@ private:
  bool readCheckpoint(bool automatic,bool apply=true);
  bool _savePending=false;
 #ifdef PICE_TESTBENCH
- bool _testSavePending=false;
+ bool _testSavePending=false,_testClickDone=false,_testUseDone=false;
  uint32 _testSaveAt=0;
 #endif
  bool background(const Common::String &name,int16 local,int16 flags) override;
@@ -43,6 +43,13 @@ private:
  struct Action { int16 hotspot=-1, verb=-1, approach=-1, entry=-1, fallback=0; };
  Common::Array<Hotspot> _hotspots;
  Common::Array<Action> _actions;
+ bool context(int16 index,int16 &value) const override;
+ int hotspotAt(Common::Point point) const;
+ bool clickRoom(Common::Point point,bool rightButton);
+ void tickAction();
+ int16 _actionContext=-1,_actionEntry=-1,_actionHotspot=-1;
+ bool _actionWalking=false;
+ int _hoverHotspot=-1;
  int16 _player=-1,_cameraActor=-1;
  bool createMenu(const Common::String &name,int16 local,int16 &id) override;
  Common::Array<Common::Array<Common::String> > _menus;
@@ -71,6 +78,8 @@ private:
 
 
  Common::Array<RoomActor> _items;
+ Common::Array<byte> _ownedItems;
+ int16 _selectedItem=-1;
  struct WorldItem { int16 item=-1,actor=-1; };
  Common::Array<WorldItem> _worldItems;
  ScriptVariables _worldVariables;

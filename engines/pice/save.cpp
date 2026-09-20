@@ -22,9 +22,10 @@ bool PiceEngine::requestSave(const Common::String &name,int16 local,const Common
  _savePending=true; debug("[pice] queued autosave key=%s",key.c_str()); return true;
 }
 bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
- if(!loading && (!_scenePreview || !_roomRunner || _dialogueActor>=0 || _closeup || _pendingRoom>=0)) return false;
+ if(!loading && (_actionEntry>=0 || !_scenePreview || !_roomRunner || _dialogueActor>=0 || _closeup || _pendingRoom>=0)) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
+ auto owned=_ownedItems; int16 selectedItem=_selectedItem;
  auto actors=_actors; auto items=_items; auto worldItems=_worldItems;
  auto hotspots=_hotspots; auto actions=_actions; auto bindings=_animationSounds;
  auto menus=_menus; auto sounds=_sounds; RoomSound music=_music; auto vars=_worldVariables;
@@ -40,7 +41,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=2; io.number(version); if(version!=1 && version!=2) return false;
+ uint32 version=3; io.number(version); if(version<1 || version>3) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || bankId<1140 || bankId>=1180 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -142,6 +143,11 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
    if(music.resource<308 || music.resource>=314 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
   } else if(musicPlaying) io.ok=false;
  } else { music=RoomSound(); musicPlaying=false; musicElapsed=0; }
+ if(version>=3) { io.bytes(owned,100); io.number(selectedItem); }
+ else { owned.clear(); owned.resize(items.size(),0); selectedItem=-1; }
+ if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
+    (selectedItem>=0 && !owned[selectedItem])) return false;
+ for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;
  if(!io.finished() || colors.size()!=768 || styles.size()!=12 || (player!=-1 && !validActor(player)) ||
     (camera!=-1 && !validActor(camera)) || period<=0 || offset<0 || offset>255 || delta < -255 || delta>255) return false;
  if(!loading || !apply) return true;
@@ -151,11 +157,13 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  StateIO taskRestore(tasks,true); if(!_roomRunner->syncState(taskRestore)) return false;
  _navigation=rebuilt; _roomRunner->navigation()=rebuilt;
  _actors=actors; _items=items; _worldItems=worldItems; _hotspots=hotspots; _actions=actions; _animationSounds=bindings;
+ _ownedItems=owned; _selectedItem=selectedItem;
  _menus=menus; _sounds=sounds; _scenery=scenerySprite; _inventoryPanel=panel;
  _sceneBackground=backgroundId; _scenePaletteId=paletteId; _scenePixels=backgroundBytes; _scenePalette=colors;
  _player=player; _cameraActor=camera; _inventorySelection=selection; _inputLocks=locks;
  _palettePulse=pulse; _pulsePeriod=period; _pulseRemaining=remaining; _pulseOffset=offset; _pulseDelta=delta;
  for(uint i=0;i<12;++i) _textStyles[i/2][i%2]=styles[i];
+ _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _random.setSeed(seed); _dialogueActor=-1; _closeup=false; _subtitle.clear(); _savePending=false; _pendingRoom=-1;
  _buildingNavigation=nullptr; _spriteMode=false; _scenePreview=true; _snapshotPending=false;
  _roomClock=_roomRenderClock=_system->getMillis(); _roomStatus="Checkpoint restored | F5 save | F7 load";
@@ -165,6 +173,8 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   if(light>brightest) { brightest=light; _textColor=i; }
  }
  for(uint i=0;i<_sounds.size();++i) { _sounds[i].handle=Audio::SoundHandle(); if(playing[i] && !startSound(i,_sounds[i].loops,elapsed[i])) warning("[pice] Cannot restore sound %u",i); }
+ uint ownedCount=0; for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) ++ownedCount;
+ debug("[pice] restored inventory owned=%u selected=%d",ownedCount,_selectedItem);
  debug("[pice] restored music active=%d playing=%d elapsed=%u",_music.active,musicPlaying,musicElapsed);
  if(musicPlaying && !startSample(_music,_music.loops,musicElapsed,true)) warning("[pice] Cannot restore music");
  debug("[pice] checkpoint restored bank=%u actors=%u items=%u task20-pc=%u",bankId,actors.size(),items.size(),bank.count()>20 ? _roomRunner->position(20) : 0);

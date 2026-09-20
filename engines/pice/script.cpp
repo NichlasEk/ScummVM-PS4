@@ -70,13 +70,13 @@ bool ScriptResource::string(uint32 &pc,Common::String &value) const {
  }
  return false;
 }
-bool ScriptResource::expression(uint32 &pc,int16 &value,const ScriptVariables *variables) const {
+bool ScriptResource::expression(uint32 &pc,int16 &value,const ScriptVariables *variables,const ScriptSceneSink *scene) const {
  uint32 next=pc; uint budget=256; int16 result=0;
  value=0;
- if (!evaluate(next,result,0,budget,variables)) return false;
+ if (!evaluate(next,result,0,budget,variables,scene)) return false;
  pc=next; value=result; return true;
 }
-bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,const ScriptVariables *variables) const {
+bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,const ScriptVariables *variables,const ScriptSceneSink *scene) const {
  if (depth>=32 || !budget) return false;
  --budget;
  uint16 op;
@@ -91,10 +91,15 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
   if (!variables || !word(pc,index) || !variables->read(op==19,int16(index),value)) return false;
   pc+=2; return true;
  }
+ if(op==46) { // 0x2a28: raw word index into runtime context pointer table.
+  uint16 index;
+  if(!scene || !word(pc,index) || !scene->context(int16(index),value)) return false;
+  pc+=2; return true;
+ }
  // Pure comparisons, eager Boolean operators, and arithmetic only.
  if ((op<7 || op>16) && op!=45) return false;
  int16 a,b;
- if (!evaluate(pc,a,depth+1,budget,variables) || !evaluate(pc,b,depth+1,budget,variables)) return false;
+ if (!evaluate(pc,a,depth+1,budget,variables,scene) || !evaluate(pc,b,depth+1,budget,variables,scene)) return false;
  switch(op) {
  case 45:value=a==b; break; // dispatch 45 -> 0x26de
  case 7: value=a!=b; break;
@@ -117,7 +122,7 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
  case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
- case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
+ case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 58: case 95: before=4; return true;
  case 109: before=5; return true;
  case 123: case 135: case 136: before=3; return true;
@@ -132,17 +137,17 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  }
 }
 bool ScriptRunner::value(uint32 &pc,int16 &result) {
- if (_bank.expression(pc,result,_variables)) return true;
+ if (_bank.expression(pc,result,_variables,_scene)) return true;
  if (!_scene) return false;
  uint32 next=pc; uint16 op;
  if (!_bank.word(next,op)) return false;
  uint before,after; bool hasKey;
  if(invocationShape(op,before,after,hasKey)) {
   next+=2; Common::String name,key; Common::Array<int16> args; int16 arg;
-  for(uint i=0;i<before;++i) { if(!_bank.expression(next,arg,_variables)) return false; args.push_back(arg); }
+  for(uint i=0;i<before;++i) { if(!_bank.expression(next,arg,_variables,_scene)) return false; args.push_back(arg); }
   if(after) {
    if(!_bank.string(next,name)) return false;
-   for(uint i=0;i<after;++i) { if(!_bank.expression(next,arg,_variables)) return false; args.push_back(arg); }
+   for(uint i=0;i<after;++i) { if(!_bank.expression(next,arg,_variables,_scene)) return false; args.push_back(arg); }
    if(hasKey && !_bank.string(next,key)) return false;
   }
   if(!_scene->invoke(op,name,args,key,result)) return false;
@@ -150,8 +155,8 @@ bool ScriptRunner::value(uint32 &pc,int16 &result) {
  }
  if(op!=55 && op!=63 && op!=66) return false;
  next+=2; Common::String name; int16 local,sequence=0,node=0;
- if (!_bank.string(next,name) || !_bank.expression(next,local,_variables) ||
-     (op!=66 && !_bank.expression(next,sequence,_variables)) || (op==55 && !_bank.expression(next,node,_variables))) return false;
+ if (!_bank.string(next,name) || !_bank.expression(next,local,_variables,_scene) ||
+     (op!=66 && !_bank.expression(next,sequence,_variables,_scene)) || (op==55 && !_bank.expression(next,node,_variables,_scene))) return false;
  if (local<0 || sequence<0) return false;
  bool ok=op==55 ? _scene->createActor(name,local,sequence,node,result) : op==63 ? _scene->createItem(name,local,sequence,result) : _scene->createMenu(name,local,result);
  if (!ok) return false;
@@ -205,10 +210,10 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  if(opcode==128) {
   if(!_scene) { task.active=false; return kUnsupported; }
   next+=2; Common::String animationName,textName,key; Common::Array<int16> args;
-  for(uint i=0;i<2;++i) { if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; } args.push_back(argument); }
+  for(uint i=0;i<2;++i) { if(!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; } args.push_back(argument); }
   if(!_bank.string(next,animationName)) { task.active=false; return kInvalid; }
-  for(uint i=0;i<3;++i) { if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; } args.push_back(argument); }
-  if(!_bank.string(next,textName) || !_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+  for(uint i=0;i<3;++i) { if(!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; } args.push_back(argument); }
+  if(!_bank.string(next,textName) || !_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; }
   args.push_back(argument);
   if(!_bank.string(next,key)) { task.active=false; return kInvalid; }
   int16 actor;
@@ -218,13 +223,13 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  if(opcode==129) {
   if(!_scene) { task.active=false; return kUnsupported; }
   next+=2; Common::String textName,key,animationName; Common::Array<int16> args;
-  if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+  if(!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; }
   args.push_back(argument);
-  if(!_bank.string(next,textName) || !_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+  if(!_bank.string(next,textName) || !_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; }
   args.push_back(argument);
   if(!_bank.string(next,key) || !_bank.string(next,animationName)) { task.active=false; return kInvalid; }
   for(uint i=0;i<5;++i) {
-   if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+   if(!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; }
    args.push_back(argument);
   }
   if(!_scene->animatedDialogue(textName,key,animationName,args)) { task.active=false; return kUnsupported; }
@@ -232,7 +237,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  }
  if(opcode==98 || opcode==123 || opcode==50 || opcode==51 || opcode==96 || opcode==117) {
   uint32 actorPC=next+2; int16 actor;
-  if(!_bank.expression(actorPC,actor,_variables) || actor<0) { task.active=false; return kInvalid; }
+  if(!_bank.expression(actorPC,actor,_variables,_scene) || actor<0) { task.active=false; return kInvalid; }
   if(!value(next,argument)) { task.active=false; return kUnsupported; }
   task.pc=next; task.actor=actor; return kWaiting;
  }
@@ -248,14 +253,14 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  }
  if(opcode==134) {
   next+=2;
-  if(!_bank.expression(next,argument,_variables) || argument<0 || argument>=25) { task.active=false; return kInvalid; }
+  if(!_bank.expression(next,argument,_variables,_scene) || argument<0 || argument>=25) { task.active=false; return kInvalid; }
   Common::Array<int16> args; args.push_back(argument); int16 result;
   if(!_scene || !_scene->invoke(100,Common::String(),args,Common::String(),result)) { task.active=false; return kUnsupported; }
   task.pc=next; task.actor=-argument-2; return kWaiting;
  }
  if(opcode==147) {
   next+=2; Common::Array<int16> args;
-  for(uint n=0;n<4;++n) { if(!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; } args.push_back(argument); }
+  for(uint n=0;n<4;++n) { if(!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; } args.push_back(argument); }
   if(args[0]<0 || args[2]<0 || args[3]<0 || uint(args[3])>=_tasks.size() || uint(args[3])==index) { task.active=false; return kInvalid; }
   int16 result;
   if(!_scene || !_scene->invoke(opcode,Common::String(),args,Common::String(),result)) { task.active=false; return kUnsupported; }
@@ -265,27 +270,27 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  if(opcode==142) {
   if(!_scene) { task.active=false; return kUnsupported; }
   next+=2;
-  if(!_bank.expression(next,argument,_variables) || argument<0) { task.active=false; return kInvalid; }
+  if(!_bank.expression(next,argument,_variables,_scene) || argument<0) { task.active=false; return kInvalid; }
   Common::Array<int16> args; args.push_back(argument); int16 result;
   if(!_scene->invoke(opcode,Common::String(),args,Common::String(),result)) { task.active=false; return kUnsupported; }
   task.pc=next; task.actor=argument; return kWaiting;
  }
  if(opcode==152) {
   next+=2; Common::String name,key; int16 local;
-  if(!_bank.string(next,name) || !_bank.expression(next,local,_variables) || !_bank.string(next,key)) { task.active=false; return kInvalid; }
+  if(!_bank.string(next,name) || !_bank.expression(next,local,_variables,_scene) || !_bank.string(next,key)) { task.active=false; return kInvalid; }
   if(!_scene || !_scene->requestSave(name,local,key)) { task.active=false; return kUnsupported; }
   task.pc=next; return kAdvanced;
  }
  if(opcode==138) {
   next+=2; Common::String name; int16 clearBefore,clearAfter;
-  if(!_bank.string(next,name) || !_bank.expression(next,clearBefore,_variables) || !_bank.expression(next,clearAfter,_variables)) { task.active=false; return kInvalid; }
+  if(!_bank.string(next,name) || !_bank.expression(next,clearBefore,_variables,_scene) || !_bank.expression(next,clearAfter,_variables,_scene)) { task.active=false; return kInvalid; }
   if(!_scene || !_scene->playMovie(name,clearBefore,clearAfter)) { task.active=false; return kUnsupported; }
   task.pc=next; return kAdvanced;
  }
  if(opcode==34) {
   if(!_scene) { task.active=false; return kUnsupported; }
   next+=2; int16 chapter,room;
-  if(!_bank.expression(next,chapter,_variables) || !_bank.expression(next,room,_variables)) { task.active=false; return kUnsupported; }
+  if(!_bank.expression(next,chapter,_variables,_scene) || !_bank.expression(next,room,_variables,_scene)) { task.active=false; return kUnsupported; }
   if(!_scene->changeRoom(chapter,room)) { task.active=false; return kUnsupported; }
   task.pc=next;
   for(uint i=0;i<_tasks.size();++i) _tasks[i].active=false;
@@ -296,14 +301,14 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  }
  if (opcode==44) { // 0x223e / dispatcher states 3 and 8: mutual rendezvous
   next+=2;
-  if(!_bank.expression(next,argument,_variables) || argument<0 || uint(argument)>=_tasks.size() || uint(argument)==index) {
+  if(!_bank.expression(next,argument,_variables,_scene) || argument<0 || uint(argument)>=_tasks.size() || uint(argument)==index) {
    task.active=false; return kInvalid;
   }
   task.pc=next; task.peer=argument; return kWaiting;
  }
  if (opcode==22) { // 0x266e: signed expression -> state 2 countdown
   next+=2;
-  if (!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+  if (!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; }
   task.pc=next; task.remainingTicks=argument; task.waiting=true;
   return kWaiting;
  }
@@ -322,15 +327,15 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  if (opcode==30) {
   if (!_scene) { task.active=false; return kUnsupported; }
   next+=2; int16 value;
-  if (!_bank.expression(next,argument,_variables) || !_bank.expression(next,value,_variables)) { task.active=false; return kInvalid; }
+  if (!_bank.expression(next,argument,_variables,_scene) || !_bank.expression(next,value,_variables,_scene)) { task.active=false; return kInvalid; }
   if (!_scene->volume(argument,value)) { task.active=false; return kUnsupported; }
   task.pc=next; return kAdvanced;
  }
  if (opcode==1 || opcode==27 || opcode==78) {
   if (!_scene) { task.active=false; return kUnsupported; }
   next+=2; Common::String name; int16 flags=0;
-  if (!_bank.string(next,name) || !_bank.expression(next,argument,_variables) ||
-      (opcode==1 && !_bank.expression(next,flags,_variables))) {
+  if (!_bank.string(next,name) || !_bank.expression(next,argument,_variables,_scene) ||
+      (opcode==1 && !_bank.expression(next,flags,_variables,_scene))) {
    task.active=false; return kInvalid;
   }
   // 0x2187 -> 0x1c88b removes a filename extension; the appended suffix
@@ -346,7 +351,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
  }
  if (opcode==3 || opcode==31) {
   next+=2;
-  if (!_bank.expression(next,argument,_variables) || argument<0 || uint(argument)>=_tasks.size()) {
+  if (!_bank.expression(next,argument,_variables,_scene) || argument<0 || uint(argument)>=_tasks.size()) {
    task.active=false; return kInvalid;
   }
   task.pc=next;
@@ -371,7 +376,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   bool jump=true;
   if (opcode==21) {
    next+=2;
-   if (!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+   if (!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; }
    uint16 following;
    if (!_bank.word(next,following) || following!=4) { task.active=false; return kInvalid; }
    jump=argument==0;
@@ -383,7 +388,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   task.pc=uint32(target); return kAdvanced;
  }
  if (opcode==5 || opcode==19 || opcode==20 || opcode==45 || (opcode>=7 && opcode<=16)) {
-  if (!_bank.expression(next,argument,_variables)) { task.active=false; return kInvalid; }
+  if (!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; }
   task.pc=next; return kAdvanced;
  }
  task.active=false;
@@ -517,6 +522,7 @@ bool runScriptTests() {
  class Sink : public ScriptSceneSink {
  public:
   int backgrounds=0,palettes=0,calls=0,roomChanges=0,movies=0,saves=0;
+  bool context(int16 index,int16 &value) const override { if(index!=9) return false; value=-6; return true; }
   bool requestSave(const Common::String &name,int16 local,const Common::String &key) override { if(name!="G_IceTxt" || local!=2 || key!="SAV00") return false; ++saves; return true; }
   bool playMovie(const Common::String &name,int16 before,int16 after) override { if(name!="clip.mux" || before!=1 || after!=0) return false; ++movies; return true; }
   bool changeRoom(int16 chapter,int16 room) override { if(chapter!=2 || room!=24) return false; ++roomChanges; return true; }
@@ -542,6 +548,17 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // Runtime context is a raw index, and works inside nested comparisons.
+ const uint16 contextWords[]={1,45,46,9,20,65530};
+ bytes.resize(sizeof(contextWords));
+ for(uint i=0;i<sizeof(contextWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],contextWords[i]);
+ ScriptResource contextBank; if(!contextBank.load(bytes)) return false;
+ uint32 contextPc=2; int16 contextValue;
+ if(!contextBank.expression(contextPc,contextValue,nullptr,&sink) || contextValue!=1 || contextPc!=12) return false;
+ contextPc=2; if(contextBank.expression(contextPc,contextValue) || contextPc!=2) return false;
+ WRITE_LE_UINT16(&bytes[6],10); if(!contextBank.load(bytes)) return false;
+ if(contextBank.expression(contextPc,contextValue,nullptr,&sink) || contextPc!=2) return false;
+ bytes.resize(7); if(!contextBank.load(bytes) || contextBank.expression(contextPc,contextValue,nullptr,&sink) || contextPc!=2) return false;
  // Saving is requested once, after decoding all arguments; the caller's
  // PC advances before the engine performs the deferred write.
  const uint16 saveWords[]={1,152,0x5f47,0x6349,0x5465,0x7478,0,20,2,0x4153,0x3056,0x0030,31,20,0};

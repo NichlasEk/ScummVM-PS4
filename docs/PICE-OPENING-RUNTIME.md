@@ -1,5 +1,9 @@
 # PICE opening-room runtime checkpoint (2026-09-19)
 
+Continuation: [native clicks and inventory](PICE-INPUT-RUNTIME.md) implements
+the first pickup/use path and save payload version 3. Historical limits below
+are superseded where described there.
+
 The native PS4 engine now runs the original first-room initialization and a
 substantial part of its opening sequence. **It is not yet a playable game.**
 This document supersedes the background-only continuation point at the end of

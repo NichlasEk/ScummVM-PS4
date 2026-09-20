@@ -104,6 +104,45 @@ bool SpriteResource::image(uint index, SpriteImage &out) const {
  return index + uint64(1) < _images.size() &&
   decodeSprite(&_data[_images[index]], _images[index+1] - _images[index], out);
 }
+bool SpriteResource::frameBounds(uint frame,Common::Rect &out) const {
+ uint budget=4096; bool any=false; out=Common::Rect();
+ return bounds(frame,0,0,out,any,0,budget) && any;
+}
+bool SpriteResource::bounds(uint frame,int x,int y,Common::Rect &out,bool &any,uint depth,uint &budget) const {
+ if(frame>=frames.size() || depth>=16 || !budget) return false;
+ --budget;
+ for(uint i=0;i<frames[frame].parts.size();++i) {
+  const SpritePart &p=frames[frame].parts[i];
+  if(p.flagsY!=1) return false;
+  int px=x+p.x,py=y+p.y;
+  if(p.flagsX==0) { if(!bounds(p.image,px,py,out,any,depth+1,budget)) return false; }
+  else if(p.flagsX==1) {
+   SpriteImage bitmap; if(!image(p.image,bitmap) || px < -16384 || py < -16384 || px+bitmap.width>16384 || py>16384) return false;
+   Common::Rect rect(px,py-bitmap.height,px+bitmap.width,py);
+   if(any) out.extend(rect); else { out=rect; any=true; }
+  } else return false;
+ }
+ return true;
+}
+bool SpriteResource::hitFrame(uint frame,int x,int bottom,int px,int py) const {
+ uint budget=4096; return hit(frame,x,bottom,px,py,0,budget);
+}
+bool SpriteResource::hit(uint frame,int x,int bottom,int px,int py,uint depth,uint &budget) const {
+ if(frame>=frames.size() || depth>=16 || !budget) return false;
+ --budget;
+ for(uint i=0;i<frames[frame].parts.size();++i) {
+  const SpritePart &part=frames[frame].parts[i];
+  if(part.flagsY!=1) continue;
+  int ox=x+part.x,oy=bottom+part.y;
+  if(part.flagsX==0) { if(hit(part.image,ox,oy,px,py,depth+1,budget)) return true; }
+  else if(part.flagsX==1) {
+   SpriteImage bitmap; if(!image(part.image,bitmap)) continue;
+   int dx=px-ox,dy=py-(oy-bitmap.height);
+   if(dx>=0 && dy>=0 && dx<bitmap.width && dy<bitmap.height && bitmap.mask[dy*bitmap.width+dx]) return true;
+  }
+ }
+ return false;
+}
 bool SpriteResource::paintFrame(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height) const {
  if (!width || !height || width>4096 || height>4096 || canvas.size()!=uint64(width)*height) return false;
  Common::Array<byte> result=canvas; uint budget=4096;
@@ -185,6 +224,9 @@ bool runSpriteTests() {
  if(!parsed.paintFrame(0,3,-2,canvas,4,4) || canvas[0]!=9 || canvas[1]!=0 || canvas[2]!=7 || canvas[4]!=9) return false;
  canvas.clear(); canvas.resize(16,9);
  if(!parsed.paintFrame(0,1,-2,canvas,4,4) || canvas[0]!=7 || canvas[1]!=9) return false;
+ Common::Rect frameRect; if(!parsed.frameBounds(0,frameRect) || frameRect!=Common::Rect(-3,2,0,4)) return false;
+ if(!parsed.hitFrame(0,3,-2,1,0) || !parsed.hitFrame(0,3,-2,2,0) ||
+    parsed.hitFrame(0,3,-2,0,0) || parsed.hitFrame(0,3,-2,1,1) || parsed.hitFrame(5,3,-2,1,0)) return false;
  // Compound frame references use the same anchor; recursive cycles fail
  // transactionally instead of leaving a partially painted destination.
  SpriteFrame compound; SpritePart reference;

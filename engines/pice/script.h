@@ -6,6 +6,7 @@
 #include "pice/room.h"
 namespace Pice {
 class StateIO;
+class ScriptSceneSink;
 // Two 16-bit tables: sizes established by save/load routines at 0xbe8d/0xcf49.
 class ScriptVariables {
 public:
@@ -25,12 +26,12 @@ public:
  uint32 entry(uint index) const { return _entries[index]; }
  // Decode a side-effect-free expression subset. Unsupported opcodes fail
  // without committing the caller's PC. No scene effects are guessed.
- bool expression(uint32 &pc, int16 &value, const ScriptVariables *variables=nullptr) const;
+ bool expression(uint32 &pc, int16 &value, const ScriptVariables *variables=nullptr, const ScriptSceneSink *scene=nullptr) const;
  bool string(uint32 &pc, Common::String &value) const;
  bool codeAddress(int64 offset) const;
  bool word(uint32 offset, uint16 &value) const;
 private:
- bool evaluate(uint32 &pc, int16 &value, uint depth, uint &budget, const ScriptVariables *variables) const;
+ bool evaluate(uint32 &pc, int16 &value, uint depth, uint &budget, const ScriptVariables *variables, const ScriptSceneSink *scene) const;
  Common::Array<byte> _data;
  Common::Array<uint32> _entries;
 };
@@ -39,6 +40,7 @@ private:
 class ScriptSceneSink {
 public:
  virtual ~ScriptSceneSink() {}
+ virtual bool context(int16 index,int16 &value) const { return false; }
  virtual bool background(const Common::String &name,int16 local,int16 flags)=0;
  virtual bool scenery(const Common::String &name,int16 local) { return false; }
  virtual bool closeupDialogue(const Common::String &animationName,const Common::String &textName,const Common::String &key,const Common::Array<int16> &args,int16 &actor) { return false; }

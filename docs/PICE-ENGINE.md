@@ -411,3 +411,5 @@ still not playable.
 See [PICE-SAVE-RUNTIME.md](PICE-SAVE-RUNTIME.md) for autosave, F5/F7 checkpoint
 controls, fresh-process restoration with music, and the next input/death-flow
 continuation. The engine is still experimental and not a complete playable game.
+
+Latest interaction milestone: [native input and inventory](PICE-INPUT-RUNTIME.md).

@@ -202,6 +202,14 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  debug("[pice] action queued hotspot=%d verb=%d entry=%d context=%d approach=%d",spot,verb,entry,_actionContext,action.approach);
  tickAction(); return true;
 }
+void PiceEngine::releaseActionInput(uint task) {
+ // A foreground script can explicitly return control while its timer keeps
+ // running (e.g. the opportunity to steal the doctor's manual).
+ // Exit actions retain ownership until their deferred transition completes.
+ if(_actionEntry!=int(task) || _actionWalking || _inputLocks || _actionExitChapter>=0) return;
+ debug("[pice] action released input entry=%d",_actionEntry);
+ _actionEntry=-1; _actionHotspot=-1;
+}
 void PiceEngine::tickAction() {
  if(_actionEntry<0 || !_roomRunner) return;
  if(_actionWalking) {

@@ -208,6 +208,12 @@ int16 PiceEngine::storeActor(const RoomActor &actor) {
  _actors.push_back(actor); return _actors.size()-1;
 }
 bool PiceEngine::runActorLifecycleTests() {
+ // Only the owning action's final unlock releases foreground input.
+ _actionEntry=12; _actionWalking=false; _actionExitChapter=-1; _inputLocks=1;
+ releaseActionInput(12); if(_actionEntry!=12) return false;
+ _inputLocks=0; releaseActionInput(11); if(_actionEntry!=12) return false;
+ _actionExitChapter=3; releaseActionInput(12); if(_actionEntry!=12) return false;
+ _actionExitChapter=-1; releaseActionInput(12); if(_actionEntry!=-1) return false;
  _selectedItem=10; Common::Array<int16> noArgs; int16 deselectResult=-1;
  if(!invoke(124,Common::String(),noArgs,Common::String(),deselectResult) || _selectedItem!=-1 || deselectResult!=0) return false;
  Action itemAction; itemAction.verb=9; itemAction.item=2;
@@ -1200,7 +1206,9 @@ void PiceEngine::tickRoom() {
   if(_roomRunner->exclusiveTask()>=0 && _roomRunner->exclusiveTask()!=int(i)) continue;
   for(uint budget=0;budget<64;++budget) {
    uint32 before=_roomRunner->position(i);
+   uint previousLocks=_inputLocks;
    ScriptRunner::Result result=_roomRunner->step(i,budget ? 0 : ticks);
+   if(previousLocks && !_inputLocks && result==ScriptRunner::kAdvanced) releaseActionInput(i);
    _navigation=_roomRunner->navigation();
    if(result==ScriptRunner::kInvalid || result==ScriptRunner::kUnsupported) {
     uint16 opcode=0; _roomBank.word(before,opcode);
@@ -1277,6 +1285,7 @@ void PiceEngine::tickRoom() {
   if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor==-1) {
    const Common::Rect &bounds=_hotspots[target].bounds;
    Common::Point point((bounds.left+bounds.right)/2,(bounds.top+bounds.bottom)/2-40);
+   if(ConfMan.hasKey("pice_test_click_item")) _selectedItem=ConfMan.getInt("pice_test_click_item");
    if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
   }
   if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor>=0) {
@@ -1288,10 +1297,19 @@ void PiceEngine::tickRoom() {
        actor.sprite.paintScaledFrame(frame,actor.feet.x,actor.feet.y-40,actorScale(actor),high,640,400)) {
      for(uint pixel=40*640;pixel<338*640 && !_testClickDone;++pixel) if(low[pixel]==high[pixel]) {
       Common::Point point(pixel%640,pixel/640);
+      if(ConfMan.hasKey("pice_test_click_item")) _selectedItem=ConfMan.getInt("pice_test_click_item");
       if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
      }
     }
    }
+  }
+ }
+ if(_testClickDone && !_testUseDone && ConfMan.hasKey("pice_test_followup_hotspot") && _actionEntry<0 && !_inputLocks && !actorBusy(_player) && !dialogueActive()) {
+  int target=ConfMan.getInt("pice_test_followup_hotspot");
+  for(int y=40;y<338 && !_testUseDone;++y) for(int x=0;x<640 && !_testUseDone;++x) {
+   Common::Point point(x,y); if(hotspotAt(point)!=target) continue;
+   _selectedItem=-1;
+   if(clickRoom(point,false)) { _testUseDone=true; debug("[pice] test followup clicked hotspot=%d",target); }
   }
  }
  if(_testClickDone && !_testUseDone && ConfMan.hasKey("pice_test_use_hotspot") && (!ConfMan.hasKey("pice_test_use_room") || _roomBankId==uint(1140+ConfMan.getInt("pice_test_use_room"))) && _actionEntry<0 && !_inputLocks && !actorBusy(_player)) {

@@ -327,3 +327,23 @@ the task-20 stop. Evidence: `artifacts/pice/doctor-check2.log`. Added an opt-in,
 one-shot `pice_test_menu_choice` hook that validates menu bounds/enabled state.
 Manual profile does not enable it. Later doctor interactions remain unverified.
 Save backup: `.tools/pice-save-backup-doctor-1789921352`.
+
+
+## Manual theft input window (2026-09-20)
+
+Surgery bank 1197 task 12 explicitly unlocks input at byte 4116, then waits
+1000 ticks before starting the doctor's return. The frontend incorrectly kept
+all hover/click/inventory blocked because the initiating action still owned
+input throughout that timer. A successful step that releases the last input
+lock now detaches its own foreground action without stopping its script. Other
+tasks cannot detach it; nested locks, queued walks and deferred exit actions
+retain ownership. Regression checks cover owner, lock and exit guards.
+
+shadPS4 self-tests PASS. Isolated replay from a copied save enters room 15,
+uses item 11 on the doctor, then clicks manual hotspot 4 after the unlock.
+Log confirms action 12 releases input, action 10 starts and inventory pickup
+item 8 succeeds before returning to reception. Evidence:
+`artifacts/pice/manual-input-check.log`. Test-only initial item and follow-up
+hotspot options support reproduction; neither is enabled in the manual profile.
+The user's Q save is preserved (backup
+`.tools/pice-save-backup-manual-input-1789923737`) and restarted on request.

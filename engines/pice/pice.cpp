@@ -147,6 +147,10 @@ int16 PiceEngine::storeActor(const RoomActor &actor) {
  _actors.push_back(actor); return _actors.size()-1;
 }
 bool PiceEngine::runActorLifecycleTests() {
+ Action itemAction; itemAction.verb=9; itemAction.item=2;
+ if(!itemAction.matches(9,2) || itemAction.matches(9,3) || itemAction.matches(6,2)) return false;
+ itemAction.verb=6; if(!itemAction.matches(6,-1) || itemAction.matches(1,-1)) return false;
+
  // Removing a middle slot must preserve all remaining IDs, invalidate its
  // associations and permit reuse without increasing the 20-actor limit.
  for(uint i=0;i<20;++i) { RoomActor actor; actor.feet.x=i; if(storeActor(actor)!=int(i)) return false; }
@@ -169,6 +173,14 @@ bool PiceEngine::runActorLifecycleTests() {
     _actors[0].active || _hotspots[0].active || _worldItems[0].actor!=-1 ||
     !invoke(67,Common::String(),args,Common::String(),result)) return false;
  args[0]=1; if(invoke(67,Common::String(),args,Common::String(),result) || !_ownedItems[0]) return false;
+ _hotspots[0].active=true;
+ args.clear(); args.push_back(0); args.push_back(0); args.push_back(-1); args.push_back(11);
+ if(!invoke(81,Common::String(),args,Common::String(),result) || result!=0 || _actions.size()!=1 ||
+    !_actions[0].matches(9,0) || _actions[0].matches(9,1) || _actions[0].entry!=11 || _actions[0].approach!=-1) return false;
+ args[1]=1; if(invoke(81,Common::String(),args,Common::String(),result) || _actions.size()!=1) return false;
+ args[0]=-1;
+ if(!invoke(81,Common::String(),args,Common::String(),result) || result!=-1 || _actions.size()!=1) return false;
+ _actions.clear();
  _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
 }
 bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) {
@@ -387,9 +399,12 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   Hotspot h; h.approach=args[op==59 ? 4 : 1]; if(op==57) h.actor=args[0]; else if(op==61) h.actor=_worldItems[args[0]].actor; else h.bounds=Common::Rect(args[0],args[1],args[2],args[3]); h.label=line.pages[0][0]; result=_hotspots.size(); _hotspots.push_back(h);
   debug("[pice] hotspot=%d actor=%d label=%s",result,h.actor,h.label.c_str()); return true;
  }
- if(op==58) {
-  if(args.size()!=4 || args[0]<0 || uint(args[0])>=_hotspots.size() || args[3]<0 || args[3]>=50 || _actions.size()>=70) return false;
-  Action action; action.hotspot=args[0]; action.verb=args[1]; action.approach=args[2]; action.entry=args[3];
+ if(op==58 || op==81) {
+  if(args.size()!=4) return false;
+  if(args[0]==-1) { result=-1; return true; } // Original optional absent hotspot.
+  if(op==81 && (args[1]<0 || uint(args[1])>=_items.size())) return false;
+  if(args[0]<0 || uint(args[0])>=_hotspots.size() || args[3]<0 || args[3]>=50 || _actions.size()>=70) return false;
+  Action action; action.hotspot=args[0]; action.verb=op==81 ? 9 : args[1]; action.item=op==81 ? args[1] : -1; action.approach=args[2]; action.entry=args[3];
   result=_actions.size(); _actions.push_back(action); return true;
  }
  if(op==110) {
@@ -813,12 +828,14 @@ void PiceEngine::tickRoom() {
   if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor>=0) {
    const RoomActor &actor=_actors[_hotspots[target].actor];
    Common::Array<byte> low,high; low.resize(640*400,0); high.resize(640*400,255);
-   uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
-   if(actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,low,640,400) &&
-      actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,high,640,400)) {
-    for(uint pixel=40*640;pixel<338*640 && !_testClickDone;++pixel) if(low[pixel]==high[pixel]) {
-     Common::Point point(pixel%640,pixel/640);
-     if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
+   if(actor.active && actor.sprite.hasSequence(actor.sequence) && actor.step<actor.sprite.sequences[actor.sequence].steps.size()) {
+    uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
+    if(actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,low,640,400) &&
+       actor.sprite.paintFrame(frame,actor.feet.x,actor.feet.y-40,high,640,400)) {
+     for(uint pixel=40*640;pixel<338*640 && !_testClickDone;++pixel) if(low[pixel]==high[pixel]) {
+      Common::Point point(pixel%640,pixel/640);
+      if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
+     }
     }
    }
   }

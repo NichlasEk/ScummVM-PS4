@@ -421,3 +421,9 @@ Fire-puzzle continuation: [dynamic navigation and extinguishing](PICE-FIRE-RUNTI
 Chest use/examine now complete through opcode 111, including text-only pages.
 Common object-response fallback is also implemented.
 See [PICE-OBJECT-DIALOGUE.md](PICE-OBJECT-DIALOGUE.md) for evidence and limitations.
+
+## Toward the bridge (2026-09-20)
+
+Post-fire exit reaches room 7. Item-specific actions (81) are implemented;
+room initialization still needs entry placement/animation (79) and random
+expressions (38). See [PICE-BRIDGE-RUNTIME.md](PICE-BRIDGE-RUNTIME.md).

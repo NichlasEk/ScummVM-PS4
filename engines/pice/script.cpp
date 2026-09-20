@@ -123,7 +123,7 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  switch(op) {
  case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
  case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
- case 58: case 95: before=4; return true;
+ case 81: case 58: case 95: before=4; return true;
  case 109: before=5; return true;
  case 123: case 135: case 136: before=3; return true;
  case 32: case 29: case 133: after=1; return true;
@@ -542,7 +542,7 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
-  int speeches=0;
+  int speeches=0,itemActions=0;
   bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) override { if(actor!=2 || name!="F_M02" || local!=3 || key!="D09") return false; ++speeches; return true; }
   int backgrounds=0,palettes=0,calls=0,roomChanges=0,movies=0,saves=0;
   bool context(int16 index,int16 &value) const override { if(index!=9) return false; value=-6; return true; }
@@ -554,6 +554,7 @@ bool runScriptTests() {
   bool actorStepReached(int16 actor,int16 target) const override { return !actorBusy(actor) || animationStep>=target; }
   bool actorBusy(int16 actor) const override { return actor==2 && busy; }
   bool invoke(uint16 opcode,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) override {
+   if(opcode==81 && args.size()==4 && args[0]==0 && args[1]==2 && args[2]==-1 && args[3]==11) { ++itemActions; result=0; return true; }
    if(opcode==100 && args.size()==1 && args[0]==3) { ++soundCalls; result=3; return true; }
    if(opcode==147 && args.size()==4 && args[0]==2 && args[1]==3 && args[2]==5 && args[3]==1) { ++triggerCalls; result=2; return true; }
    if(opcode==109 && args.size()==5 && args[0]==2 && args[1]==3 && args[2]==75 && args[3]==8 && args[4]==1 && name.empty() && key.empty()) {
@@ -571,6 +572,19 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ const uint16 itemWords[]={1,81,20,0,20,2,20,65535,20,11,31,20,0};
+ bytes.resize(sizeof(itemWords));
+ for(uint i=0;i<sizeof(itemWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],itemWords[i]);
+ ScriptResource itemBank; if(!itemBank.load(bytes)) return false;
+ ScriptRunner itemRunner(itemBank,nullptr,&sink); itemRunner.start(0);
+ if(itemRunner.step(0)!=ScriptRunner::kAdvanced || itemRunner.position(0)!=20 || sink.itemActions!=1 ||
+    itemRunner.step(0)!=ScriptRunner::kStopped) return false;
+ for(uint n=4;n<20;++n) {
+  Common::Array<byte> partial=bytes; partial.resize(n); ScriptResource shortItem;
+  if(!shortItem.load(partial)) return false;
+  ScriptRunner runner(shortItem,nullptr,&sink); runner.start(0);
+  if(runner.step(0)!=ScriptRunner::kUnsupported || runner.position(0)!=2 || sink.itemActions!=1) return false;
+ }
  // Speech must dispatch once, wait for completion, and reject truncated
  // operands without starting audio or advancing the instruction pointer.
  const uint16 speechWords[]={1,111,20,2,0x5f46,0x304d,0x0032,20,3,0x3044,0x0039,31,20,0};

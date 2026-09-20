@@ -40,7 +40,9 @@ private:
  int16 _inventorySelection=0;
  bool _palettePulse=false;
  int16 _pulsePeriod=5,_pulseRemaining=5,_pulseOffset=10,_pulseDelta=15;
- struct Action { int16 hotspot=-1, verb=-1, approach=-1, entry=-1, fallback=0; };
+ struct Action { int16 hotspot=-1, verb=-1, approach=-1, entry=-1, fallback=0, item=-1;
+  bool matches(int16 requestedVerb,int16 selectedItem) const { return verb==requestedVerb && (verb!=9 || item==selectedItem); }
+ };
  Common::Array<Hotspot> _hotspots;
  Common::Array<Action> _actions;
  bool context(int16 index,int16 &value) const override;

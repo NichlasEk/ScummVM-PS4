@@ -41,7 +41,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=4; io.number(version); if(version<1 || version>4) return false;
+ uint32 version=5; io.number(version); if(version<1 || version>5) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || bankId<1140 || bankId>=1180 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -146,6 +146,10 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  if(version>=3) { io.bytes(owned,100); io.number(selectedItem); }
  else { owned.clear(); owned.resize(items.size(),0); selectedItem=-1; }
  if(version>=4) io.number(rebuilt.generatedEnabled);
+ for(uint i=0;i<actions.size();++i) {
+  if(version>=5) io.number(actions[i].item); else actions[i].item=-1;
+  if(actions[i].item < -1 || actions[i].item>=int(items.size()) || (actions[i].item>=0 && actions[i].verb!=9)) return false;
+ }
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
  for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;

@@ -32,8 +32,8 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  int selected=-1,fallback=-1;
  for(uint i=0;i<_actions.size();++i) {
   const Action &a=_actions[i]; if(a.hotspot!=spot) continue;
-  if(a.verb==verb) { selected=i; break; }
-  if(a.fallback) fallback=i;
+  if(a.matches(verb,_selectedItem)) { selected=i; break; }
+  if(a.verb!=verb && a.fallback) fallback=i;
  }
  bool fallbackUsed=selected<0;
  if(selected<0) selected=fallback;

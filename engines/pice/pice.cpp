@@ -1381,7 +1381,8 @@ void PiceEngine::tickRoom() {
 bool PiceEngine::showAnimation(uint resource) {
  _scenePreview = false;
  Common::Array<byte> data;
- if (!_graphics.read(resource, data) || !_animation.load(data,resource)) return false;
+ // Standalone preview has no room palette to inherit.
+ if (!_graphics.read(resource, data) || !_animation.load(data,resource) || _animation.palette.size()!=768) return false;
  _sprites.clear();
  uint maxImage = 0;
  for (uint f = 0; f < _animation.frames.size(); ++f)

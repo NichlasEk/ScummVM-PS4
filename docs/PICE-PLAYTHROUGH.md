@@ -291,3 +291,22 @@ transitioned to hallway bank 1186 with no repeat of the 9018 failure. Evidence:
 all subsequent chapter interactions. Player saves backed up under
 `.tools/pice-save-backup-office-exit-1789918444`. Manual restart uses the original
 Q save, with no test click or timed shutdown.
+
+
+## Ward after elevator: palette-free animation (2026-09-20)
+
+Bank 1199 initialization byte 1076 assigns an actor from opcode 77, A03/179,
+sequence 0 at 0,0. Archive resource 358 has a zero palette offset: its sequence
+section ends at EOF, without the otherwise usual 768-byte palette trailer.
+The reader now accepts this form and leaves its palette empty; scene rendering
+continues to use the room palette. Standalone sprite preview rejects resources
+without their own palette, preventing out-of-bounds palette access.
+Synthetic checks cover parsing/rendering this variant and truncated sequences.
+
+Built package; shadPS4 self-tests PASS. Isolated room-17 initialization from a
+copy of the player's bank-1183 Q save passes 1076 and reaches 3366; no repeated
+initialization failure (`artifacts/pice/ward-check.log`). This direct room entry
+is not proof of the entire elevator sequence. A separate elevator-click probe
+restored the save but did not activate the exit hotspot within its test window.
+Player save backed up under `.tools/pice-save-backup-ward-1789919522`; manual
+profile retains that save and has no automated click or room override.

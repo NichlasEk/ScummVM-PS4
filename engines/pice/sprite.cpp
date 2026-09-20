@@ -57,12 +57,13 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId) {
  if (data.size() < 24 || READ_LE_UINT32(&data[0]) != 24) return false;
  uint32 b = READ_LE_UINT32(&data[4]), c = READ_LE_UINT32(&data[8]);
  uint32 p = READ_LE_UINT32(&data[16]), end = READ_LE_UINT32(&data[20]);
- // This first implementation accepts the fully populated, palette-bearing variant.
- if (READ_LE_UINT32(&data[12]) || b < 24 || c < b || p < c || end < p ||
-     end != data.size() || end - p != 768) return false;
+ // A zero palette offset denotes a resource using the room palette.
+ const uint32 sequenceEnd=p ? p : end;
+ if (READ_LE_UINT32(&data[12]) || b < 24 || c < b || sequenceEnd < c || end < sequenceEnd ||
+     end != data.size() || (p && end - p != 768)) return false;
  Common::Array<uint32> frameOffsets, imageOffsets, sequenceOffsets;
  if (!table(data, 24, b, 0, frameOffsets) || !table(data, b, c, 2, imageOffsets) ||
-     !table(data, c, p, 0, sequenceOffsets)) return false;
+     !table(data, c, sequenceEnd, 0, sequenceOffsets)) return false;
  SpriteResource parsed; parsed.archiveId=sourceId; parsed.fingerprint=fingerprint;
  for (uint i = 0; i + 1 < frameOffsets.size(); ++i) {
   uint32 start = frameOffsets[i], length = frameOffsets[i+1] - start;
@@ -97,7 +98,7 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId) {
   parsed.sequences.push_back(seq);
  }
  parsed._data = data; parsed._images = imageOffsets;
- parsed.palette.resize(768); memcpy(&parsed.palette[0], &data[p], 768);
+ if(p) { parsed.palette.resize(768); memcpy(&parsed.palette[0], &data[p], 768); }
  *this = parsed;
  return true;
 }
@@ -329,6 +330,13 @@ bool runSpriteTests() {
  WRITE_LE_UINT32(&sibling[20],sibling.size());
  if(!parsed.load(sibling) || parsed.hasSequence(0) || !parsed.hasSequence(1) ||
     parsed.hasSequence(2) || !parsed.paintFrame(parsed.sequences[1].steps[0].frame,3,-2,canvas,4,4)) return false;
+ // Palette-free actors inherit scene colors; sequence bytes extend to EOF.
+ Common::Array<byte> noPalette=resource; noPalette.resize(p);
+ WRITE_LE_UINT32(&noPalette[16],0); WRITE_LE_UINT32(&noPalette[20],p);
+ if(!parsed.load(noPalette) || !parsed.palette.empty() || !parsed.hasSequence(0) ||
+    !parsed.image(0,image) || !parsed.paintFrame(0,3,-2,canvas,4,4)) return false;
+ noPalette.remove_at(p-1); WRITE_LE_UINT32(&noPalette[20],noPalette.size());
+ if(parsed.load(noPalette)) return false;
  // An unused empty sequence is legal in a resource, but cannot be selected.
  Common::Array<byte> empty = resource;
  for (uint i = 0; i < 8; ++i) empty.remove_at(c+6);

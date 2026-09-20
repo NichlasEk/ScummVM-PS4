@@ -208,6 +208,15 @@ int16 PiceEngine::storeActor(const RoomActor &actor) {
  _actors.push_back(actor); return _actors.size()-1;
 }
 bool PiceEngine::runActorLifecycleTests() {
+ Common::Array<int16> closeupEntry;
+ closeupEntry.push_back(_chapter); closeupEntry.push_back(_previousRoom); closeupEntry.push_back(3);
+ closeupEntry.push_back(0); closeupEntry.push_back(2); closeupEntry.push_back(-1);
+ int16 absentActor=42;
+ if(_player!=-1 || !enterRoom("A03",closeupEntry,absentActor) || absentActor!=-1 || !_actors.empty()) return false;
+ _player=0;
+ if(enterRoom("A03",closeupEntry,absentActor)) return false;
+ _player=-1;
+
  // Only the owning action's final unlock releases foreground input.
  _actionEntry=12; _actionWalking=false; _actionExitChapter=-1; _inputLocks=1;
  releaseActionInput(12); if(_actionEntry!=12) return false;
@@ -857,6 +866,9 @@ bool PiceEngine::enterRoom(const Common::String &name,const Common::Array<int16>
  actor=-1;
  if(args.size()!=6) return false;
  if(args[0]!=_chapter || args[1]!=_previousRoom) return true;
+ // Original 0x1c683 skips actor placement when the player slot is -1.
+ // Actorless closeups without an entry continuation need no animation.
+ if(_player==-1 && args[5]==-1) return true;
  if(_player<0 || uint(_player)>=_actors.size() || !_actors[_player].active) return false;
  Common::Array<int16> animation;
  animation.push_back(_player); animation.push_back(args[3]); animation.push_back(args[4]); animation.push_back(args[2]);

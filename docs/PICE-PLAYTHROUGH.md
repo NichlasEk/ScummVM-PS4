@@ -347,3 +347,21 @@ item 8 succeeds before returning to reception. Evidence:
 hotspot options support reproduction; neither is enabled in the manual profile.
 The user's Q save is preserved (backup
 `.tools/pice-save-backup-manual-input-1789923737`) and restarted on request.
+
+
+## File-room closeup entry without Ryan (2026-09-20)
+
+Bank 1195 entry 0 byte 102 uses opcode 79 for arrival from chapter 3 room 12,
+with no continuation (-1), although this closeup has no player actor. Original
+0x1c683 skips actor placement for player slot -1. The scene sink now permits
+this no-actor/no-continuation entry while still rejecting invalid positive
+actor slots. Actorless entry continuations remain unsupported, rather than
+silently dropping their task. Regression covers the absent actor and invalid
+positive reference cases.
+
+shadPS4 self-tests PASS; copied Q save restores bank 1194, then room 13 entry
+passes byte 102, registers 'To the armoury' and 'A drawer', and completes at
+306 without initialization failure. Evidence `artifacts/pice/file-room-check.log`.
+Drawer interactions beyond initialization remain for playtesting. Original Q
+save backed up under `.tools/pice-save-backup-file-room-1789924509` and retained
+for manual restart; no room override in the player's profile.

@@ -97,6 +97,10 @@ bool RoomNavigation::segment(Common::Point from,Common::Point to) const {
  }
  return false;
 }
+static bool onLink(const RoomNode &a,const RoomNode &b,Common::Point p) {
+ return int64(p.x-a.x)*(b.y-a.y)==int64(p.y-a.y)*(b.x-a.x) &&
+  p.x>=MIN(a.x,b.x) && p.x<=MAX(a.x,b.x) && p.y>=MIN(a.y,b.y) && p.y<=MAX(a.y,b.y);
+}
 bool RoomNavigation::route(Common::Point from,Common::Point to,Common::Array<Common::Point> &points) const {
  points.clear();
  auto nodeAt=[&](Common::Point p) {
@@ -112,9 +116,16 @@ bool RoomNavigation::route(Common::Point from,Common::Point to,Common::Array<Com
       ((edges[i].a==na && edges[i].b==nb) || (edges[i].a==nb && edges[i].b==na))) return edges[i].enabled!=0;
    if(!generatedEnabled) return false;
   }
+  for(uint i=0;i<edges.size();++i) if(edges[i].active && edges[i].enabled &&
+     onLink(nodes[edges[i].a],nodes[edges[i].b],a) && onLink(nodes[edges[i].a],nodes[edges[i].b],b)) return true;
   return segment(a,b);
  };
- if((region(from)<0 && nodeAt(from)<0) || (region(to)<0 && nodeAt(to)<0)) return false;
+ auto onNetwork=[&](Common::Point p) {
+  if(region(p)>=0 || nodeAt(p)>=0) return true;
+  for(uint i=0;i<edges.size();++i) if(edges[i].active && edges[i].enabled && onLink(nodes[edges[i].a],nodes[edges[i].b],p)) return true;
+  return false;
+ };
+ if(!onNetwork(from) || !onNetwork(to)) return false;
  if(from==to) return true;
  if(connected(from,to)) { points.push_back(to); return true; }
  Common::Array<Common::Point> vertices; vertices.push_back(from); vertices.push_back(to);
@@ -168,9 +179,29 @@ bool RoomNavigation::nearest(Common::Point point,Common::Point &out) const {
    if(!found || d<best) { found=true; best=d; out=p; }
   }
  }
+ // Coordinate movement also targets the interiors of explicit walk links.
+ for(uint i=0;i<edges.size();++i) if(edges[i].active && edges[i].enabled) {
+  const RoomNode &a=nodes[edges[i].a], &b=nodes[edges[i].b];
+  int64 dx=int32(b.x)-a.x,dy=int32(b.y)-a.y,den=dx*dx+dy*dy;
+  if(!den) continue;
+  int64 num=(int32(point.x)-a.x)*dx+(int32(point.y)-a.y)*dy;
+  num=MAX<int64>(0,MIN(num,den));
+  Common::Point p(a.x+dx*num/den,a.y+dy*num/den);
+  if(!onLink(a,b,p)) p=num*2<den ? Common::Point(a.x,a.y) : Common::Point(b.x,b.y);
+  int64 x=int32(point.x)-p.x,y=int32(point.y)-p.y,d=x*x+y*y;
+  if(!found || d<best) { found=true; best=d; out=p; }
+ }
  return found;
 }
 bool runRoomTests() {
+ RoomNavigation line;
+ Common::Point projected; Common::Array<Common::Point> path;
+ if(!line.node(0,454,334,100) || !line.node(1,524,334,100) || !line.edge(0,0,1,1) ||
+    !line.nearest(Common::Point(512,330),projected) || projected!=Common::Point(512,334) ||
+    !line.route(Common::Point(524,334),projected,path) || path.size()!=1 || path[0]!=projected ||
+    !line.route(projected,Common::Point(454,334),path) ||
+    !line.setEnabled(0,0,0) || line.route(projected,Common::Point(454,334),path) ||
+    line.nearest(Common::Point(512,330),projected)) return false;
  RoomNavigation room;
  if(room.node(-1,0,0,100) || room.node(50,0,0,100) || room.edge(0,0,1,1)) return false;
  if(!room.node(0,0,0,100) || !room.node(1,10,0,100) || !room.node(2,0,10,100) ||

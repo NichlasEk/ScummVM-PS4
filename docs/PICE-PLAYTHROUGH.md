@@ -365,3 +365,25 @@ passes byte 102, registers 'To the armoury' and 'A drawer', and completes at
 Drawer interactions beyond initialization remain for playtesting. Original Q
 save backed up under `.tools/pice-save-backup-file-room-1789924509` and retained
 for manual restart; no room override in the player's profile.
+
+
+## Cable attachment on submarine deck (2026-09-20)
+
+Bank 1219 task 4 byte 2342 requests coordinate movement (123) to 512,330.
+The deck has explicit links and no triangle floor; Ryan starts at 524,334.
+Added routing to/from interiors of enabled links and coordinate-target
+projection to the navigation network (here 512,334). Disabled links remain
+excluded, including the deck's blocked passage. Synthetic tests cover projected
+movement, reverse routing and rejection after disabling the link. Sloped integer
+projections that are not exactly on a link conservatively choose an endpoint.
+
+Next instruction 139 at 2356 requests camera recenter on the actor (original
+0x1c50/0x3775). Supported by the current immediate actor-centered camera;
+original easing remains unimplemented. Opcode 142 retains its actor wait.
+
+PS4 build and shadPS4 self-tests PASS. Replay with copied bank-1219 Q slot,
+hotspot 2/item 32 passes both instructions, removes inventory item 32 and
+releases action 4 input. Evidence `artifacts/pice/cable-check2.log`. Subsequent
+interaction reaches a separate unsupported opcode 140 at task 5 byte 2636;
+that remains unresolved. Player Q save backed up under
+`.tools/pice-save-backup-cable-1789926568`; manual restart has no test hooks.

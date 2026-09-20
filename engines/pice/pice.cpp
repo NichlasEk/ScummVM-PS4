@@ -497,9 +497,10 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(args.size()!=1 || (args[0]!=0 && args[0]!=1)) return false;
   _playerMovement=args[0]!=0; result=0; return true;
  }
- if(op==142) {
-  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_actors.size()) return false;
-  // Camera actor selection is inert for the current fixed-width backgrounds.
+ if(op==139 || op==142) {
+  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active) return false;
+  // 139 requests an immediate recenter (0x1c50 -> 0x3775). Our
+  // actor-centered camera has no easing, so selection recenters immediately.
   _cameraActor=args[0]; result=0; return true;
  }
  if(op==98) {
@@ -514,6 +515,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   RoomActor actor=_actors[args[0]];
   if(!actor.routeEnabled) return false;
   Common::Point target=op==50 ? Common::Point(_navigation.nodes[args[1]].x,_navigation.nodes[args[1]].y) : Common::Point(args[1],args[2]);
+  if(op==123) { Common::Point projected; if(!_navigation.nearest(target,projected)) return false; target=projected; }
   Common::Point floorStart;
   bool atNode=false;
   for(uint i=0;i<_navigation.nodes.size();++i) if(_navigation.nodes[i].active && actor.feet==Common::Point(_navigation.nodes[i].x,_navigation.nodes[i].y)) atNode=true;

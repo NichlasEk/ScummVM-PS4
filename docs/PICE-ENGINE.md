@@ -419,5 +419,5 @@ Fire-puzzle continuation: [dynamic navigation and extinguishing](PICE-FIRE-RUNTI
 ## Object responses after the fire (2026-09-20)
 
 Chest use/examine now complete through opcode 111, including text-only pages.
-See [PICE-OBJECT-DIALOGUE.md](PICE-OBJECT-DIALOGUE.md) for evidence and remaining
-generic fallback work.
+Common object-response fallback is also implemented.
+See [PICE-OBJECT-DIALOGUE.md](PICE-OBJECT-DIALOGUE.md) for evidence and limitations.

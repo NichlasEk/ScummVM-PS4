@@ -650,13 +650,21 @@ bool PiceEngine::closeupDialogue(const Common::String &animationName,const Commo
 }
 bool PiceEngine::objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &base) {
  if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || _dialogueActor>=0) return false;
- Common::String key=objectDialogueKey(base,_actionContext,_selectedItem);
- DialogueLine line; Common::Array<uint32> voices;
- if(key.empty() || !loadDialogue(name,local,key,line,voices)) {
-  if(_actionContext==-6 || _actionContext==-1) return false;
-  key=objectDialogueKey(base,_actionContext,_selectedItem,true);
-  if(key.empty() || !loadDialogue(name,local,key,line,voices)) return false;
+ if(name.size()<3 || local<0) return false;
+ Common::String group=name,key; group.setChar('E',0); group.setChar('T',2);
+ uint32 resource; Common::Array<byte> data;
+ if(!_languageNames.resolve(group,local,resource) || !_language.read(resource,data) ||
+    !selectObjectDialogueKey(data,base,_actionContext,_selectedItem,key)) return false;
+ if(key.empty()) {
+  // 0xee8 reads F_ICETXT.PAK from data[0x156a]; 0x3ffd replaces the
+  // language letter and 0x4008 replaces character 2 with T, local index 1.
+  group="E_TCETXT"; local=1;
+  if(!_languageNames.resolve(group,local,resource) || !_language.read(resource,data) ||
+     !genericDialogueKey(data,_actionContext,_random.getRandomNumber(0x7fffffff),key)) return false;
+  debug("[pice] object-dialogue fallback group=%s key=%s",group.c_str(),key.c_str());
  }
+ DialogueLine line; Common::Array<uint32> voices;
+ if(!loadDialogue(group,local,key,line,voices)) return false;
  // 0x4579 attaches ordinary speech to the existing actor. Unlike opcode
  // 129 this does not replace its sprite with a scripted talking animation.
  _dialoguePages=line.pages; _dialogueVoices=voices; _dialoguePage=0; _closeup=false;
@@ -811,6 +819,18 @@ void PiceEngine::tickRoom() {
     for(uint pixel=40*640;pixel<338*640 && !_testClickDone;++pixel) if(low[pixel]==high[pixel]) {
      Common::Point point(pixel%640,pixel/640);
      if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
+    }
+   }
+  }
+ }
+ if(_testClickDone && !_testUseDone && ConfMan.hasKey("pice_test_use_hotspot") && _actionEntry<0 && !_inputLocks && !actorBusy(_player)) {
+  int target=ConfMan.getInt("pice_test_use_hotspot");
+  for(uint item=0;item<_ownedItems.size() && !_testUseDone;++item) if(_ownedItems[item]) {
+   for(int y=40;y<338 && !_testUseDone;y+=2) for(int x=0;x<640 && !_testUseDone;x+=2) {
+    Common::Point point(x,y);
+    if(target>=0 && hotspotAt(point)==target) {
+     _selectedItem=item;
+     if(clickRoom(point,false)) { _testUseDone=true; debug("[pice] test use item=%u hotspot=%d",item,target); }
     }
    }
   }

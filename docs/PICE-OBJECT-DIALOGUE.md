@@ -16,7 +16,7 @@ than replacing its animation resource as opcode 129 does.
 The runner validates all operands before calling the scene and waits for the
 actor's dialogue to finish. The engine resolves object-specific keys through
 the existing language directory and page decoder. It supports the per-object
-item-specific to OBJ fallback; missing responses still stop as unsupported.
+item-specific to OBJ fallback, followed by the common responses described below.
 
 The chest's D09ACT and D09LOOK entries in E_T02 local 3 have a zero voice
 flag. They are text-only responses, not missing audio. Text-only pages now
@@ -44,12 +44,43 @@ removed from the normal local profile after testing.
 
 ## Remaining work
 
-- Generic chapter fallback: MAXACT/MAXLOOK/MAXOBJ and randomized
-  DACT/DLOOK/DOBJ responses when the object's own key is absent. The original
-  handler has this path, but its resource selection still needs verification.
+- Generic fallback is now implemented; see the continuation below.
 - Further opening interactions, dialogue choices, room transitions, death and
   restart, and later chapters remain incomplete.
 - This milestone was tested in shadPS4, not on physical PS4 hardware.
 
 The experimental package is `dist/pice-experimental/ScummVM-PS4-PICE-preview.pkg`.
 Game files stay separate. The broad stable ScummVM package is unchanged.
+
+## Common response fallback (2026-09-20 continuation)
+
+The original global at data 0x156a points to F_ICETXT.PAK. Handler 0xee8
+copies it, 0x3ffd substitutes the language letter, and 0x4008 changes character
+2 to T and loads local index 1. Thus these are **common**, not chapter-specific,
+responses: E_TCETXT local 1 for the supported English edition.
+
+When the object-specific key is absent, the engine reads MAXACT, MAXLOOK or
+MAXOBJ from that resource and selects a zero-based DACT%02d, DLOOK%02d or
+DOBJ%02d response using random modulo count, as the original does. The supplied
+English resource has 3, 1 and 10 choices respectively. Missing MAX metadata
+defaults to one choice; invalid/zero/oversized counts fail safely. Random
+selection uses the engine RNG; original RNG sequence parity is not claimed.
+
+Directory validation now distinguishes absent keys from damaged directories.
+A present response with invalid page data or audio fails rather than falling
+back silently. Existing object and inventory-specific replies retain priority.
+
+Synthetic startup tests cover all three families, modulo selection, missing
+MAX metadata, invalid counts, absent selected replies, corrupt directory
+bounds, item-specific priority and OBJ fallback. The actual guest restored the
+opening autosave, picked up item 15 through hotspot 9, then used it on hotspot
+0 through normal click dispatch. Entry 6 selected DOBJ04, displayed the text,
+and finished with control returned. No original game strings are in the tests.
+Local evidence: `artifacts/pice/generic-response-verified.log`.
+
+The opt-in testbench key `pice_test_use_hotspot` uses the first owned inventory
+item on a hotspot after the initial pickup action finishes. It does not create
+inventory items or overwrite checkpoints. Normal profiles omit this key.
+
+A fresh post-fire restore also selected the chest's own D09ACT and finished
+entry 23 without generic fallback (`artifacts/pice/generic-chest-regression.log`).

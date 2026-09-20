@@ -80,7 +80,7 @@ All such hooks are removed from the normal local profile after testing.
 ## Next
 
 Update: the chest now completes both object responses; see
-[PICE-OBJECT-DIALOGUE.md](PICE-OBJECT-DIALOGUE.md). Generic fallback remains open.
+[PICE-OBJECT-DIALOGUE.md](PICE-OBJECT-DIALOGUE.md). Common response fallback is implemented there as well.
 
 Historical next step at this milestone:
 

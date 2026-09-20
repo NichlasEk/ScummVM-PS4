@@ -12,6 +12,9 @@ struct DialogueLine {
 // Text directory and page decoder, not dialogue scheduling or actor animation.
 bool decodeDialogue(const Common::Array<byte> &data, const Common::String &key, DialogueLine &line);
 Common::String objectDialogueKey(const Common::String &base,int16 context,int16 item,bool genericItem=false);
+// Successful empty selection means absent; malformed directories fail.
+bool selectObjectDialogueKey(const Common::Array<byte> &data,const Common::String &base,int16 context,int16 item,Common::String &key);
+bool genericDialogueKey(const Common::Array<byte> &data,int16 context,uint32 random,Common::String &key);
 bool runDialogueTests();
 }
 #endif

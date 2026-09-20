@@ -147,7 +147,7 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
 static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
- case 99: case 124: return true;
+ case 140: case 141: case 99: case 124: return true;
  case 30: case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
  case 139: case 149: case 115: case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 84: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 89: case 81: case 58: case 95: before=4; return true;

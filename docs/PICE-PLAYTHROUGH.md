@@ -387,3 +387,23 @@ releases action 4 input. Evidence `artifacts/pice/cable-check2.log`. Subsequent
 interaction reaches a separate unsupported opcode 140 at task 5 byte 2636;
 that remains unresolved. Player Q save backed up under
 `.tools/pice-save-backup-cable-1789926568`; manual restart has no test hooks.
+
+
+## Cable crossing interruption, opcodes 140/141 (2026-09-20)
+
+Task 5 byte 2636 saves the in-progress command before switching Ryan's
+animation; 141 restores it. Original 0x7d21/0x7dbb copy the command record and
+remember/replan the walking destination. Implemented a single saved command
+record with foreground context and pending destination. Resume replans from the
+current feet rather than teleporting or restoring stale animation frames.
+Nested saves overwrite the single slot as in the original. Save writing is
+unavailable while this transient record is live; room teardown/load clears it.
+Unit regression covers command round trip and rejection of unmatched restore.
+Exact original direction/dot-product adjustments are not yet reproduced.
+
+shadPS4 self-tests PASS; automated item32/hotspot2 followed by walking to node0
+passes both interruptions, restores walking twice, and reaches 1082,334 without
+script errors. Evidence `artifacts/pice/cable-interrupt-check.log`. This resolves
+the previously recorded 140 stop. Whether the two visible reactions match the
+original has not been established; no full chapter completion claim. Manual
+restart returns to the untouched Q save without automated actions.

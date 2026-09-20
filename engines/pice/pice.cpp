@@ -223,6 +223,13 @@ bool PiceEngine::runActorLifecycleTests() {
  _inputLocks=0; releaseActionInput(11); if(_actionEntry!=12) return false;
  _actionExitChapter=3; releaseActionInput(12); if(_actionEntry!=12) return false;
  _actionExitChapter=-1; releaseActionInput(12); if(_actionEntry!=-1) return false;
+ Common::Array<int16> interruptionArgs; int16 interruptionResult;
+ _actionContext=9; _actionEntry=7; _actionHotspot=3;
+ if(!invoke(140,Common::String(),interruptionArgs,Common::String(),interruptionResult)) return false;
+ _actionContext=-1; _actionEntry=-1; _actionHotspot=-1;
+ if(!invoke(141,Common::String(),interruptionArgs,Common::String(),interruptionResult) || _actionContext!=9 || _actionEntry!=7 || _actionHotspot!=3 ||
+    invoke(141,Common::String(),interruptionArgs,Common::String(),interruptionResult)) return false;
+ _actionContext=_actionEntry=_actionHotspot=-1;
  _selectedItem=10; Common::Array<int16> noArgs; int16 deselectResult=-1;
  if(!invoke(124,Common::String(),noArgs,Common::String(),deselectResult) || _selectedItem!=-1 || deselectResult!=0) return false;
  Action itemAction; itemAction.verb=9; itemAction.item=2;
@@ -496,6 +503,30 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==153) {
   if(args.size()!=1 || (args[0]!=0 && args[0]!=1)) return false;
   _playerMovement=args[0]!=0; result=0; return true;
+ }
+ if(op==140) {
+  if(!args.empty()) return false;
+  InterruptedAction saved;
+  saved.valid=true; saved.context=_actionContext; saved.entry=_actionEntry; saved.hotspot=_actionHotspot;
+  saved.walking=_actionWalking; saved.exitChapter=_actionExitChapter; saved.exitRoom=_actionExitRoom; saved.actor=_player;
+  if(_player>=0 && uint(_player)<_actors.size()) {
+   const RoomActor &a=_actors[_player];
+   saved.resumeWalk=a.active && a.animationMode==4 && !a.path.empty();
+   if(saved.resumeWalk) saved.destination=a.path.back();
+  }
+  _interruptedAction=saved; result=0; return true;
+ }
+ if(op==141) {
+  if(!args.empty() || !_interruptedAction.valid) return false;
+  const InterruptedAction saved=_interruptedAction;
+  if(saved.resumeWalk) {
+   Common::Array<int16> walk; walk.push_back(saved.actor); walk.push_back(saved.destination.x); walk.push_back(saved.destination.y);
+   int16 ignored; if(!invoke(123,Common::String(),walk,Common::String(),ignored)) return false;
+  }
+  _actionContext=saved.context; _actionEntry=saved.entry; _actionHotspot=saved.hotspot; _actionWalking=saved.walking;
+  _actionExitChapter=saved.exitChapter; _actionExitRoom=saved.exitRoom;
+  _interruptedAction=InterruptedAction(); result=0;
+  debug("[pice] restored interrupted action entry=%d resume-walk=%d",_actionEntry,int(saved.resumeWalk)); return true;
  }
  if(op==139 || op==142) {
   if(args.size()!=1 || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active) return false;
@@ -890,6 +921,7 @@ bool PiceEngine::loadRoom(uint room) {
  for(uint i=0;i<_sounds.size();++i) if(_sounds[i].active && !_sounds[i].persistent) {
   _mixer->stopHandle(_sounds[i].handle); _sounds[i]=RoomSound();
  }
+ _interruptedAction=InterruptedAction();
  _actors.clear(); _worldItems.clear(); _hotspots.clear(); _actions.clear(); _animationSounds.clear(); _inventoryEnabled=true; _advanceRequested=false;
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _playerMovement=true; _cursorItem=-2;
@@ -1317,6 +1349,10 @@ void PiceEngine::tickRoom() {
     }
    }
   }
+ }
+ if(_testClickDone && !_testUseDone && ConfMan.hasKey("pice_test_walk_node") && _actionEntry<0 && !_inputLocks && !actorBusy(_player) && !dialogueActive()) {
+  Common::Array<int16> walk; walk.push_back(_player); walk.push_back(ConfMan.getInt("pice_test_walk_node")); int16 ignored;
+  if(invoke(50,Common::String(),walk,Common::String(),ignored)) { _testUseDone=true; debug("[pice] test walk node=%d",walk[1]); }
  }
  if(_testClickDone && !_testUseDone && ConfMan.hasKey("pice_test_followup_hotspot") && _actionEntry<0 && !_inputLocks && !actorBusy(_player) && !dialogueActive()) {
   int target=ConfMan.getInt("pice_test_followup_hotspot");

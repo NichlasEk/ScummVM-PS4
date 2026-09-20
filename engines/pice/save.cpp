@@ -22,7 +22,7 @@ bool PiceEngine::requestSave(const Common::String &name,int16 local,const Common
  _savePending=true; debug("[pice] queued autosave key=%s",key.c_str()); return true;
 }
 bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
- if(!loading && (_fadeLevel>=0 || _gameOver || _activeMenu>=0 || _actionEntry>=0 || !_scenePreview || !_roomRunner || dialogueActive() || _closeup || _pendingRoom>=0)) return false;
+ if(!loading && (_interruptedAction.valid || _fadeLevel>=0 || _gameOver || _activeMenu>=0 || _actionEntry>=0 || !_scenePreview || !_roomRunner || dialogueActive() || _closeup || _pendingRoom>=0)) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
  bool playerMovement=_playerMovement;
@@ -224,6 +224,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _fadeLevel=-1; _palettePulse=pulse; _pulsePeriod=period; _pulseRemaining=remaining; _pulseOffset=offset; _pulseDelta=delta;
  for(uint i=0;i<12;++i) _textStyles[i/2][i%2]=styles[i];
  _actionExitChapter=_actionExitRoom=-1;
+ _interruptedAction=InterruptedAction();
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _random.setSeed(seed); _dialogueActor=-1; _narration=false; _closeup=false; _subtitle.clear(); _savePending=false; _pendingRoom=-1;
  // Recover the precise partial initializer left after returning with the medal.

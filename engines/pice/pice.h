@@ -72,6 +72,11 @@ private:
  int16 _actionExitChapter=-1,_actionExitRoom=-1;
  int16 _actionContext=-1,_actionEntry=-1,_actionHotspot=-1;
  bool _actionWalking=false;
+ struct InterruptedAction {
+  bool valid=false,walking=false,resumeWalk=false;
+  int16 context=-1,entry=-1,hotspot=-1,exitChapter=-1,exitRoom=-1,actor=-1;
+  Common::Point destination;
+ } _interruptedAction;
  int _hoverHotspot=-1,_hoverItem=-1;
  bool inventoryVisible() const;
  int inventoryAt(Common::Point point) const;

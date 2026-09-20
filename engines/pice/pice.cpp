@@ -1298,7 +1298,7 @@ Common::Error PiceEngine::run() {
     continue;
    }
 
-   if(_scenePreview && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN) && event.mouse.y>=(_player<0 ? 0 : 40) && event.mouse.y<(_player<0 ? 400 : 338)) {
+   if(_scenePreview && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN) && event.mouse.y>=(!_playerMovement || _player<0 ? 0 : 40) && event.mouse.y<(!_playerMovement || _player<0 ? 400 : 338)) {
     clickRoom(event.mouse,event.type==Common::EVENT_RBUTTONDOWN); continue;
    }
    if (event.type == Common::EVENT_RBUTTONDOWN && !_scenePreview) change = -1;

@@ -40,7 +40,7 @@ bool PiceEngine::clickMenu(Common::Point point) {
 }
 int PiceEngine::hotspotAt(Common::Point point) const {
  // Room actors use the original 640x480 anchors, offset into our 640x400 view.
- if(point.y<(_player<0 ? 0 : 40) || point.y>=(_player<0 ? 400 : 338)) return -1;
+ if(point.y<(!_playerMovement || _player<0 ? 0 : 40) || point.y>=(!_playerMovement || _player<0 ? 400 : 338)) return -1;
  for(uint i=0;i<_hotspots.size();++i) {
   const Hotspot &h=_hotspots[i]; if(!h.active) continue;
   if(h.actor==-1) { if(h.bounds.contains(point.x,point.y+40)) return i; }

@@ -473,3 +473,19 @@ are present. Evidence artifacts/pice/inventory-check2.log and inventory-check.pn
 The opt-in pice_test_inventory hook moves to slot3 and selects through the
 normal inventory method; manual profile has no hook and its Q is unchanged.
 Using the selected item on the map remains for user playtesting.
+
+
+## Walk-only exit from bank1191 (2026-09-20)
+
+The entrance-hall hotspot registers opcode80 with approach node6 and script
+entry -1. clickRoom accepted scriptless exits only when approach was also -1,
+so it rejected this valid walk-before-transition action without a script stop.
+Walking actions now permit entry -1 for an exit destination, then transition
+after reaching the approach. No nonexistent script is started. Input, hover
+and saves stay blocked while this pending walk is active. Scripted exits retain
+their existing execution path.
+
+Copied user Q in shadPS4: self-tests PASS; hotspot1 queues entry=-1 approach6,
+walk completes at296,306, request chapter3 room16/bank1198 succeeds and the
+destination entry walk completes. Evidence artifacts/pice/entrance-check.log.
+Manual Q remains unchanged in the original profile.

@@ -7,7 +7,7 @@
 #include "common/textconsole.h"
 namespace Pice {
 bool PiceEngine::ambientDialogue() const {
- return dialogueActive() && !_inputLocks && _actionEntry<0 && _activeMenu<0 &&
+ return dialogueActive() && !_inputLocks && _actionEntry<0 && !_actionWalking && _activeMenu<0 &&
   _roomRunner && _roomRunner->exclusiveTask()<0;
 }
 bool PiceEngine::dialogueBlocked(uint task) const {
@@ -131,7 +131,7 @@ bool PiceEngine::inventoryVisible() const {
  // Opcode 149 controls the original automatic panel. The preview uses an
  // explicitly hovered toolbar, available whenever player input is available.
  if(_combinationRunner || _combinationFailed) return false;
- return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _pendingRoom<0 && _eventMan->getMousePos().y>=0 && _eventMan->getMousePos().y<40;
+ return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && !_actionWalking && _pendingRoom<0 && _eventMan->getMousePos().y>=0 && _eventMan->getMousePos().y<40;
 }
 int PiceEngine::inventoryAt(Common::Point point) const {
  if(point.y<0 || point.y>=40 || point.x<0 || point.x>=600) return -1;
@@ -143,7 +143,7 @@ int PiceEngine::inventoryAt(Common::Point point) const {
 }
 void PiceEngine::updateHover() {
  int spot=-1; _hoverItem=-1;
- if(!_combinationRunner && !_combinationFailed && _scenePreview && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _pendingRoom<0) {
+ if(!_combinationRunner && !_combinationFailed && _scenePreview && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && !_actionWalking && _pendingRoom<0) {
   Common::Point point=_eventMan->getMousePos();
   if(inventoryVisible()) _hoverItem=inventoryAt(point);
   int hit=point.y<40 ? -1 : hotspotAt(point);
@@ -197,7 +197,7 @@ void PiceEngine::updateHover() {
 }
 bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  if(ambientDialogue()) finishDialogue();
- if(_combinationRunner || _combinationFailed || !_scenePreview || !_roomRunner || _inputLocks || dialogueActive() || _pendingRoom>=0 || _actionEntry>=0 ||
+ if(_combinationRunner || _combinationFailed || !_scenePreview || !_roomRunner || _inputLocks || dialogueActive() || _pendingRoom>=0 || _actionEntry>=0 || _actionWalking ||
     _roomRunner->exclusiveTask()>=0 || (_player>=0 && (uint(_player)>=_actors.size() || actorBusy(_player)))) return false;
  if(rightButton && _selectedItem>=0) { _selectedItem=-1; return true; }
  const int spot=hotspotAt(point);
@@ -223,7 +223,8 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  const Action &action=_actions[selected];
  int16 entry=fallbackUsed ? action.fallback : action.entry;
  if(entry==-1 && !fallbackUsed && action.exitChapter>=0 && action.approach==-1) return changeRoom(action.exitChapter,action.exitRoom);
- if(entry<0 || uint(entry)>=_roomBank.count() || _roomRunner->running(entry)) return false;
+ const bool walkOnlyExit=entry==-1 && !fallbackUsed && action.exitChapter>=0;
+ if(!walkOnlyExit && (entry<0 || uint(entry)>=_roomBank.count() || _roomRunner->running(entry))) return false;
  if(action.approach>=0 && _playerMovement) {
   if(_player<0) return false;
   if(uint(action.approach)>=_navigation.nodes.size() || !_navigation.nodes[action.approach].active) return false;
@@ -247,11 +248,16 @@ void PiceEngine::releaseActionInput(uint task) {
  _actionEntry=-1; _actionHotspot=-1;
 }
 void PiceEngine::tickAction() {
- if(_actionEntry<0 || !_roomRunner) return;
+ if((_actionEntry<0 && !_actionWalking) || !_roomRunner) return;
  if(_actionWalking) {
   if(actorBusy(_player) || _inputLocks || _roomRunner->exclusiveTask()>=0) return;
   if(_actionHotspot<0 || uint(_actionHotspot)>=_hotspots.size() || !_hotspots[_actionHotspot].active) {
    _actionEntry=-1; _actionContext=-1; _actionWalking=false; return;
+  }
+  if(_actionEntry==-1 && _actionExitChapter>=0) {
+   if(!changeRoom(_actionExitChapter,_actionExitRoom)) _roomStatus="Exit destination is not supported yet";
+   _actionWalking=false; _actionExitChapter=_actionExitRoom=-1;
+   _actionHotspot=-1; _actionContext=-1; return;
   }
   _roomRunner->start(_actionEntry); _actionWalking=false;
   debug("[pice] action started entry=%d context=%d",_actionEntry,_actionContext);

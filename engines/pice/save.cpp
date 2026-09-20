@@ -22,7 +22,7 @@ bool PiceEngine::requestSave(const Common::String &name,int16 local,const Common
  _savePending=true; debug("[pice] queued autosave key=%s",key.c_str()); return true;
 }
 bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
- if(!loading && (_combinationRunner || _combinationFailed || _interruptedAction.valid || _fadeLevel>=0 || _gameOver || _activeMenu>=0 || _actionEntry>=0 || !_scenePreview || !_roomRunner || dialogueActive() || _closeup || _pendingRoom>=0)) return false;
+ if(!loading && (_combinationRunner || _combinationFailed || _interruptedAction.valid || _fadeLevel>=0 || _gameOver || _activeMenu>=0 || _actionEntry>=0 || _actionWalking || !_scenePreview || !_roomRunner || dialogueActive() || _closeup || _pendingRoom>=0)) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
  bool playerMovement=_playerMovement;

@@ -45,7 +45,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=10; io.number(version); if(version<1 || version>10) return false;
+ uint32 version=11; io.number(version); if(version<1 || version>11) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || bankId<1140 || bankId>=1180 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -73,7 +73,13 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   io.number(a.walkProgress); io.number(a.walkDistance); io.number(a.walkDirection); io.number(a.pathIndex); io.number(a.animationPaused);
   if(io.count(a.path,52)) for(uint i=0;i<a.path.size();++i) io.point(a.path[i]);
   if(a.active && (!a.sprite.hasSequence(a.sequence) || a.step>=a.sprite.sequences[a.sequence].steps.size())) io.ok=false;
-  if(a.animationMode<0 || a.animationMode>4 || a.animationMode==3 || a.animationPaused || a.pathIndex>a.path.size() ||
+  if(version>=11) { io.number(a.idleMin); io.number(a.idleMax); io.number(a.idlePauseMin); io.number(a.idlePauseMax); }
+  else a.idleMin=a.idleMax=a.idlePauseMin=a.idlePauseMax=0;
+  if(a.animationMode==5) {
+   if(a.idleMin<0 || a.idleMax<a.idleMin || a.idlePauseMin<0 || a.idlePauseMax<a.idlePauseMin) io.ok=false;
+   else for(int i=a.idleMin;i<=a.idleMax;++i) if(!a.sprite.hasSequence(i)) io.ok=false;
+  }
+  if(a.animationMode<0 || a.animationMode>5 || a.animationMode==3 || (a.animationPaused && a.animationMode!=5) || a.pathIndex>a.path.size() ||
      (a.animationMode==4 && (a.walkDistance<=0 || a.walkProgress<0 || a.walkProgress>a.walkDistance || a.pathIndex>=a.path.size()))) io.ok=false;
  };
  if(io.count(actors,20)) for(uint i=0;i<actors.size();++i) actor(actors[i]);
@@ -173,7 +179,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  for(uint i=0;i<actions.size();++i) {
   if(version>=8) { io.number(actions[i].exitChapter); io.number(actions[i].exitRoom); }
   else actions[i].exitChapter=actions[i].exitRoom=-1;
-  if(actions[i].exitChapter==-1) { if(actions[i].exitRoom!=-1 || (actions[i].entry==-1 && !actions[i].fallback)) return false; }
+  if(actions[i].exitChapter==-1) { if(actions[i].exitRoom!=-1) return false; }
   else if(actions[i].verb!=3 || actions[i].exitChapter!=2 || actions[i].exitRoom<0 || actions[i].exitRoom>=40) return false;
  }
  if(version>=9) {
@@ -211,6 +217,10 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  // Continue that exact instruction, never replay initialization over live state.
  if(((version<=7 && bankId==1147) || bankId==1166) && _roomRunner->resumeStoppedAt(0,80))
   debug("[pice] resumed legacy %s initialization at byte=%u",bankId==1147 ? "bridge" : "drawer",_roomRunner->position(0));
+ if(version<=10 && bankId==1142) {
+  if(_roomRunner->position(0)==3086 || _roomRunner->position(0)==2752) _roomRunner->resumeStoppedAt(0,6);
+  _roomRunner->resumeStoppedAt(19,130); _roomRunner->resumeStoppedAt(17,112);
+ }
  if(version<=9 && bankId==1143 && _roomRunner->resumeStoppedAt(0,153))
   debug("[pice] resumed legacy bunk initialization at byte=%u",_roomRunner->position(0));
  if(version<=4 && bankId==1140 && _roomRunner->position(20)==6840 && _roomRunner->resumeStoppedAt(20,101))

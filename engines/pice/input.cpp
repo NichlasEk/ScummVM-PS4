@@ -6,6 +6,11 @@
 #include "graphics/paletteman.h"
 #include "common/textconsole.h"
 namespace Pice {
+bool PiceEngine::actorInsideHotspot(int16 actor,int16 hotspot,bool &inside) const {
+ if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || hotspot<0 || uint(hotspot)>=_hotspots.size()) return false;
+ const Common::Rect &rect=_hotspots[hotspot].bounds; const Common::Point &p=_actors[actor].feet;
+ inside=p.x>rect.left && p.x<rect.right && p.y>rect.top && p.y<rect.bottom; return true;
+}
 bool PiceEngine::stateValue(int16 kind,int16 id,int16 &value) const {
  // Opcode 86 kind 2: inventory record status byte == 1 (0x8fa).
  if(kind!=2 || id<0 || uint(id)>=_ownedItems.size()) return false;
@@ -69,7 +74,7 @@ void PiceEngine::updateHover() {
   Common::Point point=_eventMan->getMousePos();
   if(point.y<40) _hoverItem=inventoryAt(point);
   int hit=point.y<40 ? -1 : hotspotAt(point);
-  for(uint i=0;i<_actions.size();++i) if(hit>=0 && _actions[i].hotspot==hit) { spot=hit; break; }
+  for(uint i=0;i<_actions.size();++i) if(hit>=0 && _actions[i].hotspot==hit && (_actions[i].entry>=0 || _actions[i].fallback>0 || _actions[i].exitChapter>=0)) { spot=hit; break; }
  }
  _hoverHotspot=spot;
  int selected=(!_gameOver && _activeMenu<0 && _dialogueActor<0) ? _selectedItem : -1;

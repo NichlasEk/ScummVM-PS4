@@ -12,10 +12,16 @@ bool ScriptRunner::syncState(StateIO &io) {
  Common::Array<Task> tasks=_tasks; int exclusive=_exclusiveTask;
  uint count=tasks.size(); io.number(count); io.number(exclusive);
  if(!io.ok || count!=_tasks.size() || exclusive < -1 || exclusive>=int(count)) return false;
+ bool locations=!io.loading || io.data.size()==8+count*48;
+ if(io.loading && !locations && io.data.size()!=8+count*36) return false;
  for(uint i=0;i<count;++i) {
   Task &t=tasks[i]; io.number(t.pc); io.number(t.active); io.number(t.waiting);
   io.number(t.actor); io.number(t.peer); io.number(t.triggerActor); io.number(t.triggerStep);
   io.number(t.barrierReady); io.number(t.remainingTicks);
+  if(locations) { io.number(t.locationActor); io.number(t.locationHotspot); io.number(t.locationInside); }
+  else { t.locationActor=t.locationHotspot=-1; t.locationInside=false; }
+  if(t.locationActor < -1 || t.locationActor>=20 || t.locationHotspot < -1 || t.locationHotspot>=50 ||
+     ((t.locationActor==-1)!=(t.locationHotspot==-1))) return false;
   if(!io.ok || (t.active && !_bank.codeAddress(t.pc)) || t.actor < -26 || t.actor>=20 ||
      t.peer < -1 || t.peer>=int(count) || t.peer==int(i) || t.triggerActor < -1 || t.triggerActor>=20 || t.triggerStep<0) return false;
  }
@@ -138,12 +144,13 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  switch(op) {
  case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
  case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
- case 81: case 58: case 95: before=4; return true;
+ case 89: case 81: case 58: case 95: before=4; return true;
  case 80: case 109: before=5; return true;
  case 123: case 135: case 136: before=3; return true;
  case 32: case 29: case 133: after=1; return true;
  case 137: after=2; return true;
  case 77: after=4; return true;
+ case 130: before=1; after=5; return true;
  case 96: before=1; after=3; return true;
  case 117: before=1; after=4; return true;
  case 57: case 61: before=2; after=1; key=true; return true;
@@ -218,6 +225,12 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   // State 2 returns to the scheduler even on the visit that expires it.
   return kWaiting;
  }
+ if(task.locationActor>=0) {
+  bool inside;
+  if(!_scene || !_scene->actorInsideHotspot(task.locationActor,task.locationHotspot,inside)) { task.active=false; return kUnsupported; }
+  if(inside!=task.locationInside) return kWaiting;
+  task.locationActor=task.locationHotspot=-1;
+ }
  uint16 opcode;
  if (!_bank.word(task.pc,opcode)) { task.active=false; return kInvalid; }
  uint32 next=task.pc;
@@ -227,6 +240,13 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   next+=2;
  }
  int16 argument;
+ if(opcode==112) {
+  next+=2; int16 mode,actor,hotspot; bool inside;
+  if(!_bank.expression(next,mode,_variables,_scene) || !_bank.expression(next,actor,_variables,_scene) ||
+     !_bank.expression(next,hotspot,_variables,_scene) || actor<0 || actor>=20 || hotspot<0 || hotspot>=50) { task.active=false; return kInvalid; }
+  if(!_scene || !_scene->actorInsideHotspot(actor,hotspot,inside)) { task.active=false; return kUnsupported; }
+  task.locationActor=actor; task.locationHotspot=hotspot; task.locationInside=mode==0; task.pc=next; return kWaiting;
+ }
  if(opcode==131) {
   next+=2;
   if(!_bank.expression(next,argument,_variables,_scene) || argument<0) { task.active=false; return kInvalid; }
@@ -592,6 +612,8 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
+  bool inside=false;
+  bool actorInsideHotspot(int16 actor,int16 hotspot,bool &value) const override { if(actor!=2 || hotspot!=3) return false; value=inside; return true; }
   bool owned=false;
   bool stateValue(int16 kind,int16 id,int16 &value) const override { if(kind!=2 || id!=12) return false; value=owned; return true; }
   int deaths=0;
@@ -635,6 +657,17 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // A region wait yields, survives a checkpoint, then releases on entry.
+ const uint16 regionWords[]={1,112,20,0,20,2,20,3,25,4,20,42,31,20,0};
+ bytes.resize(sizeof(regionWords)); for(uint i=0;i<sizeof(regionWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],regionWords[i]);
+ ScriptResource regionBank; if(!regionBank.load(bytes)) return false;
+ ScriptRunner regionRunner(regionBank,nullptr,&sink); regionRunner.start(0);
+ if(regionRunner.step(0)!=ScriptRunner::kWaiting || regionRunner.step(0)!=ScriptRunner::kWaiting || !regionRunner.waiting(0)) return false;
+ Common::Array<byte> regionState; StateIO regionOut(regionState,false); if(!regionRunner.syncState(regionOut)) return false;
+ ScriptRunner resumedRegion(regionBank,nullptr,&sink); StateIO regionIn(regionState,true);
+ if(!resumedRegion.syncState(regionIn) || !regionIn.finished() || resumedRegion.step(0)!=ScriptRunner::kWaiting) return false;
+ sink.inside=true;
+ if(resumedRegion.step(0)!=ScriptRunner::kAdvanced || !resumedRegion.variables().read(false,4,value) || value!=42 || resumedRegion.step(0)!=ScriptRunner::kStopped) return false;
  // Nested NOT/inventory predicates must change when the item is picked up.
  const uint16 inventoryPredicate[]={1,12,91,86,20,2,20,12,45,20,1,20,1};
  bytes.resize(sizeof(inventoryPredicate));

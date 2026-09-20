@@ -76,7 +76,7 @@ private:
  bool createMenu(const Common::String &name,int16 local,int16 &id) override;
  Common::Array<Common::Array<Common::String> > _menus;
  bool createItem(const Common::String &name,int16 local,int16 sequence,int16 &id) override;
- struct RoomActor { bool active=true; SpriteResource sprite; int16 resource=0,sequence=0,node=0; Common::Point feet, labelPosition; bool routeEnabled=false; uint step=0; int32 frameTicks=0; int16 animationMode=0; Common::Point animationOrigin,walkTarget; int32 walkProgress=0,walkDistance=0; int16 walkDirection=0; Common::Array<Common::Point> path; uint pathIndex=0; bool animationPaused=false; };
+ struct RoomActor { bool active=true; SpriteResource sprite; int16 resource=0,sequence=0,node=0; Common::Point feet, labelPosition; bool routeEnabled=false; uint step=0; int32 frameTicks=0; int16 animationMode=0; Common::Point animationOrigin,walkTarget; int32 walkProgress=0,walkDistance=0; int16 walkDirection=0; Common::Array<Common::Point> path; uint pathIndex=0; bool animationPaused=false; int16 idleMin=0,idleMax=0,idlePauseMin=0,idlePauseMax=0; };
  bool startWalkLeg(RoomActor &actor);
  int16 storeActor(const RoomActor &actor);
  bool runActorLifecycleTests();
@@ -118,6 +118,7 @@ private:
  int16 _previousRoom=-1;
  bool renderRoom();
  void tickRoom();
+ bool actorInsideHotspot(int16 actor,int16 hotspot,bool &inside) const override;
  bool actorStepReached(int16 actor,int16 step) const override;
  bool actorBusy(int16 actor) const override;
  bool soundBusy(int16 sound) const override;

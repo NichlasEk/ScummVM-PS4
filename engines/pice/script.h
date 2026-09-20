@@ -57,6 +57,7 @@ public:
  virtual bool speakDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) { return false; }
+ virtual bool actorInsideHotspot(int16 actor,int16 hotspot,bool &inside) const { return false; }
  virtual bool actorStepReached(int16 actor,int16 step) const { return !actorBusy(actor); }
  virtual bool soundBusy(int16 sound) const { return false; }
  virtual bool actorBusy(int16 actor) const { return false; }
@@ -79,7 +80,7 @@ public:
  int exclusiveTask() const { return _exclusiveTask>=0 && running(_exclusiveTask) ? _exclusiveTask : -1; }
  bool running(uint index) const { return index<_tasks.size() && _tasks[index].active; }
  uint32 position(uint index) const { return _tasks[index].pc; }
- bool waiting(uint index) const { return running(index) && (_tasks[index].waiting || _tasks[index].actor!=-1 || _tasks[index].peer>=0 || _tasks[index].triggerActor>=0); }
+ bool waiting(uint index) const { return running(index) && (_tasks[index].waiting || _tasks[index].actor!=-1 || _tasks[index].peer>=0 || _tasks[index].triggerActor>=0 || _tasks[index].locationActor>=0); }
  // One original dispatcher visit. An expiring wait yields this visit too.
  Result step(uint index, uint32 elapsedTicks=0);
  Result run(uint index, uint instructionBudget);
@@ -88,7 +89,7 @@ public:
 private:
  bool value(uint32 &pc,int16 &result);
  // actor >= 0 waits for an actor; actor <= -2 encodes sound (-actor-2).
- struct Task { uint32 pc=0; bool active=false, waiting=false; int16 actor=-1,peer=-1,triggerActor=-1,triggerStep=0; bool barrierReady=false; int32 remainingTicks=0; };
+ struct Task { uint32 pc=0; bool active=false, waiting=false; int16 actor=-1,peer=-1,triggerActor=-1,triggerStep=0; bool barrierReady=false; int32 remainingTicks=0; int16 locationActor=-1,locationHotspot=-1; bool locationInside=false; };
  int _exclusiveTask=-1;
  const ScriptResource &_bank;
  Common::Array<Task> _tasks;

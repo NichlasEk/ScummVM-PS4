@@ -473,6 +473,26 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(!_graphics.read(1306+args[0],data) || !panel.load(data,1306+args[0])) return false;
   _inventoryPanel=panel; _inventorySelection=args[1]; result=0; return true;
  }
+ if(op==89) {
+  // 0x2fc4 -> 0x817e: unnamed rectangular hotspot, four evaluated coordinates.
+  if(args.size()!=4 || args[2]<args[0] || args[3]<args[1] || _hotspots.size()>=50) return false;
+  Hotspot h; h.bounds=Common::Rect(args[0],args[1],args[2],args[3]);
+  result=_hotspots.size(); _hotspots.push_back(h); return true;
+ }
+ if(op==130) {
+  // 0x18a1: independent random idle animation, no dialogue or task wait.
+  if(args.size()!=6 || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active ||
+     !name.equalsIgnoreCase("A02") || args[1]<0 || args[1]>=179 || args[2]<0 || args[3]<args[2] || args[4]<0 || args[5]<args[4]) return false;
+  Common::Array<byte> data; RoomActor actor=_actors[args[0]];
+  if(!_graphics.read(args[1],data) || !actor.sprite.load(data,args[1])) return false;
+  for(int i=args[2];i<=args[3];++i) if(!actor.sprite.hasSequence(i)) return false;
+  actor.resource=args[1]; actor.idleMin=args[2]; actor.idleMax=args[3]; actor.idlePauseMin=args[4]; actor.idlePauseMax=args[5];
+  actor.sequence=_random.getRandomNumberRng(actor.idleMin,actor.idleMax); actor.step=0; actor.animationMode=5;
+  actor.animationPaused=false; actor.animationOrigin=actor.feet;
+  actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks);
+  _actors[args[0]]=actor; result=1;
+  debug("[pice] idle animation actor=%d resource=%d sequences=%d..%d",args[0],args[1],args[2],args[3]); return true;
+ }
  if(op==57 || op==59 || op==61) {
   if(name.size()<3 || _hotspots.size()>=50) return false;
   if(op==57 && (args.size()!=3 || args[0]<0 || uint(args[0])>=_actors.size())) return false;
@@ -906,7 +926,7 @@ void PiceEngine::tickRoom() {
   if(actor.animationPaused) {
    actor.frameTicks-=ticks;
    if(actor.frameTicks>0) continue;
-   actor.sequence=_random.getRandomNumberRng(_dialogueMinSequence,_dialogueMaxSequence);
+   actor.sequence=actor.animationMode==5 ? _random.getRandomNumberRng(actor.idleMin,actor.idleMax) : _random.getRandomNumberRng(_dialogueMinSequence,_dialogueMaxSequence);
    actor.step=0; actor.animationPaused=false;
    actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks);
    continue;
@@ -937,8 +957,8 @@ void PiceEngine::tickRoom() {
      break;
     }
     actor.step=0;
-    if(actor.animationMode==3) {
-     actor.animationPaused=true; actor.frameTicks=_random.getRandomNumberRng(_dialogueMinPause,_dialogueMaxPause); break;
+    if(actor.animationMode==3 || actor.animationMode==5) {
+     actor.animationPaused=true; actor.frameTicks=actor.animationMode==5 ? _random.getRandomNumberRng(actor.idlePauseMin,actor.idlePauseMax) : _random.getRandomNumberRng(_dialogueMinPause,_dialogueMaxPause); break;
     }
     if(actor.animationMode!=4) actor.feet=actor.animationOrigin;
    } else ++actor.step;

@@ -1,5 +1,7 @@
 # Prisoner of Ice engine development
 
+Latest: [medal pickup and sleeping-quarters tasks](PICE-MEDAL-RUNTIME.md).
+
 Latest: [bunk figures and selected-item cursor](PICE-BUNK-RUNTIME.md).
 
 Latest: [drawer objects, hover inventory and music recovery](PICE-DRAWER-RUNTIME.md).

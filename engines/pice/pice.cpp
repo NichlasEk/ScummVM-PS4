@@ -428,7 +428,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   uint id=args[0];
   _itemLabels.resize(_items.size());
   for(uint h=0;h<_hotspots.size();++h) for(uint w=0;w<_worldItems.size();++w)
-   if(_worldItems[w].item==int(id) && _worldItems[w].actor>=0 && _hotspots[h].actor==_worldItems[w].actor) _itemLabels[id]=_hotspots[h].label;
+   if(_itemLabels[id].empty() && _worldItems[w].item==int(id) && _worldItems[w].actor>=0 && _hotspots[h].actor==_worldItems[w].actor) _itemLabels[id]=_hotspots[h].label;
   for(uint i=0;i<_worldItems.size();++i) if(_worldItems[i].item==int(id) && _worldItems[i].actor>=0) {
    Common::Array<int16> remove; remove.push_back(_worldItems[i].actor); int16 ignored;
    if(!invoke(83,Common::String(),remove,Common::String(),ignored)) return false;
@@ -557,9 +557,19 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   for(uint i=0;i<_navigation.nodes.size();++i) if(_navigation.nodes[i].active && actor.feet==Common::Point(_navigation.nodes[i].x,_navigation.nodes[i].y)) atNode=true;
   if(atNode) floorStart=actor.feet;
   else if(!_navigation.nearest(actor.feet,floorStart)) return false;
-  if(!_navigation.route(floorStart,target,actor.path)) return false;
+  bool projectedTarget=false;
+  if(!_navigation.route(floorStart,target,actor.path)) {
+   // Original node walks resolve coordinates through the same floor planner
+   // as coordinate walks (0x2bbc -> 0x1b687 -> 0x6a52). Off-floor door nodes
+   // may only have disabled links; approach their nearest walkable point.
+   Common::Point projected;
+   if(op!=50 || _navigation.region(target)>=0 || !_navigation.nearest(target,projected) || projected==target ||
+      !_navigation.route(floorStart,projected,actor.path)) return false;
+   debug("[pice] walk target projected node=%d from=%d,%d to=%d,%d",args[1],target.x,target.y,projected.x,projected.y);
+   target=projected; projectedTarget=true;
+  }
   if(actor.feet!=floorStart) actor.path.insert_at(0,floorStart);
-  actor.pathIndex=0; actor.node=op==50 ? args[1] : -1;
+  actor.pathIndex=0; actor.node=op==50 && !projectedTarget ? args[1] : -1;
   RoomActor validation=actor;
   for(uint i=0;i<actor.path.size();++i) {
    validation.pathIndex=i;
@@ -769,6 +779,16 @@ bool PiceEngine::createMenu(const Common::String &name,int16 local,int16 &id) {
  }
  id=_menus.size(); _menus.push_back(choices); Common::Array<byte> enabled; enabled.resize(choices.size(),0); _menuEnabled.push_back(enabled);
  debug("[pice] create-menu id=%d resource=%u entries=%u (initially disabled)",id,resource,count); return true;
+}
+void PiceEngine::refreshInventoryLabels() {
+ uint32 resource; Common::Array<byte> data;
+ if(!_languageNames.resolve(Common::String::format("E_T%02d",_chapter),0,resource) || !_language.read(resource,data)) return;
+ _itemLabels.resize(_items.size());
+ for(uint i=0;i<_items.size();++i) {
+  DialogueLine line;
+  if(decodeDialogue(data,Common::String::format("%02u",i),line) && !line.pages.empty() && !line.pages[0].empty())
+   _itemLabels[i]=line.pages[0][0];
+ }
 }
 bool PiceEngine::createItem(const Common::String &name,int16 local,int16 sequence,int16 &id) {
  if (!name.equalsIgnoreCase("OBJECT") || local<0 || local>=9 || _items.size()>=50) return false;
@@ -981,6 +1001,7 @@ bool PiceEngine::loadRoom(uint room) {
   if (light>brightest) { brightest=light; _textColor=i; }
  }
  _roomClock=_system->getMillis(); _roomRenderClock=_roomClock;
+ refreshInventoryLabels();
  return renderRoom();
 }
 int PiceEngine::cameraX() const {
@@ -1693,6 +1714,15 @@ Common::Error PiceEngine::run() {
  else if(ConfMan.getBool("pice_restore_autosave")) restored=readCheckpoint(true);
  if(restored && ConfMan.hasKey("pice_test_chapter") && !loadChapter(ConfMan.getInt("pice_test_chapter"),0)) return Common::Error(Common::kUnknownError,"Chapter test initialization failed");
  if(restored && ConfMan.hasKey("pice_test_room")) restored=loadRoom(ConfMan.getInt("pice_test_room"));
+ if(restored && ConfMan.getBool("pice_test_ward_walk") && _roomBankId==1199) {
+  // Isolate the reported movement from unrelated entry cutscenes.
+  _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
+  _roomRunner->navigation()=_navigation;
+  _actors[_player].feet=Common::Point(_navigation.nodes[21].x,_navigation.nodes[21].y);
+  Common::Array<int16> args; args.push_back(_player); args.push_back(18); int16 result;
+  debug("[pice] ward walk fixture success=%d",invoke(50,Common::String(),args,Common::String(),result));
+  debug("[pice] item names 13=%s 23=%s",_itemLabels[13].c_str(),_itemLabels[23].c_str());
+ }
  if(restored && ConfMan.getBool("pice_test_hamsun_full_inventory")) {
   // Original pickup commands on room objects; only this isolated fixture
   // skips walking/clicking. Inventory selection/use below uses real events.

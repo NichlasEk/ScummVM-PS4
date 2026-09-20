@@ -489,3 +489,28 @@ Copied user Q in shadPS4: self-tests PASS; hotspot1 queues entry=-1 approach6,
 walk completes at296,306, request chapter3 room16/bank1198 succeeds and the
 destination entry walk completes. Evidence artifacts/pice/entrance-check.log.
 Manual Q remains unchanged in the original profile.
+
+
+## Ward node18 and canonical inventory names (2026-09-20)
+
+Bank1199 task10 PC3508 opcode50 requests node18 at520,260 after collecting
+item23. Node18 lies outside the floor and its link30 to node0 is disabled.
+The preview rejected the route. Original opcode50 converts the node to
+coordinates and uses the common planner (0x2bbc -> 0x1b687 -> 0x6a52).
+The preview now retries an unreachable off-floor node at the nearest floor
+point, here528,276. It does not enable any link or bridge disconnected floor
+regions; if the projected route is also unavailable the command still fails.
+This uses the existing nearest-point approximation, not a full original
+planner reproduction.
+
+Names now come from E_T02/0 or E_T03/0, two-digit item keys, refreshed on room
+load and snapshot restore. Pickup hotspot labels only fill missing names, so
+scripted pickups and combinations no longer depend on a surviving room actor
+to identify items. Existing saves gain canonical names in memory.
+
+shadPS4 self-tests PASS. Isolated ward-walk fixture resets background tasks,
+places Ryan at node21, invokes the real node18 walk and reaches528,276. Log
+also verifies item13 Needle and item23 Personnel card-files. Evidence:
+artifacts/pice/ward-walk-check3.log. Earlier room replays triggered unrelated
+entry scenes; they do not prove the full pickup/exit sequence. Full sequence
+remains for manual playtesting. Original Q is unchanged.

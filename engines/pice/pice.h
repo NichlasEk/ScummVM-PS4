@@ -84,6 +84,7 @@ private:
   Common::Point destination;
  } _interruptedAction;
  int _hoverHotspot=-1,_hoverItem=-1;
+ void refreshInventoryLabels();
  bool inventoryVisible() const;
  int inventoryAt(Common::Point point) const;
  bool _hotCursor=false;

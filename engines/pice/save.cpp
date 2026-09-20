@@ -215,7 +215,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _previousRoom=previousRoom;
  _actors=actors; _items=items; _worldItems=worldItems; _hotspots=hotspots; _actions=actions; _animationSounds=bindings;
  _playerMovement=playerMovement; _cursorItem=-2;
- _itemLabels=labels; _hoverItem=-1;
+ _itemLabels=labels; refreshInventoryLabels(); _hoverItem=-1;
  _ownedItems=owned; _selectedItem=selectedItem;
  _menuEnabled=menuEnabled; _lastMenuChoice=lastMenuChoice; _activeMenu=_menuChoice=-1;
  _menus=menus; _sounds=sounds; _scenery=scenerySprite; _inventoryPanel=panel;

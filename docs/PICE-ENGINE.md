@@ -1,5 +1,7 @@
 # Prisoner of Ice engine development
 
+Latest: [Hamsun inventory, medal use and Nordic text](PICE-HAMSUN-INPUT.md).
+
 Latest: [medal pickup and sleeping-quarters tasks](PICE-MEDAL-RUNTIME.md).
 
 Latest: [bunk figures and selected-item cursor](PICE-BUNK-RUNTIME.md).

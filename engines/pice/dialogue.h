@@ -3,7 +3,10 @@
 #define PICE_DIALOGUE_H
 #include "common/array.h"
 #include "common/str.h"
+#include "common/ustr.h"
 namespace Pice {
+// Game strings and snapshots retain original DOS bytes; decode only for display.
+Common::U32String displayText(const Common::String &text);
 struct DialogueLine {
  Common::String voiceGroup;
  int16 voice = -1;

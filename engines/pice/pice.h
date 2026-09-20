@@ -26,6 +26,7 @@ private:
 #ifdef PICE_TESTBENCH
  bool _testSavePending=false,_testClickDone=false,_testUseDone=false,_testMenuClosed=false;
  uint32 _testSaveAt=0;
+ int _testAmbientStep=0;
 #endif
  bool background(const Common::String &name,int16 local,int16 flags) override;
  bool palette(const Common::String &name,int16 local) override;
@@ -61,6 +62,9 @@ private:
  bool context(int16 index,int16 &value) const override;
  int hotspotAt(Common::Point point) const;
  bool clickRoom(Common::Point point,bool rightButton);
+ bool ambientDialogue() const;
+ void finishDialogue();
+ bool dialogueBlocked(uint task) const override;
  void tickAction();
  int16 _actionExitChapter=-1,_actionExitRoom=-1;
  int16 _actionContext=-1,_actionEntry=-1,_actionHotspot=-1;

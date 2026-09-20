@@ -43,7 +43,7 @@ void PiceEngine::drawLabels() {
   Graphics::Surface label; label.create(320,11,Graphics::PixelFormat::createFormatCLUT8());
   label.fillRect(Common::Rect(0,0,320,11),0);
   Common::String name=_hoverItem>=0 ? (uint(_hoverItem)<_itemLabels.size() && !_itemLabels[_hoverItem].empty() ? _itemLabels[_hoverItem] : "Inventory item") : _hotspots[_hoverHotspot].label;
-  font->drawString(&label,name,4,1,312,_textColor,Graphics::kTextAlignCenter);
+  font->drawString(&label,displayText(name),4,1,312,_textColor,Graphics::kTextAlignCenter);
   for(int y=0;y<22;++y) for(int x=0;x<640;++x)
    *static_cast<byte *>(screen->getBasePtr(x,360+y))=*static_cast<const byte *>(label.getBasePtr(x/2,y/2));
   label.free();
@@ -55,10 +55,11 @@ void PiceEngine::drawLabels() {
  if (!_subtitle.empty()) {
   // Use a high-contrast, wrapped caption panel. The former one-line GUI
   // label clipped long replies and became tiny when the guest was scaled.
-  Common::Array<Common::String> lines;
+  Common::Array<Common::U32String> lines;
+  const Common::U32String subtitle=displayText(_subtitle);
   int scale=2;
-  font->wordWrapText(_subtitle,304,lines);
-  if(lines.size()>5) { scale=1; lines.clear(); font->wordWrapText(_subtitle,608,lines); }
+  font->wordWrapText(subtitle,304,lines);
+  if(lines.size()>5) { scale=1; lines.clear(); font->wordWrapText(subtitle,608,lines); }
   int height=MIN<int>(320,int(lines.size())*font->getFontHeight()*scale+16);
   byte dark=0,light=_textColor; uint lowest=766,highest=0;
   byte palette[768]; _system->getPaletteManager()->grabPalette(palette,0,256);
@@ -80,7 +81,7 @@ void PiceEngine::drawLabels() {
   Graphics::Surface menu; menu.create(136,rows*12,Graphics::PixelFormat::createFormatCLUT8()); menu.fillRect(Common::Rect(0,0,136,rows*12),0);
   int row=0;
   for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i])
-   font->drawString(&menu,_menus[_activeMenu][i],4,row++*12+2,128,_textColor);
+   font->drawString(&menu,displayText(_menus[_activeMenu][i]),4,row++*12+2,128,_textColor);
   for(int y=0;y<rows*24 && y+60<400;++y) for(int x=0;x<272;++x)
    *static_cast<byte *>(screen->getBasePtr(360+x,60+y))=*static_cast<const byte *>(menu.getBasePtr(x/2,y/2));
   menu.free();
@@ -197,6 +198,8 @@ int16 PiceEngine::storeActor(const RoomActor &actor) {
  _actors.push_back(actor); return _actors.size()-1;
 }
 bool PiceEngine::runActorLifecycleTests() {
+ _selectedItem=10; Common::Array<int16> noArgs; int16 deselectResult=-1;
+ if(!invoke(124,Common::String(),noArgs,Common::String(),deselectResult) || _selectedItem!=-1 || deselectResult!=0) return false;
  Action itemAction; itemAction.verb=9; itemAction.item=2;
  if(!itemAction.matches(9,2) || itemAction.matches(9,3) || itemAction.matches(6,2)) return false;
  itemAction.verb=6; if(!itemAction.matches(6,-1) || itemAction.matches(1,-1)) return false;
@@ -262,6 +265,11 @@ bool PiceEngine::runActorLifecycleTests() {
  _actions.clear(); _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
 }
 bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) {
+ if(op==124) {
+  // ICE640 0x1379 clears the selected inventory ID at 0x15c4.
+  if(!args.empty()) return false;
+  _selectedItem=-1; result=0; return true;
+ }
  result=-1;
  if(op==83 || op==147 || op==142 || op==98 || op==50 || op==123 || op==51 || op==96 || op==117 || op==97 || op==56 || op==92) {
   if(args.empty() || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active) return false;
@@ -914,10 +922,7 @@ void PiceEngine::tickRoom() {
    ++_dialoguePage;
    if(!startDialoguePage()) { warning("[pice] Cannot play next dialogue page"); _scenePreview=false; return; }
   } else {
-   Common::Point feet=_actors[_dialogueActor].feet;
-   _actors[_dialogueActor]=_dialogueRestore; _actors[_dialogueActor].feet=feet; _actors[_dialogueActor].animationMode=0;
-   debug("[pice] scripted-dialogue complete actor=%d",_dialogueActor);
-   _dialogueActor=-1; _subtitle.clear(); _closeup=false;
+   finishDialogue();
   }
  }
  for(uint i=0;i<_actors.size();++i) {
@@ -993,6 +998,33 @@ void PiceEngine::tickRoom() {
   }
  }
 #ifdef PICE_TESTBENCH
+ if(ConfMan.getBool("pice_test_medal_ambient")) {
+  if(_testAmbientStep==0 && _ownedItems.size()>10 && _ownedItems[10] && _actionEntry<0 && !_inputLocks) {
+   if(loadRoom(3)) { _testAmbientStep=1; debug("[pice] test medal collected, entering bunk"); }
+  } else if(_testAmbientStep==1 && ambientDialogue() && now-_pageStart>=1000) {
+   int slot=0; for(uint i=0;i<10;++i) if(_ownedItems[i]) ++slot;
+   Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(slot*50+25,20);
+   _eventMan->pushEvent(event); _testAmbientStep=2;
+  } else if(_testAmbientStep==2 && ambientDialogue() && inventoryVisible()) {
+   Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=_eventMan->getMousePos();
+   _eventMan->pushEvent(event); _testAmbientStep=3;
+   debug("[pice] test inventory visible during ambient speech, selecting medal");
+  } else if(_testAmbientStep==3 && _selectedItem==10) {
+   // Exercise item use against Hamsun's actual sprite hotspot.
+   for(int y=40;y<338 && _testAmbientStep==3;y+=2) for(int x=0;x<640 && _testAmbientStep==3;x+=2) {
+    Common::Point point(x,y);
+    if(hotspotAt(point)==1 && clickRoom(point,false)) {
+     _testAmbientStep=4; debug("[pice] test medal used on Hamsun context=%d",_actionContext);
+    }
+   }
+  }
+ }
+ if(!_testClickDone && ConfMan.getBool("pice_test_exit_ambient") && ambientDialogue() && now-_pageStart>=1500) {
+  _testClickDone=true;
+  Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=Common::Point(320,380);
+  _eventMan->pushEvent(event);
+  debug("[pice] test exit during ambient dialogue");
+ }
  if(!_testMenuClosed && _activeMenu>=0 && ConfMan.getBool("pice_test_close_menu") && _system->getMillis()-_menuOpenedAt>=2000) {
   _testMenuClosed=true;
   Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=Common::Point(0,0); _eventMan->pushEvent(event);
@@ -1312,6 +1344,8 @@ Common::Error PiceEngine::run() {
     if(event.type==Common::EVENT_RBUTTONDOWN || !clickMenu(event.mouse)) _menuChoice=-2;
     continue;
    }
+   if(_scenePreview && ambientDialogue() &&
+      (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN)) finishDialogue();
    if(_scenePreview && event.type==Common::EVENT_LBUTTONDOWN && event.mouse.y>=0 && event.mouse.y<40) {
     int item=inventoryVisible() ? inventoryAt(event.mouse) : -1;
     if(item>=0) _selectedItem=_selectedItem==item ? -1 : item;

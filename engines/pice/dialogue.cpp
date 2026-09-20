@@ -2,6 +2,9 @@
 #include "pice/dialogue.h"
 #include "common/endian.h"
 namespace Pice {
+Common::U32String displayText(const Common::String &text) {
+ return text.decode(Common::kDos850);
+}
 static bool findEntry(const Common::Array<byte> &data,const Common::String &key,uint32 &selected,uint32 &end,Common::String &voiceGroup) {
  selected=0; end=data.size(); voiceGroup.clear();
  if (data.size()<21 || data.size()>1024*1024 || key.empty() || key.size()>7) return false;
@@ -114,6 +117,11 @@ static Common::Array<byte> testText(const char *const *keys,const char *const *v
  return data;
 }
 bool runDialogueTests() {
+ const Common::U32String nordic=displayText("\x8f\x8e\x99\x86\x84\x94\x92\x9d\x91\x9b");
+ const uint32 expected[]={0xc5,0xc4,0xd6,0xe5,0xe4,0xf6,0xc6,0xd8,0xe6,0xf8};
+ if(nordic.size()!=10 || displayText("ASCII 123!")!=Common::U32String("ASCII 123!")) return false;
+ for(uint i=0;i<10;++i) if(nordic[i]!=expected[i]) return false;
+
  if(objectDialogueKey("D09",-6,-1)!="D09ACT" || objectDialogueKey("D09",-1,-1)!="D09LOOK" ||
     objectDialogueKey("D09",15,15)!="D09O15" || objectDialogueKey("D09",15,15,true)!="D09OBJ" ||
     !objectDialogueKey("TOOLONG",-1,-1).empty() || !objectDialogueKey("D09",15,-1).empty()) return false;

@@ -6,6 +6,24 @@
 #include "graphics/paletteman.h"
 #include "common/textconsole.h"
 namespace Pice {
+bool PiceEngine::ambientDialogue() const {
+ return _dialogueActor>=0 && !_inputLocks && _actionEntry<0 && _activeMenu<0 &&
+  _roomRunner && _roomRunner->exclusiveTask()<0;
+}
+bool PiceEngine::dialogueBlocked(uint task) const {
+ // A background speaker must yield to a player action rather than stopping
+ // its script, replacing foreground speech, or reopening speech over a menu.
+ return _dialogueActor>=0 || _activeMenu>=0 || (_actionEntry>=0 && task!=uint(_actionEntry));
+}
+void PiceEngine::finishDialogue() {
+ if(_dialogueActor<0) return;
+ _mixer->stopHandle(_speechHandle);
+ Common::Point feet=_actors[_dialogueActor].feet;
+ _actors[_dialogueActor]=_dialogueRestore; _actors[_dialogueActor].feet=feet;
+ debug("[pice] scripted-dialogue complete actor=%d",_dialogueActor);
+ _dialogueActor=-1; _subtitle.clear(); _closeup=false;
+}
+
 bool PiceEngine::actorInsideHotspot(int16 actor,int16 hotspot,bool &inside) const {
  if(actor<0 || uint(actor)>=_actors.size() || !_actors[actor].active || hotspot<0 || uint(hotspot)>=_hotspots.size()) return false;
  const Common::Rect &rect=_hotspots[hotspot].bounds; const Common::Point &p=_actors[actor].feet;
@@ -58,7 +76,7 @@ int PiceEngine::hotspotAt(Common::Point point) const {
  return -1;
 }
 bool PiceEngine::inventoryVisible() const {
- return _scenePreview && !_gameOver && _activeMenu<0 && _dialogueActor<0 && !_inputLocks && _actionEntry<0 && _eventMan->getMousePos().y<40;
+ return _scenePreview && !_gameOver && _activeMenu<0 && (_dialogueActor<0 || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _eventMan->getMousePos().y<40;
 }
 int PiceEngine::inventoryAt(Common::Point point) const {
  if(point.y<0 || point.y>=40 || point.x<0 || point.x>=600) return -1;
@@ -70,14 +88,14 @@ int PiceEngine::inventoryAt(Common::Point point) const {
 }
 void PiceEngine::updateHover() {
  int spot=-1; _hoverItem=-1;
- if(_scenePreview && !_gameOver && _activeMenu<0 && _dialogueActor<0 && !_inputLocks && _actionEntry<0 && _pendingRoom<0) {
+ if(_scenePreview && !_gameOver && _activeMenu<0 && (_dialogueActor<0 || ambientDialogue()) && !_inputLocks && _actionEntry<0 && _pendingRoom<0) {
   Common::Point point=_eventMan->getMousePos();
   if(point.y<40) _hoverItem=inventoryAt(point);
   int hit=point.y<40 ? -1 : hotspotAt(point);
   for(uint i=0;i<_actions.size();++i) if(hit>=0 && _actions[i].hotspot==hit && (_actions[i].entry>=0 || _actions[i].fallback>0 || _actions[i].exitChapter>=0)) { spot=hit; break; }
  }
  _hoverHotspot=spot;
- int selected=(!_gameOver && _activeMenu<0 && _dialogueActor<0) ? _selectedItem : -1;
+ int selected=(!_gameOver && _activeMenu<0 && (_dialogueActor<0 || ambientDialogue())) ? _selectedItem : -1;
  if(selected>=0 && uint(selected)<_items.size() && uint(selected)<_ownedItems.size() && _ownedItems[selected]) {
   if(_cursorItem==selected) return;
   const RoomActor &item=_items[selected]; Common::Rect bounds;
@@ -123,6 +141,7 @@ void PiceEngine::updateHover() {
  CursorMan.replaceCursor(pixels,16,19,5,0,0,false);
 }
 bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
+ if(ambientDialogue()) finishDialogue();
  if(!_scenePreview || !_roomRunner || _inputLocks || _dialogueActor>=0 || _pendingRoom>=0 || _actionEntry>=0 ||
     _roomRunner->exclusiveTask()>=0 || (_player>=0 && (uint(_player)>=_actors.size() || actorBusy(_player)))) return false;
  if(rightButton && _selectedItem>=0) { _selectedItem=-1; return true; }

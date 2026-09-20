@@ -142,6 +142,7 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
 static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
+ case 124: return true;
  case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
  case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 89: case 81: case 58: case 95: before=4; return true;
@@ -239,6 +240,9 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if (++wrappers>32 || !_bank.word(next+2,opcode)) { task.active=false; return kInvalid; }
   next+=2;
  }
+ // Speech contention is a scheduler wait, not an unsupported instruction.
+ // Keep the PC and all operands untouched until the speech channel is free.
+ if((opcode==52 || opcode==111 || opcode==128 || opcode==129) && _scene && _scene->dialogueBlocked(index)) return kWaiting;
  int16 argument;
  if(opcode==112) {
   next+=2; int16 mode,actor,hotspot; bool inside;
@@ -612,6 +616,8 @@ bool runScriptTests() {
  // Original-format resource instructions, with odd/even string padding.
  class Sink : public ScriptSceneSink {
  public:
+  bool speechBlocked=false;
+  bool dialogueBlocked(uint task) const override { return speechBlocked; }
   bool inside=false;
   bool actorInsideHotspot(int16 actor,int16 hotspot,bool &value) const override { if(actor!=2 || hotspot!=3) return false; value=inside; return true; }
   bool owned=false;
@@ -657,6 +663,16 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // A competing line waits without consuming its operands or killing its task.
+ for(uint i=0;i<4;++i) {
+  const uint16 ops[]={52,111,128,129};
+  bytes.resize(4); WRITE_LE_UINT16(&bytes[0],1); WRITE_LE_UINT16(&bytes[2],ops[i]);
+  ScriptResource speechBank; if(!speechBank.load(bytes)) return false;
+  ScriptRunner speechRunner(speechBank,nullptr,&sink); speechRunner.start(0); sink.speechBlocked=true;
+  for(uint n=0;n<3;++n) if(speechRunner.step(0)!=ScriptRunner::kWaiting || speechRunner.position(0)!=2 || !speechRunner.running(0)) return false;
+  sink.speechBlocked=false;
+  if(speechRunner.step(0)!=ScriptRunner::kInvalid || speechRunner.running(0)) return false;
+ }
  // A region wait yields, survives a checkpoint, then releases on entry.
  const uint16 regionWords[]={1,112,20,0,20,2,20,3,25,4,20,42,31,20,0};
  bytes.resize(sizeof(regionWords)); for(uint i=0;i<sizeof(regionWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],regionWords[i]);

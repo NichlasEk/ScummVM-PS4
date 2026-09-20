@@ -1,5 +1,7 @@
 # Prisoner of Ice engine development
 
+Latest: [bunk figures and selected-item cursor](PICE-BUNK-RUNTIME.md).
+
 Latest: [drawer objects, hover inventory and music recovery](PICE-DRAWER-RUNTIME.md).
 
 Latest: [scene depth, hover feedback and death recovery](PICE-RECOVERY-AND-LAYERS.md).

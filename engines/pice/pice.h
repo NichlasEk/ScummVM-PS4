@@ -69,6 +69,8 @@ private:
  bool inventoryVisible() const;
  int inventoryAt(Common::Point point) const;
  bool _hotCursor=false;
+ int _cursorItem=-1;
+ bool _playerMovement=true;
  void updateHover();
  int16 _player=-1,_cameraActor=-1;
  bool createMenu(const Common::String &name,int16 local,int16 &id) override;

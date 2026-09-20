@@ -365,6 +365,10 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(args.size()!=3 || args[0]<0 || args[0]>=6 || args[1]<0 || args[1]>255 || args[2]<0 || args[2]>255) return false;
   _textStyles[args[0]][0]=args[1]; _textStyles[args[0]][1]=args[2]; result=0; return true;
  }
+ if(op==153) {
+  if(args.size()!=1 || (args[0]!=0 && args[0]!=1)) return false;
+  _playerMovement=args[0]!=0; result=0; return true;
+ }
  if(op==142) {
   if(args.size()!=1 || args[0]<0 || uint(args[0])>=_actors.size()) return false;
   // Camera actor selection is inert for the current fixed-width backgrounds.
@@ -375,6 +379,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(_actors[args[0]].animationMode) _actors[args[0]].animationMode=1;
   result=0; return true;
  }
+ if((op==50 || op==123) && args.size()==(op==50 ? 2U : 3U) && _player>=0 && args[0]==_player && !_playerMovement) { result=args[0]; return true; }
  if(op==50 || op==123) {
   if(args.size()!=(op==50 ? 2U : 3U) || args[0]<0 || uint(args[0])>=_actors.size() || (op==50 && (args[1]<0 || uint(args[1])>=_navigation.nodes.size() ||
      !_navigation.nodes[args[1]].active || _navigation.nodes[args[1]].scale!=100))) return false;
@@ -496,7 +501,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(args.size()!=4) return false;
   if(args[0]==-1) { result=-1; return true; } // Original optional absent hotspot.
   if(op==81 && (args[1]<0 || uint(args[1])>=_items.size())) return false;
-  if(args[0]<0 || uint(args[0])>=_hotspots.size() || args[3]<0 || args[3]>=50 || _actions.size()>=70) return false;
+  if(args[0]<0 || uint(args[0])>=_hotspots.size() || args[3]<-1 || args[3]>=50 || _actions.size()>=70) return false;
   Action action; action.hotspot=args[0]; action.verb=op==81 ? 9 : args[1]; action.item=op==81 ? args[1] : -1; action.approach=args[2]; action.entry=args[3];
   result=_actions.size(); _actions.push_back(action); return true;
  }
@@ -663,6 +668,7 @@ bool PiceEngine::loadRoom(uint room) {
  }
  _actors.clear(); _worldItems.clear(); _hotspots.clear(); _actions.clear(); _animationSounds.clear();
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
+ _playerMovement=true; _cursorItem=-2;
  _scenery=SpriteResource(); _navigation.clear(); _player=-1; _cameraActor=-1; _inputLocks=0; _palettePulse=false; _dialogueActor=-1; _closeup=false;
  _mixer->stopHandle(_speechHandle); _subtitle.clear(); _pendingRoom=-1;
 
@@ -1263,6 +1269,7 @@ Common::Error PiceEngine::run() {
 #ifdef PICE_TESTBENCH
  if(ConfMan.getBool("pice_restore_slot0")) restored=readCheckpoint(false);
  else if(ConfMan.getBool("pice_restore_autosave")) restored=readCheckpoint(true);
+ if(restored && ConfMan.hasKey("pice_test_room")) restored=loadRoom(ConfMan.getInt("pice_test_room"));
 #endif
  if (!restored && !showScriptScene()) { warning("[pice] Room initialization unsupported; staying in background preview"); if (!playDialogueSample()) playSpeech(); }
  bool done = false;

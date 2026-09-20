@@ -3,6 +3,7 @@
 #include "common/system.h"
 #include "common/events.h"
 #include "graphics/cursorman.h"
+#include "graphics/paletteman.h"
 #include "common/textconsole.h"
 namespace Pice {
 bool PiceEngine::stateValue(int16 kind,int16 id,int16 &value) const {
@@ -71,8 +72,36 @@ void PiceEngine::updateHover() {
   for(uint i=0;i<_actions.size();++i) if(hit>=0 && _actions[i].hotspot==hit) { spot=hit; break; }
  }
  _hoverHotspot=spot;
+ int selected=(!_gameOver && _activeMenu<0 && _dialogueActor<0) ? _selectedItem : -1;
+ if(selected>=0 && uint(selected)<_items.size() && uint(selected)<_ownedItems.size() && _ownedItems[selected]) {
+  if(_cursorItem==selected) return;
+  const RoomActor &item=_items[selected]; Common::Rect bounds;
+  if(item.sprite.hasSequence(item.sequence)) {
+   uint frame=item.sprite.sequences[item.sequence].steps[0].frame;
+   if(item.sprite.frameBounds(frame,bounds) && bounds.width()>0 && bounds.height()>0 && bounds.width()<=512 && bounds.height()<=512) {
+    Common::Array<byte> low,high; low.resize(bounds.width()*bounds.height(),0); high.resize(low.size(),255);
+    if(item.sprite.paintFrame(frame,-bounds.left,-bounds.top,low,bounds.width(),bounds.height()) &&
+       item.sprite.paintFrame(frame,-bounds.left,-bounds.top,high,bounds.width(),bounds.height())) {
+     uint w=MIN<int>(40,bounds.width()),h=MIN<int>(34,bounds.height());
+     byte pixels[40*34],opaque[40*34],used[256]={0};
+     for(uint y=0;y<h;++y) for(uint x=0;x<w;++x) {
+      uint src=(y*bounds.height()/h)*bounds.width()+x*bounds.width()/w, dst=y*w+x;
+      pixels[dst]=low[src]; opaque[dst]=low[src]==high[src]; if(opaque[dst]) used[pixels[dst]]=1;
+     }
+     uint transparent=0; while(transparent<256 && used[transparent]) ++transparent;
+     if(transparent<256) {
+      for(uint i=0;i<w*h;++i) if(!opaque[i]) pixels[i]=transparent;
+      byte palette[768]; _system->getPaletteManager()->grabPalette(palette,0,256);
+      CursorMan.replaceCursorPalette(palette,0,256); CursorMan.replaceCursor(pixels,w,h,w/2,h/2,transparent,false);
+      _cursorItem=selected; return;
+     }
+    }
+   }
+  }
+ }
+ bool reset=_cursorItem!=-1; _cursorItem=-1;
  bool hot=spot>=0 || _hoverItem>=0;
- if(hot==_hotCursor) return;
+ if(!reset && hot==_hotCursor) return;
  _hotCursor=hot;
  if(!hot) { CursorMan.setDefaultArrowCursor(false); return; }
  // Original native pointer artwork: outlined hand, independent of room palette.
@@ -106,7 +135,7 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  bool fallbackUsed=selected<0;
  if(selected<0) selected=fallback;
  if(selected<0) {
-  if(_player<0 || spot>=0 || point.y<40 || point.y>=338) return false;
+  if(!_playerMovement || _player<0 || spot>=0 || point.y<40 || point.y>=338) return false;
   Common::Point target; if(!_navigation.nearest(Common::Point(point.x,point.y+40),target)) return false;
   if(target==_actors[_player].feet) return true;
   Common::Array<int16> args; args.push_back(_player); args.push_back(target.x); args.push_back(target.y); int16 result;
@@ -116,7 +145,7 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  int16 entry=fallbackUsed ? action.fallback : action.entry;
  if(entry==-1 && !fallbackUsed && action.exitChapter>=0 && action.approach==-1) return changeRoom(action.exitChapter,action.exitRoom);
  if(entry<0 || uint(entry)>=_roomBank.count() || _roomRunner->running(entry)) return false;
- if(action.approach>=0) {
+ if(action.approach>=0 && _playerMovement) {
   if(_player<0) return false;
   if(uint(action.approach)>=_navigation.nodes.size() || !_navigation.nodes[action.approach].active) return false;
   const RoomNode &node=_navigation.nodes[action.approach];

@@ -25,6 +25,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  if(!loading && (_gameOver || _activeMenu>=0 || _actionEntry>=0 || !_scenePreview || !_roomRunner || _dialogueActor>=0 || _closeup || _pendingRoom>=0)) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
+ bool playerMovement=_playerMovement;
  int16 previousRoom=_previousRoom;
  auto labels=_itemLabels; labels.resize(_items.size());
  auto owned=_ownedItems; int16 selectedItem=_selectedItem;
@@ -44,7 +45,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=9; io.number(version); if(version<1 || version>9) return false;
+ uint32 version=10; io.number(version); if(version<1 || version>10) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || bankId<1140 || bankId>=1180 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -172,13 +173,14 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  for(uint i=0;i<actions.size();++i) {
   if(version>=8) { io.number(actions[i].exitChapter); io.number(actions[i].exitRoom); }
   else actions[i].exitChapter=actions[i].exitRoom=-1;
-  if(actions[i].exitChapter==-1) { if(actions[i].exitRoom!=-1 || actions[i].entry==-1) return false; }
+  if(actions[i].exitChapter==-1) { if(actions[i].exitRoom!=-1 || (actions[i].entry==-1 && !actions[i].fallback)) return false; }
   else if(actions[i].verb!=3 || actions[i].exitChapter!=2 || actions[i].exitRoom<0 || actions[i].exitRoom>=40) return false;
  }
  if(version>=9) {
   if(!io.count(labels,100) || labels.size()!=items.size()) return false;
   for(uint i=0;i<labels.size();++i) io.string(labels[i]);
  } else { labels.clear(); labels.resize(items.size()); }
+ if(version>=10) io.number(playerMovement); else playerMovement=true;
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
  for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;
@@ -193,6 +195,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _gameOver=false;
  _previousRoom=previousRoom;
  _actors=actors; _items=items; _worldItems=worldItems; _hotspots=hotspots; _actions=actions; _animationSounds=bindings;
+ _playerMovement=playerMovement; _cursorItem=-2;
  _itemLabels=labels; _hoverItem=-1;
  _ownedItems=owned; _selectedItem=selectedItem;
  _menuEnabled=menuEnabled; _lastMenuChoice=lastMenuChoice; _activeMenu=_menuChoice=-1;
@@ -208,6 +211,8 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  // Continue that exact instruction, never replay initialization over live state.
  if(((version<=7 && bankId==1147) || bankId==1166) && _roomRunner->resumeStoppedAt(0,80))
   debug("[pice] resumed legacy %s initialization at byte=%u",bankId==1147 ? "bridge" : "drawer",_roomRunner->position(0));
+ if(version<=9 && bankId==1143 && _roomRunner->resumeStoppedAt(0,153))
+  debug("[pice] resumed legacy bunk initialization at byte=%u",_roomRunner->position(0));
  if(version<=4 && bankId==1140 && _roomRunner->position(20)==6840 && _roomRunner->resumeStoppedAt(20,101))
   debug("[pice] resumed legacy post-fire music script at byte=6840");
  _buildingNavigation=nullptr; _spriteMode=false; _scenePreview=true; _snapshotPending=false;

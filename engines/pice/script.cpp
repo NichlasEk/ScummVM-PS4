@@ -100,6 +100,11 @@ bool ScriptResource::evaluate(uint32 &pc,int16 &value,uint depth,uint &budget,co
   if (!variables || !word(pc,index) || !variables->read(op==19,int16(index),value)) return false;
   pc+=2; return true;
  }
+ if(op==121) { // 0x1236: bit15 selects B, low15 bits are the evaluated index.
+  int16 address;
+  return variables && evaluate(pc,address,depth+1,budget,variables,scene) &&
+   variables->read((uint16(address)&0x8000)!=0,uint16(address)&0x7fff,value);
+ }
  if(op==46) { // 0x2a28: raw word index into runtime context pointer table.
   uint16 index;
   if(!scene || !word(pc,index) || !scene->context(int16(index),value)) return false;
@@ -520,7 +525,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if (!_bank.codeAddress(target)) { task.active=false; return kInvalid; }
   task.pc=uint32(target); return kAdvanced;
  }
- if (opcode==5 || opcode==19 || opcode==20 || opcode==45 || (opcode>=7 && opcode<=16)) {
+ if (opcode==121 || opcode==5 || opcode==19 || opcode==20 || opcode==45 || (opcode>=7 && opcode<=16)) {
   if (!_bank.expression(next,argument,_variables,_scene)) { task.active=false; return kInvalid; }
   task.pc=next; return kAdvanced;
  }
@@ -545,6 +550,25 @@ bool runScriptTests() {
  if(waiter.step(0)!=ScriptRunner::kWaiting || waiter.position(0)!=2 || waiter.step(0)!=ScriptRunner::kWaiting) return false;
  advance.pressed=true;
  if(waiter.step(0)!=ScriptRunner::kAdvanced || waiter.position(0)!=4 || waiter.step(0)!=ScriptRunner::kStopped) return false;
+
+ // Indirect reads use an evaluated address, preserve shared B state and
+ // reject out-of-range references without advancing the caller's PC.
+ for(uint address : {1U,0x8001U,0x803bU,0x7fffU,0xffffU}) {
+  const uint16 words[]={1,121,14,20,uint16(address-1),20,1,31,20,0};
+  Common::Array<byte> bytes; bytes.resize(sizeof(words));
+  for(uint i=0;i<sizeof(words)/2;++i) WRITE_LE_UINT16(&bytes[i*2],words[i]);
+  ScriptResource bank; if(!bank.load(bytes)) return false;
+  ScriptVariables shared; ScriptRunner runner(bank,&shared);
+  bool valid=(address&0x7fff)<250;
+  if(valid && !runner.variables().write((address&0x8000)!=0,address&0x7fff,1234)) return false;
+  uint32 pc=2; int16 result;
+  if(bank.expression(pc,result,&runner.variables())!=valid || pc!=(valid ? 14U : 2U)) return false;
+  if(valid) {
+   if(result!=1234 || !runner.start(0) || runner.step(0)!=ScriptRunner::kAdvanced ||
+      runner.position(0)!=14 || runner.step(0)!=ScriptRunner::kStopped) return false;
+   if(address&0x8000) { if(!shared.read(true,address&0x7fff,result) || result!=1234) return false; }
+  }
+ }
 
  // Prefix updates preserve 16-bit wraparound and return the new value.
  for(uint table : {5U,19U}) for(uint op : {23U,24U}) {

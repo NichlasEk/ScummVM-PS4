@@ -640,3 +640,22 @@ This validates entry and restoration, not the later library puzzles.
 Test profile: .tools/xdg-pice-tall-camera-check. The user's latest Q remains
 unchanged in .tools/xdg-pice-preload-check (bank1245); restart that ordinary
 profile without test overrides for manual continuation.
+
+## Bookshelf indirect variable read (2026-09-21)
+
+Bank1247 task10 PC924 opcode6 wraps B44=opcode121(B74). The preceding
+assignment computes B74=0x803b+(B43-1), addressing the selected book's B
+variable. Original handler0x1236 evaluates the address, uses bit15 to select
+B (base0xf3c) rather than A (base0xd48), and reads the low15-bit index.
+Added this expression and discarded-result form with the existing table
+bounds checks. No puzzle variables are forced and no new save format is
+needed. Tests cover evaluated A/B addresses, the actual0x803b address,
+shared B storage and rejected out-of-range reads without PC advancement.
+
+PS4 build and startup self-tests PASS. A copied latest Q (bank1246) enters
+room11 and examines hotspot1 through verb1. Task10 passes924, narration134
+runs and finishes; subsequent verb6 interaction also completes without a
+script stop. Evidence artifacts/pice/books-indirect-check.log. This is a
+focused closeup interaction test, not validation of all book combinations.
+Original Q in .tools/xdg-pice-preload-check is unchanged and the ordinary
+profile is restarted from it; test profile .tools/xdg-pice-books-check.

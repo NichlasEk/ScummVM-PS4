@@ -48,7 +48,7 @@ bool PiceEngine::stateValue(int16 kind,int16 id,int16 &value) const {
 }
 bool PiceEngine::context(int16 index,int16 &value) const {
  if(index==5) { value=_chapter; return true; }
- if(index==4) { value=int(_roomBankId)-(_chapter==2 ? 1140 : 1182); return true; }
+ if(index==4) { value=int(_roomBankId)-chapterRoomBase(_chapter); return true; }
  if(index==6) { value=_lastMenuChoice; return true; }
  if(index!=9) return false;
  value=_actionContext; return true;
@@ -100,7 +100,7 @@ bool PiceEngine::selectInventoryItem(int item) {
    const ItemPair &p=_itemPairs[i];
    if(!((p.first==_selectedItem && p.second==item) || (p.second==_selectedItem && p.first==item))) continue;
    Common::Array<byte> bytes;
-   if(!_graphics.read(_chapter==2 ? 1138 : 1180,bytes) || !_combinationBank.load(bytes) || uint(p.entry)>=_combinationBank.count()) return false;
+   if(!_graphics.read(chapterRoomBase(_chapter)-2,bytes) || !_combinationBank.load(bytes) || uint(p.entry)>=_combinationBank.count()) return false;
    _combinationVariables=ScriptVariables(&_worldVariables);
    _combinationRunner.reset(new ScriptRunner(_combinationBank,&_combinationVariables,this));
    _combinationRunner->start(p.entry); _selectedItem=-1;

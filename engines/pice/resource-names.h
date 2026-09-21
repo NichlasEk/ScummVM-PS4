@@ -7,6 +7,9 @@ namespace Pice {
 // Script references may include the original .PAK archive suffix.
 bool matchesResourceGroup(const Common::String &name,const Common::String &group);
 bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resource);
+int chapterRoomBase(int chapter);
+int chapterRoomCount(int chapter);
+int chapterForBank(uint bank);
 struct ResourceName { Common::String name; uint32 base; };
 // Supported English CD language-index variant: length, chained XOR payload,
 // trailing zero; payload is count followed by 8-byte names and uint32 bases.

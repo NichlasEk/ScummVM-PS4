@@ -123,7 +123,7 @@ bool PiceEngine::showPicture(uint position) {
 }
 bool PiceEngine::loadAnimation(const Common::String &name,int local,SpriteResource &sprite) {
  uint32 id; Common::Array<byte> bytes;
- return (matchesResourceGroup(name,"A02") || matchesResourceGroup(name,"A03")) &&
+ return (matchesResourceGroup(name,"A02") || matchesResourceGroup(name,"A03") || matchesResourceGroup(name,"A06")) &&
   resolveChapterGraphics(name,local,id) && _graphics.read(id,bytes) && sprite.load(bytes,id);
 }
 bool PiceEngine::background(const Common::String &name,int16 local,int16 flags) {
@@ -362,6 +362,12 @@ bool PiceEngine::runActorLifecycleTests() {
  if(invoke(80,Common::String(),args,Common::String(),result) || _actions.size()!=count) return false;
  args[2]=-1; args[4]=7;
  if(!invoke(80,Common::String(),args,Common::String(),result) || _actions.back().entry!=-1) return false;
+ // Releasing a background must not reset an independently running fade.
+ _scenePixels.resize(16,1); _fadeLevel=27;
+ args.clear(); args.push_back(10); args.push_back(0); args.push_back(0); args.push_back(0);
+ if(!invoke(95,Common::String(),args,Common::String(),result) || result!=10 ||
+    !_scenePixels.empty() || _fadeLevel!=27) return false;
+ _fadeLevel=-1;
  _ownedItems.resize(4,0); _ownedItems[0]=1; _ownedItems[3]=1;
  if(inventoryAt(Common::Point(10,10))!=0 || inventoryAt(Common::Point(60,10))!=3 ||
     inventoryAt(Common::Point(110,10))!=-1 || inventoryAt(Common::Point(10,40))!=-1 || inventoryAt(Common::Point(-1,10))!=-1) return false;
@@ -444,8 +450,8 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==32) {
   // Original PCM music path 0x1594e changes MUS02 to WUS02, base 308.
   // The CD includes rendered music as well as HMP tracks; use its PCM path.
-  int base=name.equalsIgnoreCase("MUS02") ? 308 : name.equalsIgnoreCase("MUS03") ? 314 : -1;
-  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==308 ? 6 : 17)) return false;
+  int base=name.equalsIgnoreCase("MUS02") ? 308 : name.equalsIgnoreCase("MUS03") ? 314 : name.equalsIgnoreCase("MUS06") ? 331 : -1;
+  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==308 ? 6 : base==314 ? 17 : 9)) return false;
   Common::Array<byte> data; uint32 offset,size;
   if(!_soundArchive.read(base+args[0],data) || !voicePayload(data,offset,size)) return false;
   _mixer->stopHandle(_music.handle); _music=RoomSound(); _music.active=true; _music.persistent=true; _music.resource=base+args[0];
@@ -480,8 +486,8 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   _mixer->setChannelVolume(sound.handle,sound.volume); result=args[1]; return true;
  }
  if(op==133 || op==29) {
-  int base=name.equalsIgnoreCase("SMP02") ? 45 : name.equalsIgnoreCase("SMP03") ? 113 : -1;
-  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==45 ? 68 : 52)) return false;
+  int base=name.equalsIgnoreCase("SMP02") ? 45 : name.equalsIgnoreCase("SMP03") ? 113 : name.equalsIgnoreCase("SMP06") ? 165 : -1;
+  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==45 ? 68 : base==113 ? 52 : 31)) return false;
   uint slot=0; while(slot<_sounds.size() && _sounds[slot].active) ++slot;
   if(slot>=25) return false;
   Common::Array<byte> data; uint32 offset,size;
@@ -625,6 +631,11 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==95) {
   // Original 0x7536 dispatch entries 1,2,5,6 return directly at 0x76bf.
   if(args.size()==4 && (args[0]==1 || args[0]==2 || args[0]==5 || args[0]==6)) { result=args[0]; return true; }
+  // Mode 10 calls 0x3e39: release the background resource handle (0x1444).
+  // It does not cancel the palette effect; the next movie/room replaces it.
+  if(args.size()==4 && args[0]==10) {
+   _scenePixels.clear(); result=10; debug("[pice] background released"); return true;
+  }
   // 0x75bf/0x7873: asynchronous palette interpolation. This scene uses
   // mode 7, RGB target black, duration 200; update only palette entries 0..239.
   if(args.size()==4 && args[0]==7 && args[1]==0 && (args[2]==0 || args[2]==1) && args[3]>0) {
@@ -717,7 +728,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==80) {
   // 0x34e8 -> 0x83cb: exit hotspot, approach, script, chapter, room.
   if(args.size()!=5 || args[0]<0 || uint(args[0])>=_hotspots.size() || args[1]<-1 || args[1]>=50 ||
-     args[2]<-1 || args[2]>=50 || (args[3]!=2 && args[3]!=3) || args[4]<0 || args[4]>=(args[3]==2 ? 40 : 52)) return false;
+     args[2]<-1 || args[2]>=50 || (chapterRoomBase(args[3])<0) || args[4]<0 || args[4]>=chapterRoomCount(args[3])) return false;
   Action action; action.hotspot=args[0]; action.verb=3; action.approach=args[1]; action.entry=args[2];
   action.exitChapter=args[3]; action.exitRoom=args[4]; if(storeAction(action)<0) return false; result=0; return true;
  }
@@ -896,16 +907,16 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  return !movie.failed && !shouldQuit();
 }
 bool PiceEngine::loadChapter(int16 chapter,uint room) {
- if(chapter!=3 || room>=52) return false;
+ if((chapter!=3 && chapter!=6) || room>=uint(chapterRoomCount(chapter))) return false;
  // Chapter-local definitions must be recreated before any destination room.
  _roomRunner.reset(); _actors.clear(); _hotspots.clear(); _actions.clear(); _worldItems.clear();
  _items.clear(); _ownedItems.clear(); _itemLabels.clear(); _menus.clear(); _menuEnabled.clear();
  _animationSounds.clear(); _selectedItem=-1; _activeMenu=_menuChoice=-1; _inputLocks=0;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
  _sounds.clear(); _mixer->stopHandle(_music.handle); _music=RoomSound();
- _chapter=chapter; _roomBankId=1182+room; _itemPairs.clear(); _pendingChapter=chapter; _pendingRoom=-1; _previousRoom=-1;
+ _chapter=chapter; _roomBankId=chapterRoomBase(chapter)+room; _itemPairs.clear(); _pendingChapter=chapter; _pendingRoom=-1; _previousRoom=-1;
  Common::Array<byte> bytes; ScriptResource bootstrap;
- if(!_graphics.read(1181,bytes) || !bootstrap.load(bytes)) return false;
+ if(!_graphics.read(chapterRoomBase(chapter)-1,bytes) || !bootstrap.load(bytes)) return false;
  ScriptRunner init(bootstrap,&_worldVariables,this); init.start(0);
  ScriptRunner::Result result=init.run(0,4096); uint16 op=0; bootstrap.word(init.position(0),op);
  debug("[pice] chapter bootstrap chapter=%d result=%d pc=%u opcode=%u",chapter,int(result),init.position(0),op);
@@ -915,11 +926,11 @@ bool PiceEngine::loadChapter(int16 chapter,uint room) {
 bool PiceEngine::changeRoom(int16 chapter,int16 room) {
  // 0x1c232 passes room+2 to the SMxx script group. SM02 begins at 1138;
  // bootstrap occupies slot 1, so room 0 is 1140 and room 24 is 1164.
- if((chapter!=2 && chapter!=3) || room<0 || room>=(chapter==2 ? 40 : 52) || _pendingRoom>=0) return false;
+ if((chapterRoomBase(chapter)<0) || room<0 || room>=chapterRoomCount(chapter) || _pendingRoom>=0) return false;
  Common::Array<byte> bytes; ScriptResource bank;
- if(!_graphics.read((chapter==2 ? 1140 : 1182)+room,bytes) || !bank.load(bytes)) return false;
+ if(!_graphics.read(chapterRoomBase(chapter)+room,bytes) || !bank.load(bytes)) return false;
  _pendingRoom=room; _pendingChapter=chapter;
- debug("[pice] request-room chapter=%d room=%d bank=%d",chapter,room,(chapter==2 ? 1140 : 1182)+room); return true;
+ debug("[pice] request-room chapter=%d room=%d bank=%d",chapter,room,chapterRoomBase(chapter)+room); return true;
 }
 bool PiceEngine::gameOver(int16 reason) {
  if(reason<0 || reason>=50) return false;
@@ -949,9 +960,9 @@ bool PiceEngine::enterRoom(const Common::String &name,const Common::Array<int16>
 }
 bool PiceEngine::loadRoom(uint room) {
  Common::Array<byte> bytes; ScriptResource bank;
- if(room>=uint(_chapter==2 ? 40 : 52) || !_graphics.read((_chapter==2 ? 1140 : 1182)+room,bytes) || !bank.load(bytes)) return false;
- _previousRoom=_roomRunner ? int(_roomBankId)-(_chapter==2 ? 1140 : 1182) : -1;
- _roomRunner.reset(); _roomBank=bank; _roomBankId=(_chapter==2 ? 1140 : 1182)+room;
+ if(room>=uint(chapterRoomCount(_chapter)) || !_graphics.read(chapterRoomBase(_chapter)+room,bytes) || !bank.load(bytes)) return false;
+ _previousRoom=_roomRunner ? int(_roomBankId)-chapterRoomBase(_chapter) : -1;
+ _roomRunner.reset(); _roomBank=bank; _roomBankId=chapterRoomBase(_chapter)+room;
  // Same-chapter teardown preserves inventory, dialogue menus, variables and
  // persistent SFX handles (0x1c4a9 -> 0x15286 with argument zero).
  for(uint i=0;i<_sounds.size();++i) if(_sounds[i].active && !_sounds[i].persistent) {
@@ -1011,9 +1022,12 @@ int PiceEngine::cameraX() const {
 bool PiceEngine::renderRoom() {
  _system->fillScreen(0);
  _roomCanvas.clear(); _roomCanvas.resize(640*400,0);
- uint height=READ_LE_UINT16(&_scenePixels[2]);
- uint width=READ_LE_UINT16(&_scenePixels[0]); int viewX=cameraX();
- for(uint y=0;y<height;++y) memcpy(&_roomCanvas[((400-height)/2+y)*640],&_scenePixels[4+y*width+viewX],640);
+ int viewX=cameraX();
+ if(!_scenePixels.empty()) {
+  uint height=READ_LE_UINT16(&_scenePixels[2]);
+  uint width=READ_LE_UINT16(&_scenePixels[0]);
+  for(uint y=0;y<height;++y) memcpy(&_roomCanvas[((400-height)/2+y)*640],&_scenePixels[4+y*width+viewX],640);
+ }
  // Original 0xb3b6 merges actors (Y at +5) and scenery (Y at +3).
  // Equal anchors paint scenery first, allowing an actor to stand in front.
  struct Layer { int y; uint index; bool actor; };
@@ -1714,6 +1728,13 @@ Common::Error PiceEngine::run() {
  else if(ConfMan.getBool("pice_restore_autosave")) restored=readCheckpoint(true);
  if(restored && ConfMan.hasKey("pice_test_chapter") && !loadChapter(ConfMan.getInt("pice_test_chapter"),0)) return Common::Error(Common::kUnknownError,"Chapter test initialization failed");
  if(restored && ConfMan.hasKey("pice_test_room")) restored=loadRoom(ConfMan.getInt("pice_test_room"));
+ if(restored && ConfMan.getBool("pice_test_snapshot_roundtrip")) {
+  Common::Array<byte> payload;
+  uint bank=_roomBankId; int chapter=_chapter;
+  bool ok=snapshot(payload,false) && snapshot(payload,true) && _roomBankId==bank && _chapter==chapter;
+  debug("[pice] snapshot roundtrip bank=%u chapter=%d bytes=%u pass=%d",bank,chapter,payload.size(),ok);
+  if(!ok) return Common::Error(Common::kUnknownError,"Snapshot roundtrip test failed");
+ }
  if(restored && ConfMan.getBool("pice_test_ward_walk") && _roomBankId==1199) {
   // Isolate the reported movement from unrelated entry cutscenes.
   _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));

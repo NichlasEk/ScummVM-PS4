@@ -22,7 +22,7 @@ bool PiceEngine::requestSave(const Common::String &name,int16 local,const Common
  _savePending=true; debug("[pice] queued autosave key=%s",key.c_str()); return true;
 }
 bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
- if(!loading && (_combinationRunner || _combinationFailed || _interruptedAction.valid || _fadeLevel>=0 || _gameOver || _activeMenu>=0 || _actionEntry>=0 || _actionWalking || !_scenePreview || !_roomRunner || dialogueActive() || _closeup || _pendingRoom>=0)) return false;
+ if(!loading && (_scenePixels.empty() || _combinationRunner || _combinationFailed || _interruptedAction.valid || _fadeLevel>=0 || _gameOver || _activeMenu>=0 || _actionEntry>=0 || _actionWalking || !_scenePreview || !_roomRunner || dialogueActive() || _closeup || _pendingRoom>=0)) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
  bool playerMovement=_playerMovement;
@@ -48,7 +48,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  StateIO io(bytes,loading);
  uint32 version=12; io.number(version); if(version<1 || version>12) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
- if(!io.ok || bankId<1140 || bankId>=1234 || (bankId>=1180 && bankId<1182) || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
+ if(!io.ok || chapterForBank(bankId)<0 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
  uint32 bankHash=checksum(bankBytes),backgroundHash=checksum(backgroundBytes),expectedBank=bankHash,expectedBackground=backgroundHash;
  io.number(expectedBank); io.number(expectedBackground);
@@ -155,7 +155,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   io.number(musicPlaying); io.number(musicElapsed);
   if(music.active) {
    Common::Array<byte> raw; uint32 start,size;
-   if(music.resource<308 || music.resource>=331 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
+   if(music.resource<308 || music.resource>=340 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
   } else if(musicPlaying) io.ok=false;
  } else { music=RoomSound(); musicPlaying=false; musicElapsed=0; }
  if(version>=3) { io.bytes(owned,100); io.number(selectedItem); }
@@ -166,7 +166,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   if(actions[i].item < -1 || actions[i].item>=int(items.size()) || (actions[i].item>=0 && actions[i].verb!=9)) return false;
  }
  if(version>=6) io.number(previousRoom); else previousRoom=-1;
- if(previousRoom < -1 || previousRoom>=(bankId>=1182 ? 52 : 40)) return false;
+ if(previousRoom < -1 || previousRoom>=chapterRoomCount(chapterForBank(bankId))) return false;
  if(version>=7) {
   if(!io.count(menuEnabled,20) || menuEnabled.size()!=menus.size()) return false;
   for(uint i=0;i<menuEnabled.size();++i) {
@@ -185,7 +185,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   if(version>=8) { io.number(actions[i].exitChapter); io.number(actions[i].exitRoom); }
   else actions[i].exitChapter=actions[i].exitRoom=-1;
   if(actions[i].exitChapter==-1) { if(actions[i].exitRoom!=-1) return false; }
-  else if(actions[i].verb!=3 || (actions[i].exitChapter!=2 && actions[i].exitChapter!=3) || actions[i].exitRoom<0 || actions[i].exitRoom>=(actions[i].exitChapter==2 ? 40 : 52)) return false;
+  else if(actions[i].verb!=3 || chapterRoomBase(actions[i].exitChapter)<0 || actions[i].exitRoom<0 || actions[i].exitRoom>=chapterRoomCount(actions[i].exitChapter)) return false;
  }
  if(version>=9) {
   if(!io.count(labels,100) || labels.size()!=items.size()) return false;
@@ -206,7 +206,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
     (camera!=-1 && !validActor(camera)) || period<=0 || offset<0 || offset>255 || delta < -255 || delta>255) return false;
  if(!loading || !apply) return true;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
- _mixer->stopHandle(_speechHandle); _mixer->stopHandle(_music.handle); _music=music; _music.handle=Audio::SoundHandle(); _roomRunner.reset(); _roomBank=bank; _roomBankId=bankId; _chapter=bankId>=1182 ? 3 : 2; _pendingChapter=_chapter; _worldVariables=vars; _itemPairs=pairs; _inventoryEnabled=inventoryEnabled;
+ _mixer->stopHandle(_speechHandle); _mixer->stopHandle(_music.handle); _music=music; _music.handle=Audio::SoundHandle(); _roomRunner.reset(); _roomBank=bank; _roomBankId=bankId; _chapter=chapterForBank(bankId); _pendingChapter=_chapter; _worldVariables=vars; _itemPairs=pairs; _inventoryEnabled=inventoryEnabled;
  _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
  StateIO taskRestore(tasks,true); if(!_roomRunner->syncState(taskRestore)) return false;
  _roomRunner->prioritizeInitialization();

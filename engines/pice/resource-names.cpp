@@ -2,14 +2,21 @@
 #include "pice/resource-names.h"
 #include "common/endian.h"
 namespace Pice {
+int chapterRoomBase(int chapter) { return chapter==2 ? 1140 : chapter==3 ? 1182 : chapter==6 ? 1236 : -1; }
+int chapterRoomCount(int chapter) { return chapter==2 ? 40 : chapter==3 ? 52 : chapter==6 ? 15 : 0; }
+int chapterForBank(uint bank) {
+ for(int chapter : {2,3,6}) if(bank>=uint(chapterRoomBase(chapter)) && bank<uint(chapterRoomBase(chapter)+chapterRoomCount(chapter))) return chapter;
+ return -1;
+}
+
 bool matchesResourceGroup(const Common::String &name,const Common::String &group) {
  return name.equalsIgnoreCase(group) || name.equalsIgnoreCase(group+".PAK");
 }
 bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) {
  // English CD graphics group boundaries from its original resource directory.
  struct Group { const char *name; uint base,count; };
- static const Group groups[]={{"A02",0,179},{"A03",179,201},{"B02",815,67},{"B03",882,119}};
- for(uint i=0;i<4;++i) if(matchesResourceGroup(name,groups[i].name)) {
+ static const Group groups[]={{"A02",0,179},{"A03",179,201},{"B02",815,67},{"B03",882,119},{"A06",380,79},{"B06",1001,38}};
+ for(uint i=0;i<6;++i) if(matchesResourceGroup(name,groups[i].name)) {
   if(local<0 || uint(local)>=groups[i].count) return false;
   resource=groups[i].base+local; return true;
  }
@@ -66,6 +73,12 @@ static Common::Array<byte> encodeFixture(const Common::Array<byte> &plain) {
 }
 bool runResourceNameTests() {
  uint32 id=0;
+ if(chapterRoomBase(6)!=1236 || chapterRoomCount(6)!=15 || chapterForBank(1235)!=-1 ||
+    chapterForBank(1236)!=6 || chapterForBank(1250)!=6 || chapterForBank(1251)!=-1 ||
+    chapterRoomBase(4)!=-1 || chapterRoomCount(4)!=0 || chapterForBank(1181)!=-1 ||
+    chapterForBank(1182)!=3 || chapterForBank(1233)!=3 || chapterForBank(1234)!=-1 ||
+    !resolveChapterGraphics("A06.Pak",78,id) || id!=458 || resolveChapterGraphics("A06",79,id) ||
+    !resolveChapterGraphics("B06",37,id) || id!=1038 || resolveChapterGraphics("B06",38,id)) return false;
  if(!resolveChapterGraphics("A03.Pak",0,id) || id!=179 || !resolveChapterGraphics("A03",200,id) || id!=379 ||
     resolveChapterGraphics("A03",201,id) || resolveChapterGraphics("A02",179,id) || resolveChapterGraphics("A03",-1,id) ||
     !resolveChapterGraphics("B03",44,id) || id!=926 || resolveChapterGraphics("A04",0,id)) return false;

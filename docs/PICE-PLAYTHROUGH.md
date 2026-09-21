@@ -514,3 +514,37 @@ also verifies item13 Needle and item23 Personnel card-files. Evidence:
 artifacts/pice/ward-walk-check3.log. Earlier room replays triggered unrelated
 entry scenes; they do not prove the full pickup/exit sequence. Full sequence
 remains for manual playtesting. Original Q is unchanged.
+
+## Letter to chapter6 and airfield background release (2026-09-21)
+
+Bank1227 task1 PC80 opcode34 requests chapter6 room0. The preview supported
+only chapter2/3 destinations. Chapter6 now resolves global1234, bootstrap1235
+and rooms1236..1250, A06 sprites380..458, B06 graphics1001..1038,
+SMP06 sounds165..195 and WUS06 PCM music331..339. These bounds come from the
+original executable's resource directory. Room exits, inventory combination
+bank selection, previous-room context and snapshot validation/restoration use
+the same chapter mapping. Boundary self-tests reject bootstrap/global banks,
+unsupported chapters and local graphics IDs crossing into the next group.
+
+The next stop was bank1236 task1 PC226 opcode95(10,0,0,0). The original mode10
+jump-table entry at0x7536 calls0x3e39, releasing background handle0x1444 via
+0x1bc28. It is not a palette reset. The preview releases its decoded background;
+rendering tolerates the empty background and checkpoints reject that transient
+state. Existing fade behavior remains active until the movie/room replaces it.
+
+PS4 build and startup self-tests PASS in shadPS4. Chapter6 fixture reaches
+VIN9: all61 frames,117600 audio bytes, final FNV c445e351, failed=0; room1237
+and its actor dialogue then load. Copied-Q room1227 replay reads all four
+letter pages and takes the scripted transition through1236/VIN9 to1237,
+then1238/1239/1240 without a reported script stop. Evidence:
+artifacts/pice/chapter6-check2.log and artifacts/pice/letter6-check.log.
+These are targeted fixtures, not a full chapter or physical PS4 playthrough.
+
+The separate in-memory snapshot roundtrip at bank1240 additionally caught an
+old music-ID ceiling331; it now allows chapter6 PCM resources through339.
+Final roundtrip serializes15684 bytes and restores bank1240/chapter6 with
+pass=1 (artifacts/pice/chapter6-roundtrip2.log). This checks serialization and
+resource reconstruction, not the timing of user Q during the longer intro.
+A lifecycle regression also verifies mode10 frees background pixels while
+leaving an existing fade level unchanged. Original manual Q SHA-256 remains
+c5ec22a5e5a7ebb3250f4c79b39a425d4df3f3ed7f557809bc98ca16807bded3.

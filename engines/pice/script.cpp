@@ -282,9 +282,10 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if(!_scene || !_scene->actorInsideHotspot(actor,hotspot,inside)) { task.active=false; return kUnsupported; }
   task.locationActor=actor; task.locationHotspot=hotspot; task.locationInside=mode==0; task.pc=next; return kWaiting;
  }
- if(opcode==131) {
-  next+=2;
-  if(!_bank.expression(next,argument,_variables,_scene) || argument<0) { task.active=false; return kInvalid; }
+ if(opcode==131 || opcode==132) {
+  next+=2; argument=0;
+  // 132 (original 0x19f1) tears down gameplay and opens the main menu.
+  if(opcode==131 && (!_bank.expression(next,argument,_variables,_scene) || argument<0)) { task.active=false; return kInvalid; }
   if(!_scene || !_scene->gameOver(argument)) { task.active=false; return kUnsupported; }
   for(uint i=0;i<_tasks.size();++i) _tasks[i].active=false;
   task.pc=next; _exclusiveTask=-1; return kStopped;
@@ -724,7 +725,7 @@ bool runScriptTests() {
   bool owned=false;
   bool stateValue(int16 kind,int16 id,int16 &value) const override { if(kind!=2 || id!=12) return false; value=owned; return true; }
   int deaths=0;
-  bool gameOver(int16 reason) override { if(reason!=3) return false; ++deaths; return true; }
+  bool gameOver(int16 reason) override { if(reason!=3 && reason!=0) return false; ++deaths; return true; }
   int speeches=0,itemActions=0,entries=0;
   mutable uint32 rng=0;
   bool randomValue(int16 bound,int16 &value) const override { ++rng; value=bound-1; return true; }
@@ -821,6 +822,13 @@ bool runScriptTests() {
  ScriptResource deathBank; if(!deathBank.load(bytes)) return false;
  ScriptRunner deathRunner(deathBank,nullptr,&sink); deathRunner.start(0); deathRunner.start(1);
  if(deathRunner.step(0)!=ScriptRunner::kStopped || sink.deaths!=1 || deathRunner.running(0) || deathRunner.running(1)) return false;
+ const uint16 menuWords[]={2,3,132,31,20,1};
+ bytes.resize(sizeof(menuWords));
+ for(uint i=0;i<sizeof(menuWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],menuWords[i]);
+ ScriptResource menuBank; if(!menuBank.load(bytes)) return false;
+ ScriptRunner menuRunner(menuBank,nullptr,&sink); menuRunner.start(0); menuRunner.start(1);
+ if(menuRunner.step(0)!=ScriptRunner::kStopped || sink.deaths!=2 || menuRunner.position(0)!=6 ||
+    menuRunner.running(0) || menuRunner.running(1)) return false;
  ScriptRunner noRecovery(deathBank); noRecovery.start(0);
  if(noRecovery.step(0)!=ScriptRunner::kUnsupported || noRecovery.resumeStoppedAt(0,80) ||
     !noRecovery.resumeStoppedAt(0,131) || noRecovery.resumeStoppedAt(0,131) ||

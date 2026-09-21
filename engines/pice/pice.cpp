@@ -1450,7 +1450,15 @@ void PiceEngine::tickRoom() {
    if(_roomRunner->exclusiveTask()!=int(i) || result!=ScriptRunner::kAdvanced) break;
   }
  }
+ // Keep clicks until a script tick actually runs, not merely a render loop.
+ _advanceRequested=false;
 #ifdef PICE_TESTBENCH
+ if(ConfMan.getBool("pice_test_death_continue") && !_testUseDone && _roomBankId==1261 &&
+    _roomRunner->running(4) && _roomRunner->position(4)==486 && !_roomRunner->waiting(4)) {
+  Common::Event click; click.type=Common::EVENT_LBUTTONDOWN; click.mouse=Common::Point(320,200);
+  _eventMan->pushEvent(click); _testUseDone=true;
+  debug("[pice] test death-screen continue click queued");
+ }
  if(ConfMan.getBool("pice_test_trace_waits")) {
   static uint32 lastTrace=0;
   if(now-lastTrace>=5000) {
@@ -2005,7 +2013,7 @@ Common::Error PiceEngine::run() {
     if (!showPicture(next)) { _mixer->stopHandle(_speechHandle); CursorMan.popCursor(); return Common::Error(Common::kReadingFailed); }
    }
   }
-  tickRoom(); _advanceRequested=false;
+  tickRoom();
   advanceAnimation();
   _system->updateScreen(); _system->delayMillis(10);
  }

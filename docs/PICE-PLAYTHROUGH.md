@@ -859,3 +859,28 @@ Restarted original profile/Q with status tracing only, no automated clicks.
 Current log: artifacts/pice/neighbor-manual.log. Original reported manual
 freeze remains unconfirmed; do not claim a gameplay fix based on the test-hook
 fix alone. PS4 build succeeds; startup self-tests and Q restoration verified.
+
+## Prison death panorama and recovery menu (2026-09-21 evening)
+
+The snowy base screen is bank1261 task4 PC486 opcode36 (wait for input),
+followed by opcode132, previously unimplemented. The render loop cleared
+_advanceRequested even if tickRoom returned before a 10ms script tick, losing
+clicks. The flag is now cleared only after script processing. Opcode132,
+original handler0x19f1 (room teardown and main-menu initialization), opens
+the existing recovery menu and stops all room tasks, like131 without its
+reason operand. Regression checks cover operand-free132 and all-task stop.
+
+Doomed user Q and other saves backed up in
+artifacts/pice/before-death-recovery-saves before any replacement. Isolated
+xdg-pice-death-check reproduces death and queues a real click when task4
+reaches opcode36. Log artifacts/pice/death-menu-check.log confirms recovery
+menu opened (reason0); a subsequent save restoration also occurred. User
+could interact with that visible test window. Build succeeds and startup
+self-tests pass including the new132 test.
+
+Recovered the user's own earlier Q (18759 bytes, Sep21 20:12) from
+xdg-pice-neighbor-check, originally cloned from their profile, into their
+manual slot; set latest marker M. This is after the Parker movie, before
+the doomed save, not a fabricated puzzle state or a test-progress save.
+Restarted normal profile with no click hooks. Log:
+artifacts/pice/death-recovery-manual.log. Periodic status tracing remains on.

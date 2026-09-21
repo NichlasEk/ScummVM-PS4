@@ -420,6 +420,18 @@ bool PiceEngine::runActorLifecycleTests() {
  _actionEntry=15;
  if(!invoke(51,Common::String(),args,Common::String(),result) || _actors[0].sequence!=2 || _actionEntry!=15) return false;
  _actionEntry=-1; _player=-1;
+ // A disconnected but valid destination completes without crossing a wall,
+ // cancels an old walk, and leaves malformed node references as errors.
+ _navigation.clear(); _navigation.node(0,0,0,100); _navigation.node(1,100,0,100);
+ _navigation.edge(0,0,1,0);
+ _actors[0].feet=Common::Point(0,0); _actors[0].routeEnabled=true;
+ _actors[0].animationMode=4; _actors[0].sequence=10; _actors[0].walkDirection=2;
+ _actors[0].path.push_back(Common::Point(20,0)); _actors[0].walkDistance=20;
+ args[1]=1;
+ if(!invoke(50,Common::String(),args,Common::String(),result) || result!=0 || actorBusy(0) ||
+    _actors[0].feet!=Common::Point(0,0) || !_actors[0].path.empty() || _actors[0].sequence!=2 || _navigation.edges[0].enabled) return false;
+ args[1]=2; if(invoke(50,Common::String(),args,Common::String(),result)) return false;
+ _navigation.clear();
  WRITE_LE_UINT16(&_scenePixels[2],316); if(cameraY()!=0) return false;
  _cameraActor=-1; _scenePixels.clear();
  _actions.clear(); _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
@@ -627,7 +639,17 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
    // may only have disabled links; approach their nearest walkable point.
    Common::Point projected;
    if(op!=50 || _navigation.region(target)>=0 || !_navigation.nearest(target,projected) || projected==target ||
-      !_navigation.route(floorStart,projected,actor.path)) return false;
+      !_navigation.route(floorStart,projected,actor.path)) {
+    // Original 0x1b794..0x1b808 clears movement when the planner has no
+    // route; opcode50/123 still completes. Do not turn a blocked walk into
+    // a script failure or bypass disabled links (e.g. prison cell walls).
+    if(actor.animationMode==4) { actor.sequence=actor.walkDirection; actor.step=0; }
+    actor.path.clear(); actor.pathIndex=0; actor.walkProgress=actor.walkDistance=0;
+    actor.animationMode=0; actor.animationPaused=false; actor.animationOrigin=actor.feet;
+    _actors[args[0]]=actor; result=args[0];
+    debug("[pice] walk blocked actor=%d from=%d,%d target=%d,%d; standing",args[0],actor.feet.x,actor.feet.y,target.x,target.y);
+    return true;
+   }
    debug("[pice] walk target projected node=%d from=%d,%d to=%d,%d",args[1],target.x,target.y,projected.x,projected.y);
    target=projected; projectedTarget=true;
   }

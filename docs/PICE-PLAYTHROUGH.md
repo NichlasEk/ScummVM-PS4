@@ -813,3 +813,25 @@ Repro profile retains a valid pre-action Q and configuration:
 Intermediate saves: artifacts/pice/prison-entry-playthrough.sav,
 prison-utensils-playthrough.sav, prison-stool-playthrough.sav.
 Build and startup self-tests PASS; observed real clicks reach the above stop.
+
+## Prison wall blocked-walk completion fixed (2026-09-21)
+
+The above task23 PC14708 stop is fixed. Ryan's request from(218,384) to
+node23(92,306) has no route across the cell partitions. Original opcode50
+handler0x2bbc calls0x1b687, which invokes the planner0x6a52; its
+0x1b794..0x1b808 branch clears movement when fewer than two route points
+exist and returns normally. The preview incorrectly returned an invocation
+failure, stopping the whole task. A valid but unreachable movement now
+clears the old path, retains position, restores standing facing if walking,
+and completes. Invalid node references still fail; disabled edges remain
+disabled. Existing off-floor target projection remains in place.
+
+Regression checks exercise a disabled link between two valid nodes, old-path
+cancellation, unchanged feet/facing and invalid-node rejection. PS4 build and
+startup self-tests PASS. Actual copied-Q spoon/wall click passes the old
+failure, plays Parker key107/voice541, transitions to1258, completes all312
+frames of Vfinal2.mux (failed=0), returns to1253 and writes a valid checkpoint
+(18448 bytes). No room-task stop in artifacts/pice/prison-blocked-walk-check.log.
+Saved continuation: artifacts/pice/prison-after-parker-playthrough.sav.
+Test emulator stopped after verification; original terrace Q SHA256 still
+f0cb796533359f2e6d582f45e9c3a4e5dfca6ef6eee5240e9e79b2da0a97f033.

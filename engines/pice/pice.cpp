@@ -1451,6 +1451,15 @@ void PiceEngine::tickRoom() {
   }
  }
 #ifdef PICE_TESTBENCH
+ if(ConfMan.getBool("pice_test_trace_waits")) {
+  static uint32 lastTrace=0;
+  if(now-lastTrace>=5000) {
+   lastTrace=now; _snapshotPending=true;
+   debug("[pice] waits bank=%u locks=%u action=%d walking=%d exclusive=%d dialogue=%d",_roomBankId,_inputLocks,_actionEntry,_actionWalking,_roomRunner->exclusiveTask(),_dialogueActor);
+   for(uint t=0;t<50;++t) if(_roomRunner->running(t)) debug("[pice] waits task=%u pc=%u waiting=%d",t,_roomRunner->position(t),_roomRunner->waiting(t));
+   for(uint a=0;a<_actors.size();++a) if(_actors[a].active) debug("[pice] waits actor=%u mode=%d seq=%d step=%u feet=%d,%d",a,_actors[a].animationMode,_actors[a].sequence,_actors[a].step,_actors[a].feet.x,_actors[a].feet.y);
+  }
+ }
  if(ConfMan.getBool("pice_test_inventory") && !_testUseDone) {
   Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(125,20);
   _eventMan->pushEvent(event);
@@ -1532,7 +1541,7 @@ void PiceEngine::tickRoom() {
    for(uint i=0;i<_hotspots.size();++i) if(_hotspots[i].active && _hotspots[i].label.equalsIgnoreCase(ConfMan.get("pice_test_click_label"))) { target=i; break; }
   }
   // Probe the actual screen hit test, including scrolling and scaled actors.
-  if(target>=0 && uint(target)<_hotspots.size()) {
+  if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].active) {
    for(int y=40;y<360 && !_testClickDone;++y) for(int x=0;x<640 && !_testClickDone;++x) {
     Common::Point point(x,y);
     if(hotspotAt(point)!=target) continue;

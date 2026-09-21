@@ -835,3 +835,27 @@ frames of Vfinal2.mux (failed=0), returns to1253 and writes a valid checkpoint
 Saved continuation: artifacts/pice/prison-after-parker-playthrough.sav.
 Test emulator stopped after verification; original terrace Q SHA256 still
 f0cb796533359f2e6d582f45e9c3a4e5dfca6ef6eee5240e9e79b2da0a97f033.
+
+## Neighbor removal freeze report and test harness stall (2026-09-21 evening)
+
+User reported a freeze after Vfinal2 and the guard removing Hamsun. Original
+manual log evening-manual.log has no script-error marker; it ends with guard
+walking to node22. User's newer Q is bank1253 with13 actor slots and one input
+lock during a scripted scene (not the old terrace Q). Preserve that save.
+
+Copied profile xdg-pice-neighbor-check initially retained a spoon/wall click
+hook. After the wall hotspot is disabled this hook scans every screen pixel
+on every frame, causing severe stalls inside the hit-testing work. Fix: skip
+inactive targets. This explains the repeated stall in the test window, but
+is NOT proof of the cause in the original manual run, which had no click hook.
+Added opt-in pice_test_trace_waits logging (every5seconds) with actor/task
+state and snapshots. With automatic clicks removed, neighbor-passive.log
+continues through officer dialogue240/245 and Parker108, releases input,
+and accepts a real hotspot13 action. Later it progresses through1257/1261;
+no opcode stop observed. User was interacting with the visible test window,
+so this is not a deterministic unattended puzzle test.
+
+Restarted original profile/Q with status tracing only, no automated clicks.
+Current log: artifacts/pice/neighbor-manual.log. Original reported manual
+freeze remains unconfirmed; do not claim a gameplay fix based on the test-hook
+fix alone. PS4 build succeeds; startup self-tests and Q restoration verified.

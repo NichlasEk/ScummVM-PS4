@@ -23,6 +23,7 @@ private:
  bool writeCheckpoint(bool automatic);
  bool readCheckpoint(bool automatic,bool apply=true);
  bool _savePending=false;
+ bool snapshotReady() const;
 #ifdef PICE_TESTBENCH
  bool _testMovieDone=false,_testCheckpointDone=false,_testSavePending=false,_testClickDone=false,_testUseDone=false,_testMenuClosed=false,_testMenuChoiceDone=false;
  uint32 _testSaveAt=0;

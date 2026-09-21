@@ -952,3 +952,25 @@ Build/self-tests PASS. Copied Q test clicks hotspot8 at605,338, starts entry11,
 picks up item1 and releases input (butt-fixed-check.log). Battery test picks
 up item5 (weapon-check.log). Original saves backed up in before-weapon-edge-saves;
 no test pickups copied into user's profile. Restart uses own latest Q.
+
+## 2026-09-21 — queued autosaves and Illsmouth
+
+The apparent freeze in1275 was its proximity guard: task13 moves Ryan back
+and says450, "Careful! He's too close!". User progressed normally.
+Autosave requests instead were consumed during transient state (fade,
+dialogue/action), when snapshot deliberately refuses serialization. Share
+snapshotReady() between capture and autosave processing; keep requests
+queued until ready and coalesce repeated valid SAV00 requests. This also
+avoids rejecting opcode87 solely because dialogue or another request exists.
+Actual I/O/validation failures remain reported. Test clone autosave-check.log
+saved automatically after the chapter10 introduction, 17672 bytes.
+
+Next real stop: bank1242 task12 PC3106 opcode34(11,1). Original directory
+SM11 base1286/bootstrap1287/rooms1288..1291, A11 base688 count36, B11
+base1099 count9, SMP11 base261 count16, WUS11 base349 count1. Added bounded
+maps/bootstrap/music restoration support and boundary regression checks.
+Build/startup self-tests PASS. Chapter11 destination fixture reaches1289,
+3 actors, stable Q14327 bytes; chapter11-restore-check.log roundtrip passes.
+Not a full Illsmouth playthrough. User saves backed up before-illsmouth-saves.
+Latest actual user save is autosave1242, newer than Q1279; launch switches to
+that autosave without overwriting either with test progress.

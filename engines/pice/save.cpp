@@ -18,11 +18,16 @@ static uint32 checksum(const Common::Array<byte> &bytes) {
 bool PiceEngine::requestSave(const Common::String &name,int16 local,const Common::String &key) {
  // Original 0x20cf -> main loop 0x18f9c -> 0xe504. Queue the request;
  // serialize only after the requesting task has advanced its PC.
- if(_savePending || !name.equalsIgnoreCase("G_IceTxt") || local!=2 || key!="SAV00" || dialogueActive() || _pendingRoom>=0) return false;
+ if(!name.equalsIgnoreCase("G_IceTxt") || local!=2 || key!="SAV00") return false;
  _savePending=true; debug("[pice] queued autosave key=%s",key.c_str()); return true;
 }
+bool PiceEngine::snapshotReady() const {
+ return !_scenePixels.empty() && !_combinationRunner && !_combinationFailed && !_interruptedAction.valid &&
+  _fadeLevel<0 && !_gameOver && _activeMenu<0 && _actionEntry<0 && !_actionWalking && _scenePreview &&
+  _roomRunner && !dialogueActive() && !_closeup && _pendingRoom<0;
+}
 bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
- if(!loading && (_scenePixels.empty() || _combinationRunner || _combinationFailed || _interruptedAction.valid || _fadeLevel>=0 || _gameOver || _activeMenu>=0 || _actionEntry>=0 || _actionWalking || !_scenePreview || !_roomRunner || dialogueActive() || _closeup || _pendingRoom>=0)) return false;
+ if(!loading && !snapshotReady()) return false;
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
  bool playerMovement=_playerMovement;
@@ -158,7 +163,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   io.number(musicPlaying); io.number(musicElapsed);
   if(music.active) {
    Common::Array<byte> raw; uint32 start,size;
-   if(music.resource<308 || music.resource>=349 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
+   if(music.resource<308 || music.resource>=350 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
   } else if(musicPlaying) io.ok=false;
  } else { music=RoomSound(); musicPlaying=false; musicElapsed=0; }
  if(version>=3) { io.bytes(owned,100); io.number(selectedItem); }

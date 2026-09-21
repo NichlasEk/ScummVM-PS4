@@ -548,3 +548,31 @@ resource reconstruction, not the timing of user Q during the longer intro.
 A lifecycle regression also verifies mode10 frees background pixels while
 leaving an existing fade level unchanged. Original manual Q SHA-256 remains
 c5ec22a5e5a7ebb3250f4c79b39a425d4df3f3ed7f557809bc98ca16807bded3.
+
+## Curator first-visit preload (2026-09-21)
+
+Bank1241 task0 PC3944 is a discarded assignment A127=opcode143("A06",32).
+Original 0x1cbe -> 0x1a907 loads an off-screen sprite handle into the first
+free slot of a five-slot table. Added bounded preload allocation, opcode144
+release (0x1a943), room teardown and version13 snapshot resource/hash storage.
+Existing versions1..12 remain readable. A version12-or-older bank1241 save
+stopped at exactly PC3944 can retry that instruction. Later actor/resource
+swap opcodes145/146 remain outside this change; preloading does not render
+an extra actor or skip those operations.
+
+Initial direct-room fixture was invalid: B50 did not identify a first visit,
+so it reached an earlier actor-dependent opcode109 without creating actors.
+It does not show a regression in the normal room transition. The full-route
+fixture reached the preceding dialogue but timed out before the office.
+The corrected isolated fixture sets B50=1 (the preceding room's first-visit
+assignment), then lets the unmodified room initialization create the actors.
+It loads resource412 into slot0 and finishes task0 at3976, past the reported
+stop. Four actor hotspots Ryan/Diane/Jorge/Miguel are registered. Version13
+snapshot serializes16469 bytes and restores the preload ID and fingerprint,
+then writes/reparses a checkpoint: pass=1. Startup self-tests PASS.
+Evidence: artifacts/pice/preload-entry.log. This is a first-visit fixture,
+not a complete replay of the user's latest world state or later dialogue.
+
+The untimed window is left on the separate .tools/xdg-pice-preload-check
+profile. Its INI test overrides have been removed; its slot0 is the curator
+fixture checkpoint. The original .tools/xdg-pice-bridge-manual Q is unchanged.

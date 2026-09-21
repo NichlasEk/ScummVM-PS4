@@ -30,6 +30,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  auto labels=_itemLabels; labels.resize(_items.size());
  auto pairs=_itemPairs; bool inventoryEnabled=_inventoryEnabled;
  auto owned=_ownedItems; int16 selectedItem=_selectedItem;
+ auto preloadedAnimations=_preloadedAnimations;
  auto actors=_actors; auto items=_items; auto worldItems=_worldItems;
  auto hotspots=_hotspots; auto actions=_actions; auto bindings=_animationSounds;
  auto menuEnabled=_menuEnabled; int16 lastMenuChoice=_lastMenuChoice;
@@ -46,7 +47,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=12; io.number(version); if(version<1 || version>12) return false;
+ uint32 version=13; io.number(version); if(version<1 || version>13) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || chapterForBank(bankId)<0 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -199,6 +200,10 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
    if(pairs[i].first<0 || uint(pairs[i].first)>=items.size() || pairs[i].second<0 || uint(pairs[i].second)>=items.size() || pairs[i].entry<0) return false;
   }
  } else { pairs.clear(); inventoryEnabled=true; }
+ if(version>=13) {
+  if(!io.count(preloadedAnimations,5)) return false;
+  for(uint i=0;i<preloadedAnimations.size();++i) sprite(preloadedAnimations[i]);
+ } else preloadedAnimations.clear();
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
  for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;
@@ -219,6 +224,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _ownedItems=owned; _selectedItem=selectedItem;
  _menuEnabled=menuEnabled; _lastMenuChoice=lastMenuChoice; _activeMenu=_menuChoice=-1;
  _menus=menus; _sounds=sounds; _scenery=scenerySprite; _inventoryPanel=panel;
+ _preloadedAnimations=preloadedAnimations;
  _sceneBackground=backgroundId; _scenePaletteId=paletteId; _scenePixels=backgroundBytes; _scenePalette=colors;
  _player=player; _cameraActor=camera; _inventorySelection=selection; _inputLocks=locks;
  _fadeLevel=-1; _palettePulse=pulse; _pulsePeriod=period; _pulseRemaining=remaining; _pulseOffset=offset; _pulseDelta=delta;
@@ -241,6 +247,8 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  }
  if(version<=9 && bankId==1143 && _roomRunner->resumeStoppedAt(0,153))
   debug("[pice] resumed legacy bunk initialization at byte=%u",_roomRunner->position(0));
+ if(version<=12 && bankId==1241 && _roomRunner->position(0)==3944 && _roomRunner->resumeStoppedAt(0,6))
+  debug("[pice] resumed curator animation preload at byte=3944");
  if(version<=4 && bankId==1140 && _roomRunner->position(20)==6840 && _roomRunner->resumeStoppedAt(20,101))
   debug("[pice] resumed legacy post-fire music script at byte=6840");
  _buildingNavigation=nullptr; _spriteMode=false; _scenePreview=true; _snapshotPending=false;

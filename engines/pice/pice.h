@@ -101,6 +101,7 @@ private:
  int16 storeActor(const RoomActor &actor);
  bool runActorLifecycleTests();
  Common::Array<RoomActor> _actors;
+ Common::Array<SpriteResource> _preloadedAnimations;
  bool speakDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) override;
  bool objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &key) override;
  bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) override;

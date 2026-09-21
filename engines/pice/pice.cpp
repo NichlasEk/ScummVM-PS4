@@ -628,6 +628,23 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   result=_worldItems.size(); actor.animationMode=1; actor.animationOrigin=actor.feet; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks); item.actor=storeActor(actor); if(item.actor<0) return false; _worldItems.push_back(item); return true;
  }
  if(op==61 && args.size()==3 && args[0]==-1) { result=-1; return true; }
+ if(op==143) {
+  // Original 0x1cbe -> 0x1a907 allocates one of five off-screen resources.
+  if(args.size()!=1) return false;
+  uint slot=0;
+  while(slot<_preloadedAnimations.size() && _preloadedAnimations[slot].archiveId>=0) ++slot;
+  SpriteResource sprite;
+  if(slot>=5 || !loadAnimation(name,args[0],sprite)) return false;
+  if(slot==_preloadedAnimations.size()) _preloadedAnimations.push_back(sprite);
+  else _preloadedAnimations[slot]=sprite;
+  result=slot; debug("[pice] animation preload slot=%u resource=%d",slot,sprite.archiveId); return true;
+ }
+ if(op==144) {
+  // 0x1a943 releases a preload handle without touching room actors.
+  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_preloadedAnimations.size() ||
+     _preloadedAnimations[args[0]].archiveId<0) return false;
+  _preloadedAnimations[args[0]]=SpriteResource(); result=args[0]; return true;
+ }
  if(op==95) {
   // Original 0x7536 dispatch entries 1,2,5,6 return directly at 0x76bf.
   if(args.size()==4 && (args[0]==1 || args[0]==2 || args[0]==5 || args[0]==6)) { result=args[0]; return true; }
@@ -973,7 +990,7 @@ bool PiceEngine::loadRoom(uint room) {
  _actors.clear(); _worldItems.clear(); _hotspots.clear(); _actions.clear(); _animationSounds.clear(); _inventoryEnabled=true; _advanceRequested=false;
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _playerMovement=true; _cursorItem=-2;
- _scenery=SpriteResource(); _navigation.clear(); _player=-1; _cameraActor=-1; _inputLocks=0; _palettePulse=false; _fadeLevel=-1; _dialogueActor=-1; _narration=false; _closeup=false;
+ _preloadedAnimations.clear(); _scenery=SpriteResource(); _navigation.clear(); _player=-1; _cameraActor=-1; _inputLocks=0; _palettePulse=false; _fadeLevel=-1; _dialogueActor=-1; _narration=false; _closeup=false;
  _mixer->stopHandle(_speechHandle); _subtitle.clear(); _pendingRoom=-1;
 
  _scenePixels.clear(); _scenePalette.clear();
@@ -1473,6 +1490,18 @@ void PiceEngine::tickRoom() {
     _fadeLevel<0 && _roomRunner->exclusiveTask()<0 && !actorBusy(_player)) {
   if(writeCheckpoint(false)) { _testCheckpointDone=true; debug("[pice] test progression checkpoint bank=%u",_roomBankId); }
  }
+ if(ConfMan.getBool("pice_test_preload_roundtrip") && !_testCheckpointDone && !_preloadedAnimations.empty()) {
+  Common::Array<byte> payload;
+  auto expected=_preloadedAnimations;
+  if(snapshot(payload,false)) {
+   bool ok=snapshot(payload,true) && _preloadedAnimations.size()==expected.size();
+   for(uint i=0;ok && i<expected.size();++i)
+    ok=_preloadedAnimations[i].archiveId==expected[i].archiveId && _preloadedAnimations[i].fingerprint==expected[i].fingerprint;
+   if(ok) ok=writeCheckpoint(false);
+   _testCheckpointDone=true;
+   debug("[pice] preload snapshot roundtrip bank=%u slots=%u pass=%d",_roomBankId,expected.size(),ok);
+  }
+ }
  if(_testSavePending && int32(_system->getMillis()-_testSaveAt)>=0) {
   _testSavePending=false;
   if(!writeCheckpoint(false)) warning("[pice] Test music checkpoint failed");
@@ -1727,6 +1756,7 @@ Common::Error PiceEngine::run() {
  if(ConfMan.getBool("pice_restore_slot0")) restored=readCheckpoint(false);
  else if(ConfMan.getBool("pice_restore_autosave")) restored=readCheckpoint(true);
  if(restored && ConfMan.hasKey("pice_test_chapter") && !loadChapter(ConfMan.getInt("pice_test_chapter"),0)) return Common::Error(Common::kUnknownError,"Chapter test initialization failed");
+ if(restored && ConfMan.getBool("pice_test_curator_entry")) _worldVariables.write(true,50,1);
  if(restored && ConfMan.hasKey("pice_test_room")) restored=loadRoom(ConfMan.getInt("pice_test_room"));
  if(restored && ConfMan.getBool("pice_test_snapshot_roundtrip")) {
   Common::Array<byte> payload;

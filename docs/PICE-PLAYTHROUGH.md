@@ -576,3 +576,28 @@ not a complete replay of the user's latest world state or later dialogue.
 The untimed window is left on the separate .tools/xdg-pice-preload-check
 profile. Its INI test overrides have been removed; its slot0 is the curator
 fixture checkpoint. The original .tools/xdg-pice-bridge-manual Q is unchanged.
+
+## Curator threat walk direction (2026-09-21)
+
+Bank1241 task21 PC5594 opcode50 moves Hernandez (actor5, resource381) from
+node21 to node0. The route exists, but its final leg508,300 ->510,312 was
+rejected because startWalkLeg selected direction0/sequence8 for downward
+motion. Original sprite order is N,NE,E,SE,S,SW,W,NW: resource381 sequence8
+is a stationary placeholder; sequence12 contains downward steps totaling
+Y+26. Resources380 and0 independently confirm the same directional order.
+The screen-Y sign was reversed for vertical and diagonal directions.
+
+Corrected all six affected directions. Eight-direction regression checks
+include the actual near-vertical (2,12) leg. Failed-leg diagnostics now name
+the actor, resource and endpoints. No navigation link was enabled and the
+failed-route behavior is unchanged. An earlier no-route hypothesis was
+rejected by the replay and its tentative change removed.
+
+PS4 build/self-tests PASS. Isolated threat fixture restores the separate
+curator checkpoint and starts task21 with its saved navigation/actors:
+Hernandez walks454,290 ->510,312 in two waypoints, completes, and subsequent
+voices470..472 play. Evidence artifacts/pice/threat-check3.log. This fixture
+cancels unrelated room tasks and does not certify the entire cutscene.
+The ordinary untimed replay is restarted from .tools/xdg-pice-preload-check
+slot0, before the conversation, with no test overrides. Original older Q in
+.tools/xdg-pice-bridge-manual remains untouched.

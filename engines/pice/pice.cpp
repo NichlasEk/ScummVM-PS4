@@ -160,12 +160,17 @@ uint PiceEngine::actorScale(const RoomActor &actor) const {
  if(actor.node>=0 && uint(actor.node)<_navigation.nodes.size() && _navigation.nodes[actor.node].active) return _navigation.nodes[actor.node].scale;
  return 100;
 }
+static int walkDirection(int dx,int dy) {
+ // Original sprite order: N, NE, E, SE, S, SW, W, NW; screen Y grows down.
+ int ax=ABS(dx),ay=ABS(dy);
+ return ax*1000<ay*414 ? (dy>0 ? 4 : 0) : ay*1000<ax*414 ? (dx>0 ? 2 : 6) : dx>0 ? (dy>0 ? 3 : 1) : (dy>0 ? 5 : 7);
+}
 bool PiceEngine::startWalkLeg(RoomActor &actor) {
  if(actor.pathIndex>=actor.path.size()) { actor.animationMode=0; return true; }
  Common::Point target=actor.path[actor.pathIndex];
  int dx=target.x-actor.feet.x,dy=target.y-actor.feet.y,ax=ABS(dx),ay=ABS(dy);
  if(!ax && !ay) return false;
- int direction=ax*1000<ay*414 ? (dy>0 ? 0 : 4) : ay*1000<ax*414 ? (dx>0 ? 2 : 6) : dx>0 ? (dy>0 ? 1 : 3) : (dy>0 ? 7 : 5);
+ int direction=walkDirection(dx,dy);
  if(!actor.sprite.hasSequence(direction) || !actor.sprite.hasSequence(direction+8)) return false;
  bool moves=false;
  const Common::Array<SequenceStep> &steps=actor.sprite.sequences[direction+8].steps;
@@ -208,6 +213,10 @@ int16 PiceEngine::storeActor(const RoomActor &actor) {
  _actors.push_back(actor); return _actors.size()-1;
 }
 bool PiceEngine::runActorLifecycleTests() {
+ const int directions[][2]={{0,-10},{10,-10},{10,0},{10,10},{0,10},{-10,10},{-10,0},{-10,-10}};
+ for(int i=0;i<8;++i) if(walkDirection(directions[i][0],directions[i][1])!=i) return false;
+ if(walkDirection(2,12)!=4 || walkDirection(12,2)!=2) return false;
+
  ScriptVariables shared,local(&shared); int16 v;
  if(!shared.write(false,96,77) || !shared.write(true,17,16) || !local.read(true,17,v) || v!=16 ||
     !local.write(false,96,2) || !shared.read(false,96,v) || v!=77 ||
@@ -555,7 +564,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(args.size()!=(op==50 ? 2U : 3U) || args[0]<0 || uint(args[0])>=_actors.size() || (op==50 && (args[1]<0 || uint(args[1])>=_navigation.nodes.size() ||
      !_navigation.nodes[args[1]].active || !_navigation.nodes[args[1]].scale || _navigation.nodes[args[1]].scale>400))) return false;
   RoomActor actor=_actors[args[0]];
-  if(!actor.routeEnabled) return false;
+  if(!actor.routeEnabled) { warning("[pice] walk routing disabled actor=%d",args[0]); return false; }
   Common::Point target=op==50 ? Common::Point(_navigation.nodes[args[1]].x,_navigation.nodes[args[1]].y) : Common::Point(args[1],args[2]);
   if(op==123) { Common::Point projected; if(!_navigation.nearest(target,projected)) return false; target=projected; }
   Common::Point floorStart;
@@ -579,7 +588,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   RoomActor validation=actor;
   for(uint i=0;i<actor.path.size();++i) {
    validation.pathIndex=i;
-   if(!startWalkLeg(validation)) return false;
+   if(!startWalkLeg(validation)) { warning("[pice] walk leg invalid actor=%d resource=%d from=%d,%d to=%d,%d",args[0],actor.resource,validation.feet.x,validation.feet.y,actor.path[i].x,actor.path[i].y); return false; }
    validation.feet=actor.path[i];
   }
   if(!startWalkLeg(actor)) return false;
@@ -1764,6 +1773,11 @@ Common::Error PiceEngine::run() {
   bool ok=snapshot(payload,false) && snapshot(payload,true) && _roomBankId==bank && _chapter==chapter;
   debug("[pice] snapshot roundtrip bank=%u chapter=%d bytes=%u pass=%d",bank,chapter,payload.size(),ok);
   if(!ok) return Common::Error(Common::kUnknownError,"Snapshot roundtrip test failed");
+ }
+ if(restored && ConfMan.getBool("pice_test_curator_threat") && _roomBankId==1241) {
+  _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
+  _roomRunner->navigation()=_navigation;
+  _roomRunner->start(21);
  }
  if(restored && ConfMan.getBool("pice_test_ward_walk") && _roomBankId==1199) {
   // Isolate the reported movement from unrelated entry cutscenes.

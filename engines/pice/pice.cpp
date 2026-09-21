@@ -409,6 +409,17 @@ bool PiceEngine::runActorLifecycleTests() {
  _cameraRecenter=false; _player=-1;
  _actors.resize(2); _actors[1].active=true; args[0]=1;
  if(!invoke(142,Common::String(),args,Common::String(),result) || _cameraActor!=0 || _cameraRecenter) return false;
+ // Sequence -1 cancels movement while retaining the actor and facing.
+ _actors[0].animationMode=4; _actors[0].walkDirection=2; _actors[0].sequence=10;
+ _actors[0].path.push_back(Common::Point(100,100)); _actors[0].walkDistance=20;
+ args.clear(); args.push_back(0); args.push_back(-1);
+ _player=0; _actionWalking=true; _actionEntry=15; _actionHotspot=13;
+ if(!invoke(51,Common::String(),args,Common::String(),result) || actorBusy(0) ||
+    !_actors[0].active || _actors[0].sequence!=2 || !_actors[0].path.empty() || _actors[0].walkDistance) return false;
+ if(_actionWalking || _actionEntry!=-1 || _actionHotspot!=-1) return false;
+ _actionEntry=15;
+ if(!invoke(51,Common::String(),args,Common::String(),result) || _actors[0].sequence!=2 || _actionEntry!=15) return false;
+ _actionEntry=-1; _player=-1;
  WRITE_LE_UINT16(&_scenePixels[2],316); if(cameraY()!=0) return false;
  _cameraActor=-1; _scenePixels.clear();
  _actions.clear(); _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
@@ -656,6 +667,16 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   uint count=op==51 ? 2 : op==96 ? 4 : 5;
   if(args.size()!=count || args[0]<0 || uint(args[0])>=_actors.size()) return false;
   RoomActor actor=_actors[args[0]];
+  if(op==51 && args[1]==-1) {
+   // Original 0x2c85 -> 0x1b654 cancels walking rather than selecting -1.
+   if(actor.animationMode==3) return false;
+   if(actor.animationMode==4) { actor.sequence=actor.walkDirection; actor.step=0; }
+   actor.path.clear(); actor.pathIndex=0; actor.walkProgress=actor.walkDistance=0;
+   actor.animationMode=0; actor.animationPaused=false; actor.animationOrigin=actor.feet;
+   _actors[args[0]]=actor; cancelPendingApproach(args[0]); result=args[0];
+   debug("[pice] actor movement stopped actor=%d sequence=%d at=%d,%d",args[0],actor.sequence,actor.feet.x,actor.feet.y);
+   return true;
+  }
   if(op==51) {
    if(actor.animationMode==3 || args[1]<0 || !actor.sprite.hasSequence(args[1])) return false;
    actor.sequence=args[1];
@@ -672,7 +693,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
    }
   }
   actor.step=0; actor.frameTicks=actor.sprite.sequences[actor.sequence].steps[0].ticks; actor.animationMode=1; actor.animationOrigin=actor.feet; actor.animationPaused=false;
-  _actors[args[0]]=actor; result=op==51 ? args[0] : actor.sequence;
+  _actors[args[0]]=actor; if(op==51) cancelPendingApproach(args[0]); result=op==51 ? args[0] : actor.sequence;
   debug("[pice] actor-animation actor=%d resource=%d sequence=%d at=%d,%d",args[0],actor.resource,actor.sequence,actor.feet.x,actor.feet.y); return true;
  }
  if(op==60) {
@@ -1839,7 +1860,8 @@ Common::Error PiceEngine::run() {
  if(restored && ConfMan.getBool("pice_test_curator_entry")) _worldVariables.write(true,50,1);
  if(restored && ConfMan.hasKey("pice_test_room")) restored=loadRoom(ConfMan.getInt("pice_test_room"));
  if(restored && ConfMan.getBool("pice_test_venus_walk") && _roomBankId==1249) {
-  debug("[pice] Venus floor click accepted=%d",int(clickRoom(Common::Point(350-cameraX(),240-cameraY()),false)));
+  _testClickDone=clickRoom(Common::Point(350-cameraX(),240-cameraY()),false);
+  debug("[pice] Venus floor click accepted=%d",int(_testClickDone));
  }
  if(restored && ConfMan.getBool("pice_test_book_placement") && _roomBankId==1247) {
   int16 book,result; Common::Array<int16> args;

@@ -258,6 +258,14 @@ void PiceEngine::releaseActionInput(uint task) {
  debug("[pice] action released input entry=%d",_actionEntry);
  _actionEntry=-1; _actionHotspot=-1;
 }
+void PiceEngine::cancelPendingApproach(int16 actor) {
+ // Original opcode51 clears the player's pending interaction at 0x2c8d.
+ // Preserve a task that already started; only the queued approach is canceled.
+ if(actor!=_player || !_actionWalking) return;
+ debug("[pice] canceled pending approach entry=%d actor=%d",_actionEntry,actor);
+ _actionWalking=false; _actionEntry=-1; _actionHotspot=-1;
+ _actionExitChapter=_actionExitRoom=-1;
+}
 void PiceEngine::tickAction() {
  if((_actionEntry<0 && !_actionWalking) || !_roomRunner) return;
  if(_actionWalking) {

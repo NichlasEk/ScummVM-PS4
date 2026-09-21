@@ -730,3 +730,29 @@ and lands at368,254 without script failure. Subsequent navigation reaches
 Venus node30 at410,260. Evidence artifacts/pice/venus-floor-check.log.
 This verifies the first jump, not the full statue sequence. Ordinary user
 profile is restored from the unchanged terrace Q (venus-manual.log).
+
+## Jupiter jump cancellation and approach deadlock (2026-09-21)
+
+Bank1249 task5 PC3384 is opcode51(actor0,-1). Original0x2c85 calls0x1b654
+to cancel movement, not select animation -1. Implemented cancellation with
+path cleanup, standing facing for walking actors, and no invalid sprite
+index. Tests cover stopping a walk and repeating the stop when idle.
+
+The first replay then hung at Jupiter: task5 wanted Diane's dialogue129,
+but the user click on Jupiter still owned a pending approach (entry15).
+dialogueBlocked rejected task5 while tickAction could not start entry15
+because task5 held the input lock. Original opcode51 also clears the
+player's pending interaction at0x2c8d. Cancel a queued player approach on
+successful opcode51, preserving an action whose task has already started.
+Regression checks cover both queued and already-started actions.
+
+PS4 build/startup tests PASS. Isolated terrace-Q replay clicks the first
+jump trigger and then Jupiter hotspot13. Entry15 is canceled when task5
+takes over; opcode51(-1) passes; jump resource399 runs; Ryan lands524,265
+and walks to575,263. Diane's key1030/voice522 plays and completes. Subsequent
+normal clicks start and finish new actor dialogue, proving input is released.
+Evidence artifacts/pice/jupiter-complete-check.log. Earlier jupiter-check.log
+shows the intermediate deadlock and is not the final successful result.
+This validates the Venus-to-Jupiter sequence, not the remaining statue puzzle.
+Ordinary profile restarted from the user's own unchanged terrace Q without
+hooks (jupiter-manual.log). Test profile .tools/xdg-pice-jupiter-check.

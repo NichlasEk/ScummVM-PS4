@@ -35,6 +35,7 @@ private:
  bool hit(uint frame,int x,int bottom,int px,int py,uint depth,uint &budget) const;
  bool paintOne(const SpritePart &part,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const;
  bool paint(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const;
+ bool _rawImages=false;
  Common::Array<byte> _data;
  Common::Array<uint32> _images;
 };

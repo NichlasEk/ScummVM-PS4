@@ -902,3 +902,20 @@ this test does not establish full chapter9 playability or the whole vent
 puzzle. User could interact with visible test windows. Original Q remains
 bank1254 (ventilation); restarted that profile using the new build, log
 artifacts/pice/chapter9-manual.log.
+
+## 2026-09-21 — missing mine cart
+
+Bank1268 task0 stopped at PC2958 opcode6 while creating A09/5 (resource549).
+This is an XA4F editor container: zero end header, trailing tag, 14-byte
+OP/INFO metadata in offset tables and some sequence records, and raw indexed
+bitmaps rather than RLE. Added bounded parsing and zero-transparent raw
+rendering; legacy RLE keeps literal palette-zero pixels opaque. Synthetic
+fixtures cover drawing/picking, truncation, malformed metadata and dimensions.
+
+Saved partial mine initialization now resumes only task0 stopped at the exact
+bank/PC/opcode, preserving the rest of the checkpoint. PS4 build and startup
+self-tests PASS. Copied user Q resumes, creates clickable A mine cart, opens
+bank1270 and exposes A miner's bar; pickup item0 completes. Visible test
+window received user input, so later pickup is not an automated assertion.
+Evidence: artifacts/pice/cart-resume-check.log and cart-resume.png. User Q
+backed up under before-cart-fix-saves; no test save replaces it.

@@ -33,11 +33,16 @@ bool decodeSprite(const byte *data, uint32 size, SpriteImage &out) {
  out = decoded;
  return true;
 }
+static bool editorInfo(const Common::Array<byte> &data,uint32 at) {
+ return at<=data.size() && data.size()-at>=14 && READ_LE_UINT16(&data[at])==0 &&
+  memcmp(&data[at+6],"OP\x04\0INFO",8)==0;
+}
 static bool table(const Common::Array<byte> &data, uint32 start, uint32 end,
-                  uint extra, Common::Array<uint32> &out) {
+                  uint extra, Common::Array<uint32> &out,bool raw=false) {
  out.clear();
  if (end > data.size() || start > end || end - start < 4) return false;
  uint32 first = READ_LE_UINT32(&data[start]);
+ if(raw) { if(first<18 || first>end-start || !editorInfo(data,start+first-14)) return false; extra=14; }
  if (first < 4 + extra || first > end - start || (first - extra) % 4) return false;
  uint count = (first - extra) / 4;
  if (count > 65536) return false;
@@ -53,20 +58,23 @@ static bool table(const Common::Array<byte> &data, uint32 start, uint32 end,
 bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId) {
  archiveId=sourceId; fingerprint=2166136261U;
  for(uint i=0;i<data.size();++i) fingerprint=(fingerprint^data[i])*16777619U;
- frames.clear(); sequences.clear(); palette.clear(); _data.clear(); _images.clear();
+ frames.clear(); sequences.clear(); palette.clear(); _data.clear(); _images.clear(); _rawImages=false;
  if (data.size() < 24 || READ_LE_UINT32(&data[0]) != 24) return false;
  uint32 b = READ_LE_UINT32(&data[4]), c = READ_LE_UINT32(&data[8]);
  uint32 p = READ_LE_UINT32(&data[16]), end = READ_LE_UINT32(&data[20]);
+ bool raw=end==0 && data.size()>=28 && memcmp(&data[data.size()-4],"XA4F",4)==0;
+ if(raw) end=data.size()-4;
  // A zero palette offset denotes a resource using the room palette.
  const uint32 sequenceEnd=p ? p : end;
  if (READ_LE_UINT32(&data[12]) || b < 24 || c < b || sequenceEnd < c || end < sequenceEnd ||
-     end != data.size() || (p && end - p != 768)) return false;
+     end != data.size()-(raw ? 4 : 0) || (p && end - p != 768)) return false;
  Common::Array<uint32> frameOffsets, imageOffsets, sequenceOffsets;
- if (!table(data, 24, b, 0, frameOffsets) || !table(data, b, c, 2, imageOffsets) ||
-     !table(data, c, sequenceEnd, 0, sequenceOffsets)) return false;
- SpriteResource parsed; parsed.archiveId=sourceId; parsed.fingerprint=fingerprint;
+ if (!table(data, 24, b, 0, frameOffsets,raw) || !table(data, b, c, 2, imageOffsets,raw) ||
+     !table(data, c, sequenceEnd, 0, sequenceOffsets,raw)) return false;
+ SpriteResource parsed; parsed._rawImages=raw; parsed.archiveId=sourceId; parsed.fingerprint=fingerprint;
  for (uint i = 0; i + 1 < frameOffsets.size(); ++i) {
   uint32 start = frameOffsets[i], length = frameOffsets[i+1] - start;
+  if(raw && length>=16 && editorInfo(data,start+length-14)) length-=14;
   if (length < 2 || data[start] || length != 2U + 8U*data[start+1]) return false;
   SpriteFrame frame;
   for (uint j = 0; j < data[start+1]; ++j) {
@@ -81,6 +89,7 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId) {
  }
  for (uint i = 0; i + 1 < sequenceOffsets.size(); ++i) {
   uint32 start = sequenceOffsets[i], length = sequenceOffsets[i+1] - start;
+  if(raw && length>=16 && editorInfo(data,start+length-14)) length-=14;
   if (length < 2 || data[start] || length != 2U + 8U*data[start+1]) return false;
   // Some original resources contain unused empty sequence slots. Preserve
   // their indices; callers must reject selecting them via hasSequence().
@@ -104,6 +113,16 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId) {
 }
 bool SpriteResource::image(uint index, SpriteImage &out) const {
  out = SpriteImage();
+ if(_rawImages) {
+  if(index+uint64(1)>=_images.size()) return false;
+  uint32 start=_images[index],size=_images[index+1]-start;
+  if(size<4) return false;
+  uint w=READ_LE_UINT16(&_data[start]),h=READ_LE_UINT16(&_data[start+2]);
+  if(!w || !h || w>4096 || h>4096 || size!=4+w*h) return false;
+  out.width=w; out.height=h; out.pixels.resize(w*h); out.mask.resize(w*h);
+  for(uint i=0;i<w*h;++i) { out.pixels[i]=_data[start+4+i]; out.mask[i]=out.pixels[i] ? 255 : 0; }
+  return true;
+ }
  return index + uint64(1) < _images.size() &&
   decodeSprite(&_data[_images[index]], _images[index+1] - _images[index], out);
 }
@@ -337,6 +356,32 @@ bool runSpriteTests() {
     !parsed.image(0,image) || !parsed.paintFrame(0,3,-2,canvas,4,4)) return false;
  noPalette.remove_at(p-1); WRITE_LE_UINT32(&noPalette[20],noPalette.size());
  if(parsed.load(noPalette)) return false;
+ // Synthetic XA4F editor container: raw 2x1 pixels, metadata after each
+ // offset table and after the sequence. Zero is transparent in raw images.
+ Common::Array<byte> raw; raw.resize(122,0);
+ WRITE_LE_UINT32(&raw[0],24); WRITE_LE_UINT32(&raw[4],52); WRITE_LE_UINT32(&raw[8],76);
+ const uint starts[]={24,52,76};
+ for(uint i=0;i<3;++i) {
+  WRITE_LE_UINT32(&raw[starts[i]],18);
+  memcpy(&raw[starts[i]+10],"OP\x04\0INFO",8);
+ }
+ raw[43]=1; raw[44]=raw[45]=1; WRITE_LE_UINT16(&raw[50],1);
+ WRITE_LE_UINT16(&raw[70],2); WRITE_LE_UINT16(&raw[72],1); raw[75]=7;
+ raw[95]=1; WRITE_LE_UINT16(&raw[98],1);
+ memcpy(&raw[110],"OP\x04\0INFO",8); memcpy(&raw[118],"XA4F",4);
+ if(!parsed.load(raw) || !parsed.image(0,image) || image.width!=2 || image.height!=1 ||
+    image.mask[0] || image.mask[1]!=255 || !parsed.hasSequence(0) ||
+    parsed.hitFrame(0,0,0,0,0) || !parsed.hitFrame(0,0,0,1,0)) return false;
+ canvas.clear(); canvas.resize(2,9);
+ if(!parsed.paintFrame(0,0,0,canvas,2,1) || canvas[0]!=9 || canvas[1]!=7) return false;
+ for(uint n=0;n<raw.size();++n) {
+  Common::Array<byte> truncated=raw; truncated.resize(n);
+  if(parsed.load(truncated)) return false;
+ }
+ Common::Array<byte> corruptRaw=raw; corruptRaw[34]^=1;
+ if(parsed.load(corruptRaw)) return false;
+ corruptRaw=raw; WRITE_LE_UINT16(&corruptRaw[70],3);
+ if(!parsed.load(corruptRaw) || parsed.image(0,image) || image.width) return false;
  // An unused empty sequence is legal in a resource, but cannot be selected.
  Common::Array<byte> empty = resource;
  for (uint i = 0; i < 8; ++i) empty.remove_at(c+6);

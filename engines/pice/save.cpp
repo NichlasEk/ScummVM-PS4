@@ -245,6 +245,9 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  // Recover the precise partial initializer left after returning with the medal.
  if(bankId==1142 && _roomRunner->position(0)==1610 && _roomRunner->resumeStoppedAt(0,110))
   debug("[pice] resumed optional medal action setup");
+ // Resume the exact mine initializer interrupted by the XA4F cart resource.
+ if(bankId==1268 && _roomRunner->position(0)==2958 && _roomRunner->resumeStoppedAt(0,6))
+  debug("[pice] resumed mine cart initialization at byte=2958");
  // Old bridge previews saved after initialization stopped at exit registration.
  // Continue that exact instruction, never replay initialization over live state.
  if(((version<=7 && bankId==1147) || bankId==1166) && _roomRunner->resumeStoppedAt(0,80))

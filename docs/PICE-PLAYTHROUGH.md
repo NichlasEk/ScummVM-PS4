@@ -659,3 +659,30 @@ script stop. Evidence artifacts/pice/books-indirect-check.log. This is a
 focused closeup interaction test, not validation of all book combinations.
 Original Q in .tools/xdg-pice-preload-check is unchanged and the ordinary
 profile is restarted from it; test profile .tools/xdg-pice-books-check.
+
+## Book placement context and relocation (2026-09-21)
+
+The user could select books but every slot behaved like examination.
+The dispatcher entry1/2/3 starts task10 and terminates before task10 reads
+context9. tickAction cleared that context on entry completion, converting
+item use into context=-1 (examine). Retain the last dispatched context until
+another action or room reset replaces it, including delegated tasks.
+The earlier opcode121 test validated examination only, not book placement.
+
+The actual placement path also requires opcode88 (original0x9ab), which
+relocates an actor to a navigation node and restarts its current sequence,
+and opcode54 (0x1267), an evaluated indirect A/B variable write matching
+121's address format. Both are now implemented with bounds checks.
+
+PS4 build/startup tests PASS. Isolated fixture restores a copy of the real
+bank1246 Q, enters closeup1247, gives the first registered book via67, then
+uses the normal click path. Task10 moves actor1 to node1 at302,384, removes
+item2, and writes B59=1. A screenshot confirms the upright book in slot1.
+The saved placed state roundtrips (15156 bytes); a normal empty-hand click
+moves the book to offscreen node0 and returns item2 without a script stop.
+Evidence: books-placement-check.log, book-placed.png, books-takeback-check.log
+under artifacts/pice. This tests placing/removing one book, not the complete
+correct-order puzzle. Test profile .tools/xdg-pice-placement-check.
+On the user's request, the ordinary .tools/xdg-pice-preload-check profile
+was restarted immediately from its own unmodified Q (bank1246), with no
+placement hooks. Runtime log: artifacts/pice/books-placement-manual.log.

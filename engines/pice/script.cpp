@@ -155,7 +155,7 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  before=after=0; key=false;
  switch(op) {
  case 140: case 141: case 99: case 124: return true;
- case 30: case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
+ case 88: case 30: case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
  case 119: case 144: case 139: case 149: case 115: case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 84: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 89: case 81: case 58: case 95: before=4; return true;
  case 80: case 109: before=5; return true;
@@ -175,6 +175,12 @@ bool ScriptRunner::value(uint32 &pc,int16 &result) {
  if (_bank.expression(pc,result,_variables,_scene)) return true;
  uint32 next=pc; uint16 op;
  if (!_bank.word(next,op)) return false;
+ if(op==54) { // 0x1267: evaluated indirect A/B assignment.
+  next+=2; int16 address,assigned;
+  if(!_bank.expression(next,address,_variables,_scene) || !_bank.expression(next,assigned,_variables,_scene) ||
+     !_variables->write((uint16(address)&0x8000)!=0,uint16(address)&0x7fff,assigned)) return false;
+  result=0; pc=next; return true;
+ }
  if(op==23 || op==24) {
   // Original 0xa38/0xaa2: prefix INC/DEC of a raw A/B variable reference.
   uint16 table,index; int16 previous;
@@ -364,7 +370,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   task.pc=next; task.actor=actor; return kWaiting;
  }
  uint before,after; bool hasKey;
- if(opcode==23 || opcode==24 || opcode==55 || opcode==63 || opcode==66 || invocationShape(opcode,before,after,hasKey)) {
+ if(opcode==54 || opcode==23 || opcode==24 || opcode==55 || opcode==63 || opcode==66 || invocationShape(opcode,before,after,hasKey)) {
   if(!value(next,argument)) { task.active=false; return kUnsupported; }
   task.pc=next; return kAdvanced;
  }

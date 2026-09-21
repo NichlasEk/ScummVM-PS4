@@ -633,6 +633,20 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(args[0]) { if(_inputLocks) --_inputLocks; } else ++_inputLocks;
   result=0; return true;
  }
+ if(op==88) {
+  // 0x9ab: relocate to a navigation node and restart the current sequence.
+  const RoomNavigation &nav=_roomRunner ? _roomRunner->navigation() : _navigation;
+  if(args.size()!=2 || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active ||
+     args[1]<0 || uint(args[1])>=nav.nodes.size() || !nav.nodes[args[1]].active ||
+     !nav.nodes[args[1]].scale || nav.nodes[args[1]].scale>400) return false;
+  RoomActor &actor=_actors[args[0]];
+  if(actor.animationMode==3 || !actor.sprite.hasSequence(actor.sequence)) return false;
+  actor.node=args[1]; actor.feet=Common::Point(nav.nodes[args[1]].x,nav.nodes[args[1]].y);
+  actor.step=0; actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks);
+  actor.animationMode=1; actor.animationOrigin=actor.feet; actor.animationPaused=false;
+  debug("[pice] relocate actor=%d node=%d at=%d,%d",args[0],actor.node,actor.feet.x,actor.feet.y);
+  result=-1; return true;
+ }
  if(op==51 || op==96 || op==117) {
   uint count=op==51 ? 2 : op==96 ? 4 : 5;
   if(args.size()!=count || args[0]<0 || uint(args[0])>=_actors.size()) return false;
@@ -1542,6 +1556,15 @@ void PiceEngine::tickRoom() {
     _fadeLevel<0 && _roomRunner->exclusiveTask()<0 && !actorBusy(_player)) {
   if(writeCheckpoint(false)) { _testCheckpointDone=true; debug("[pice] test progression checkpoint bank=%u",_roomBankId); }
  }
+ if(ConfMan.getBool("pice_test_book_placement") && !_testCheckpointDone && _roomBankId==1247 &&
+    !_roomRunner->running(10) && !_roomRunner->running(11) && !dialogueActive()) {
+  int16 placed,book;
+  if(_worldVariables.read(true,59,placed) && placed==1 && _worldVariables.read(true,3,book) &&
+     book>=0 && uint(book)<_ownedItems.size() && !_ownedItems[book] && writeCheckpoint(false)) {
+   _testCheckpointDone=true; _snapshotPending=true;
+   debug("[pice] book placement verified slot=1 value=%d item=%d removed=1",placed,book);
+  }
+ }
  if(ConfMan.getBool("pice_test_preload_roundtrip") && !_testCheckpointDone && !_preloadedAnimations.empty()) {
   Common::Array<byte> payload;
   auto expected=_preloadedAnimations;
@@ -1810,6 +1833,13 @@ Common::Error PiceEngine::run() {
  if(restored && ConfMan.hasKey("pice_test_chapter") && !loadChapter(ConfMan.getInt("pice_test_chapter"),0)) return Common::Error(Common::kUnknownError,"Chapter test initialization failed");
  if(restored && ConfMan.getBool("pice_test_curator_entry")) _worldVariables.write(true,50,1);
  if(restored && ConfMan.hasKey("pice_test_room")) restored=loadRoom(ConfMan.getInt("pice_test_room"));
+ if(restored && ConfMan.getBool("pice_test_book_placement") && _roomBankId==1247) {
+  int16 book,result; Common::Array<int16> args;
+  if(!_worldVariables.read(true,3,book)) return Common::Error(Common::kUnknownError,"Missing book variable");
+  args.push_back(book);
+  if(!invoke(67,Common::String(),args,Common::String(),result)) return Common::Error(Common::kUnknownError,"Book fixture pickup failed");
+  ConfMan.setInt("pice_test_click_item",book);
+ }
  if(restored && ConfMan.getBool("pice_test_snapshot_roundtrip")) {
   Common::Array<byte> payload;
   uint bank=_roomBankId; int chapter=_chapter;

@@ -269,7 +269,9 @@ void PiceEngine::tickAction() {
   if(_actionExitChapter>=0 && !_gameOver && _pendingRoom<0 && !changeRoom(_actionExitChapter,_actionExitRoom))
    _roomStatus="Exit destination is not supported yet";
   _actionExitChapter=_actionExitRoom=-1;
-  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1;
+  // Context is the last dispatched action, also read by delegated tasks.
+  // A later click or room change replaces it; finishing the entry does not.
+  _actionEntry=-1; _actionHotspot=-1;
  }
 }
 }

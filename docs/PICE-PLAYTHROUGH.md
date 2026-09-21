@@ -780,3 +780,36 @@ bytes), then restores and roundtrips it successfully. Evidence:
 artifacts/pice/chapter8-save-check.log and chapter8-restore-check.log.
 The user's original Q remains separate and unchanged. This validates the
 chapter entry and save/restore, not the remainder of chapter8.
+
+## Unattended playtest from terrace Q: next prison stop (2026-09-21)
+
+User requested playing onward while away, to locate the next stop. Cloned
+`.tools/xdg-pice-preload-check` into `.tools/xdg-pice-next-scene-check`.
+Original Q SHA256 remains
+`f0cb796533359f2e6d582f45e9c3a4e5dfca6ef6eee5240e9e79b2da0a97f033`.
+No test saves were copied back. The click fixture now scans the actual screen
+hit test instead of unscrolled actor/world coordinates, so it works on the
+scrolling terrace; it also emits a screenshot after its click.
+
+Actual input progression (no chapter jump or variable edits): select A disc
+(hotspot15), follow rooms1250 ->1249 ->1261 ->1253; collect utensils at
+hotspot11 (items0,1,2), collect stool at hotspot7 (item3). The complete terrace
+capture/transition passes. Logs: artifacts/pice/next-scene-disc-check2.log,
+next-scene-spoon.log, next-scene-stool.log. An attempted stool/grill use was
+handled without a stop, but did not solve the puzzle. Puzzle order was checked
+against https://gameboomers.com/wtcheats/pcPp/PrisIce.htm.
+
+NEXT REPRODUCED STOP, NOT FIXED: use spoon(item0) on The wall(hotspot17).
+Bank1253 task23 PC14708 opcode50(A0,23) returns unsupported. A0 is Ryan,
+node23 is (92,306), scale90. This is the actual movement invocation failing,
+not an unimplemented opcode50. Exact route/actor-state cause still needs
+investigation. Other background actors continue animating after this stop.
+Evidence: artifacts/pice/next-scene-wall.log and prison-wall-stop.png.
+The test emulator was stopped after capture.
+
+Repro profile retains a valid pre-action Q and configuration:
+`pice_restore_slot0=true`, `pice_test_click_hotspot=17`,
+`pice_test_click_item=0`, `pice_test_checkpoint_bank=1253`.
+Intermediate saves: artifacts/pice/prison-entry-playthrough.sav,
+prison-utensils-playthrough.sav, prison-stool-playthrough.sav.
+Build and startup self-tests PASS; observed real clicks reach the above stop.

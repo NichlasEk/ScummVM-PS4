@@ -1509,24 +1509,15 @@ void PiceEngine::tickRoom() {
    target=-1;
    for(uint i=0;i<_hotspots.size();++i) if(_hotspots[i].active && _hotspots[i].label.equalsIgnoreCase(ConfMan.get("pice_test_click_label"))) { target=i; break; }
   }
-  if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor==-1) {
-   const Common::Rect &bounds=_hotspots[target].bounds;
-   Common::Point point((bounds.left+bounds.right)/2,(bounds.top+bounds.bottom)/2-40);
-   if(ConfMan.hasKey("pice_test_click_item")) _selectedItem=ConfMan.getInt("pice_test_click_item");
-   if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
-  }
-  if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].actor>=0) {
-   const RoomActor &actor=_actors[_hotspots[target].actor];
-   Common::Array<byte> low,high; low.resize(640*400,0); high.resize(640*400,255);
-   if(actor.active && actor.sprite.hasSequence(actor.sequence) && actor.step<actor.sprite.sequences[actor.sequence].steps.size()) {
-    uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
-    if(actor.sprite.paintScaledFrame(frame,actor.feet.x,actor.feet.y-40,actorScale(actor),low,640,400) &&
-       actor.sprite.paintScaledFrame(frame,actor.feet.x,actor.feet.y-40,actorScale(actor),high,640,400)) {
-     for(uint pixel=40*640;pixel<338*640 && !_testClickDone;++pixel) if(low[pixel]==high[pixel]) {
-      Common::Point point(pixel%640,pixel/640);
-      if(ConfMan.hasKey("pice_test_click_item")) _selectedItem=ConfMan.getInt("pice_test_click_item");
-      if(hotspotAt(point)==target && clickRoom(point,ConfMan.getBool("pice_test_right_click"))) { _testClickDone=true; debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y); }
-     }
+  // Probe the actual screen hit test, including scrolling and scaled actors.
+  if(target>=0 && uint(target)<_hotspots.size()) {
+   for(int y=40;y<360 && !_testClickDone;++y) for(int x=0;x<640 && !_testClickDone;++x) {
+    Common::Point point(x,y);
+    if(hotspotAt(point)!=target) continue;
+    if(ConfMan.hasKey("pice_test_click_item")) _selectedItem=ConfMan.getInt("pice_test_click_item");
+    if(clickRoom(point,ConfMan.getBool("pice_test_right_click"))) {
+     _testClickDone=true; _snapshotPending=true;
+     debug("[pice] test click hotspot=%d at=%d,%d",target,point.x,point.y);
     }
    }
   }

@@ -686,3 +686,22 @@ correct-order puzzle. Test profile .tools/xdg-pice-placement-check.
 On the user's request, the ordinary .tools/xdg-pice-preload-check profile
 was restarted immediately from its own unmodified Q (bank1246), with no
 placement hooks. Runtime log: artifacts/pice/books-placement-manual.log.
+
+## Unlocked terrace exit dispatch (2026-09-21)
+
+The key correctly sets B45=3 in bank1246 task18 and replaces the door
+hotspot with a rectangle whose opcode59 fifth argument is3 (exit marker).
+The preview stored this value as Hotspot.approach but ignored it on clicks,
+selecting verb6/context=-6. Task18 deliberately says closed for that branch;
+the unlocked transition requires verb3/context=-3. Honor the hotspot exit
+marker for empty-hand clicks, including exits implemented by a fallback
+script without an explicit verb3 action. Selected items still use verb9.
+No save-format change: the marker was already serialized.
+
+User saved a fresh Q at the unlocked door. PS4 build/self-tests PASS; its
+isolated copy .tools/xdg-pice-terrace-check dispatches hotspot9 verb3,
+entry18 context=-3, then requests chapter6 room13 bank1249. Terrace
+initialization reaches2968 and dialogue continues without a script error.
+Evidence artifacts/pice/terrace-check.log. Original Q remains at the door;
+ordinary profile restarted without hooks (terrace-manual.log). This checks
+the doorway transition, not later terrace gameplay.

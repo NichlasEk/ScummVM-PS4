@@ -205,6 +205,9 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  // Original input 0x1a128 / 0x1a188 selects verb 1 / 6. Exit hotspots
  // select verb 3. Full inventory and cursor-mode selection remain separate.
  int16 verb=_selectedItem>=0 ? 9 : rightButton ? 1 : 6;
+ // A hotspot can mark a scripted exit without an explicit verb-3 action.
+ // The terrace replaces its locked hotspot with this marker after unlocking.
+ if(_selectedItem<0 && spot>=0 && _hotspots[spot].approach==3) verb=3;
  for(uint i=0;i<_actions.size();++i) if(_selectedItem<0 && _actions[i].hotspot==spot && _actions[i].verb==3) { verb=3; break; }
  int selected=-1,fallback=-1;
  for(uint i=0;i<_actions.size();++i) {

@@ -56,6 +56,7 @@ public:
  virtual bool requestSave(const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool playMovie(const Common::String &name,int16 before,int16 after) { return false; }
  virtual bool changeRoom(int16 chapter,int16 room) { return false; }
+ virtual bool speechBusy(int16 actor) const { return actorBusy(actor); }
  virtual bool narrationBusy() const { return false; }
  virtual bool describeObject(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) { return false; }
  virtual bool narrate(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) { return false; }

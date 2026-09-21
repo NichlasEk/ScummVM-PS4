@@ -112,6 +112,7 @@ private:
  mutable Common::RandomSource _random{"pice"};
  bool _narration=false;
  bool dialogueActive() const { return _dialogueActor>=0 || _narration; }
+ bool speechBusy(int16 actor) const override { return _dialogueActor==actor; }
  bool narrationBusy() const override { return _narration; }
  bool resolveObjectDescription(Common::String &group,int16 &local,const Common::String &base,Common::String &key);
  bool describeObject(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) override;

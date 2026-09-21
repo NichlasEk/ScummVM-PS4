@@ -22,7 +22,7 @@ bool ScriptRunner::syncState(StateIO &io) {
   else { t.locationActor=t.locationHotspot=-1; t.locationInside=false; }
   if(t.locationActor < -1 || t.locationActor>=20 || t.locationHotspot < -1 || t.locationHotspot>=50 ||
      ((t.locationActor==-1)!=(t.locationHotspot==-1))) return false;
-  if(!io.ok || (t.active && !_bank.codeAddress(t.pc)) || t.actor < -27 || t.actor>=20 ||
+  if(!io.ok || (t.active && !_bank.codeAddress(t.pc)) || t.actor < -47 || t.actor>=20 ||
      t.peer < -1 || t.peer>=int(count) || t.peer==int(i) || t.triggerActor < -1 || t.triggerActor>=20 || t.triggerStep<0) return false;
  }
  if(io.loading) { _tasks=tasks; _exclusiveTask=exclusive; }
@@ -238,6 +238,10 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   }
   return kWaiting;
  }
+ if(task.actor<=-28) {
+  if(!_scene || !_scene->speechBusy(-task.actor-28)) task.actor=-1;
+  return kWaiting;
+ }
  if(task.actor==-27) {
   if(!_scene || !_scene->narrationBusy()) task.actor=-1;
   return kWaiting;
@@ -334,7 +338,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
    task.active=false; return kInvalid;
   }
   if(!_scene || !(opcode==52 ? _scene->speakDialogue(actor,name,local,key) : _scene->objectDialogue(actor,name,local,key))) { task.active=false; return kUnsupported; }
-  task.pc=next; task.actor=actor; return kWaiting;
+  task.pc=next; task.actor=-28-actor; return kWaiting;
  }
  if(opcode==128) {
   if(!_scene) { task.active=false; return kUnsupported; }
@@ -347,7 +351,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if(!_bank.string(next,key)) { task.active=false; return kInvalid; }
   int16 actor;
   if(!_scene->closeupDialogue(animationName,textName,key,args,actor)) { task.active=false; return kUnsupported; }
-  task.pc=next; task.actor=actor; return kWaiting;
+  task.pc=next; task.actor=-28-actor; return kWaiting;
  }
  if(opcode==129) {
   if(!_scene) { task.active=false; return kUnsupported; }
@@ -362,7 +366,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
    args.push_back(argument);
   }
   if(!_scene->animatedDialogue(textName,key,animationName,args)) { task.active=false; return kUnsupported; }
-  task.pc=next; task.actor=args[0]; return kWaiting;
+  task.pc=next; task.actor=-28-args[0]; return kWaiting;
  }
  if(opcode==98 || opcode==123 || opcode==50 || opcode==51 || opcode==96 || opcode==117) {
   uint32 actorPC=next+2; int16 actor;
@@ -742,6 +746,8 @@ bool runScriptTests() {
   bool requestSave(const Common::String &name,int16 local,const Common::String &key) override { if(name!="G_IceTxt" || local!=2 || key!="SAV00") return false; ++saves; return true; }
   bool playMovie(const Common::String &name,int16 before,int16 after) override { if(name!="clip.mux" || before!=1 || after!=0) return false; ++movies; return true; }
   bool changeRoom(int16 chapter,int16 room) override { if(chapter!=2 || room!=24) return false; ++roomChanges; return true; }
+  bool speaking=true;
+  bool speechBusy(int16 actor) const override { return actor==2 && speaking; }
   bool busy=true,soundPlaying=true; int animationStep=0,triggerCalls=0,soundCalls=0;
   bool soundBusy(int16 sound) const override { return sound==3 && soundPlaying; }
   bool actorStepReached(int16 actor,int16 target) const override { return !actorBusy(actor) || animationStep>=target; }
@@ -876,22 +882,22 @@ bool runScriptTests() {
  ScriptRunner speechRunner(speechBank,nullptr,&sink); speechRunner.start(0);
  if(speechRunner.step(0)!=ScriptRunner::kWaiting || speechRunner.position(0)!=22 || sink.speeches!=1 ||
     speechRunner.step(0)!=ScriptRunner::kWaiting || sink.speeches!=1) return false;
- sink.busy=false;
+ sink.speaking=false;
  if(speechRunner.step(0)!=ScriptRunner::kWaiting || speechRunner.step(0)!=ScriptRunner::kStopped) return false;
- sink.busy=true;
+ sink.speaking=true;
  for(uint n=4;n<22;++n) {
   Common::Array<byte> partial=bytes; partial.resize(n); ScriptResource shortSpeech;
   if(!shortSpeech.load(partial)) return false;
   ScriptRunner runner(shortSpeech,nullptr,&sink); runner.start(0);
   if(runner.step(0)!=ScriptRunner::kInvalid || runner.position(0)!=2 || sink.speeches!=1) return false;
  }
- // Ordinary speech shares operand decoding and actor completion waits.
+ // Ordinary speech finishes even while the actor keeps animating.
  for(uint i=0;i<sizeof(speechWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],speechWords[i]);
  WRITE_LE_UINT16(&bytes[2],52);
  ScriptResource plainBank; if(!plainBank.load(bytes)) return false;
  ScriptRunner plain(plainBank,nullptr,&sink); plain.start(0);
  if(plain.step(0)!=ScriptRunner::kWaiting || sink.speeches!=2 || plain.position(0)!=22 || plain.step(0)!=ScriptRunner::kWaiting) return false;
- sink.busy=false; if(plain.step(0)!=ScriptRunner::kWaiting || plain.step(0)!=ScriptRunner::kStopped) return false; sink.busy=true;
+ sink.speaking=false; if(plain.step(0)!=ScriptRunner::kWaiting || plain.step(0)!=ScriptRunner::kStopped) return false; sink.speaking=true;
  // Runtime context is a raw index, and works inside nested comparisons.
  const uint16 contextWords[]={1,45,46,9,20,65530};
  bytes.resize(sizeof(contextWords));

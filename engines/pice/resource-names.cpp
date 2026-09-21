@@ -2,10 +2,10 @@
 #include "pice/resource-names.h"
 #include "common/endian.h"
 namespace Pice {
-int chapterRoomBase(int chapter) { return chapter==2 ? 1140 : chapter==3 ? 1182 : chapter==6 ? 1236 : chapter==8 ? 1253 : chapter==9 ? 1264 : chapter==10 ? 1273 : chapter==11 ? 1288 : -1; }
-int chapterRoomCount(int chapter) { return chapter==2 ? 40 : chapter==3 ? 52 : chapter==6 ? 15 : chapter==8 ? 9 : chapter==9 ? 7 : chapter==10 ? 13 : chapter==11 ? 4 : 0; }
+int chapterRoomBase(int chapter) { return chapter==2 ? 1140 : chapter==3 ? 1182 : chapter==6 ? 1236 : chapter==8 ? 1253 : chapter==9 ? 1264 : chapter==10 ? 1273 : chapter==11 ? 1288 : chapter==12 ? 1294 : -1; }
+int chapterRoomCount(int chapter) { return chapter==2 ? 40 : chapter==3 ? 52 : chapter==6 ? 15 : chapter==8 ? 9 : chapter==9 ? 7 : chapter==10 ? 13 : chapter==11 ? 4 : chapter==12 ? 12 : 0; }
 int chapterForBank(uint bank) {
- for(int chapter : {2,3,6,8,9,10,11}) if(bank>=uint(chapterRoomBase(chapter)) && bank<uint(chapterRoomBase(chapter)+chapterRoomCount(chapter))) return chapter;
+ for(int chapter : {2,3,6,8,9,10,11,12}) if(bank>=uint(chapterRoomBase(chapter)) && bank<uint(chapterRoomBase(chapter)+chapterRoomCount(chapter))) return chapter;
  return -1;
 }
 
@@ -15,8 +15,8 @@ bool matchesResourceGroup(const Common::String &name,const Common::String &group
 bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) {
  // English CD graphics group boundaries from its original resource directory.
  struct Group { const char *name; uint base,count; };
- static const Group groups[]={{"A02",0,179},{"A03",179,201},{"B02",815,67},{"B03",882,119},{"A06",380,79},{"B06",1001,38},{"A08",459,85},{"B08",1039,18},{"A09",544,65},{"B09",1057,19},{"A10",609,79},{"B10",1076,23},{"A11",688,36},{"B11",1099,9}};
- for(uint i=0;i<14;++i) if(matchesResourceGroup(name,groups[i].name)) {
+ static const Group groups[]={{"A02",0,179},{"A03",179,201},{"B02",815,67},{"B03",882,119},{"A06",380,79},{"B06",1001,38},{"A08",459,85},{"B08",1039,18},{"A09",544,65},{"B09",1057,19},{"A10",609,79},{"B10",1076,23},{"A11",688,36},{"B11",1099,9},{"A12",724,91},{"B12",1108,30}};
+ for(uint i=0;i<16;++i) if(matchesResourceGroup(name,groups[i].name)) {
   if(local<0 || uint(local)>=groups[i].count) return false;
   resource=groups[i].base+local; return true;
  }
@@ -73,6 +73,10 @@ static Common::Array<byte> encodeFixture(const Common::Array<byte> &plain) {
 }
 bool runResourceNameTests() {
  uint32 id=0;
+ if(chapterRoomBase(12)!=1294 || chapterRoomCount(12)!=12 || chapterForBank(1293)!=-1 ||
+    chapterForBank(1294)!=12 || chapterForBank(1305)!=12 || chapterForBank(1306)!=-1 ||
+    !resolveChapterGraphics("A12.Pak",90,id) || id!=814 || resolveChapterGraphics("A12",91,id) ||
+    !resolveChapterGraphics("B12",29,id) || id!=1137 || resolveChapterGraphics("B12",30,id)) return false;
  if(chapterRoomBase(11)!=1288 || chapterRoomCount(11)!=4 || chapterForBank(1287)!=-1 ||
     chapterForBank(1288)!=11 || chapterForBank(1291)!=11 || chapterForBank(1292)!=-1 ||
     !resolveChapterGraphics("A11.Pak",35,id) || id!=723 || resolveChapterGraphics("A11",36,id) ||

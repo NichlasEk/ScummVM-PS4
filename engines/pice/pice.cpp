@@ -123,7 +123,7 @@ bool PiceEngine::showPicture(uint position) {
 }
 bool PiceEngine::loadAnimation(const Common::String &name,int local,SpriteResource &sprite) {
  uint32 id; Common::Array<byte> bytes;
- return (matchesResourceGroup(name,"A02") || matchesResourceGroup(name,"A03") || matchesResourceGroup(name,"A06") || matchesResourceGroup(name,"A08") || matchesResourceGroup(name,"A09") || matchesResourceGroup(name,"A10") || matchesResourceGroup(name,"A11")) &&
+ return (matchesResourceGroup(name,"A02") || matchesResourceGroup(name,"A03") || matchesResourceGroup(name,"A06") || matchesResourceGroup(name,"A08") || matchesResourceGroup(name,"A09") || matchesResourceGroup(name,"A10") || matchesResourceGroup(name,"A11") || matchesResourceGroup(name,"A12")) &&
   resolveChapterGraphics(name,local,id) && _graphics.read(id,bytes) && sprite.load(bytes,id);
 }
 bool PiceEngine::background(const Common::String &name,int16 local,int16 flags) {
@@ -519,8 +519,8 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==32) {
   // Original PCM music path 0x1594e changes MUS02 to WUS02, base 308.
   // The CD includes rendered music as well as HMP tracks; use its PCM path.
-  int base=name.equalsIgnoreCase("MUS02") ? 308 : name.equalsIgnoreCase("MUS03") ? 314 : name.equalsIgnoreCase("MUS06") ? 331 : name.equalsIgnoreCase("MUS08") ? 340 : name.equalsIgnoreCase("MUS09") ? 342 : name.equalsIgnoreCase("MUS10") ? 346 : name.equalsIgnoreCase("MUS11") ? 349 : -1;
-  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==308 ? 6 : base==314 ? 17 : base==331 ? 9 : base==340 ? 2 : base==342 ? 4 : base==346 ? 3 : 1)) return false;
+  int base=name.equalsIgnoreCase("MUS02") ? 308 : name.equalsIgnoreCase("MUS03") ? 314 : name.equalsIgnoreCase("MUS06") ? 331 : name.equalsIgnoreCase("MUS08") ? 340 : name.equalsIgnoreCase("MUS09") ? 342 : name.equalsIgnoreCase("MUS10") ? 346 : name.equalsIgnoreCase("MUS11") ? 349 : name.equalsIgnoreCase("MUS12") ? 350 : -1;
+  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==308 ? 6 : base==314 ? 17 : base==331 ? 9 : base==340 ? 2 : base==342 ? 4 : base==346 ? 3 : base==349 ? 1 : 3)) return false;
   Common::Array<byte> data; uint32 offset,size;
   if(!_soundArchive.read(base+args[0],data) || !voicePayload(data,offset,size)) return false;
   _mixer->stopHandle(_music.handle); _music=RoomSound(); _music.active=true; _music.persistent=true; _music.resource=base+args[0];
@@ -555,8 +555,8 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   _mixer->setChannelVolume(sound.handle,sound.volume); result=args[1]; return true;
  }
  if(op==133 || op==29) {
-  int base=name.equalsIgnoreCase("SMP02") ? 45 : name.equalsIgnoreCase("SMP03") ? 113 : name.equalsIgnoreCase("SMP06") ? 165 : name.equalsIgnoreCase("SMP08") ? 196 : name.equalsIgnoreCase("SMP09") ? 222 : name.equalsIgnoreCase("SMP10") ? 244 : name.equalsIgnoreCase("SMP11") ? 261 : -1;
-  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==45 ? 68 : base==113 ? 52 : base==165 ? 31 : base==196 ? 26 : base==222 ? 22 : base==244 ? 17 : 16)) return false;
+  int base=name.equalsIgnoreCase("SMP02") ? 45 : name.equalsIgnoreCase("SMP03") ? 113 : name.equalsIgnoreCase("SMP06") ? 165 : name.equalsIgnoreCase("SMP08") ? 196 : name.equalsIgnoreCase("SMP09") ? 222 : name.equalsIgnoreCase("SMP10") ? 244 : name.equalsIgnoreCase("SMP11") ? 261 : name.equalsIgnoreCase("SMP12") ? 277 : -1;
+  if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==45 ? 68 : base==113 ? 52 : base==165 ? 31 : base==196 ? 26 : base==222 ? 22 : base==244 ? 17 : base==261 ? 16 : 28)) return false;
   uint slot=0; while(slot<_sounds.size() && _sounds[slot].active) ++slot;
   if(slot>=25) return false;
   Common::Array<byte> data; uint32 offset,size;
@@ -1038,7 +1038,7 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  return !movie.failed && !shouldQuit();
 }
 bool PiceEngine::loadChapter(int16 chapter,uint room) {
- if((chapter!=3 && chapter!=6 && chapter!=8 && chapter!=9 && chapter!=10 && chapter!=11) || room>=uint(chapterRoomCount(chapter))) return false;
+ if((chapter!=3 && chapter!=6 && chapter!=8 && chapter!=9 && chapter!=10 && chapter!=11 && chapter!=12) || room>=uint(chapterRoomCount(chapter))) return false;
  // Chapter-local definitions must be recreated before any destination room.
  _roomRunner.reset(); _actors.clear(); _hotspots.clear(); _actions.clear(); _worldItems.clear();
  _items.clear(); _ownedItems.clear(); _itemLabels.clear(); _menus.clear(); _menuEnabled.clear();

@@ -974,3 +974,26 @@ Build/startup self-tests PASS. Chapter11 destination fixture reaches1289,
 Not a full Illsmouth playthrough. User saves backed up before-illsmouth-saves.
 Latest actual user save is autosave1242, newer than Q1279; launch switches to
 that autosave without overwriting either with test progress.
+
+## 2026-09-21 — ghost dialogue wait and chapter12 door
+
+Bank1289 task7 PC4182 waited for actor6 after voice605/key220 finished.
+finishDialogue restored its ambient looping animation, so actorBusy stayed
+true forever. Speech opcodes52/111/128/129 now wait for speechBusy on that
+actor, separately from movement/animation waits. Task.actor values -28..-47
+encode these waits; state validation accepts them without changing layout.
+Regression speech tests keep animation busy while speech finishes.
+
+Copied-Q gem/hollow click then Narackamous click reproduces the sequence:
+voice605 completes, entry7 unlocks, later Boleskine dialogue and book pickup
+work (speech-loop-check.log; later interactions include user input). Next
+stop task9 PC4420 opcode80 registers exit to chapter12 room0. Added original
+directory maps: SM12 base1292/bootstrap1293/rooms1294..1305; A12 base724
+count91, B12 base1108 count30, SMP12 base277 count28, WUS12 base350 count3
+(archive count353). This unblocks exit validation and destination loading.
+
+Build/startup self-tests PASS. Chapter12 destination fixture reaches1294 with
+6 actors, saves14847 bytes, and chapter12-restore-check.log roundtrip passes.
+No full chapter12 playthrough claimed. Actual user Q remains1289 before the
+ghost sequence; backup before-ghost-door-saves. Launch restored to manual Q
+(newer than autosave1242), no test saves copied over user progress.

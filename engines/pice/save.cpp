@@ -26,6 +26,8 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  // Parse into copies, reconstruct resource references and validate everything
  // before replacing live state. Saves contain resource IDs/hashes, not assets.
  bool playerMovement=_playerMovement;
+ bool cameraFrozen=_cameraFrozen,cameraRecenter=_cameraRecenter;
+ Common::Point cameraPosition=_cameraPosition;
  int16 previousRoom=_previousRoom;
  auto labels=_itemLabels; labels.resize(_items.size());
  auto pairs=_itemPairs; bool inventoryEnabled=_inventoryEnabled;
@@ -47,14 +49,14 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=13; io.number(version); if(version<1 || version>13) return false;
+ uint32 version=14; io.number(version); if(version<1 || version>14) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || chapterForBank(bankId)<0 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
  uint32 bankHash=checksum(bankBytes),backgroundHash=checksum(backgroundBytes),expectedBank=bankHash,expectedBackground=backgroundHash;
  io.number(expectedBank); io.number(expectedBackground);
  uint16 width,height;
- if(!io.ok || bankHash!=expectedBank || backgroundHash!=expectedBackground || !decodeImageHeader(backgroundBytes,width,height) || width<640 || width>2048 || height>320) return false;
+ if(!io.ok || bankHash!=expectedBank || backgroundHash!=expectedBackground || !decodeImageHeader(backgroundBytes,width,height) || width<640 || width>2048 || height>2048) return false;
  ScriptResource bank; if(!bank.load(bankBytes) || !vars.syncState(io)) return false;
  io.bytes(tasks,16384); if(!io.ok) return false;
  ScriptRunner candidate(bank,&vars,this); StateIO taskInput(tasks,true);
@@ -204,6 +206,10 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   if(!io.count(preloadedAnimations,5)) return false;
   for(uint i=0;i<preloadedAnimations.size();++i) sprite(preloadedAnimations[i]);
  } else preloadedAnimations.clear();
+ if(version>=14) {
+  io.number(cameraFrozen); io.number(cameraRecenter); io.point(cameraPosition);
+  if(cameraPosition.x<0 || cameraPosition.x>MAX(0,int(width)-640) || cameraPosition.y<0 || cameraPosition.y>MAX(0,int(height)-320)) return false;
+ } else { cameraFrozen=false; cameraRecenter=false; cameraPosition=Common::Point(); }
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
  for(uint i=0;i<owned.size();++i) if(owned[i]>1) return false;
@@ -226,6 +232,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _menus=menus; _sounds=sounds; _scenery=scenerySprite; _inventoryPanel=panel;
  _preloadedAnimations=preloadedAnimations;
  _sceneBackground=backgroundId; _scenePaletteId=paletteId; _scenePixels=backgroundBytes; _scenePalette=colors;
+ _cameraFrozen=cameraFrozen; _cameraRecenter=cameraRecenter; _cameraPosition=cameraPosition;
  _player=player; _cameraActor=camera; _inventorySelection=selection; _inputLocks=locks;
  _fadeLevel=-1; _palettePulse=pulse; _pulsePeriod=period; _pulseRemaining=remaining; _pulseOffset=offset; _pulseDelta=delta;
  for(uint i=0;i<12;++i) _textStyles[i/2][i%2]=styles[i];

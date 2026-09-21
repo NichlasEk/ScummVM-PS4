@@ -601,3 +601,42 @@ cancels unrelated room tasks and does not certify the entire cutscene.
 The ordinary untimed replay is restarted from .tools/xdg-pice-preload-check
 slot0, before the conversation, with no test overrides. Original older Q in
 .tools/xdg-pice-bridge-manual remains untouched.
+
+## Secret passage and tall library camera (2026-09-21)
+
+The bank1245 ->1246 passage first failed loading B06/10 (resource1011,
+640x632) at task0 PC70 opcode1: backgrounds and saves were limited to320
+rows. After accepting the tall image, task0 stopped at PC1048 opcode119.
+Original handler0x1209 sets the automatic-camera freeze byte144c; update
+routine0x3a43 honors it. Explicit recenter139 still works while frozen.
+Original player selection56 ->0x1aafe also selects the first camera actor
+and requests recentering; that selection was missing. Opcode142 only
+waits for an actor and must not change the camera target.
+
+Background rendering now crops a320-row viewport from images up to2048
+rows. Camera Y, actor/scenery placement, hotspots and free-walk coordinates
+share the same offset. Opcode119 holds the viewport; opcode139 and initial
+player selection request recentering on rendering. Snapshot version14
+persists the frozen position and pending recenter, accepts tall backgrounds,
+and still reads versions1..13. This retains the existing immediate
+actor-centered tracking; original camera easing is not implemented here.
+
+PS4 build and startup tests PASS. Regression checks cover vertical clamping,
+offset hotspot hits, freeze/recenter/release, initial player-camera selection
+and opcode142 leaving the camera alone. An initial direct-room fixture was
+invalid (missing the passage's B53 assignment), stopping at1326; do not
+interpret that fixture as a supported room-entry replay.
+
+The corrected replay copies the user's current bank1245 Q and uses ordinary
+interactions (hotspots5 then13, verb6) to enter bank1246. Initialization
+finishes at3832, the entrance animations run, Diane walks to node6, and a
+checkpoint is written without script errors. Restoring that checkpoint
+recreates four actors and passes a version14 snapshot roundtrip (16606
+payload bytes). The captured image shows Ryan and Diane on the lower
+library walkway, with the viewport correctly at the bottom.
+Evidence: artifacts/pice/tall-camera-passage.log,
+artifacts/pice/tall-camera-restore.log and tall-camera-restored.png.
+This validates entry and restoration, not the later library puzzles.
+Test profile: .tools/xdg-pice-tall-camera-check. The user's latest Q remains
+unchanged in .tools/xdg-pice-preload-check (bank1245); restart that ordinary
+profile without test overrides for manual continuation.

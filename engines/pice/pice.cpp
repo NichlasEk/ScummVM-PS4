@@ -132,7 +132,7 @@ bool PiceEngine::background(const Common::String &name,int16 local,int16 flags) 
  uint32 resource; if (!resolveChapterGraphics(name,local,resource) || flags) return false;
  Common::Array<byte> pixels; uint16 w,h;
 
- if (!_graphics.read(resource,pixels) || !decodeImageHeader(pixels,w,h) || w<640 || w>2048 || h>320) return false;
+ if (!_graphics.read(resource,pixels) || !decodeImageHeader(pixels,w,h) || w<640 || w>2048 || h>2048) return false;
  _scenePixels=pixels; _sceneBackground=resource;
  debug("[pice] script-background name=%s local=%d flags=%d resource=%u fnv=%08x",name.c_str(),local,flags,resource,hashBytes(pixels));
  return true;
@@ -381,6 +381,31 @@ bool PiceEngine::runActorLifecycleTests() {
  if(inventoryAt(Common::Point(10,10))!=0 || inventoryAt(Common::Point(60,10))!=3 ||
     inventoryAt(Common::Point(110,10))!=-1 || inventoryAt(Common::Point(10,40))!=-1 || inventoryAt(Common::Point(-1,10))!=-1) return false;
  _itemLabels.clear();
+ // Tall-room camera clamps at both ends; hit testing uses world Y.
+ _scenePixels.resize(4); WRITE_LE_UINT16(&_scenePixels[0],640); WRITE_LE_UINT16(&_scenePixels[2],632);
+ _actors.resize(1); _cameraActor=0; _actors[0].feet.y=80;
+ if(cameraY()!=0) return false;
+ _actors[0].feet.y=396; if(cameraY()!=156) return false;
+ _actors[0].feet.y=654; if(cameraY()!=312) return false;
+ _hotspots.clear(); Hotspot tall; tall.bounds=Common::Rect(100,650,120,670); _hotspots.push_back(tall);
+ if(hotspotAt(Common::Point(110,308))!=0 || hotspotAt(Common::Point(110,20))!=-1) return false;
+ // Hold the viewport, let explicit recenter override the freeze, then release.
+ _cameraRecenter=false; _actors[0].active=true;
+ args.clear(); args.push_back(1);
+ if(!invoke(119,Common::String(),args,Common::String(),result)) return false;
+ _actors[0].feet.y=396; if(cameraY()!=312) return false;
+ args[0]=0;
+ if(!invoke(139,Common::String(),args,Common::String(),result) || cameraY()!=156) return false;
+ _cameraPosition=Common::Point(cameraX(),cameraY()); _cameraRecenter=false;
+ _actors[0].feet.y=80; if(cameraY()!=156) return false;
+ if(!invoke(119,Common::String(),args,Common::String(),result) || cameraY()!=0) return false;
+ _cameraActor=-1;
+ if(!invoke(56,Common::String(),args,Common::String(),result) || _cameraActor!=0 || !_cameraRecenter) return false;
+ _cameraRecenter=false; _player=-1;
+ _actors.resize(2); _actors[1].active=true; args[0]=1;
+ if(!invoke(142,Common::String(),args,Common::String(),result) || _cameraActor!=0 || _cameraRecenter) return false;
+ WRITE_LE_UINT16(&_scenePixels[2],316); if(cameraY()!=0) return false;
+ _cameraActor=-1; _scenePixels.clear();
  _actions.clear(); _actors.clear(); _items.clear(); _ownedItems.clear(); _hotspots.clear(); _worldItems.clear(); return true;
 }
 int PiceEngine::storeAction(const Action &action) {
@@ -548,11 +573,18 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   _interruptedAction=InterruptedAction(); result=0;
   debug("[pice] restored interrupted action entry=%d resume-walk=%d",_actionEntry,int(saved.resumeWalk)); return true;
  }
+ if(op==119) {
+  if(args.size()!=1) return false;
+  _cameraPosition=Common::Point(cameraX(),cameraY());
+  _cameraFrozen=args[0]==1; result=0; return true;
+ }
  if(op==139 || op==142) {
   if(args.size()!=1 || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active) return false;
   // 139 requests an immediate recenter (0x1c50 -> 0x3775). Our
   // actor-centered camera has no easing, so selection recenters immediately.
-  _cameraActor=args[0]; result=0; return true;
+  // 142 only waits for this actor; it does not select a camera target.
+  if(op==139) { _cameraActor=args[0]; _cameraRecenter=true; }
+  result=0; return true;
  }
  if(op==98) {
   if(args.size()!=1 || args[0]<0 || uint(args[0])>=_actors.size() || _actors[args[0]].animationMode==4) return false;
@@ -784,7 +816,11 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  }
  if(op==56 || op==92 || op==135) {
   if(args.size()!=(op==135 ? 3U : 1U) || args[0]<0 || uint(args[0])>=_actors.size()) return false;
-  if(op==56 || op==92) { _actors[args[0]].routeEnabled=true; if(op==56) _player=args[0]; }
+  if(op==56 || op==92) { _actors[args[0]].routeEnabled=true; if(op==56) {
+   _player=args[0];
+   // Original 0x1aafe selects and recenters the first player camera.
+   if(_cameraActor==-1) { _cameraActor=args[0]; _cameraRecenter=true; }
+  } }
   else _actors[args[0]].labelPosition=Common::Point(args[1],args[2]);
   result=args[0]; return true;
  }
@@ -999,7 +1035,7 @@ bool PiceEngine::loadRoom(uint room) {
  _actors.clear(); _worldItems.clear(); _hotspots.clear(); _actions.clear(); _animationSounds.clear(); _inventoryEnabled=true; _advanceRequested=false;
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _playerMovement=true; _cursorItem=-2;
- _preloadedAnimations.clear(); _scenery=SpriteResource(); _navigation.clear(); _player=-1; _cameraActor=-1; _inputLocks=0; _palettePulse=false; _fadeLevel=-1; _dialogueActor=-1; _narration=false; _closeup=false;
+ _preloadedAnimations.clear(); _scenery=SpriteResource(); _navigation.clear(); _player=-1; _cameraActor=-1; _cameraFrozen=false; _cameraRecenter=false; _cameraPosition=Common::Point(); _inputLocks=0; _palettePulse=false; _fadeLevel=-1; _dialogueActor=-1; _narration=false; _closeup=false;
  _mixer->stopHandle(_speechHandle); _subtitle.clear(); _pendingRoom=-1;
 
  _scenePixels.clear(); _scenePalette.clear();
@@ -1042,17 +1078,24 @@ bool PiceEngine::loadRoom(uint room) {
  return renderRoom();
 }
 int PiceEngine::cameraX() const {
+ if(_cameraFrozen && !_cameraRecenter) return _cameraPosition.x;
  if(_scenePixels.size()<4 || _cameraActor<0 || uint(_cameraActor)>=_actors.size()) return 0;
  return MAX(0,MIN(int(READ_LE_UINT16(&_scenePixels[0]))-640,int(_actors[_cameraActor].feet.x)-320));
+}
+int PiceEngine::cameraY() const {
+ if(_cameraFrozen && !_cameraRecenter) return _cameraPosition.y;
+ if(_scenePixels.size()<4 || _cameraActor<0 || uint(_cameraActor)>=_actors.size()) return 0;
+ return MAX(0,MIN(int(READ_LE_UINT16(&_scenePixels[2]))-320,int(_actors[_cameraActor].feet.y)-240));
 }
 bool PiceEngine::renderRoom() {
  _system->fillScreen(0);
  _roomCanvas.clear(); _roomCanvas.resize(640*400,0);
- int viewX=cameraX();
+ int viewX=cameraX(),viewY=cameraY();
+ _cameraPosition=Common::Point(viewX,viewY); _cameraRecenter=false;
  if(!_scenePixels.empty()) {
-  uint height=READ_LE_UINT16(&_scenePixels[2]);
+  uint height=MIN<uint>(320,READ_LE_UINT16(&_scenePixels[2]));
   uint width=READ_LE_UINT16(&_scenePixels[0]);
-  for(uint y=0;y<height;++y) memcpy(&_roomCanvas[((400-height)/2+y)*640],&_scenePixels[4+y*width+viewX],640);
+  for(uint y=0;y<height;++y) memcpy(&_roomCanvas[((400-height)/2+y)*640],&_scenePixels[4+(y+viewY)*width+viewX],640);
  }
  // Original 0xb3b6 merges actors (Y at +5) and scenery (Y at +3).
  // Equal anchors paint scenery first, allowing an actor to stand in front.
@@ -1080,8 +1123,8 @@ bool PiceEngine::renderRoom() {
   if(layer.actor) {
    const RoomActor &actor=_actors[layer.index];
    uint frame=actor.sprite.sequences[actor.sequence].steps[actor.step].frame;
-   if(!actor.sprite.paintScaledFrame(frame,actor.feet.x-viewX,actor.feet.y-40,actorScale(actor),_roomCanvas,640,400)) return false;
-  } else if(!_scenery.paintPart(sceneryFrame,layer.index,-viewX,-40,_roomCanvas,640,400)) return false;
+   if(!actor.sprite.paintScaledFrame(frame,actor.feet.x-viewX,actor.feet.y-40-viewY,actorScale(actor),_roomCanvas,640,400)) return false;
+  } else if(!_scenery.paintPart(sceneryFrame,layer.index,-viewX,-40-viewY,_roomCanvas,640,400)) return false;
  }
  if(_closeup && dialogueActive()) {
   Common::Array<int16> sequences;
@@ -1770,7 +1813,9 @@ Common::Error PiceEngine::run() {
  if(restored && ConfMan.getBool("pice_test_snapshot_roundtrip")) {
   Common::Array<byte> payload;
   uint bank=_roomBankId; int chapter=_chapter;
-  bool ok=snapshot(payload,false) && snapshot(payload,true) && _roomBankId==bank && _chapter==chapter;
+  Common::Point camera(cameraX(),cameraY()); bool frozen=_cameraFrozen;
+  bool ok=snapshot(payload,false) && snapshot(payload,true) && _roomBankId==bank && _chapter==chapter &&
+   camera==Common::Point(cameraX(),cameraY()) && _cameraFrozen==frozen;
   debug("[pice] snapshot roundtrip bank=%u chapter=%d bytes=%u pass=%d",bank,chapter,payload.size(),ok);
   if(!ok) return Common::Error(Common::kUnknownError,"Snapshot roundtrip test failed");
  }

@@ -92,6 +92,8 @@ private:
  bool _playerMovement=true;
  void updateHover();
  int16 _player=-1,_cameraActor=-1;
+ bool _cameraFrozen=false,_cameraRecenter=false;
+ Common::Point _cameraPosition;
  bool createMenu(const Common::String &name,int16 local,int16 &id) override;
  Common::Array<Common::Array<Common::String> > _menus;
  bool createItem(const Common::String &name,int16 local,int16 sequence,int16 &id) override;
@@ -145,6 +147,7 @@ private:
  struct ItemPair { int16 first=-1,second=-1,entry=-1; };
  Common::Array<ItemPair> _itemPairs;
  int cameraX() const;
+ int cameraY() const;
  bool _fadeIn=false, _advanceRequested=false, _inventoryEnabled=true;
  bool advanceRequested() const override { return _advanceRequested; }
  bool loadChapter(int16 chapter,uint room);

@@ -82,6 +82,7 @@ int PiceEngine::hotspotAt(Common::Point point) const {
  point.x+=cameraX();
  // Room actors use the original 640x480 anchors, offset into our 640x400 view.
  if(point.y<(!_playerMovement || _player<0 ? 0 : 40) || point.y>=(!_playerMovement || _player<0 ? 400 : 338)) return -1;
+ point.y+=cameraY();
  for(uint i=0;i<_hotspots.size();++i) {
   const Hotspot &h=_hotspots[i]; if(!h.active) continue;
   if(h.actor==-1) { if(h.bounds.contains(point.x,point.y+40)) return i; }
@@ -215,7 +216,7 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  if(selected<0) selected=fallback;
  if(selected<0) {
   if(!_playerMovement || _player<0 || spot>=0 || point.y<40 || point.y>=338) return false;
-  Common::Point target; if(!_navigation.nearest(Common::Point(point.x+cameraX(),point.y+40),target)) return false;
+  Common::Point target; if(!_navigation.nearest(Common::Point(point.x+cameraX(),point.y+40+cameraY()),target)) return false;
   if(target==_actors[_player].feet) return true;
   Common::Array<int16> args; args.push_back(_player); args.push_back(target.x); args.push_back(target.y); int16 result;
   return invoke(123,Common::String(),args,Common::String(),result);

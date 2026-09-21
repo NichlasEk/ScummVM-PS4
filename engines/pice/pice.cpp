@@ -387,8 +387,13 @@ bool PiceEngine::runActorLifecycleTests() {
  if(cameraY()!=0) return false;
  _actors[0].feet.y=396; if(cameraY()!=156) return false;
  _actors[0].feet.y=654; if(cameraY()!=312) return false;
- _hotspots.clear(); Hotspot tall; tall.bounds=Common::Rect(100,650,120,670); _hotspots.push_back(tall);
+ _hotspots.clear(); Hotspot tall; tall.label="test"; tall.bounds=Common::Rect(100,650,120,670); _hotspots.push_back(tall);
  if(hotspotAt(Common::Point(110,308))!=0 || hotspotAt(Common::Point(110,20))!=-1) return false;
+ _actions.clear(); Hotspot trigger; trigger.bounds=tall.bounds; _hotspots.insert_at(0,trigger);
+ if(hotspotAt(Common::Point(110,308))!=1) return false;
+ Action triggerAction; triggerAction.hotspot=0; _actions.push_back(triggerAction);
+ if(hotspotAt(Common::Point(110,308))!=0) return false;
+ _actions.clear(); _hotspots.remove_at(0);
  // Hold the viewport, let explicit recenter override the freeze, then release.
  _cameraRecenter=false; _actors[0].active=true;
  args.clear(); args.push_back(1);
@@ -1833,6 +1838,9 @@ Common::Error PiceEngine::run() {
  if(restored && ConfMan.hasKey("pice_test_chapter") && !loadChapter(ConfMan.getInt("pice_test_chapter"),0)) return Common::Error(Common::kUnknownError,"Chapter test initialization failed");
  if(restored && ConfMan.getBool("pice_test_curator_entry")) _worldVariables.write(true,50,1);
  if(restored && ConfMan.hasKey("pice_test_room")) restored=loadRoom(ConfMan.getInt("pice_test_room"));
+ if(restored && ConfMan.getBool("pice_test_venus_walk") && _roomBankId==1249) {
+  debug("[pice] Venus floor click accepted=%d",int(clickRoom(Common::Point(350-cameraX(),240-cameraY()),false)));
+ }
  if(restored && ConfMan.getBool("pice_test_book_placement") && _roomBankId==1247) {
   int16 book,result; Common::Array<int16> args;
   if(!_worldVariables.read(true,3,book)) return Common::Error(Common::kUnknownError,"Missing book variable");

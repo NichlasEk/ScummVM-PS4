@@ -85,6 +85,13 @@ int PiceEngine::hotspotAt(Common::Point point) const {
  point.y+=cameraY();
  for(uint i=0;i<_hotspots.size();++i) {
   const Hotspot &h=_hotspots[i]; if(!h.active) continue;
+  // Unnamed rectangles are also used as actor-location triggers. They must
+  // not swallow floor clicks unless an action explicitly targets them.
+  if(h.label.empty()) {
+   bool interactive=false;
+   for(uint j=0;j<_actions.size();++j) if(_actions[j].hotspot==int(i)) { interactive=true; break; }
+   if(!interactive) continue;
+  }
   if(h.actor==-1) { if(h.bounds.contains(point.x,point.y+40)) return i; }
   else if(h.actor>=0 && uint(h.actor)<_actors.size()) {
    const RoomActor &a=_actors[h.actor];

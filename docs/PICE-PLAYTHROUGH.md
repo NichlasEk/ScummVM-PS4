@@ -705,3 +705,28 @@ initialization reaches2968 and dialogue continues without a script error.
 Evidence artifacts/pice/terrace-check.log. Original Q remains at the door;
 ordinary profile restarted without hooks (terrace-manual.log). This checks
 the doorway transition, not later terrace gameplay.
+
+## Venus jump trigger swallowing floor clicks (2026-09-21)
+
+The terrace Q (bank1249) restores with input unlocked, no exclusive task,
+player idle at202,304. Venus' inspection approach node30 at410,260 is not
+reachable before the jump. The jump itself is triggered by task1 opcode112
+when Ryan enters the unnamed rectangle338,250..366,296; it walks to336,290
+and plays A06/43 (resource423). Unnamed location rectangles were returned
+by hotspotAt even when no action targeted them, so clickRoom refused to
+walk on this part of the floor. Larger unnamed regions also covered the
+rest of the terrace floor.
+
+Ignore unlabeled rectangles in mouse hit testing unless an action targets
+them. actorInsideHotspot remains unchanged, so script location triggers
+still work. Regression checks ensure an invisible trigger does not mask a
+named hotspot, and that an explicitly interactive unnamed hotspot still
+receives clicks. Added restored-input diagnostics and a narrow optional
+pice_test_venus_walk hook for a normal floor click at world350,280.
+
+PS4 build/self-tests PASS. Copied-Q replay accepts the floor click, walks
+202,304 ->350,280, triggers the scripted approach336,290 and animation423,
+and lands at368,254 without script failure. Subsequent navigation reaches
+Venus node30 at410,260. Evidence artifacts/pice/venus-floor-check.log.
+This verifies the first jump, not the full statue sequence. Ordinary user
+profile is restored from the unchanged terrace Q (venus-manual.log).

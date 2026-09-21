@@ -234,6 +234,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _sceneBackground=backgroundId; _scenePaletteId=paletteId; _scenePixels=backgroundBytes; _scenePalette=colors;
  _cameraFrozen=cameraFrozen; _cameraRecenter=cameraRecenter; _cameraPosition=cameraPosition;
  _player=player; _cameraActor=camera; _inventorySelection=selection; _inputLocks=locks;
+ debug("[pice] restored input locks=%u exclusive=%d player=%d busy=%d movement=%d",_inputLocks,_roomRunner->exclusiveTask(),_player,int(actorBusy(_player)),int(_playerMovement));
  _fadeLevel=-1; _palettePulse=pulse; _pulsePeriod=period; _pulseRemaining=remaining; _pulseOffset=offset; _pulseDelta=delta;
  for(uint i=0;i<12;++i) _textStyles[i/2][i%2]=styles[i];
  _actionExitChapter=_actionExitRoom=-1;

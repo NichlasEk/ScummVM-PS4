@@ -884,3 +884,21 @@ manual slot; set latest marker M. This is after the Parker movie, before
 the doomed save, not a fabricated puzzle state or a test-progress save.
 Restarted normal profile with no click hooks. Log:
 artifacts/pice/death-recovery-manual.log. Periodic status tracing remains on.
+
+## Ventilation exit to chapter9 (2026-09-21)
+
+Bank1261 task3 PC452 opcode34(9,2) failed after fading out: unsupported
+chapter9 destination. Resource directory in original ICE640 object1 gives
+SM09 global1262/bootstrap1263/rooms1264..1270, A09 base544 count65,
+B09 base1057 count19, SMP09 base222 count22, WUS09 base342 count4.
+Added these bounds, actor animation group, chapter bootstrap support and
+checkpoint music range. Boundary self-tests cover rooms and graphics IDs.
+
+PS4 build/startup self-tests PASS. Copied-Q destination fixture loads chapter9
+room2/bank1266 with7 actors, sound and unlocked input. Stable checkpoint16491
+bytes restores and roundtrips successfully. Logs chapter9-check.log and
+chapter9-restore-check.log. Initial transient autosave is still rejected;
+this test does not establish full chapter9 playability or the whole vent
+puzzle. User could interact with visible test windows. Original Q remains
+bank1254 (ventilation); restarted that profile using the new build, log
+artifacts/pice/chapter9-manual.log.

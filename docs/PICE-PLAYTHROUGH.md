@@ -937,3 +937,18 @@ evidence: chapter10-transition-check.log. User input occurred in test window;
 this is not a full automated chapter playthrough. Original user-profile saves
 backed up under artifacts/pice/before-chapter10-saves and remain untouched;
 restart uses original Q, not copied test progress.
+
+## 2026-09-21 — weapon butt at lower scene edge
+
+Both battery and butt load in bank1279. Battery click succeeds unchanged.
+Butt actor5 resource1312 frame5 at1248,388 has bounds(-5,-10,14,-1):
+visible screen pixels begin at y338 with camera640,0. Hotspot picking and
+event dispatch incorrectly stopped at y338 although the scene ends at360.
+Extended these two boundaries to360; untargeted floor walking retains its
+existing range. Caption area starts at360 and remains excluded. Regression
+checks y338 and359 hit, y360 does not, with a player active.
+
+Build/self-tests PASS. Copied Q test clicks hotspot8 at605,338, starts entry11,
+picks up item1 and releases input (butt-fixed-check.log). Battery test picks
+up item5 (weapon-check.log). Original saves backed up in before-weapon-edge-saves;
+no test pickups copied into user's profile. Restart uses own latest Q.

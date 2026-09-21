@@ -394,6 +394,13 @@ bool PiceEngine::runActorLifecycleTests() {
  Action triggerAction; triggerAction.hotspot=0; _actions.push_back(triggerAction);
  if(hotspotAt(Common::Point(110,308))!=0) return false;
  _actions.clear(); _hotspots.remove_at(0);
+ // The entire visible scene ends at y360; its bottom 22 pixels contain
+ // pickable objects such as the weapon butt. Captions begin below it.
+ int savedPlayer=_player; _player=0;
+ _hotspots[0].bounds=Common::Rect(100,690,120,720);
+ if(hotspotAt(Common::Point(110,338))!=0 || hotspotAt(Common::Point(110,359))!=0 ||
+    hotspotAt(Common::Point(110,360))!=-1) return false;
+ _hotspots[0].bounds=tall.bounds; _player=savedPlayer;
  // Hold the viewport, let explicit recenter override the freeze, then release.
  _cameraRecenter=false; _actors[0].active=true;
  args.clear(); args.push_back(1);
@@ -1466,6 +1473,7 @@ void PiceEngine::tickRoom() {
    debug("[pice] waits bank=%u locks=%u action=%d walking=%d exclusive=%d dialogue=%d",_roomBankId,_inputLocks,_actionEntry,_actionWalking,_roomRunner->exclusiveTask(),_dialogueActor);
    for(uint t=0;t<50;++t) if(_roomRunner->running(t)) debug("[pice] waits task=%u pc=%u waiting=%d",t,_roomRunner->position(t),_roomRunner->waiting(t));
    for(uint a=0;a<_actors.size();++a) if(_actors[a].active) debug("[pice] waits actor=%u mode=%d seq=%d step=%u feet=%d,%d",a,_actors[a].animationMode,_actors[a].sequence,_actors[a].step,_actors[a].feet.x,_actors[a].feet.y);
+
   }
  }
  if(ConfMan.getBool("pice_test_inventory") && !_testUseDone) {
@@ -1975,7 +1983,7 @@ Common::Error PiceEngine::run() {
     continue;
    }
 
-   if(_scenePreview && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN) && event.mouse.y>=(!_playerMovement || _player<0 ? 0 : 40) && event.mouse.y<(!_playerMovement || _player<0 ? 400 : 338)) {
+   if(_scenePreview && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN) && event.mouse.y>=(!_playerMovement || _player<0 ? 0 : 40) && event.mouse.y<(!_playerMovement || _player<0 ? 400 : 360)) {
     clickRoom(event.mouse,event.type==Common::EVENT_RBUTTONDOWN); continue;
    }
    if (event.type == Common::EVENT_RBUTTONDOWN && !_scenePreview) change = -1;

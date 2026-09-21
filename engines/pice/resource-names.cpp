@@ -2,10 +2,10 @@
 #include "pice/resource-names.h"
 #include "common/endian.h"
 namespace Pice {
-int chapterRoomBase(int chapter) { return chapter==2 ? 1140 : chapter==3 ? 1182 : chapter==6 ? 1236 : -1; }
-int chapterRoomCount(int chapter) { return chapter==2 ? 40 : chapter==3 ? 52 : chapter==6 ? 15 : 0; }
+int chapterRoomBase(int chapter) { return chapter==2 ? 1140 : chapter==3 ? 1182 : chapter==6 ? 1236 : chapter==8 ? 1253 : -1; }
+int chapterRoomCount(int chapter) { return chapter==2 ? 40 : chapter==3 ? 52 : chapter==6 ? 15 : chapter==8 ? 9 : 0; }
 int chapterForBank(uint bank) {
- for(int chapter : {2,3,6}) if(bank>=uint(chapterRoomBase(chapter)) && bank<uint(chapterRoomBase(chapter)+chapterRoomCount(chapter))) return chapter;
+ for(int chapter : {2,3,6,8}) if(bank>=uint(chapterRoomBase(chapter)) && bank<uint(chapterRoomBase(chapter)+chapterRoomCount(chapter))) return chapter;
  return -1;
 }
 
@@ -15,8 +15,8 @@ bool matchesResourceGroup(const Common::String &name,const Common::String &group
 bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) {
  // English CD graphics group boundaries from its original resource directory.
  struct Group { const char *name; uint base,count; };
- static const Group groups[]={{"A02",0,179},{"A03",179,201},{"B02",815,67},{"B03",882,119},{"A06",380,79},{"B06",1001,38}};
- for(uint i=0;i<6;++i) if(matchesResourceGroup(name,groups[i].name)) {
+ static const Group groups[]={{"A02",0,179},{"A03",179,201},{"B02",815,67},{"B03",882,119},{"A06",380,79},{"B06",1001,38},{"A08",459,85},{"B08",1039,18}};
+ for(uint i=0;i<8;++i) if(matchesResourceGroup(name,groups[i].name)) {
   if(local<0 || uint(local)>=groups[i].count) return false;
   resource=groups[i].base+local; return true;
  }
@@ -73,6 +73,10 @@ static Common::Array<byte> encodeFixture(const Common::Array<byte> &plain) {
 }
 bool runResourceNameTests() {
  uint32 id=0;
+ if(chapterRoomBase(8)!=1253 || chapterRoomCount(8)!=9 || chapterForBank(1252)!=-1 ||
+    chapterForBank(1253)!=8 || chapterForBank(1261)!=8 || chapterForBank(1262)!=-1 ||
+    !resolveChapterGraphics("A08.Pak",84,id) || id!=543 || resolveChapterGraphics("A08",85,id) ||
+    !resolveChapterGraphics("B08",17,id) || id!=1056 || resolveChapterGraphics("B08",18,id)) return false;
  if(chapterRoomBase(6)!=1236 || chapterRoomCount(6)!=15 || chapterForBank(1235)!=-1 ||
     chapterForBank(1236)!=6 || chapterForBank(1250)!=6 || chapterForBank(1251)!=-1 ||
     chapterRoomBase(4)!=-1 || chapterRoomCount(4)!=0 || chapterForBank(1181)!=-1 ||

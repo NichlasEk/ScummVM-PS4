@@ -158,7 +158,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   io.number(musicPlaying); io.number(musicElapsed);
   if(music.active) {
    Common::Array<byte> raw; uint32 start,size;
-   if(music.resource<308 || music.resource>=340 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
+   if(music.resource<308 || music.resource>=342 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
   } else if(musicPlaying) io.ok=false;
  } else { music=RoomSound(); musicPlaying=false; musicElapsed=0; }
  if(version>=3) { io.bytes(owned,100); io.number(selectedItem); }

@@ -756,3 +756,27 @@ shows the intermediate deadlock and is not the final successful result.
 This validates the Venus-to-Jupiter sequence, not the remaining statue puzzle.
 Ordinary profile restarted from the user's own unchanged terrace Q without
 hooks (jupiter-manual.log). Test profile .tools/xdg-pice-jupiter-check.
+
+## Terrace capture to chapter8 prison (2026-09-21)
+
+The black screen after the Germans arrive is bank1249 task18 PC6562,
+opcode34(8,8), after the palette has faded out. Chapter8 was outside the
+supported room mapping; the old room and looping audio remained active.
+The original ICE640 object1 resource directory supplies SM08 base1251
+(global1251, bootstrap1252, rooms1253..1261), A08 base459 count85,
+B08 base1039 count18, SMP08 base196 count26 and WUS08 base340 count2.
+These groups now resolve, actor loading accepts A08, and checkpoint music
+validation includes both chapter8 tracks. Boundary self-tests cover the
+new room and graphics ranges. The chapter test hook now loads its requested
+initial room directly, without initializing room0 first.
+
+PS4 build and startup self-tests PASS. Copied-Q chapter8/room8 fixture
+plays narration VO_0/voice572, then follows the actual script transition to
+room0/bank1253. Ryan, Diane, guards, doors, dialogue and patrol animations
+run without the prior initialization stop. Evidence: chapter8-check2.log.
+The initial autosave occurs during a transient state and is rejected;
+the stable-state checkpoint fixture subsequently saves bank1253 (18951
+bytes), then restores and roundtrips it successfully. Evidence:
+artifacts/pice/chapter8-save-check.log and chapter8-restore-check.log.
+The user's original Q remains separate and unchanged. This validates the
+chapter entry and save/restore, not the remainder of chapter8.

@@ -919,3 +919,21 @@ bank1270 and exposes A miner's bar; pickup item0 completes. Visible test
 window received user input, so later pickup is not an automated assertion.
 Evidence: artifacts/pice/cart-resume-check.log and cart-resume.png. User Q
 backed up under before-cart-fix-saves; no test save replaces it.
+
+## 2026-09-21 — chapter10 transition
+
+Bank1265 task1 PC88 opcode34(10,1) failed after fade because chapter10 was
+not mapped. Original ICE640 object1 directory: SM10 base1271, next SM11
+1286; bootstrap1272, rooms1273..1285. A10 base609 count79, B10 base1076
+count23, SMP10 base244 count17, WUS10 base346 count3. Added graphics,
+sample/music and bootstrap support, plus checkpoint music bounds and
+resource boundary self-tests.
+
+Build/startup self-tests PASS. Copied-Q room1 transition fixture follows
+1265 ->1274 ->1275 introduction ->1274, where input unlocks and interaction
+works. A Q saved in the visible test window (17700 bytes, 12 actors) restores
+and snapshot roundtrip passes in chapter10-restore-check.log. Transition
+evidence: chapter10-transition-check.log. User input occurred in test window;
+this is not a full automated chapter playthrough. Original user-profile saves
+backed up under artifacts/pice/before-chapter10-saves and remain untouched;
+restart uses original Q, not copied test progress.

@@ -19,6 +19,11 @@ public:
  explicit PiceEngine(OSystem *system) : Engine(system), _picture(0), _speech(0), _textColor(255) {}
  Common::Error run() override;
 private:
+ bool _saturnMovieActive=false;
+ uint32 _saturnPauseStart=0,_saturnPausedMs=0;
+ void pauseEngineIntern(bool pause) override;
+ Common::Error runSaturnPreview();
+ bool playSaturnMovie(const Common::String &name,bool audit);
  bool _mac=false, _windows=false, _demo=false;
  MusicMidi _midi;
 #ifdef PICE_TESTBENCH

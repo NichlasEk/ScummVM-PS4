@@ -1980,6 +1980,7 @@ Common::Error PiceEngine::run() {
  SearchMan.addSubDirectoryMatching(gameDir,"MAC_KRO");
  Common::FSNode macRoot=gameDir.getName().equalsIgnoreCase("MAC_KRO") ? gameDir.getParent() : gameDir;
  SearchMan.addSubDirectoryMatching(macRoot,"MAC_MUX");
+ if(!Common::File::exists(Common::Path("KSVGA.KRO")) && Common::File::exists(Common::Path("KVGA.KRO"))) return runSaturnPreview();
  if(!_graphics.open(Common::Path("KSVGA.KRO"))) return Common::Error(Common::kReadingFailed,"Cannot read PICE graphics archive");
  _mac=_graphics.isMac();
  _windows=!_mac && Common::File::exists(Common::Path("KSOUNDW.KRO"));

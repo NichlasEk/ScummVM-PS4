@@ -71,8 +71,10 @@ bool PiceEngine::pollMenu(int16 menu,bool &ready) {
  return true;
 }
 bool PiceEngine::clickMenu(Common::Point point) {
- if(_activeMenu<0 || _menuChoice!=-1 || point.x<360 || point.x>=632 || point.y<60) return false;
- int row=(point.y-60)/24,visible=0;
+ if(_activeMenu<0 || _menuChoice!=-1) return false;
+ Common::Rect box=dialogueMenuBounds(); box.grow(-8);
+ if(!box.contains(point)) return false;
+ int row=(point.y-box.top)/_originalFont.getFontHeight(),visible=0;
  for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) {
   if(visible++==row) { _menuChoice=i; debug("[pice] menu selected id=%d option=%u",_activeMenu,i); return true; }
  }
@@ -139,7 +141,7 @@ bool PiceEngine::inventoryVisible() const {
  // Opcode 149 controls the original automatic panel. The preview uses an
  // explicitly hovered toolbar, available whenever player input is available.
  if(_combinationRunner || _combinationFailed) return false;
- return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && !_actionWalking && _pendingRoom<0 && _eventMan->getMousePos().y>=0 && _eventMan->getMousePos().y<40;
+ return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && !_actionWalking && _pendingRoom<0 && pointerPosition().y>=0 && pointerPosition().y<40;
 }
 int PiceEngine::inventoryAt(Common::Point point) const {
  if(point.y<0 || point.y>=40 || point.x<0 || point.x>=600) return -1;
@@ -152,7 +154,7 @@ int PiceEngine::inventoryAt(Common::Point point) const {
 void PiceEngine::updateHover() {
  int spot=-1; _hoverItem=-1;
  if(!_combinationRunner && !_combinationFailed && _scenePreview && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && !_actionWalking && _pendingRoom<0) {
-  Common::Point point=_eventMan->getMousePos();
+  Common::Point point=pointerPosition();
   if(inventoryVisible()) _hoverItem=inventoryAt(point);
   int hit=point.y<40 ? -1 : hotspotAt(point);
   // Named floor triggers remain discoverable even without click actions.
@@ -188,22 +190,11 @@ void PiceEngine::updateHover() {
   }
  }
  bool reset=_cursorItem!=-1; _cursorItem=-1;
- bool hot=spot>=0 || _hoverItem>=0;
+ bool hot=spot>=0 || _hoverItem>=0 || _activeMenu>=0;
  if(!reset && hot==_hotCursor) return;
  _hotCursor=hot;
- if(!hot) { CursorMan.setDefaultArrowCursor(false); return; }
- // Original native pointer artwork: outlined hand, independent of room palette.
- static const char *rows[]={
-  "     XX         ", "    X22X        ", "    X22X        ", "    X22X        ",
-  "    X22XXXXX    ", "    X22X22X2X   ", "    X22X22X2XX  ", "    X2222222X2X ",
-  " XX X222222222X ", "X22XX222222222X ", "X2222222222222X ", " X222222222222X ",
-  "  X22222222222X ", "  X2222222222X  ", "   X222222222X  ", "    X2222222X   ",
-  "    X3333333X   ", "    X3333333X   ", "     XXXXXXX    "};
- byte pixels[16*19];
- for(uint y=0;y<19;++y) for(uint x=0;x<16;++x) pixels[y*16+x]=rows[y][x]=='X' ? 1 : rows[y][x]=='2' ? 2 : rows[y][x]=='3' ? 3 : 0;
- const byte colors[]={0,0,0, 0,0,0, 255,255,255, 255,220,64};
- CursorMan.replaceCursorPalette(colors,0,4);
- CursorMan.replaceCursor(pixels,16,19,5,0,0,false);
+ if(!originalCursor(hot ? 26 : 25)) CursorMan.setDefaultArrowCursor(false);
+
 }
 bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  if(ambientDialogue()) finishDialogue();

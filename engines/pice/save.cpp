@@ -55,7 +55,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  Common::Array<byte> tasks,backgroundBytes,bankBytes;
  if(!loading) { StateIO out(tasks,false); if(!_roomRunner->syncState(out)) return false; }
  StateIO io(bytes,loading);
- uint32 version=14; io.number(version); if(version<1 || version>14) return false;
+ uint32 version=15; io.number(version); if(version<1 || version>15) return false;
  io.number(bankId); io.number(backgroundId); io.number(paletteId); io.number(seed);
  if(!io.ok || chapterForBank(bankId)<0 || backgroundId>=_graphics.count() || paletteId>=_graphics.count() ||
     !_graphics.read(bankId,bankBytes) || !_graphics.read(backgroundId,backgroundBytes)) return false;
@@ -78,7 +78,10 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  };
  auto actor=[&](RoomActor &a) {
   io.number(a.active); sprite(a.sprite); io.number(a.resource); io.number(a.sequence); io.number(a.node);
-  io.point(a.feet); io.point(a.labelPosition); io.number(a.routeEnabled); io.number(a.step); io.number(a.frameTicks);
+  io.point(a.feet); io.point(a.textColors);
+  // Before v15 this field already stored opcode 135 colors under a misleading name.
+  if(version<15 && a.textColors==Common::Point()) a.textColors=Common::Point(96,255);
+  if(a.textColors.x<0 || a.textColors.x>255 || a.textColors.y<0 || a.textColors.y>255) io.ok=false; io.number(a.routeEnabled); io.number(a.step); io.number(a.frameTicks);
   io.number(a.animationMode); io.point(a.animationOrigin); io.point(a.walkTarget);
   io.number(a.walkProgress); io.number(a.walkDistance); io.number(a.walkDirection); io.number(a.pathIndex); io.number(a.animationPaused);
   if(io.count(a.path,52)) for(uint i=0;i<a.path.size();++i) io.point(a.path[i]);
@@ -243,6 +246,11 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  debug("[pice] restored input locks=%u exclusive=%d player=%d busy=%d movement=%d",_inputLocks,_roomRunner->exclusiveTask(),_player,int(actorBusy(_player)),int(_playerMovement));
  _fadeLevel=-1; _palettePulse=pulse; _pulsePeriod=period; _pulseRemaining=remaining; _pulseOffset=offset; _pulseDelta=delta;
  for(uint i=0;i<12;++i) _textStyles[i/2][i%2]=styles[i];
+ if(version<15) {
+  const byte defaults[6][2]={{56,63},{32,43},{131,124},{80,79},{32,110},{32,47}};
+  for(uint i=0;i<6;++i) if(!_textStyles[i][0] && !_textStyles[i][1])
+   memcpy(_textStyles[i],defaults[i],2);
+ }
  _actionExitChapter=_actionExitRoom=-1;
  _combinationRunner.reset(); _combinationFailed=false;
  _interruptedAction=InterruptedAction();

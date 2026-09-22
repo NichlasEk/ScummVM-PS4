@@ -115,7 +115,7 @@ bool PiceEngine::mainMenu(bool resumable) {
   if(page==kNewConfirm && resumable) text("Unsaved progress will be lost",116,251);
   if(page==kQuitConfirm && resumable) text("Unsaved progress will be lost",116,251);
   if(!notice.empty()) text(notice,365,252);
-  _system->unlockScreen(); _system->updateScreen();
+  _system->unlockScreen(); presentFrame();
 #ifdef PICE_TESTBENCH
   // The test driver injects ordinary input; it cannot bypass menu guards.
   if(testKey<testKeys.size() && _system->getMillis()>=nextTestKey) {
@@ -128,13 +128,14 @@ bool PiceEngine::mainMenu(bool resumable) {
    if(out.open(Common::Path(Common::String::format("/data/scummvm/saves/pice-menu-%d.ppm",int(page))))) {
     const char header[]="P6\n640 400\n255\n"; out.write(header,sizeof(header)-1);
     screen=_system->lockScreen();
-    for(int y=0;y<400;++y) for(int x=0;x<640;++x) { byte c=*static_cast<byte *>(screen->getBasePtr(x,y)); out.write(&colors[c*3],3); }
+    for(int y=0;y<400;++y) for(int x=0;x<640;++x) { byte c=*static_cast<byte *>(screen->getBasePtr(x,y+40)); out.write(&colors[c*3],3); }
     _system->unlockScreen(); out.finalize();
    }
   }
 #endif
   Common::Event event;
   while(!finished && _eventMan->pollEvent(event)) {
+   event.mouse.y-=40;
    if(event.type==Common::EVENT_QUIT) { quitGame(); break; }
    bool activate=false,back=false; int adjust=0;
    if(event.type==Common::EVENT_MOUSEMOVE || event.type==Common::EVENT_LBUTTONDOWN) {
@@ -225,7 +226,7 @@ bool PiceEngine::mainMenu(bool resumable) {
   _pageStart+=_system->getMillis()-opened;
  }
  _roomClock=_roomRenderClock=_system->getMillis(); _advanceRequested=false;
- if(running) renderRoom();
+ if(running) { _cursorItem=-2; renderRoom(); }
  debug("[pice] main menu closed running=%d restored=%d",running,!restoreScene);
  return running;
 }

@@ -11,6 +11,7 @@
 #include "pice/sprite.h"
 #include "pice/dialogue.h"
 #include "pice/lipsync.h"
+#include "pice/font.h"
 namespace Pice {
 class PiceEngine : public Engine, public ScriptSceneSink {
 public:
@@ -18,6 +19,13 @@ public:
  Common::Error run() override;
 private:
  bool showPicture(uint position);
+ OriginalFont _originalFont;
+ SpriteResource _originalCursor;
+ bool originalCursor(uint frame);
+ Common::Rect dialogueMenuBounds() const;
+ void presentFrame();
+ Common::Point pointerPosition() const;
+
  bool mainMenu(bool resumable);
  bool startupMovies();
  bool newGame();
@@ -105,7 +113,7 @@ private:
  bool createMenu(const Common::String &name,int16 local,int16 &id) override;
  Common::Array<Common::Array<Common::String> > _menus;
  bool createItem(const Common::String &name,int16 local,int16 sequence,int16 &id) override;
- struct RoomActor { bool active=true; SpriteResource sprite; int16 resource=0,sequence=0,node=0; Common::Point feet, labelPosition; bool routeEnabled=false; uint step=0; int32 frameTicks=0; int16 animationMode=0; Common::Point animationOrigin,walkTarget; int32 walkProgress=0,walkDistance=0; int16 walkDirection=0; Common::Array<Common::Point> path; uint pathIndex=0; bool animationPaused=false; int16 idleMin=0,idleMax=0,idlePauseMin=0,idlePauseMax=0; };
+ struct RoomActor { bool active=true; SpriteResource sprite; int16 resource=0,sequence=0,node=0; Common::Point feet, textColors=Common::Point(96,255); bool routeEnabled=false; uint step=0; int32 frameTicks=0; int16 animationMode=0; Common::Point animationOrigin,walkTarget; int32 walkProgress=0,walkDistance=0; int16 walkDirection=0; Common::Array<Common::Point> path; uint pathIndex=0; bool animationPaused=false; int16 idleMin=0,idleMax=0,idlePauseMin=0,idlePauseMax=0; };
  uint actorScale(const RoomActor &actor) const;
  bool startWalkLeg(RoomActor &actor);
  int16 storeActor(const RoomActor &actor);
@@ -117,6 +125,7 @@ private:
  bool animatedDialogue(const Common::String &textName,const Common::String &key,const Common::String &animationName,const Common::Array<int16> &args) override;
  mutable Common::RandomSource _random{"pice"};
  bool _narration=false;
+ Common::Point _narrationAnchor=Common::Point(320,240);
  bool dialogueActive() const { return _dialogueActor>=0 || _narration; }
  bool speechBusy(int16 actor) const override { return _dialogueActor==actor; }
  bool narrationBusy() const override { return _narration; }
@@ -136,7 +145,7 @@ private:
  uint _dialoguePage=0;
  uint32 _pageStart=0;
  bool _closeup=false;
- byte _textStyles[6][2]={{0,0},{0,0},{32,43},{0,0},{0,0},{0,0}};
+ byte _textStyles[6][2]={{56,63},{32,43},{131,124},{80,79},{32,110},{32,47}};
 
 
  Common::Array<RoomActor> _items;

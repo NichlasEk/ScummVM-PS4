@@ -31,6 +31,13 @@ static uint32 hashBytes(const Common::Array<byte> &data) {
  return value;
 }
 void PiceEngine::drawLabels() {
+ const byte uiColors[]={0,0,0, 32,28,24, 224,216,152, 255,248,200, 116,77,48, 192,145,99, 255,255,255};
+ _system->getPaletteManager()->setPalette(uiColors,240,7);
+ if(_scenePalette.size()==768) {
+  _system->getPaletteManager()->setPalette(&_scenePalette[_textStyles[0][0]*3],241,1);
+  _system->getPaletteManager()->setPalette(&_scenePalette[_textStyles[0][1]*3],242,1);
+  _system->getPaletteManager()->setPalette(&_scenePalette[_textStyles[3][1]*3],243,1);
+ }
  updateHover();
  Graphics::Surface *screen = _system->lockScreen();
  const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
@@ -40,52 +47,59 @@ void PiceEngine::drawLabels() {
  if(!_scenePreview) font->drawString(screen, status, 8, 24, 624, _textColor);
  if(!_scenePreview) font->drawString(screen, _scenePreview ? "L1/Q: save | R1/U: load | Esc: exit" : "Click title: images/animation | Left: next | Right: previous", 8, 365, 624, _textColor);
  if(_hoverHotspot>=0 || _hoverItem>=0) {
-  Graphics::Surface label; label.create(320,11,Graphics::PixelFormat::createFormatCLUT8());
-  label.fillRect(Common::Rect(0,0,320,11),0);
   Common::String name=_hoverItem>=0 ? (uint(_hoverItem)<_itemLabels.size() && !_itemLabels[_hoverItem].empty() ? _itemLabels[_hoverItem] : "Inventory item") : _hotspots[_hoverHotspot].label;
-  font->drawString(&label,displayText(name),4,1,312,_textColor,Graphics::kTextAlignCenter);
-  for(int y=0;y<22;++y) for(int x=0;x<640;++x)
-   *static_cast<byte *>(screen->getBasePtr(x,360+y))=*static_cast<const byte *>(label.getBasePtr(x/2,y/2));
-  label.free();
+  _originalFont.drawString(screen,displayText(name),8,360,624,246,Graphics::kTextAlignCenter);
  }
 
  if(_scenePreview && _hoverHotspot<0 && _hoverItem<0 && (_roomStatus.contains("stopped") || _roomStatus.contains("failed") || _roomStatus.contains("No valid")))
   font->drawString(screen,_roomStatus,8,365,624,_textColor);
  if(!_scenePreview) font->drawString(screen, _scenePreview ? "Left: act / walk | Right: examine | L1/Q save | R1/U load" : "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
  if (!_subtitle.empty() && (_subtitles || !dialogueActive() || _dialoguePage>=_dialogueVoices.size() || _dialogueVoices[_dialoguePage]==0xffffffff)) {
-  // Use a high-contrast, wrapped caption panel. The former one-line GUI
-  // label clipped long replies and became tiny when the guest was scaled.
   Common::Array<Common::U32String> lines;
-  const Common::U32String subtitle=displayText(_subtitle);
-  int scale=2;
-  font->wordWrapText(subtitle,304,lines);
-  if(lines.size()>5) { scale=1; lines.clear(); font->wordWrapText(subtitle,608,lines); }
-  int height=MIN<int>(320,int(lines.size())*font->getFontHeight()*scale+16);
-  byte dark=0,light=_textColor; uint lowest=766,highest=0;
-  byte palette[768]; _system->getPaletteManager()->grabPalette(palette,0,256);
-  for(uint i=0;i<256;++i) {
-   uint sum=palette[i*3]+palette[i*3+1]+palette[i*3+2];
-   if(sum<lowest) { lowest=sum; dark=i; }
-   if(sum>highest) { highest=sum; light=i; }
+  const Graphics::Font *captionFont=&_originalFont;
+  captionFont->wordWrapText(displayText(_subtitle),608,lines,0,Graphics::kWordWrapOnExplicitNewLines);
+  if(lines.size()*captionFont->getFontHeight()>340) {
+   captionFont=font; lines.clear(); captionFont->wordWrapText(displayText(_subtitle),608,lines);
   }
-  Graphics::Surface caption; caption.create(640/scale,height/scale,Graphics::PixelFormat::createFormatCLUT8());
-  caption.fillRect(Common::Rect(0,0,caption.w,caption.h),dark);
+  // Original 0x4437 copies the speaker's outline/fill pair into the text channel.
+  Common::Point colors(_textStyles[2][0],_textStyles[2][1]);
+  int width=0, height=lines.size()*captionFont->getFontHeight();
+  for(uint i=0;i<lines.size();++i) width=MAX(width,captionFont->getStringWidth(lines[i]));
+  int x=_narrationAnchor.x-width/2, y=_narrationAnchor.y-height/2;
+  if(_dialogueActor>=0 && uint(_dialogueActor)<_actors.size()) {
+   const RoomActor &actor=_actors[_dialogueActor]; colors=actor.textColors;
+   Common::Rect bounds;
+   int top=0;
+   if(actor.sprite.hasSequence(actor.sequence) && actor.step<actor.sprite.sequences[actor.sequence].steps.size() &&
+      actor.sprite.frameBounds(actor.sprite.sequences[actor.sequence].steps[actor.step].frame,bounds))
+    top=bounds.top*int(actorScale(actor))/100;
+   x=actor.feet.x-cameraX()-width/2;
+   y=actor.feet.y+top-cameraY()-height;
+  }
+  // Original 0x43b7 clamps text into the 640x480 viewport, above the speaker.
+  x=CLIP(x,20,MAX(20,619-width));
+  y=CLIP(y,82+captionFont->getFontHeight(),MAX(82+captionFont->getFontHeight(),398-height));
+  if(_scenePalette.size()==768) {
+   _system->getPaletteManager()->setPalette(&_scenePalette[colors.x*3],247,1);
+   _system->getPaletteManager()->setPalette(&_scenePalette[colors.y*3],248,1);
+  }
+  _originalFont.setShadow(247);
   for(uint i=0;i<lines.size();++i)
-   font->drawString(&caption,lines[i],8/scale,8/scale+i*font->getFontHeight(),caption.w-16/scale,light,Graphics::kTextAlignCenter);
-  for(int y=0;y<height;++y) for(int x=0;x<640;++x)
-   *static_cast<byte *>(screen->getBasePtr(x,400-height+y))=*static_cast<const byte *>(caption.getBasePtr(x/scale,y/scale));
-  caption.free();
+   captionFont->drawString(screen,lines[i],x,y-40+i*captionFont->getFontHeight(),width,248,Graphics::kTextAlignCenter);
+  _originalFont.setShadow(241);
  }
  if(_activeMenu>=0 && _menuChoice==-1) {
-  int rows=0; for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) ++rows;
-  Graphics::Surface menu; menu.create(136,rows*12,Graphics::PixelFormat::createFormatCLUT8()); menu.fillRect(Common::Rect(0,0,136,rows*12),0);
-  int row=0;
-  for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i])
-   font->drawString(&menu,displayText(_menus[_activeMenu][i]),4,row++*12+2,128,_textColor);
-  for(int y=0;y<rows*24 && y+60<400;++y) for(int x=0;x<272;++x)
-   *static_cast<byte *>(screen->getBasePtr(360+x,60+y))=*static_cast<const byte *>(menu.getBasePtr(x/2,y/2));
-  menu.free();
-  font->drawString(screen,"Click outside / Esc: close",364,MIN(384,64+rows*24),264,_textColor);
+  Common::Rect box=dialogueMenuBounds();
+  screen->fillRect(box,240);
+  screen->frameRect(box,244); box.grow(-1); screen->frameRect(box,245);
+  box.grow(-1); screen->frameRect(box,244);
+  int row=0; Common::Point mouse=pointerPosition();
+  Common::Rect content=dialogueMenuBounds();
+  for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) {
+   int y=content.top+8+row++*_originalFont.getFontHeight();
+   bool hovered=mouse.x>=content.left+8 && mouse.x<content.right-8 && mouse.y>=y && mouse.y<y+_originalFont.getFontHeight();
+   _originalFont.drawString(screen,displayText(_menus[_activeMenu][i]),content.left+10,y,content.width()-20,hovered ? 243 : 242);
+  }
  }
  if(_gameOver) {
   screen->fillRect(Common::Rect(176,144,464,298),0);
@@ -122,7 +136,7 @@ bool PiceEngine::showPicture(uint position) {
  }
  _system->fillScreen(0);
  _system->copyRectToScreen(&pixels[4], w, (640 - w) / 2, 42, w, h);
- drawLabels(); _system->updateScreen();
+ drawLabels(); presentFrame();
  debug("[pice] image=%u width=%u height=%u pixel-fnv=%08x palette-fnv=%08x", resource, w, h, hashBytes(pixels), hashBytes(palette));
  return true;
 }
@@ -262,6 +276,11 @@ bool PiceEngine::runActorLifecycleTests() {
  // associations and permit reuse without increasing the 20-actor limit.
  for(uint i=0;i<20;++i) { RoomActor actor; actor.feet.x=i; if(storeActor(actor)!=int(i)) return false; }
  if(storeActor(RoomActor())!=-1) return false;
+ Common::Array<int16> colorArgs; colorArgs.push_back(0); colorArgs.push_back(128); colorArgs.push_back(139); int16 colorResult;
+ if(!invoke(135,Common::String(),colorArgs,Common::String(),colorResult) || _actors[0].textColors!=Common::Point(128,139)) return false;
+ colorArgs[2]=256;
+ if(invoke(135,Common::String(),colorArgs,Common::String(),colorResult) || _actors[0].textColors!=Common::Point(128,139)) return false;
+
  int16 coordinate;
  _actors[0].feet=Common::Point(-12,345);
  if(!actorCoordinate(0,false,coordinate) || coordinate!=-12 || !actorCoordinate(0,true,coordinate) || coordinate!=345 ||
@@ -345,8 +364,8 @@ bool PiceEngine::runActorLifecycleTests() {
  if(!invoke(68,Common::String(),args,Common::String(),result)) return false;
  args[1]=2; if(!invoke(68,Common::String(),args,Common::String(),result)) return false;
  bool ready=false;
- if(!pollMenu(0,ready) || ready || clickMenu(Common::Point(359,61)) || clickMenu(Common::Point(370,120)) ||
-    !clickMenu(Common::Point(370,85)) || !pollMenu(0,ready) || !ready || _lastMenuChoice!=2) return false;
+ if(!pollMenu(0,ready) || ready || clickMenu(Common::Point(359,61)) || clickMenu(Common::Point(370,60+16+2*_originalFont.getFontHeight())) ||
+    !clickMenu(Common::Point(370,68+_originalFont.getFontHeight()+1)) || !pollMenu(0,ready) || !ready || _lastMenuChoice!=2) return false;
  if(!pollMenu(0,ready) || ready) return false;
  _menuChoice=-2; if(!pollMenu(0,ready) || !ready || _lastMenuChoice!=-1 || _activeMenu!=-1) return false;
  if(!invoke(69,Common::String(),args,Common::String(),result) || _menuEnabled[0][2]) return false;
@@ -954,7 +973,12 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
    // Original 0x1aafe selects and recenters the first player camera.
    if(_cameraActor==-1) { _cameraActor=args[0]; _cameraRecenter=true; }
   } }
-  else _actors[args[0]].labelPosition=Common::Point(args[1],args[2]);
+  else {
+   // Original opcode 135 (0x1aac -> 0x1aab5): actor outline/fill palette indices.
+   if(args[1]<0 || args[1]>255 || args[2]<0 || args[2]>255) return false;
+   _actors[args[0]].textColors=Common::Point(args[1],args[2]);
+   debug("[pice] actor-text-colors actor=%d outline=%d fill=%d",args[0],args[1],args[2]);
+  }
   result=args[0]; return true;
  }
  if(op==77) {
@@ -1019,6 +1043,8 @@ bool PiceEngine::showScriptScene() {
  Common::Array<byte> bytes;
  // Original startup 0x18d10/0x18d19 selects chapter 2, room 39.
  // Bootstrap opcode 34 reads that destination through context slots 5/4.
+ const byte defaultStyles[6][2]={{56,63},{32,43},{131,124},{80,79},{32,110},{32,47}};
+ memcpy(_textStyles,defaultStyles,sizeof(_textStyles));
  _chapter=_pendingChapter=2; _pendingRoom=-1; _roomBankId=chapterRoomBase(2)+39;
  _roomRunner.reset(); _inputLocks=0; _dialogueActor=-1; _narration=false; _pulseOffset=10; _pulseDelta=15;
  _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _ownedItems.clear(); _itemLabels.clear(); _selectedItem=-1; _actors.clear(); _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1; _hotspots.clear(); _actions.clear(); _player=-1;
@@ -1101,7 +1127,7 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
   for(uint y=0;y<height;++y) for(uint x=0;x<width;++x)
    screen[(y+(400-height)/2)*640+x+(640-width)/2]=movie.pixels[(y*movie.height/height)*movie.width+x*movie.width/width];
   _system->getPaletteManager()->setPalette(&movie.palette[0],0,256);
-  _system->copyRectToScreen(&screen[0],640,0,0,640,400); _system->updateScreen();
+  _system->copyRectToScreen(&screen[0],640,0,0,640,400); presentFrame();
  }
  if(!movie.failed && !shouldQuit() && !_movieSkipped) waitForFrame(movie.frame);
  _mixer->stopHandle(handle);
@@ -1307,7 +1333,7 @@ bool PiceEngine::renderRoom() {
   ++inventorySlot;
  }
  _system->copyRectToScreen(&_roomCanvas[0],640,0,0,640,400);
- drawLabels(); _system->updateScreen(); return true;
+ drawLabels(); presentFrame(); return true;
 }
 bool PiceEngine::loadDialogue(const Common::String &name,int16 local,const Common::String &key,DialogueLine &line,Common::Array<uint32> &voices) {
  if(name.size()<3 || local<0) return false;
@@ -1327,7 +1353,7 @@ bool PiceEngine::startDialoguePage() {
  if(_dialoguePage>=_dialogueVoices.size() || _dialoguePage>=_dialoguePages.size()) return false;
  if(_dialogueVoices[_dialoguePage]!=0xffffffff && !playVoice(_dialogueVoices[_dialoguePage])) return false;
  _pageStart=_system->getMillis(); _subtitle.clear();
- for(uint i=0;i<_dialoguePages[_dialoguePage].size();++i) { if(i) _subtitle+=' '; _subtitle+=_dialoguePages[_dialoguePage][i]; }
+ for(uint i=0;i<_dialoguePages[_dialoguePage].size();++i) { if(i) _subtitle+='\n'; _subtitle+=_dialoguePages[_dialoguePage][i]; }
  debug("[pice] dialogue-page=%u/%u voice=%u closeup=%d",_dialoguePage+1,_dialoguePages.size(),_dialogueVoices[_dialoguePage],int(_closeup)); return true;
 }
 bool PiceEngine::closeupDialogue(const Common::String &animationName,const Common::String &textName,const Common::String &key,const Common::Array<int16> &args,int16 &actor) {
@@ -1345,7 +1371,7 @@ bool PiceEngine::closeupDialogue(const Common::String &animationName,const Commo
  if(!startDialoguePage()) { _closeup=false; return false; }
  // Original 0x16bb uses the independent text channel (state 5), not
  // a camera actor. args[3:5] are text anchors, not required dimensions.
- actor=-27; _narration=true;
+ actor=-27; _narration=true; _narrationAnchor=Common::Point(args[3],args[4]);
  debug("[pice] closeup-dialogue actor=%d animation=%d key=%s pages=%u",actor,args[2],key.c_str(),line.pages.size()); return true;
 }
 bool PiceEngine::objectDialogue(int16 actor,const Common::String &name,int16 local,const Common::String &base) {
@@ -1384,9 +1410,7 @@ bool PiceEngine::narrate(int16 x,int16 y,const Common::String &name,int16 local,
  if(!loadDialogue(name,local,key,line,voices)) return false;
  _dialoguePages=line.pages; _dialogueVoices=voices; _dialoguePage=0; _closeup=false;
  if(!startDialoguePage()) return false;
- _narration=true;
- // Coordinates are original text anchors; the native caption panel currently
- // uses the same readable placement for actor speech and recorded voices.
+ _narration=true; _narrationAnchor=Common::Point(x,y);
  debug("[pice] narration key=%s voice=%u anchor=%d,%d",key.c_str(),voices[0],x,y);
  return true;
 }
@@ -1422,7 +1446,7 @@ bool PiceEngine::animatedDialogue(const Common::String &textName,const Common::S
  _dialogueActor=args[0]; _dialogueRestore=_actors[args[0]]; _actors[args[0]]=actor;
  _dialogueMinSequence=args[3]; _dialogueMaxSequence=args[4]; _dialogueMinPause=args[5]; _dialogueMaxPause=args[6];
  _subtitle.clear();
- for(uint i=0;i<line.pages[0].size();++i) { if(i) _subtitle+=' '; _subtitle+=line.pages[0][i]; }
+ for(uint i=0;i<line.pages[0].size();++i) { if(i) _subtitle+='\n'; _subtitle+=line.pages[0][i]; }
  debug("[pice] scripted-dialogue actor=%d key=%s voice=%u",args[0],key.c_str(),voices[0]);
  return true;
 }
@@ -1442,7 +1466,7 @@ void PiceEngine::tickRoom() {
 #ifdef PICE_TESTBENCH
   if(!_testUseDone && ConfMan.getBool("pice_test_recover_latest") && _system->getMillis()-_menuOpenedAt>=2000) {
    _testUseDone=true;
-   Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=Common::Point(320,186);
+   Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=Common::Point(320,226);
    _eventMan->pushEvent(event);
   }
 #endif
@@ -1562,7 +1586,7 @@ void PiceEngine::tickRoom() {
   }
  }
  if(ConfMan.getBool("pice_test_inventory") && !_testUseDone) {
-  Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(125,20);
+  Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(125,60);
   _eventMan->pushEvent(event);
   _system->warpMouse(125,20);
   if(inventoryVisible()) {
@@ -1584,7 +1608,7 @@ void PiceEngine::tickRoom() {
   if(ConfMan.getBool("pice_test_hamsun_full_inventory") && _activeMenu>=0 && _menuChoice==-1 && now-_menuOpenedAt>=1000 && _testConversationChoices<2) {
    int choice=_testConversationChoices ? 6 : 2, row=0;
    for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) {
-    if(int(i)==choice) { if(clickMenu(Common::Point(370,60+row*24+12))) ++_testConversationChoices; break; }
+    if(int(i)==choice) { if(clickMenu(Common::Point(dialogueMenuBounds().left+12,68+row*_originalFont.getFontHeight()+4))) ++_testConversationChoices; break; }
     ++row;
    }
   }
@@ -1602,7 +1626,7 @@ void PiceEngine::tickRoom() {
    if(loadRoom(3)) { _testAmbientStep=1; debug("[pice] test medal collected, entering bunk"); }
   } else if(_testAmbientStep==1 && ambientDialogue() && now-_pageStart>=1000) {
    int slot=0; for(int i=0;i<_testAmbientItem;++i) if(_ownedItems[i]) ++slot;
-   Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(slot*50+25,20);
+   Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(slot*50+25,60);
    _eventMan->pushEvent(event); _testAmbientStep=2;
   } else if(_testAmbientStep==2 && ambientDialogue() && inventoryVisible()) {
    Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=_eventMan->getMousePos();
@@ -1620,7 +1644,7 @@ void PiceEngine::tickRoom() {
  }
  if(!_testClickDone && ConfMan.getBool("pice_test_exit_ambient") && ambientDialogue() && now-_pageStart>=1500) {
   _testClickDone=true;
-  Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=Common::Point(320,380);
+  Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=Common::Point(320,420);
   _eventMan->pushEvent(event);
   debug("[pice] test exit during ambient dialogue");
  }
@@ -1631,7 +1655,7 @@ void PiceEngine::tickRoom() {
  if(!_testUseDone && _activeMenu>=0 && ConfMan.hasKey("pice_test_menu_option") && _system->getMillis()-_menuOpenedAt>=2000) {
   int wanted=ConfMan.getInt("pice_test_menu_option"),row=0;
   for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) {
-   if(int(i)==wanted) { _testUseDone=clickMenu(Common::Point(370,60+row*24+12)); break; }
+   if(int(i)==wanted) { _testUseDone=clickMenu(Common::Point(dialogueMenuBounds().left+12,68+row*_originalFont.getFontHeight()+4)); break; }
    ++row;
   }
  }
@@ -1777,13 +1801,19 @@ void PiceEngine::tickRoom() {
   if(_snapshotPending && ConfMan.hasKey("pice_debug_snapshot_path")) {
    Common::DumpFile snapshot;
    if(snapshot.open(Common::Path(ConfMan.get("pice_debug_snapshot_path")))) {
-    const char header[]="P6\n640 400\n255\n";
-    snapshot.write(header,sizeof(header)-1);
+    bool includeUI=ConfMan.getBool("pice_debug_snapshot_ui");
+    Common::String header=Common::String::format("P6\n640 %d\n255\n",includeUI ? 480 : 400);
+    snapshot.write(header.c_str(),header.size());
     byte palette[768],row[640*3]; _system->getPaletteManager()->grabPalette(palette,0,256);
-    for(uint y=0;y<400;++y) {
-     for(uint x=0;x<640;++x) memcpy(row+x*3,palette+_roomCanvas[y*640+x]*3,3);
+    Graphics::Surface *screen=includeUI ? _system->lockScreen() : nullptr;
+    for(uint y=0;y<uint(includeUI ? 480 : 400);++y) {
+     for(uint x=0;x<640;++x) {
+      byte pixel=includeUI ? *static_cast<const byte *>(screen->getBasePtr(x,y)) : _roomCanvas[y*640+x];
+      memcpy(row+x*3,palette+pixel*3,3);
+     }
      snapshot.write(row,sizeof(row));
     }
+    if(screen) _system->unlockScreen();
     snapshot.finalize();
     debug("[pice] room snapshot written: %s",ConfMan.get("pice_debug_snapshot_path").c_str());
    } else warning("[pice] Cannot open debug snapshot path");
@@ -1906,10 +1936,14 @@ bool PiceEngine::playDialogueSample() {
  return true;
 }
 Common::Error PiceEngine::run() {
- if (!runStateTests() || !runActorLifecycleTests() || !runMovieTests() || !runLipSyncTests() || !runRoomTests() || !runSelfTests() || !runSpriteTests() || !runResourceNameTests() || !runScriptTests() || !runDialogueTests() || !runVoiceTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
- debug("[pice] parser self-tests PASS");
  if (!_graphics.open(Common::Path("KSVGA.KRO")) || !_language.open(Common::Path("E_KLANG.KRO")) || !_soundArchive.open(Common::Path("KSOUND.KRO")))
   return Common::Error(Common::kReadingFailed, "PICE preview requires the English European CD KSVGA.KRO, E_KLANG.KRO and KSOUND.KRO");
+ Common::Array<byte> uiResource;
+ if(!_graphics.read(1318,uiResource) || !_originalFont.load(uiResource) ||
+    !_graphics.read(1315,uiResource) || !_originalCursor.load(uiResource,1315))
+  return Common::Error(Common::kReadingFailed,"Cannot read original PICE interface resources");
+ if (!runFontTests() || !runStateTests() || !runActorLifecycleTests() || !runMovieTests() || !runLipSyncTests() || !runRoomTests() || !runSelfTests() || !runSpriteTests() || !runResourceNameTests() || !runScriptTests() || !runDialogueTests() || !runVoiceTests()) return Common::Error(Common::kUnknownError, "PICE parser self-tests failed");
+ debug("[pice] parser self-tests PASS");
  debug("[pice] KSVGA=%u E_KLANG=%u entries", _graphics.count(), _language.count());
  Common::File nameFile;
  if (nameFile.open(Common::Path("E_KLANG.BIN"))) {
@@ -1973,7 +2007,7 @@ Common::Error PiceEngine::run() {
   if (decodeImageHeader(data, w, h) && w <= 640 && h <= 320) _pictures.push_back(i);
  }
  if (_pictures.empty()) return Common::Error(Common::kReadingFailed, "No supported background images");
- initGraphics(640, 400);
+ initGraphics(640, 480);
  syncSoundSettings();
  CursorMan.setDefaultArrowCursor(true); CursorMan.showMouse(true);
  _system->fillScreen(0);
@@ -2053,6 +2087,7 @@ Common::Error PiceEngine::run() {
  while (!shouldQuit() && !done) {
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
+   event.mouse.y-=40;
    if(event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN || event.type==Common::EVENT_KEYDOWN) _advanceRequested=true;
    int change = 0;
    if(_gameOver) {

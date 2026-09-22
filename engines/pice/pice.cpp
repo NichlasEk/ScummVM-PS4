@@ -411,8 +411,9 @@ bool PiceEngine::runActorLifecycleTests() {
     !_scenePixels.empty() || _fadeLevel!=27) return false;
  _fadeLevel=-1;
  _ownedItems.resize(4,0); _ownedItems[0]=1; _ownedItems[3]=1;
- if(inventoryAt(Common::Point(10,10))!=0 || inventoryAt(Common::Point(60,10))!=3 ||
-    inventoryAt(Common::Point(110,10))!=-1 || inventoryAt(Common::Point(10,40))!=-1 || inventoryAt(Common::Point(-1,10))!=-1) return false;
+ if(inventoryAt(Common::Point(10,10))!=0 || inventoryAt(Common::Point(39,10))!=0 ||
+    inventoryAt(Common::Point(40,10))!=3 || inventoryAt(Common::Point(79,10))!=3 ||
+    inventoryAt(Common::Point(80,10))!=-1 || inventoryAt(Common::Point(10,40))!=-1 || inventoryAt(Common::Point(-1,10))!=-1) return false;
  _itemLabels.clear();
  // Tall-room camera clamps at both ends; hit testing uses world Y.
  _scenePixels.resize(4); WRITE_LE_UINT16(&_scenePixels[0],640); WRITE_LE_UINT16(&_scenePixels[2],632);
@@ -1316,20 +1317,33 @@ bool PiceEngine::renderRoom() {
   }
  }
  uint inventorySlot=0;
- for(uint i=0;inventoryVisible() && i<_ownedItems.size() && inventorySlot<12;++i) if(_ownedItems[i]) {
+ for(uint i=0;inventoryVisible() && i<_ownedItems.size() && inventorySlot<16;++i) if(_ownedItems[i]) {
+  // OBJECT 8 supplies the original blue slot and grey selected-slot artwork.
+  int slotX=inventorySlot*40;
+  int panelSequence=_inventorySelection+(_selectedItem==int(i) ? 1 : 0);
+  if(_inventoryPanel.hasSequence(panelSequence)) {
+   uint frame=_inventoryPanel.sequences[panelSequence].steps[0].frame;
+   Common::Rect bounds;
+   if(_inventoryPanel.frameBounds(frame,bounds) && bounds.width()==40 && bounds.height()==40)
+    _inventoryPanel.paintFrame(frame,slotX-bounds.left,-bounds.top,_roomCanvas,640,400);
+  }
   const RoomActor &item=_items[i];
   if(item.sprite.hasSequence(item.sequence)) {
    uint frame=item.sprite.sequences[item.sequence].steps[0].frame; Common::Rect bounds;
    if(item.sprite.frameBounds(frame,bounds) && bounds.width()>0 && bounds.height()>0 && bounds.width()<=512 && bounds.height()<=512) {
-    Common::Array<byte> icon; icon.resize(bounds.width()*bounds.height(),0);
-    if(item.sprite.paintFrame(frame,-bounds.left,-bounds.top,icon,bounds.width(),bounds.height())) {
-     uint w=MIN<uint>(40,bounds.width()),h=MIN<uint>(34,bounds.height());
-     for(uint y=0;y<h;++y) for(uint x=0;x<w;++x)
-      _roomCanvas[(2+y)*640+inventorySlot*50+5+x]=icon[(y*bounds.height()/h)*bounds.width()+x*bounds.width()/w];
+    Common::Array<byte> icon,mask; icon.resize(bounds.width()*bounds.height(),0); mask.resize(icon.size(),255);
+    if(item.sprite.paintFrame(frame,-bounds.left,-bounds.top,icon,bounds.width(),bounds.height()) &&
+       item.sprite.paintFrame(frame,-bounds.left,-bounds.top,mask,bounds.width(),bounds.height())) {
+     uint scale=MAX(1,MAX(int(bounds.width()),int(bounds.height())));
+     uint w=MAX<uint>(1,bounds.width()*MIN<uint>(32,scale)/scale);
+     uint h=MAX<uint>(1,bounds.height()*MIN<uint>(32,scale)/scale);
+     for(uint y=0;y<h;++y) for(uint x=0;x<w;++x) {
+      uint source=(y*bounds.height()/h)*bounds.width()+x*bounds.width()/w;
+      if(icon[source]==mask[source]) _roomCanvas[((40-h)/2+y)*640+slotX+(40-w)/2+x]=icon[source];
+     }
     }
    }
   }
-  if(_selectedItem==int(i)) for(uint x=inventorySlot*50+4;x<inventorySlot*50+49;++x) _roomCanvas[38*640+x]=_textColor;
   ++inventorySlot;
  }
  _system->copyRectToScreen(&_roomCanvas[0],640,0,0,640,400);
@@ -1586,11 +1600,11 @@ void PiceEngine::tickRoom() {
   }
  }
  if(ConfMan.getBool("pice_test_inventory") && !_testUseDone) {
-  Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(125,60);
+  Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(20,60);
   _eventMan->pushEvent(event);
-  _system->warpMouse(125,20);
+  _system->warpMouse(20,60);
   if(inventoryVisible()) {
-   int item=inventoryAt(Common::Point(125,20));
+   int item=inventoryAt(Common::Point(20,20));
    bool selected=item>=0 && selectInventoryItem(item);
    debug("[pice] inventory hover test bank=%u native-enabled=%d visible=1 item=%d selected=%d",_roomBankId,_inventoryEnabled,item,selected);
    _snapshotPending=true; _testUseDone=true;
@@ -1626,7 +1640,7 @@ void PiceEngine::tickRoom() {
    if(loadRoom(3)) { _testAmbientStep=1; debug("[pice] test medal collected, entering bunk"); }
   } else if(_testAmbientStep==1 && ambientDialogue() && now-_pageStart>=1000) {
    int slot=0; for(int i=0;i<_testAmbientItem;++i) if(_ownedItems[i]) ++slot;
-   Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(slot*50+25,60);
+   Common::Event event; event.type=Common::EVENT_MOUSEMOVE; event.mouse=Common::Point(slot*40+20,60);
    _eventMan->pushEvent(event); _testAmbientStep=2;
   } else if(_testAmbientStep==2 && ambientDialogue() && inventoryVisible()) {
    Common::Event event; event.type=Common::EVENT_LBUTTONDOWN; event.mouse=_eventMan->getMousePos();

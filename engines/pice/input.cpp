@@ -144,10 +144,10 @@ bool PiceEngine::inventoryVisible() const {
  return _scenePreview && _roomRunner && _roomRunner->exclusiveTask()<0 && !_gameOver && _activeMenu<0 && (!dialogueActive() || ambientDialogue()) && !_inputLocks && _actionEntry<0 && !_actionWalking && _pendingRoom<0 && pointerPosition().y>=0 && pointerPosition().y<40;
 }
 int PiceEngine::inventoryAt(Common::Point point) const {
- if(point.y<0 || point.y>=40 || point.x<0 || point.x>=600) return -1;
+ if(point.y<0 || point.y>=40 || point.x<0 || point.x>=640) return -1;
  uint slot=0;
  for(uint i=0;i<_ownedItems.size();++i) if(_ownedItems[i]) {
-  if(int(slot++)==point.x/50) return i;
+  if(int(slot++)==point.x/40) return i;
  }
  return -1;
 }

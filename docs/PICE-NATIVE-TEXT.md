@@ -80,3 +80,20 @@ display, leaving the interactive game alone. The full new-game path reached
 room 22, waited during closeup 1020, logged dialogue completion, and only then
 entered bridge bank 1146. Evidence: artifacts/pice/radio-hidden-check.log and
 radio-wait-build.log. No physical-console audio check has been performed yet.
+
+## Native inventory slots
+
+The inventory now paints the panel already loaded by opcode 137 from OBJECT
+8 (KSVGA resource 1314): sequence 0 is the blue slot and sequence 1 the grey
+selected slot. Other script-selected pairs use the same base/base+1 rule.
+The original 40x40 artwork is decoded at runtime. Icons retain their aspect
+ratio within a centered 32x32 area, with transparent coverage preserved so
+they cannot erase the frame. The old selection underline is removed.
+Rendering, pointer hit testing and test input now share 40-pixel slots, up to
+16 across the 640-pixel viewport. Slot-edge picking checks cover 39/40/79/80.
+
+The PS4 package builds and guest self-tests pass with the new slot-edge checks.
+The copied autosave used for the hidden visual check entered a locked bridge
+cutscene, so that run did not reach the inventory-selection assertion. The
+interactive emulator was opened with the new build for manual visual checking;
+do not treat the hidden run as verified selected-slot gameplay.

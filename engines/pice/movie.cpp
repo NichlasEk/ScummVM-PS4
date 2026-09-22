@@ -32,6 +32,15 @@ bool decodeMovieFrame(const Common::Array<byte> &data,Common::Array<byte> &pixel
  if(mode!=0 && mode!=2 && mode!=4 && mode!=6) return false;
  uint start=mac ? 2 : 1;
  uint32 offset=resource32(&data[start],mac),control=resource32(&data[start+4],mac),literal=resource32(&data[start+8],mac);
+ // Swedish Mac SWFINAL3 frame 167 has two damaged high bytes in its
+ // control length. Frame 169 is byte-identical except for those bytes.
+ // Match the complete known packet, never truncate arbitrary bad lengths.
+ if(mac && pixels.size()==640*480 && mode==2 && offset==0 &&
+    control==0xffff07aa && literal==0 && data.size()==1976) {
+  uint32 hash=2166136261U;
+  for(uint i=0;i<data.size();++i) hash=(hash^data[i])*16777619U;
+  if(hash==0x9cf59ba1U) control=1962;
+ }
  uint64 total=uint64(control)+literal;
  if(offset>pixels.size() || !control || total>4*1024*1024) return false;
  Common::Array<byte> expanded;
@@ -188,6 +197,25 @@ bool runMovieTests() {
  raw[0]=2; raw.resize(17); WRITE_LE_UINT32(&raw[9],0);
  unchanged=pixels;
  if(!decodeMovieFrame(raw,pixels) || pixels!=unchanged) return false;
+ // The known Swedish Mac damaged packet is a full-frame skip. Construct
+ // its control stream without a game asset; the prior image must survive.
+ Common::Array<byte> swedish; swedish.resize(1976,255);
+ WRITE_BE_UINT16(&swedish[0],2); WRITE_BE_UINT32(&swedish[2],0);
+ WRITE_BE_UINT32(&swedish[6],0xffff07aa); WRITE_BE_UINT32(&swedish[10],0);
+ WRITE_BE_UINT32(&swedish[1970],0x800000ff);
+ swedish[1974]=180; swedish[1975]=0;
+ Common::Array<byte> fullFrame; fullFrame.resize(640*480,73);
+ Common::Array<byte> original=fullFrame;
+ if(!decodeMovieFrame(swedish,fullFrame,true) || fullFrame!=original) return false;
+ // A nearby damaged packet, DOS data, or another canvas must still fail.
+ swedish[14]^=1;
+ if(decodeMovieFrame(swedish,fullFrame,true) || fullFrame!=original) return false;
+ swedish[14]^=1;
+ if(decodeMovieFrame(swedish,fullFrame,false)) return false;
+ Common::Array<byte> smallFrame; smallFrame.resize(8,73);
+ if(decodeMovieFrame(swedish,smallFrame,true)) return false;
+ WRITE_BE_UINT32(&swedish[6],1962);
+ if(!decodeMovieFrame(swedish,fullFrame,true) || fullFrame!=original) return false;
  // Minimal complete container, plus corrupt chunk lengths and all prefixes.
  Common::Array<byte> container; container.resize(32,0);
  WRITE_LE_UINT32(&container[0],0xaa07); WRITE_LE_UINT16(&container[4],32);

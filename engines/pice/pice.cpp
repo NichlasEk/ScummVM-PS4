@@ -277,7 +277,7 @@ bool PiceEngine::runActorLifecycleTests() {
     invoke(83,Common::String(),args,Common::String(),result) || storeActor(RoomActor())!=7) return false;
  args[0]=0;
  if(!invoke(115,Common::String(),args,Common::String(),result) || result!=0 || _animationSounds[1].actor!=8) return false;
- args[0]=2; if(invoke(115,Common::String(),args,Common::String(),result)) return false;
+ args[0]=30; if(invoke(115,Common::String(),args,Common::String(),result)) return false;
  args[0]=1;
  if(!invoke(115,Common::String(),args,Common::String(),result) || _animationSounds.size()!=2 || _animationSounds[1].actor!=-1) return false;
  _sounds.push_back(RoomSound());
@@ -678,6 +678,19 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(args[0]) { if(_inputLocks) --_inputLocks; } else ++_inputLocks;
   result=0; return true;
  }
+ if(op==87) {
+  // Original 0x93e: assign absolute coordinates, clear the node, refresh
+  // the current sequence with its existing frame, and wait for the actor.
+  if(args.size()!=3 || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active) return false;
+  RoomActor &actor=_actors[args[0]];
+  if(actor.animationMode==3 || !actor.sprite.hasSequence(actor.sequence)) return false;
+  actor.feet=Common::Point(args[1],args[2]); actor.node=-1;
+  if(actor.step>=actor.sprite.sequences[actor.sequence].steps.size()) actor.step=0;
+  actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[actor.step].ticks);
+  actor.animationMode=1; actor.animationOrigin=actor.feet; actor.animationPaused=false;
+  actor.path.clear(); actor.pathIndex=0; actor.walkDistance=actor.walkProgress=0;
+  result=-1; return true;
+ }
  if(op==88) {
   // 0x9ab: relocate to a navigation node and restart the current sequence.
   const RoomNavigation &nav=_roomRunner ? _roomRunner->navigation() : _navigation;
@@ -806,8 +819,10 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  }
  if(op==115) {
   // 0x10fd -> 0xb940: free a binding slot without renumbering other IDs.
-  if(args.size()!=1 || args[0]<0 || uint(args[0])>=_animationSounds.size()) return false;
-  _animationSounds[args[0]]=AnimationSound(); result=0; return true;
+  if(args.size()!=1 || args[0]<0 || args[0]>=30) return false;
+  // Original table has 30 slots, including never-used/free slots.
+  if(uint(args[0])<_animationSounds.size()) _animationSounds[args[0]]=AnimationSound();
+  result=0; return true;
  }
  if(op==137) {
   if(args.size()!=2 || !name.equalsIgnoreCase("OBJECT") || args[0]<0 || args[0]>=9 || args[1]<0) return false;
@@ -1558,7 +1573,9 @@ void PiceEngine::tickRoom() {
   }
   // Probe the actual screen hit test, including scrolling and scaled actors.
   if(target>=0 && uint(target)<_hotspots.size() && _hotspots[target].active) {
-   for(int y=40;y<360 && !_testClickDone;++y) for(int x=0;x<640 && !_testClickDone;++x) {
+   int probeX=ConfMan.hasKey("pice_test_click_x") ? ConfMan.getInt("pice_test_click_x") : -1;
+   int probeY=ConfMan.hasKey("pice_test_click_y") ? ConfMan.getInt("pice_test_click_y") : -1;
+   for(int y=probeY>=0 ? probeY : 40;y<(probeY>=0 ? probeY+1 : 360) && !_testClickDone;++y) for(int x=probeX>=0 ? probeX : 0;x<(probeX>=0 ? probeX+1 : 640) && !_testClickDone;++x) {
     Common::Point point(x,y);
     if(hotspotAt(point)!=target) continue;
     if(ConfMan.hasKey("pice_test_click_item")) _selectedItem=ConfMan.getInt("pice_test_click_item");

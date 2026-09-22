@@ -997,3 +997,25 @@ Build/startup self-tests PASS. Chapter12 destination fixture reaches1294 with
 No full chapter12 playthrough claimed. Actual user Q remains1289 before the
 ghost sequence; backup before-ghost-door-saves. Launch restored to manual Q
 (newer than autosave1242), no test saves copied over user progress.
+
+## 2026-09-22 — rowing boat placement and Sears dialogue
+
+Bank1294 task1 PC2460 and task10 PC5216 stopped on87 (not autosave152).
+Original0x93e evaluates actor,x,y, sets anchor/node=-1, refreshes current
+sequence preserving valid step (b097 with BL=0), and waits for the actor.
+Implemented absolute relocation and dispatcher wait; old navigation paths
+are discarded. Optional explicit click coordinates avoid expensive full
+screen scans for large boat sprites in the testbench.
+
+Next task5 PC3854 opcode115 tried freeing an unused animation-sound slot.
+Original b940 operates on the fixed 30-slot table; accept unused valid slots
+without extending our sparse array, still reject indices outside0..29.
+Build/startup self-tests PASS. boat-dialogue-check.log: real boat click260,260,
+both boats move, entry1 releases input, followup Sears click, dialogue1020/
+1030 finishes and entry5 releases input. User then clicked additional talks
+1050/1070/1080. No full boat puzzle completion claimed.
+
+ACTIVE USER WINDOW now uses .tools/xdg-pice-boat-check (user continued in
+the visible test window). Leave it running; its config has automatic click
+hooks removed for future restarts. Log boat-dialogue-check.log. Preserve any
+new Q there when continuing; original preload-check saves are untouched.

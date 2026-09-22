@@ -159,7 +159,7 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  case 119: case 144: case 139: case 149: case 115: case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 84: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 89: case 81: case 58: case 95: before=4; return true;
  case 80: case 109: before=5; return true;
- case 64: case 116: case 123: case 135: case 136: before=3; return true;
+ case 87: case 64: case 116: case 123: case 135: case 136: before=3; return true;
  case 143: case 32: case 29: case 133: after=1; return true;
  case 137: after=2; return true;
  case 77: after=4; return true;
@@ -368,7 +368,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if(!_scene->animatedDialogue(textName,key,animationName,args)) { task.active=false; return kUnsupported; }
   task.pc=next; task.actor=-28-args[0]; return kWaiting;
  }
- if(opcode==98 || opcode==123 || opcode==50 || opcode==51 || opcode==96 || opcode==117) {
+ if(opcode==87 || opcode==98 || opcode==123 || opcode==50 || opcode==51 || opcode==96 || opcode==117) {
   uint32 actorPC=next+2; int16 actor;
   if(!_bank.expression(actorPC,actor,_variables,_scene) || actor<0) { task.active=false; return kInvalid; }
   if(!value(next,argument)) { task.active=false; return kUnsupported; }

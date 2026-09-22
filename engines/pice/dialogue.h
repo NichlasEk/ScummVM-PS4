@@ -6,7 +6,7 @@
 #include "common/ustr.h"
 namespace Pice {
 // Game strings and snapshots retain original DOS bytes; decode only for display.
-Common::U32String displayText(const Common::String &text);
+Common::U32String displayText(const Common::String &text,bool mac=false);
 struct DialogueLine {
  Common::String voiceGroup;
  int16 voice = -1;

@@ -18,6 +18,10 @@ public:
  explicit PiceEngine(OSystem *system) : Engine(system), _picture(0), _speech(0), _textColor(255) {}
  Common::Error run() override;
 private:
+ bool _mac=false;
+ char _languagePrefix='E';
+ Common::String _availableLanguages;
+ Common::U32String displayText(const Common::String &text) const { return Pice::displayText(text,_mac); }
  bool showPicture(uint position);
  OriginalFont _originalFont;
  SpriteResource _originalCursor;
@@ -35,6 +39,8 @@ private:
  bool requestSave(const Common::String &name,int16 local,const Common::String &key) override;
  bool snapshot(Common::Array<byte> &bytes,bool loading,bool apply=true);
  bool writeCheckpoint(bool automatic);
+ Common::String savePrefix() const;
+ Common::String saveName(bool automatic) const;
  bool readCheckpoint(bool automatic,bool apply=true);
  bool _savePending=false;
  bool snapshotReady() const;

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/movie.h"
-#include "common/endian.h"
+#include "pice/formats.h"
 namespace Pice {
 namespace {
 struct Reader {
- Reader(const Common::Array<byte> &bytes,uint start,uint end) : data(bytes),pos(start),limit(end) {}
+ Reader(const Common::Array<byte> &bytes,uint start,uint end,bool big=false) : data(bytes),pos(start),limit(end),mac(big) {}
  const Common::Array<byte> &data;
  uint pos,limit;
+ bool mac;
  uint32 mask=0;
  uint bits=0;
  bool low=false;
@@ -17,26 +18,30 @@ struct Reader {
   value=low ? pair&15 : pair>>4; low=!low; return true;
  }
  bool bit(bool &value) {
-  if(!bits) { if(limit-pos<4) return false; mask=READ_LE_UINT32(&data[pos]); pos+=4; bits=32; }
+  if(!bits) { if(limit-pos<4) return false; mask=resource32(&data[pos],mac); pos+=4; bits=32; }
   value=(mask&0x80000000U)!=0; mask<<=1; --bits; return true;
  }
 };
 }
-bool decodeMovieFrame(const Common::Array<byte> &data,Common::Array<byte> &pixels) {
+bool decodeMovieFrame(const Common::Array<byte> &data,Common::Array<byte> &pixels,bool mac) {
  // ICE640 0x22ff5/0x2300c expand control + literal streams. 0x230e5
  // then applies run lengths and (flag 2) unchanged-pixel spans.
- if(data.size()<13 || (data[0]!=0 && data[0]!=2 && data[0]!=4 && data[0]!=6) || pixels.empty()) return false;
- uint32 offset=READ_LE_UINT32(&data[1]),control=READ_LE_UINT32(&data[5]),literal=READ_LE_UINT32(&data[9]);
+ uint header=mac ? 14 : 13;
+ if(data.size()<header || pixels.empty()) return false;
+ uint mode=mac ? READ_BE_UINT16(&data[0]) : data[0];
+ if(mode!=0 && mode!=2 && mode!=4 && mode!=6) return false;
+ uint start=mac ? 2 : 1;
+ uint32 offset=resource32(&data[start],mac),control=resource32(&data[start+4],mac),literal=resource32(&data[start+8],mac);
  uint64 total=uint64(control)+literal;
  if(offset>pixels.size() || !control || total>4*1024*1024) return false;
  Common::Array<byte> expanded;
- Reader source{data,13,data.size()};
+ Reader source{data,header,data.size(),mac};
  // Original 0x22ff5: bit 4 selects LZ expansion; otherwise the two
  // streams are stored verbatim (SBLOOD mixes raw and compressed frames).
- if(!(data[0]&4)) {
-  if(total!=data.size()-13) return false;
+ if(!(mode&4)) {
+  if(total!=data.size()-header) return false;
   expanded.resize(total);
-  for(uint i=0;i<total;++i) expanded[i]=data[13+i];
+  for(uint i=0;i<total;++i) expanded[i]=data[header+i];
   source.pos=data.size();
  }
  uint32 flags=0;
@@ -45,7 +50,7 @@ bool decodeMovieFrame(const Common::Array<byte> &data,Common::Array<byte> &pixel
   bool copy=(flags&0x80000000U)!=0; flags<<=1;
   if(!flags) {
    if(source.limit-source.pos<4) return false;
-   flags=READ_LE_UINT32(&data[source.pos]); source.pos+=4;
+   flags=resource32(&data[source.pos],mac); source.pos+=4;
    if(!(flags&0x7fffffffU)) return false;
    copy=(flags&0x80000000U)!=0; flags<<=1;
   }
@@ -63,7 +68,7 @@ bool decodeMovieFrame(const Common::Array<byte> &data,Common::Array<byte> &pixel
  }
  if(source.pos!=data.size()) return false;
  Common::Array<byte> result=pixels;
- Reader commands{expanded,0,control};
+ Reader commands{expanded,0,control,mac};
  uint input=control,output=offset;
  while(input<expanded.size()) {
   bool bit; uint count=1;
@@ -82,7 +87,7 @@ bool decodeMovieFrame(const Common::Array<byte> &data,Common::Array<byte> &pixel
      if(!bit) count=3;
      else {
       count=4;
-      if(data[0]&2) {
+      if(mode&2) {
        if(!commands.bit(bit)) return false;
        if(bit) {
         byte skip; if(!commands.byteValue(skip) || skip>result.size()-output) return false;
@@ -101,16 +106,21 @@ bool decodeMovieFrame(const Common::Array<byte> &data,Common::Array<byte> &pixel
 }
 bool MovieResource::load(const Common::Array<byte> &data) {
  _data.clear(); _chunks.clear(); pixels.clear(); palette.clear(); audio.clear(); _next=frame=0; failed=false;
- if(data.size()<32 || data.size()>64*1024*1024 || READ_LE_UINT32(&data[0])!=0xaa07) return false;
- uint header=READ_LE_UINT16(&data[4]);
- width=READ_LE_UINT16(&data[28]); height=READ_LE_UINT16(&data[30]); divisor=READ_LE_UINT16(&data[12]);
- // Verified 8-bit mono PCM variants, including the 640x480 SBLOOD clip.
- if(!((width==320 && height==200) || (width==640 && height==480)) || !divisor || READ_LE_UINT16(&data[14])!=22050 || READ_LE_UINT16(&data[26])!=8 || header<32 || header>data.size()) return false;
+ if(data.size()<32 || data.size()>64*1024*1024) return false;
+ _mac=READ_BE_UINT32(&data[0])==0xaa07;
+ if(resource32(&data[0],_mac)!=0xaa07) return false;
+ uint header=resource16(&data[4],_mac);
+ width=resource16(&data[28],_mac); height=resource16(&data[30],_mac); divisor=resource16(&data[12],_mac);
+ sampleRate=resource16(&data[14],_mac);
+ // Macintosh stores frames per second here; DOS stores PCM bit depth.
+ uint format=resource16(&data[26],_mac);
+ if(!((width==320 && height==200) || (width==640 && height==480)) || !divisor ||
+    (sampleRate!=22050 && !(_mac && sampleRate==22254)) || (_mac ? (format==0 || format>60) : format!=8) || header<32 || header>data.size()) return false;
  Common::Array<Chunk> chunks; Common::Array<byte> pcm;
  uint pos=header; bool ended=false;
  while(pos<data.size()) {
   if(data.size()-pos<6 || ended) return false;
-  Chunk c{READ_LE_UINT16(&data[pos]),pos+6,READ_LE_UINT32(&data[pos+2])};
+  Chunk c{READ_LE_UINT16(&data[pos]),pos+6,resource32(&data[pos+2],_mac)};
   if(c.size>data.size()-c.offset) return false;
   if(c.type==6 || c.type==7) {
    for(uint i=0;i<c.size;++i) pcm.push_back(data[c.offset+i]);
@@ -132,7 +142,7 @@ bool MovieResource::nextFrame() {
   if(c.type==111) {
    Common::Array<byte> bytes; bytes.resize(c.size);
    for(uint i=0;i<c.size;++i) bytes[i]=_data[c.offset+i];
-   if(!decodeMovieFrame(bytes,pixels)) { failed=true; return false; }
+   if(!decodeMovieFrame(bytes,pixels,_mac)) { failed=true; return false; }
   }
   if(c.type==5) { ++frame; return true; }
  }
@@ -202,6 +212,26 @@ bool runMovieTests() {
  WRITE_LE_UINT16(&container[28],640);
  WRITE_LE_UINT32(&container[34],0xffffffff);
  if(movie.load(container)) return false;
+ // Mac uses big-endian fields, but retains little-endian chunk tags.
+ Common::Array<byte> mac; mac.resize(32,0);
+ WRITE_BE_UINT32(&mac[0],0xaa07); WRITE_BE_UINT16(&mac[4],32);
+ WRITE_BE_UINT16(&mac[12],9943); WRITE_BE_UINT16(&mac[14],22254);
+ WRITE_BE_UINT16(&mac[26],10); WRITE_BE_UINT16(&mac[28],640); WRITE_BE_UINT16(&mac[30],480);
+ for(uint c=0;c<5;++c) {
+  uint size=types[c]==111 ? 19 : sizes[c], at=mac.size(); mac.resize(at+6+size,0);
+  WRITE_LE_UINT16(&mac[at],types[c]); WRITE_BE_UINT32(&mac[at+2],size);
+  if(types[c]==111) {
+   WRITE_BE_UINT32(&mac[at+6+6],4); WRITE_BE_UINT32(&mac[at+6+10],1);
+   mac[at+6+18]=42;
+  }
+ }
+ for(uint fps=5;fps<=12;++fps) {
+  WRITE_BE_UINT16(&mac[26],fps);
+  if(!movie.load(mac) || movie.sampleRate!=22254 || !movie.nextFrame() || movie.pixels[0]!=42 ||
+     movie.pixels[1]!=0 || movie.nextFrame() || movie.failed) return false;
+ }
+ WRITE_BE_UINT32(&mac[34],0xffffffff);
+ if(movie.load(mac)) return false;
  return true;
 }
 }

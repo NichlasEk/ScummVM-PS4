@@ -1,28 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/lipsync.h"
 #include "pice/voice.h"
-#include "common/endian.h"
+#include "pice/formats.h"
 namespace Pice {
 bool VoiceAnimation::load(const Common::Array<byte> &voice) {
  unit=0; tracks.clear(); uint32 offset,size;
- if(!voicePayload(voice,offset,size) || offset!=24) return false;
+ if(!voicePayload(voice,offset,size) || (offset!=24 && offset!=28)) return false;
+ bool mac=offset==28;
  uint32 start=offset+size;
  if(voice.size()-start<8) return false;
  VoiceAnimation parsed;
- parsed.unit=READ_LE_UINT32(&voice[start]); uint32 base=start+4;
- uint32 first=READ_LE_UINT32(&voice[base]);
+ parsed.unit=resource32(&voice[start],mac); uint32 base=start+4;
+ uint32 first=resource32(&voice[base],mac);
  if(!parsed.unit || parsed.unit>10000 || !first || first%4 || first/4>16 || first>voice.size()-base) return false;
  uint count=first/4,previous=0;
  for(uint i=0;i<count;++i) {
-  uint32 relative=READ_LE_UINT32(&voice[base+i*4]);
+  uint32 relative=resource32(&voice[base+i*4],mac);
   if(relative<first || relative>voice.size()-base || (i && relative<=previous)) return false;
   previous=relative;
   uint32 pos=base+relative;
-  uint64 end=i+1<count ? base+uint64(READ_LE_UINT32(&voice[base+i*4+4])) : voice.size();
+  uint64 end=i+1<count ? base+uint64(resource32(&voice[base+i*4+4],mac)) : voice.size();
   if(end>voice.size() || pos>end || end-pos<9) return false;
-  uint32 bytes=READ_LE_UINT32(&voice[pos]);
+  uint32 bytes=resource32(&voice[pos],mac);
   if(!bytes || bytes%2 || bytes!=end-pos-9) return false;
-  VoiceTrack track; track.independent=voice[pos+4]; track.dependency=int16(READ_LE_UINT16(&voice[pos+5])); track.multiplier=int16(READ_LE_UINT16(&voice[pos+7]));
+  VoiceTrack track; track.independent=voice[pos+4]; track.dependency=int16(resource16(&voice[pos+5],mac)); track.multiplier=int16(resource16(&voice[pos+7],mac));
   if(track.independent>1 || track.dependency<-1 || track.dependency>=int(count) || track.multiplier<0) return false;
   for(uint j=0;j<bytes;j+=2) {
    VoiceFrame frame; frame.sequence=voice[pos+9+j]; frame.duration=voice[pos+10+j];

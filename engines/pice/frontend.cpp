@@ -12,6 +12,14 @@
 #include "graphics/surface.h"
 
 namespace Pice {
+static const char *subtitleLanguageName(char prefix) {
+ switch(prefix) {
+ case 'B': return "Portuguese"; case 'D': return "German"; case 'F': return "French";
+ case 'I': return "Italian"; case 'N': return "Dutch"; case 'S': return "Spanish";
+ case 'W': return "Swedish"; default: return "English";
+ }
+}
+
 bool PiceEngine::startupMovies() {
  // Original startup 0x18df0/0x18e0a/0x18e24. ICE640 uses the
  // corresponding 640x480 S clips. Escape/click skips one clip at a time.
@@ -81,7 +89,9 @@ bool PiceEngine::mainMenu(bool resumable) {
     add(Common::String::format("%s  < %d%% >",label,(ConfMan.getInt(key)*100+127)/255));
    }
    add(Common::String::format("Stick sensitivity < %d/7 >",CLIP(ConfMan.getInt("kbdmouse_speed"),0,7)));
-   add(_subtitles ? "Subtitles: On" : "Subtitles: Off"); add("Text language: English",false); add("Films and extras"); add("Back");
+   add(_subtitles ? "Subtitles: On" : "Subtitles: Off"); Common::String selectedLanguage=ConfMan.get("pice_text_language");
+   char language=selectedLanguage.size()==1 && _availableLanguages.contains(selectedLanguage[0]) ? selectedLanguage[0] : _languagePrefix;
+   add(Common::String::format("Text language: %s%s",subtitleLanguageName(language),language!=_languagePrefix ? " (restart)" : ""),_availableLanguages.size()>1); add("Films and extras"); add("Back");
   } else if(page==kExtras) {
    title="Films and extras"; add("Replay introduction"); add("Credits"); add("Outtakes"); add("Back");
   } else {
@@ -161,6 +171,16 @@ bool PiceEngine::mainMenu(bool resumable) {
     if(page==kMain) { if(resumable) { running=true; finished=true; } }
     else { page=kMain; selection=resumable ? 0 : 1; notice.clear(); }
     break;
+   }
+   if(page==kOptions && selection==5 && (adjust || activate) && _availableLanguages.size()>1) {
+    Common::String selected=ConfMan.get("pice_text_language");
+    char current=selected.size()==1 && _availableLanguages.contains(selected[0]) ? selected[0] : _languagePrefix;
+    uint at=0; while(at<_availableLanguages.size() && _availableLanguages[at]!=current) ++at;
+    at=(at+_availableLanguages.size()+(adjust<0 ? -1 : 1))%_availableLanguages.size();
+    Common::String next; next+=_availableLanguages[at];
+    ConfMan.set("pice_text_language",next,Common::ConfigManager::kApplicationDomain);
+    ConfMan.set("pice_text_language",next); ConfMan.flushToDisk();
+    notice="Restart the game to apply text language"; break;
    }
    if(page==kOptions && adjust && selection==3) {
     int speed=CLIP(ConfMan.getInt("kbdmouse_speed")+adjust,0,7);

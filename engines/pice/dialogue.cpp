@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/dialogue.h"
-#include "common/endian.h"
+#include "pice/formats.h"
 namespace Pice {
-Common::U32String displayText(const Common::String &text) {
- return text.decode(Common::kDos850);
+Common::U32String displayText(const Common::String &text,bool mac) {
+ return text.decode(mac ? Common::kMacRoman : Common::kDos850);
 }
 static bool findEntry(const Common::Array<byte> &data,const Common::String &key,uint32 &selected,uint32 &end,Common::String &voiceGroup) {
  selected=0; end=data.size(); voiceGroup.clear();
  if (data.size()<21 || data.size()>1024*1024 || key.empty() || key.size()>7) return false;
  // Original object 2 0x1d08a/0x1d0f2: (first offset - 10) / 11.
- uint32 first=READ_LE_UINT32(&data[7]);
+ bool mac=READ_LE_UINT32(&data[7])>=data.size();
+ uint32 first=resource32(&data[7],mac);
  if (first<21 || first>=data.size() || (first-10)%11) return false;
  uint32 count=(first-10)/11, directoryEnd=count*11;
  if (count>4096 || data[directoryEnd+8]!=0) return false;
@@ -22,7 +23,7 @@ static bool findEntry(const Common::Array<byte> &data,const Common::String &key,
  if (voiceGroup.empty()) return false;
  uint32 previous=0;
  for (uint32 i=0;i<count;++i) {
-  uint32 record=i*11, offset=READ_LE_UINT32(&data[record+7]);
+  uint32 record=i*11, offset=resource32(&data[record+7],mac);
   if (offset<first || offset>=data.size() || data.size()-offset<5 || (i && offset<=previous)) return false;
   previous=offset;
   Common::String name;
@@ -43,12 +44,13 @@ bool decodeDialogue(const Common::Array<byte> &data,const Common::String &key,Di
  // 0x1d0f2 returns entry+2. 0x4499 checks entry[-1] for voice;
  // 0x44b9 reads the signed voice index at entry. Page offsets are relative
  // to entry+2 (0x4555); the first offset is also twice the page count.
- if (data[selected-1]) decoded.voice=int16(READ_LE_UINT16(&data[selected]));
- uint32 base=selected+2, tableBytes=READ_LE_UINT16(&data[base]);
+ bool mac=READ_LE_UINT32(&data[7])>=data.size();
+ if (data[selected-1]) decoded.voice=int16(resource16(&data[selected],mac));
+ uint32 base=selected+2, tableBytes=resource16(&data[base],mac);
  if (!tableBytes || (tableBytes&1) || tableBytes>128 || base+tableBytes>=end) return false;
  for (uint page=0;page<tableBytes/2;++page) {
-  uint32 start=base+READ_LE_UINT16(&data[base+page*2]);
-  uint32 limit=page+1<tableBytes/2 ? base+READ_LE_UINT16(&data[base+page*2+2]) : end;
+  uint32 start=base+resource16(&data[base+page*2],mac);
+  uint32 limit=page+1<tableBytes/2 ? base+resource16(&data[base+page*2+2],mac) : end;
   if (start<base+tableBytes || start>=limit || limit>end) return false;
   uint lines=data[start++];
   if (!lines || lines>32) return false;

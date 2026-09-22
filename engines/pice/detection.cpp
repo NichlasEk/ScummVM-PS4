@@ -10,11 +10,19 @@ static const ADGameDescription descriptions[] = {
   AD_ENTRY2s("KSVGA.KRO", "f933283265f8e8816acac67c9d72da85", 45874014,
              "E_KLANG.KRO", "a8e66acb3ce6a8fc126b948d4417e345", 32611279),
   Common::EN_GRB, Common::kPlatformDOS, ADGF_UNSTABLE, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
+ {"pice", "Macintosh multilingual CD",
+  AD_ENTRY2s("KSVGA.KRO", "a28f988a822ecca247a59c46dcc99b73", 45719760,
+             "E_KLANG.KRO", "cef7f74a762becd4c6c813ab5cf4597f", 32611722),
+  Common::EN_ANY, Common::kPlatformMacintosh, ADGF_UNSTABLE, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
+ {"pice", "Macintosh English/Swedish CD",
+  AD_ENTRY2s("KSVGA.KRO", "a28f988a822ecca247a59c46dcc99b73", 45719789,
+             "W_KLANG.KRO", "bf5b0447a3530f478b0a100f94066b94", 32919521),
+  Common::SE_SWE, Common::kPlatformMacintosh, ADGF_UNSTABLE, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
  AD_TABLE_END_MARKER
 };
 class PiceDetection : public AdvancedMetaEngineDetection<ADGameDescription> {
 public:
- PiceDetection() : AdvancedMetaEngineDetection(descriptions, games) {}
+ PiceDetection() : AdvancedMetaEngineDetection(descriptions, games) { static const char *const dirs[]={"MAC_KRO",nullptr}; _directoryGlobs=dirs; _maxScanDepth=2; }
  const char *getName() const override { return "pice"; }
  const char *getEngineName() const override { return "Prisoner of Ice (experimental)"; }
  const char *getOriginalCopyright() const override { return "Prisoner of Ice (C) 1995 Infogrames"; }

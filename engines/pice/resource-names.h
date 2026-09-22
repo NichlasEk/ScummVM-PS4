@@ -20,6 +20,7 @@ public:
  uint count() const { return _entries.size(); }
  const ResourceName &entry(uint i) const { return _entries[i]; }
 private:
+ char _prefix='E';
  Common::Array<ResourceName> _entries;
  uint32 _archiveCount = 0;
 };

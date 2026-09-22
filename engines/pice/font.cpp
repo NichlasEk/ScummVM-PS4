@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/font.h"
-#include "common/endian.h"
+#include "pice/formats.h"
 #include "graphics/surface.h"
 namespace Pice {
 bool OriginalFont::load(const Common::Array<byte> &bytes) {
  _data.clear(); _characters.clear(); _height=_ascent=_maxWidth=0;
- if(bytes.size()<8 || READ_LE_UINT16(&bytes[0])!=1 || bytes[2]>bytes[3] || !bytes[4] || bytes[4]>64 || bytes[5]>64) return false;
+ _mac=bytes.size()>=8 && READ_BE_UINT16(&bytes[0])==0;
+ if(bytes.size()<8 || (!_mac && READ_LE_UINT16(&bytes[0])!=1) || bytes[2]>bytes[3] || !bytes[4] || bytes[4]>64 || bytes[5]>64) return false;
  uint count=uint(bytes[3])-bytes[2]+1, tableEnd=8+count*10;
  if(bytes.size()<tableEnd) return false;
  for(uint i=0;i<count;++i) {
-  const byte *g=&bytes[8+i*10]; uint32 offset=READ_LE_UINT32(g);
+  const byte *g=&bytes[8+i*10]; uint32 offset=resource32(g,_mac);
   uint width=g[4],height=g[5];
   if(width>64 || height>64 || g[8]>64 || g[9] || g[6]>64 || g[7]>64) return false;
   if(offset && (!width || !height || offset<tableEnd || offset>bytes.size() || width*height>bytes.size()-offset)) return false;
   _maxWidth=MAX(_maxWidth,int(g[8]));
-  char code=char(bytes[2]+i); _characters+=Common::String(&code,1).decode(Common::kDos850);
+  char code=char(bytes[2]+i); _characters+=Common::String(&code,1).decode(_mac ? Common::kMacRoman : Common::kDos850);
  }
  _ascent=bytes[4]; _height=bytes[4]+bytes[5]; _data=bytes; return true;
 }
@@ -27,7 +28,7 @@ int OriginalFont::getCharWidth(uint32 chr) const {
 }
 void OriginalFont::drawChar(Graphics::Surface *dst,uint32 chr,int x,int y,uint32 color) const {
  if(!ready() || !dst || dst->format.bytesPerPixel!=1) return;
- const byte *g=&_data[8+glyph(chr)*10]; uint32 offset=READ_LE_UINT32(g);
+ const byte *g=&_data[8+glyph(chr)*10]; uint32 offset=resource32(g,_mac);
  if(!offset) return;
  x+=int8(g[6]); y+=_ascent-g[7];
  for(uint yy=0;yy<g[5];++yy) for(uint xx=0;xx<g[4];++xx) {

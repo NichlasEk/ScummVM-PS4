@@ -11,6 +11,10 @@
     snprintf(candidate, sizeof(candidate), "%s%s", root, nested ? "/scummvm/games/pice" : "");
     snprintf(resource, sizeof(resource), "%s/KSVGA.KRO", candidate);
     FILE *probe = fopen(resource, "rb");
+    if (!probe) {
+     snprintf(resource, sizeof(resource), "%s/MAC_KRO/KSVGA.KRO", candidate);
+     probe = fopen(resource, "rb");
+    }
     if (!probe) continue;
     fclose(probe); found = true;
     snprintf(gamePath, sizeof(gamePath), "%s", candidate);

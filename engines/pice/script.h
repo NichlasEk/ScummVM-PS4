@@ -33,6 +33,7 @@ public:
  bool word(uint32 offset, uint16 &value) const;
 private:
  bool evaluate(uint32 &pc, int16 &value, uint depth, uint &budget, const ScriptVariables *variables, const ScriptSceneSink *scene) const;
+ bool _mac=false;
  Common::Array<byte> _data;
  Common::Array<uint32> _entries;
 };

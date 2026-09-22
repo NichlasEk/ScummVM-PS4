@@ -9,7 +9,7 @@ struct SpriteImage {
  Common::Array<byte> pixels, mask;
 };
 // Transparent spans and literals; palette index zero can itself be opaque.
-bool decodeSprite(const byte *data, uint32 size, SpriteImage &out);
+bool decodeSprite(const byte *data, uint32 size, SpriteImage &out,bool mac=false);
 struct SpritePart { uint16 image; int16 x, y; byte flagsX, flagsY; };
 struct SpriteFrame { Common::Array<SpritePart> parts; };
 struct SequenceStep { uint16 frame, ticks; int16 x, y; };
@@ -35,7 +35,7 @@ private:
  bool hit(uint frame,int x,int bottom,int px,int py,uint depth,uint &budget) const;
  bool paintOne(const SpritePart &part,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const;
  bool paint(uint frame,int x,int bottom,Common::Array<byte> &canvas,uint width,uint height,uint depth,uint &budget) const;
- bool _rawImages=false;
+ bool _rawImages=false, _mac=false;
  Common::Array<byte> _data;
  Common::Array<uint32> _images;
 };

@@ -15,7 +15,9 @@
 #include "common/events.h"
 #include "common/memstream.h"
 #include "common/textconsole.h"
-#include "common/endian.h"
+#include "pice/formats.h"
+#include "common/fs.h"
+#include "common/archive.h"
 #include "graphics/paletteman.h"
 #include "graphics/cursorman.h"
 #include "graphics/fontman.h"
@@ -996,7 +998,7 @@ bool PiceEngine::createMenu(const Common::String &name,int16 local,int16 &id) {
  Common::String group=name; group.setChar('E',0); group.setChar('T',2);
  uint32 resource; Common::Array<byte> data;
  if(!_languageNames.resolve(group,local,resource) || !_language.read(resource,data) || data.size()<21) return false;
- uint32 first=READ_LE_UINT32(&data[7]);
+ uint32 first=resource32(&data[7],_mac);
  if(first<21 || first>=data.size() || (first-10)%11) return false;
  uint count=(first-10)/11;
  if(count>50) return false;
@@ -1067,7 +1069,13 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  byte previousPalette[768]; _system->getPaletteManager()->grabPalette(previousPalette,0,256);
  _movieSkipped=false;
  Common::File file;
- if(!file.open(Common::Path("E_VIDEO").join(name))) { warning("[pice] movie open failed: %s",name.c_str()); return false; }
+ Common::String movieName=name;
+ if(_mac) {
+  movieName.toUppercase();
+  if(movieName.hasPrefix("VFINAL")) movieName=Common::String::format("S%c%s",_languagePrefix,movieName.c_str()+1);
+  else if(movieName.hasPrefix("V")) movieName.setChar('S',0);
+ }
+ if(!file.open(_mac ? Common::Path(movieName) : Common::Path("E_VIDEO").join(name))) { warning("[pice] movie open failed: %s",name.c_str()); return false; }
  if(file.size()<32 || file.size()>64*1024*1024) return false;
  Common::Array<byte> bytes; bytes.resize(file.size());
  if(file.read(&bytes[0],bytes.size())!=bytes.size()) return false;
@@ -1089,7 +1097,7 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  for(uint i=0;i<_sounds.size();++i) if(_sounds[i].active) pause(_sounds[i].handle);
  debug("[pice] movie background audio paused channels=%u",paused.size());
  Audio::SoundHandle handle;
- _mixer->playStream(Audio::Mixer::kSFXSoundType,&handle,Audio::makeRawStream(&movie.audio[0],movie.audio.size(),22050,Audio::FLAG_UNSIGNED,DisposeAfterUse::NO));
+ _mixer->playStream(Audio::Mixer::kSFXSoundType,&handle,Audio::makeRawStream(&movie.audio[0],movie.audio.size(),movie.sampleRate,Audio::FLAG_UNSIGNED,DisposeAfterUse::NO));
  Common::Array<byte> screen; screen.resize(640*400,0);
  uint32 start=_system->getMillis();
  auto waitForFrame=[&](uint frame) {
@@ -1950,8 +1958,24 @@ bool PiceEngine::playDialogueSample() {
  return true;
 }
 Common::Error PiceEngine::run() {
- if (!_graphics.open(Common::Path("KSVGA.KRO")) || !_language.open(Common::Path("E_KLANG.KRO")) || !_soundArchive.open(Common::Path("KSOUND.KRO")))
-  return Common::Error(Common::kReadingFailed, "PICE preview requires the English European CD KSVGA.KRO, E_KLANG.KRO and KSOUND.KRO");
+ Common::FSNode gameDir(ConfMan.getPath("path"));
+ SearchMan.addSubDirectoryMatching(gameDir,"MAC_KRO");
+ Common::FSNode macRoot=gameDir.getName().equalsIgnoreCase("MAC_KRO") ? gameDir.getParent() : gameDir;
+ SearchMan.addSubDirectoryMatching(macRoot,"MAC_MUX");
+ if(!_graphics.open(Common::Path("KSVGA.KRO"))) return Common::Error(Common::kReadingFailed,"Cannot read PICE graphics archive");
+ _mac=_graphics.isMac();
+ _availableLanguages.clear();
+ for(const char *p="EBDFINSW";*p;++p)
+  if(Common::File::exists(Common::Path(Common::String::format("%c_KLANG.KRO",*p))) &&
+     Common::File::exists(Common::Path(Common::String::format("%c_KLANG.BIN",*p)))) _availableLanguages+=*p;
+ Common::String requested=ConfMan.get("pice_text_language");
+ if(requested.size()==1 && _availableLanguages.contains(requested[0])) _languagePrefix=requested[0];
+ else if(_mac && Common::File::exists(Common::Path("W_KLANG.KRO"))) _languagePrefix='W';
+ Common::String languageArchive=Common::String::format("%c_KLANG.KRO",_languagePrefix);
+ if(!_language.open(Common::Path(languageArchive)) || !_soundArchive.open(Common::Path("KSOUND.KRO")))
+  return Common::Error(Common::kReadingFailed,"Cannot read selected PICE language or sound archive");
+ if(_language.isMac()!=_mac || _soundArchive.isMac()!=_mac) return Common::Error(Common::kReadingFailed,"Mixed DOS/Mac archives are not supported");
+ debug("[pice] edition=%s language=%c",_mac ? "Macintosh" : "DOS",_languagePrefix);
  Common::Array<byte> uiResource;
  if(!_graphics.read(1318,uiResource) || !_originalFont.load(uiResource) ||
     !_graphics.read(1315,uiResource) || !_originalCursor.load(uiResource,1315))
@@ -1960,7 +1984,7 @@ Common::Error PiceEngine::run() {
  debug("[pice] parser self-tests PASS");
  debug("[pice] KSVGA=%u E_KLANG=%u entries", _graphics.count(), _language.count());
  Common::File nameFile;
- if (nameFile.open(Common::Path("E_KLANG.BIN"))) {
+ if (nameFile.open(Common::Path(Common::String::format("%c_KLANG.BIN",_languagePrefix)))) {
   if (nameFile.size()<9 || nameFile.size()>1024*1024) return Common::Error(Common::kReadingFailed,"Invalid language index size");
   Common::Array<byte> bytes; bytes.resize(nameFile.size());
   ResourceNames &names = _languageNames;

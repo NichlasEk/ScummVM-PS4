@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/resource-names.h"
-#include "common/endian.h"
+#include "pice/formats.h"
 namespace Pice {
 int chapterRoomBase(int chapter) { return chapter==2 ? 1140 : chapter==3 ? 1182 : chapter==6 ? 1236 : chapter==8 ? 1253 : chapter==9 ? 1264 : chapter==10 ? 1273 : chapter==11 ? 1288 : chapter==12 ? 1294 : -1; }
 int chapterRoomCount(int chapter) { return chapter==2 ? 40 : chapter==3 ? 52 : chapter==6 ? 15 : chapter==8 ? 9 : chapter==9 ? 7 : chapter==10 ? 13 : chapter==11 ? 4 : chapter==12 ? 12 : 0; }
@@ -25,12 +25,13 @@ bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resourc
 bool ResourceNames::load(const Common::Array<byte> &encoded, uint32 archiveCount) {
  _entries.clear(); _archiveCount = 0;
  if (!archiveCount || encoded.size() < 9 || encoded.size() > 1024*1024) return false;
- uint32 length = READ_LE_UINT32(&encoded[0]);
+ bool mac=READ_LE_UINT32(&encoded[0])!=encoded.size()-5;
+ uint32 length = resource32(&encoded[0],mac);
  if (length != encoded.size()-5 || length < 4 || encoded.back()) return false;
  Common::Array<byte> decoded; decoded.resize(length);
  byte previous = 0x5a;
  for (uint32 i=0; i<length; ++i) previous = decoded[i] = encoded[i+4] ^ previous;
- uint32 count = READ_LE_UINT32(&decoded[0]);
+ uint32 count = resource32(&decoded[0],mac);
  if (!count || count > 65536 || uint64(count)*12+4 != length) return false;
  Common::Array<ResourceName> parsed;
  for (uint i=0; i<count; ++i) {
@@ -43,18 +44,21 @@ bool ResourceNames::load(const Common::Array<byte> &encoded, uint32 archiveCount
    if (padding || !((c>='A' && c<='Z') || (c>='0' && c<='9') || c=='_')) return false;
    entry.name += char(c);
   }
-  entry.base = READ_LE_UINT32(record+8);
+  entry.base = resource32(record+8,mac);
   if (entry.name.empty() || entry.base >= archiveCount || (i && entry.base <= parsed.back().base)) return false;
   for (uint j=0; j<parsed.size(); ++j) if (parsed[j].name == entry.name) return false;
   parsed.push_back(entry);
  }
+ _prefix=parsed[0].name[0];
  _entries = parsed; _archiveCount = archiveCount;
  return true;
 }
 bool ResourceNames::resolve(const Common::String &name, uint32 local, uint32 &resource) const {
  resource = 0;
  for (uint i=0; i<_entries.size(); ++i) {
-  if (!_entries[i].name.equalsIgnoreCase(name)) continue;
+  Common::String mapped=name;
+  if(mapped.size()>2 && mapped[1]=='_' && mapped[0]=='E') mapped.setChar(_prefix,0);
+  if (!_entries[i].name.equalsIgnoreCase(mapped)) continue;
   uint32 end = i+1 < _entries.size() ? _entries[i+1].base : _archiveCount;
   // Unlike the original unchecked addition, do not let a local index cross
   // into the next named group or wrap around the archive index.

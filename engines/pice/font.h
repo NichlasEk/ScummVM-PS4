@@ -18,6 +18,7 @@ private:
  int glyph(uint32 chr) const;
  Common::Array<byte> _data;
  Common::U32String _characters;
+ bool _mac=false;
  byte _shadow=241;
  int _height=0,_ascent=0,_maxWidth=0;
 };

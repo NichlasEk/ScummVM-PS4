@@ -13,9 +13,9 @@ KLANG language set was found in these sources. This does not establish
 which languages were sold in other releases or imply those releases lack
 multilingual support.
 
-The current engine hardcodes E_KLANG and E_T resource resolution. A future
-language selector needs both available-data detection and runtime resource
-selection; changing a settings label alone will not translate subtitles.
+The engine now detects installed KLANG banks and selects their matching text,
+voice and resource-name indices. Mac edition details and validation limits
+are documented in [PICE-MAC.md](PICE-MAC.md).
 Original executable data includes LANGUAGE_LETTER= and F_KLANG.KRO.
 
 ## Startup and native menu
@@ -35,8 +35,7 @@ has been initialized.
 The main menu uses the original KSVGA resource 1321 wooden crate. These
 static panels have no sequence table; SpriteResource accepts this format
 only when explicitly requested, with synthetic parser/rendering coverage.
-Menu text currently uses ScummVM's pixel font, not the original gold serif
-font. No commercial assets are included in the source or package.
+Menu text now uses the original font resource; see PICE-NATIVE-TEXT.md. No commercial assets are included in the source or package.
 
 The six main actions are Return to game, New game, Load a game, Save a game,
 Options and Exit game. Escape opens the same menu during gameplay and

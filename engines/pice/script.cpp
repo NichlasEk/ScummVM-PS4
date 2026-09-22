@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/script.h"
 #include "pice/state.h"
-#include "common/endian.h"
+#include "pice/formats.h"
 namespace Pice {
 bool ScriptVariables::syncState(StateIO &io) {
  for(uint i=0;i<_a.size();++i) io.number(_a[i]);
@@ -48,12 +48,13 @@ bool ScriptResource::codeAddress(int64 offset) const {
 bool ScriptResource::load(const Common::Array<byte> &data) {
  _data.clear(); _entries.clear();
  if (data.size()<4 || data.size()>131072) return false;
- uint count=READ_LE_UINT16(&data[0]);
+ _mac=data[0]==0 && data[1]>0 && data[1]<=50;
+ uint count=resource16(&data[0],_mac);
  // Original scheduler allocates 50 task slots per script bank.
  if (!count || count>50 || count*2>data.size()) return false;
  Common::Array<uint32> entries;
  for (uint i=0;i<count;++i) {
-  uint32 offset=uint32(READ_LE_UINT16(&data[i*2]))*2;
+  uint32 offset=uint32(resource16(&data[i*2],_mac))*2;
   if (offset<count*2 || offset+2>data.size() || (i && offset<entries.back())) return false;
   entries.push_back(offset);
  }
@@ -62,7 +63,7 @@ bool ScriptResource::load(const Common::Array<byte> &data) {
 bool ScriptResource::word(uint32 offset,uint16 &value) const {
  value=0;
  if (offset>_data.size() || _data.size()-offset<2) return false;
- value=READ_LE_UINT16(&_data[offset]); return true;
+ value=resource16(&_data[offset],_mac); return true;
 }
 bool ScriptResource::string(uint32 &pc,Common::String &value) const {
  // Original 0x2121 includes NUL, then rounds consumed bytes up to even.

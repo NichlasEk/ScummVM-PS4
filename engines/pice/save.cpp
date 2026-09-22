@@ -314,12 +314,15 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  debug("[pice] checkpoint restored bank=%u actors=%u items=%u task20-pc=%u",bankId,actors.size(),items.size(),bank.count()>20 ? _roomRunner->position(20) : 0);
  return renderRoom();
 }
-static Common::String saveName(bool automatic) {
- return ConfMan.getActiveDomainName()+(automatic ? "-pice-autosave.sav" : "-pice-slot0.sav");
+Common::String PiceEngine::savePrefix() const {
+ return ConfMan.getActiveDomainName()+(_mac ? Common::String::format("-mac-%c",_languagePrefix) : Common::String());
+}
+Common::String PiceEngine::saveName(bool automatic) const {
+ return savePrefix()+(automatic ? "-pice-autosave.sav" : "-pice-slot0.sav");
 }
 bool PiceEngine::loadLatestSave() {
  bool automatic=true; // Legacy saves have no ordering marker; prefer autosave.
- Common::ScopedPtr<Common::InSaveFile> latest(_system->getSavefileManager()->openForLoading(ConfMan.getActiveDomainName()+"-pice-latest"));
+ Common::ScopedPtr<Common::InSaveFile> latest(_system->getSavefileManager()->openForLoading(savePrefix()+"-pice-latest"));
  if(latest && latest->size()==1) automatic=latest->readByte()!='M';
  return readCheckpoint(automatic) || readCheckpoint(!automatic);
 }
@@ -332,7 +335,7 @@ bool PiceEngine::writeCheckpoint(bool automatic) {
  file->write("PICESV01",8); file->writeUint32LE(payload.size()); file->writeUint32LE(checksum(payload));
  file->write(&payload[0],payload.size()); file->finalize(); if(file->err()) return false; file.reset();
  if(!readCheckpoint(automatic,false)) return false;
- Common::ScopedPtr<Common::OutSaveFile> latest(_system->getSavefileManager()->openForSaving(ConfMan.getActiveDomainName()+"-pice-latest",false));
+ Common::ScopedPtr<Common::OutSaveFile> latest(_system->getSavefileManager()->openForSaving(savePrefix()+"-pice-latest",false));
  if(latest) { latest->writeByte(automatic ? 'A' : 'M'); latest->finalize(); }
  _roomStatus=automatic ? "Autosaved | L1/Q save | R1/U load" : "Checkpoint saved | L1/Q save | R1/U load";
  debug("[pice] checkpoint saved automatic=%d bytes=%u checksum=%08x",automatic,payload.size(),checksum(payload));

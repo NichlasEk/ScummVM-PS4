@@ -6,7 +6,13 @@ bool voicePayload(const Common::Array<byte> &data,uint32 &offset,uint32 &size) {
  offset=0; size=0;
  uint32 start=0, available=data.size();
  static const char header[]="EDITLS:05/03/95_1.0";
- if (data.size()>=sizeof(header) && !memcmp(&data[0],header,sizeof(header))) {
+ static const char macHeader[]="EDITLS_MAC:30/07/95_1.0";
+ if(data.size()>=sizeof(macHeader)+4 && !memcmp(&data[0],macHeader,sizeof(macHeader))) {
+  uint32 span=READ_BE_UINT32(&data[sizeof(macHeader)]);
+  if(span<16 || span>data.size()-sizeof(macHeader)) return false;
+  start=sizeof(macHeader)+4; available=span-4;
+ }
+ else if (data.size()>=sizeof(header) && !memcmp(&data[0],header,sizeof(header))) {
   if (data.size()<36) return false;
   uint32 span=READ_LE_UINT32(&data[20]);
   if (span<16 || span>data.size()-20) return false;

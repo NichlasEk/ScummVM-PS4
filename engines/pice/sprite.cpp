@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/sprite.h"
-#include "common/endian.h"
+#include "pice/formats.h"
 namespace Pice {
-bool decodeSprite(const byte *data, uint32 size, SpriteImage &out) {
+bool decodeSprite(const byte *data, uint32 size, SpriteImage &out,bool mac) {
  out = SpriteImage();
  if (!data || size < 4) return false;
- uint16 w = READ_LE_UINT16(data), h = READ_LE_UINT16(data + 2);
+ uint16 w = resource16(data,mac), h = resource16(data + 2,mac);
  if (!w || !h || w > 4096 || h > 4096) return false;
  SpriteImage decoded;
  decoded.width = w; decoded.height = h;
@@ -38,20 +38,20 @@ static bool editorInfo(const Common::Array<byte> &data,uint32 at) {
   memcmp(&data[at+6],"OP\x04\0INFO",8)==0;
 }
 static bool table(const Common::Array<byte> &data, uint32 start, uint32 end,
-                  uint extra, Common::Array<uint32> &out,bool raw=false) {
+                  uint extra, Common::Array<uint32> &out,bool raw=false,bool mac=false) {
  out.clear();
  if (end > data.size() || start > end || end - start < 4) return false;
- uint32 first = READ_LE_UINT32(&data[start]);
+ uint32 first = resource32(&data[start],mac);
  if(raw) { if(first<18 || first>end-start || !editorInfo(data,start+first-14)) return false; extra=14; }
  if (first < 4 + extra || first > end - start || (first - extra) % 4) return false;
  uint count = (first - extra) / 4;
  if (count > 65536) return false;
  for (uint i = 0; i < count; ++i) {
-  uint32 offset = READ_LE_UINT32(&data[start + i*4]);
+  uint32 offset = resource32(&data[start + i*4],mac);
   if (offset < first || offset >= end - start || (i && offset <= out.back() - start)) return false;
   out.push_back(start + offset);
  }
- if (extra && READ_LE_UINT16(&data[start + count*4]) != 0) return false;
+ if (extra && resource16(&data[start + count*4],mac) != 0) return false;
  out.push_back(end);
  return true;
 }
@@ -59,9 +59,11 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId,bool st
  archiveId=sourceId; fingerprint=2166136261U;
  for(uint i=0;i<data.size();++i) fingerprint=(fingerprint^data[i])*16777619U;
  frames.clear(); sequences.clear(); palette.clear(); _data.clear(); _images.clear(); _rawImages=false;
- if (data.size() < 24 || READ_LE_UINT32(&data[0]) != 24) return false;
- uint32 b = READ_LE_UINT32(&data[4]), c = READ_LE_UINT32(&data[8]);
- uint32 p = READ_LE_UINT32(&data[16]), end = READ_LE_UINT32(&data[20]);
+ if(data.size()<24) return false;
+ _mac=READ_BE_UINT32(&data[0])==24;
+ if(resource32(&data[0],_mac)!=24) return false;
+ uint32 b = resource32(&data[4],_mac), c = resource32(&data[8],_mac);
+ uint32 p = resource32(&data[16],_mac), end = resource32(&data[20],_mac);
  bool raw=end==0 && data.size()>=28 && memcmp(&data[data.size()-4],"XA4F",4)==0;
  if(raw) end=data.size()-4;
  // A zero palette offset denotes a resource using the room palette.
@@ -69,12 +71,12 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId,bool st
  // Native menu panels have frames and bitmaps but no sequence table.
  bool panel=staticPanel && c==0 && p && !raw;
  if(panel) c=p;
- if (READ_LE_UINT32(&data[12]) || b < 24 || c < b || sequenceEnd < c || end < sequenceEnd ||
+ if (resource32(&data[12],_mac) || b < 24 || c < b || sequenceEnd < c || end < sequenceEnd ||
      end != data.size()-(raw ? 4 : 0) || (p && end - p != 768)) return false;
  Common::Array<uint32> frameOffsets, imageOffsets, sequenceOffsets;
- if (!table(data, 24, b, 0, frameOffsets,raw) || !table(data, b, c, 2, imageOffsets,raw) ||
-     (!panel && !table(data, c, sequenceEnd, 0, sequenceOffsets,raw))) return false;
- SpriteResource parsed; parsed._rawImages=raw; parsed.archiveId=sourceId; parsed.fingerprint=fingerprint;
+ if (!table(data, 24, b, 0, frameOffsets,raw,_mac) || !table(data, b, c, 2, imageOffsets,raw,_mac) ||
+     (!panel && !table(data, c, sequenceEnd, 0, sequenceOffsets,raw,_mac))) return false;
+ SpriteResource parsed; parsed._mac=_mac; parsed._rawImages=raw; parsed.archiveId=sourceId; parsed.fingerprint=fingerprint;
  for (uint i = 0; i + 1 < frameOffsets.size(); ++i) {
   uint32 start = frameOffsets[i], length = frameOffsets[i+1] - start;
   if(raw && length>=16 && editorInfo(data,start+length-14)) length-=14;
@@ -83,8 +85,8 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId,bool st
   for (uint j = 0; j < data[start+1]; ++j) {
    const byte *r = &data[start + 2 + j*8];
    SpritePart part;
-   part.flagsX = r[0]; part.flagsY = r[1]; part.image = READ_LE_UINT16(r+2);
-   part.x = int16(READ_LE_UINT16(r+4)); part.y = int16(READ_LE_UINT16(r+6));
+   part.flagsX = r[0]; part.flagsY = r[1]; part.image = resource16(r+2,_mac);
+   part.x = int16(resource16(r+4,_mac)); part.y = int16(resource16(r+6,_mac));
    if (part.flagsX>1 || part.image >= (part.flagsX==0 ? frameOffsets.size()-1 : imageOffsets.size()-1)) return false;
    frame.parts.push_back(part);
   }
@@ -100,8 +102,8 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId,bool st
   for (uint j = 0; j < data[start+1]; ++j) {
    const byte *r = &data[start + 2 + j*8];
    SequenceStep step;
-   step.frame = READ_LE_UINT16(r); step.ticks = READ_LE_UINT16(r+2);
-   step.x = int16(READ_LE_UINT16(r+4)); step.y = int16(READ_LE_UINT16(r+6));
+   step.frame = resource16(r,_mac); step.ticks = resource16(r+2,_mac);
+   step.x = int16(resource16(r+4,_mac)); step.y = int16(resource16(r+6,_mac));
    // A03/88 has an out-of-range frame in unused sequence 3. Keep
    // valid sibling sequences usable, but reject selecting this sequence.
    if (step.frame >= parsed.frames.size()) seq.valid = false;
@@ -120,14 +122,14 @@ bool SpriteResource::image(uint index, SpriteImage &out) const {
   if(index+uint64(1)>=_images.size()) return false;
   uint32 start=_images[index],size=_images[index+1]-start;
   if(size<4) return false;
-  uint w=READ_LE_UINT16(&_data[start]),h=READ_LE_UINT16(&_data[start+2]);
+  uint w=resource16(&_data[start],_mac),h=resource16(&_data[start+2],_mac);
   if(!w || !h || w>4096 || h>4096 || size!=4+w*h) return false;
   out.width=w; out.height=h; out.pixels.resize(w*h); out.mask.resize(w*h);
   for(uint i=0;i<w*h;++i) { out.pixels[i]=_data[start+4+i]; out.mask[i]=out.pixels[i] ? 255 : 0; }
   return true;
  }
  return index + uint64(1) < _images.size() &&
-  decodeSprite(&_data[_images[index]], _images[index+1] - _images[index], out);
+  decodeSprite(&_data[_images[index]], _images[index+1] - _images[index], out,_mac);
 }
 bool SpriteResource::frameBounds(uint frame,Common::Rect &out) const {
  uint budget=4096; bool any=false; out=Common::Rect();

@@ -57,6 +57,7 @@ bool PiceEngine::mainMenu(bool resumable) {
  auto pause=[&](Audio::SoundHandle handle) {
   if(_mixer->isSoundHandleActive(handle)) { _mixer->pauseHandle(handle,true); paused.push_back(handle); }
  };
+ bool midiPlaying=_windows && _midi.isPlaying(); if(midiPlaying) _midi.pause();
  pause(_music.handle); pause(_speechHandle);
  for(uint i=0;i<_sounds.size();++i) if(_sounds[i].active) pause(_sounds[i].handle);
  uint32 opened=_system->getMillis();
@@ -241,6 +242,7 @@ bool PiceEngine::mainMenu(bool resumable) {
   _system->delayMillis(10);
  }
  for(uint i=0;i<paused.size();++i) _mixer->pauseHandle(paused[i],false);
+ if(midiPlaying) { _midi.resume(); syncSoundSettings(); }
  if(restoreScene) {
   _system->getPaletteManager()->setPalette(oldPalette,0,256);
   _pageStart+=_system->getMillis()-opened;

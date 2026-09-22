@@ -208,7 +208,13 @@ bool PiceEngine::startSound(uint id,uint loops,uint32 elapsed) {
 }
 bool PiceEngine::startSample(RoomSound &sound,uint loops,uint32 elapsed,bool music) {
  Common::Array<byte> data; uint32 offset,size;
- if(!_soundArchive.read(sound.resource,data) || !voicePayload(data,offset,size)) return false;
+ if(!_soundArchive.read(sound.resource,data)) return false;
+ if(_windows && music) {
+  sound.loops=loops; sound.elapsedBase=0;
+  _midi.setVolume(ConfMan.getBool("mute") ? 0 : sound.volume*ConfMan.getInt("music_volume")/255);
+  return _midi.play(data,loops,elapsed);
+ }
+ if(!voicePayload(data,offset,size)) return false;
  byte *owned=(byte *)malloc(size); if(!owned) return false;
  memcpy(owned,&data[offset],size);
  Audio::SeekableAudioStream *wave=Audio::makeWAVStream(new Common::MemoryReadStream(owned,size,DisposeAfterUse::YES),DisposeAfterUse::YES);
@@ -562,7 +568,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  }
  if(op==104) {
   if(args.size()!=1 || (args[0]!=-2 && args[0]!=0)) return false;
-  if(args[0]==0) { _mixer->stopHandle(_music.handle); _music=RoomSound(); }
+  if(args[0]==0) { _midi.stop(); _mixer->stopHandle(_music.handle); _music=RoomSound(); }
   result=args[0]==-2 ? 0 : args[0]; return true;
  }
  if(op==32) {
@@ -571,8 +577,9 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   int base=name.equalsIgnoreCase("MUS02") ? 308 : name.equalsIgnoreCase("MUS03") ? 314 : name.equalsIgnoreCase("MUS06") ? 331 : name.equalsIgnoreCase("MUS08") ? 340 : name.equalsIgnoreCase("MUS09") ? 342 : name.equalsIgnoreCase("MUS10") ? 346 : name.equalsIgnoreCase("MUS11") ? 349 : name.equalsIgnoreCase("MUS12") ? 350 : -1;
   if(args.size()!=1 || base<0 || args[0]<0 || args[0]>=(base==308 ? 6 : base==314 ? 17 : base==331 ? 9 : base==340 ? 2 : base==342 ? 4 : base==346 ? 3 : base==349 ? 1 : 3)) return false;
   Common::Array<byte> data; uint32 offset,size;
-  if(!_soundArchive.read(base+args[0],data) || !voicePayload(data,offset,size)) return false;
-  _mixer->stopHandle(_music.handle); _music=RoomSound(); _music.active=true; _music.persistent=true; _music.resource=base+args[0];
+  if(_windows) base-=308;
+  if(!_soundArchive.read(base+args[0],data) || (_windows ? (data.size()<14 || memcmp(data.data(),"MThd",4)) : !voicePayload(data,offset,size))) return false;
+  _midi.stop(); _mixer->stopHandle(_music.handle); _music=RoomSound(); _music.active=true; _music.persistent=true; _music.resource=base+args[0];
   result=0; debug("[pice] load-music resource=%u",_music.resource); return true;
  }
  if(op==118 || op==33) {
@@ -585,7 +592,7 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
 #ifdef PICE_TESTBENCH
    if(ConfMan.getBool("pice_test_save_after_music")) { _testSavePending=true; _testSaveAt=_system->getMillis()+1500; }
 #endif
-  } else { _music.volume=(uint(args[1])*255+50)/100; _mixer->setChannelVolume(_music.handle,_music.volume); }
+  } else { _music.volume=(uint(args[1])*255+50)/100; _mixer->setChannelVolume(_music.handle,_music.volume); if(_windows) syncSoundSettings(); }
   result=op==33 ? args[1] : args[0]; return true;
  }
  if(op==149) {
@@ -1052,7 +1059,7 @@ bool PiceEngine::showScriptScene() {
  _roomRunner.reset(); _inputLocks=0; _dialogueActor=-1; _narration=false; _pulseOffset=10; _pulseDelta=15;
  _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _ownedItems.clear(); _itemLabels.clear(); _selectedItem=-1; _actors.clear(); _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1; _hotspots.clear(); _actions.clear(); _player=-1;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
- _sounds.clear(); _animationSounds.clear(); _mixer->stopHandle(_music.handle); _music=RoomSound();
+ _sounds.clear(); _animationSounds.clear(); _midi.stop(); _mixer->stopHandle(_music.handle); _music=RoomSound();
  ScriptResource bootstrap;
  if (!_graphics.read(1139,bytes) || !bootstrap.load(bytes)) return false;
  ScriptRunner init(bootstrap,&_worldVariables,this); init.start(0);
@@ -1066,6 +1073,7 @@ bool PiceEngine::showScriptScene() {
 bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) {
  if((before!=0 && before!=1) || (after!=0 && after!=1) || name.empty()) return false;
  for(uint i=0;i<name.size();++i) if(name[i]=='/' || name[i]=='\\' || name[i]==':') return false;
+ if(_windows) return playWindowsMovie(name,before,after);
  byte previousPalette[768]; _system->getPaletteManager()->grabPalette(previousPalette,0,256);
  _movieSkipped=false;
  Common::File file;
@@ -1158,7 +1166,7 @@ bool PiceEngine::loadChapter(int16 chapter,uint room) {
  _items.clear(); _ownedItems.clear(); _itemLabels.clear(); _menus.clear(); _menuEnabled.clear();
  _animationSounds.clear(); _selectedItem=-1; _activeMenu=_menuChoice=-1; _inputLocks=0;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
- _sounds.clear(); _mixer->stopHandle(_music.handle); _music=RoomSound();
+ _sounds.clear(); _midi.stop(); _mixer->stopHandle(_music.handle); _music=RoomSound();
  _chapter=chapter; _roomBankId=chapterRoomBase(chapter)+room; _itemPairs.clear(); _pendingChapter=chapter; _pendingRoom=-1; _previousRoom=-1;
  Common::Array<byte> bytes; ScriptResource bootstrap;
  if(!_graphics.read(chapterRoomBase(chapter)-1,bytes) || !bootstrap.load(bytes)) return false;
@@ -1774,7 +1782,7 @@ void PiceEngine::tickRoom() {
    debug("[pice] preload snapshot roundtrip bank=%u slots=%u pass=%d",_roomBankId,expected.size(),ok);
   }
  }
- if(_testSavePending && int32(_system->getMillis()-_testSaveAt)>=0) {
+ if(_testSavePending && int32(_system->getMillis()-_testSaveAt)>=0 && snapshotReady()) {
   _testSavePending=false;
   if(!writeCheckpoint(false)) warning("[pice] Test music checkpoint failed");
  }
@@ -1957,6 +1965,10 @@ bool PiceEngine::playDialogueSample() {
  drawLabels();
  return true;
 }
+void PiceEngine::syncSoundSettings() {
+ Engine::syncSoundSettings();
+ if(_windows) _midi.setVolume(ConfMan.getBool("mute") ? 0 : _music.volume*ConfMan.getInt("music_volume")/255);
+}
 Common::Error PiceEngine::run() {
  Common::FSNode gameDir(ConfMan.getPath("path"));
  SearchMan.addSubDirectoryMatching(gameDir,"MAC_KRO");
@@ -1964,18 +1976,19 @@ Common::Error PiceEngine::run() {
  SearchMan.addSubDirectoryMatching(macRoot,"MAC_MUX");
  if(!_graphics.open(Common::Path("KSVGA.KRO"))) return Common::Error(Common::kReadingFailed,"Cannot read PICE graphics archive");
  _mac=_graphics.isMac();
+ _windows=!_mac && Common::File::exists(Common::Path("KSOUNDW.KRO"));
  _availableLanguages.clear();
  for(const char *p="EBDFINSW";*p;++p)
   if(Common::File::exists(Common::Path(Common::String::format("%c_KLANG.KRO",*p))) &&
      Common::File::exists(Common::Path(Common::String::format("%c_KLANG.BIN",*p)))) _availableLanguages+=*p;
  Common::String requested=ConfMan.get("pice_text_language");
  if(requested.size()==1 && _availableLanguages.contains(requested[0])) _languagePrefix=requested[0];
- else if(_mac && Common::File::exists(Common::Path("W_KLANG.KRO"))) _languagePrefix='W';
+ else if((_mac || _windows) && Common::File::exists(Common::Path("W_KLANG.KRO"))) _languagePrefix='W';
  Common::String languageArchive=Common::String::format("%c_KLANG.KRO",_languagePrefix);
- if(!_language.open(Common::Path(languageArchive)) || !_soundArchive.open(Common::Path("KSOUND.KRO")))
+ if(!_language.open(Common::Path(languageArchive)) || !_soundArchive.open(Common::Path(_windows ? "KSOUNDW.KRO" : "KSOUND.KRO")))
   return Common::Error(Common::kReadingFailed,"Cannot read selected PICE language or sound archive");
  if(_language.isMac()!=_mac || _soundArchive.isMac()!=_mac) return Common::Error(Common::kReadingFailed,"Mixed DOS/Mac archives are not supported");
- debug("[pice] edition=%s language=%c",_mac ? "Macintosh" : "DOS",_languagePrefix);
+ debug("[pice] edition=%s language=%c",_mac ? "Macintosh" : _windows ? "Windows" : "DOS",_languagePrefix);
  Common::Array<byte> uiResource;
  if(!_graphics.read(1318,uiResource) || !_originalFont.load(uiResource) ||
     !_graphics.read(1315,uiResource) || !_originalCursor.load(uiResource,1315))
@@ -2110,6 +2123,10 @@ Common::Error PiceEngine::run() {
  }
 
 #endif
+#ifdef PICE_TESTBENCH
+ if(ConfMan.getBool("pice_test_windows_assets") && !auditWindowsAssets())
+  return Common::Error(Common::kUnknownError,"Windows asset audit failed");
+#endif
  if (!restored) {
   if(!startupMovies()) warning("[pice] Startup movie unavailable");
   if(!mainMenu(false)) { CursorMan.popCursor(); return Common::kNoError; }
@@ -2201,7 +2218,7 @@ Common::Error PiceEngine::run() {
   _system->updateScreen(); _system->delayMillis(10);
  }
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
- _mixer->stopHandle(_speechHandle); _mixer->stopHandle(_music.handle); CursorMan.popCursor();
+ _mixer->stopHandle(_speechHandle); _midi.stop(); _mixer->stopHandle(_music.handle); CursorMan.popCursor();
  return Common::kNoError;
 }
 }

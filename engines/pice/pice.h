@@ -12,13 +12,20 @@
 #include "pice/dialogue.h"
 #include "pice/lipsync.h"
 #include "pice/font.h"
+#include "pice/midi.h"
 namespace Pice {
 class PiceEngine : public Engine, public ScriptSceneSink {
 public:
  explicit PiceEngine(OSystem *system) : Engine(system), _picture(0), _speech(0), _textColor(255) {}
  Common::Error run() override;
 private:
- bool _mac=false;
+ bool _mac=false, _windows=false;
+ MusicMidi _midi;
+#ifdef PICE_TESTBENCH
+ bool auditWindowsAssets();
+#endif
+ bool playWindowsMovie(const Common::String &name,int16 before,int16 after);
+ void syncSoundSettings() override;
  char _languagePrefix='E';
  Common::String _availableLanguages;
  Common::U32String displayText(const Common::String &text) const { return Pice::displayText(text,_mac); }

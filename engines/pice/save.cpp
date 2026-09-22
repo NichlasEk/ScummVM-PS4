@@ -160,14 +160,18 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  io.number(player); io.number(camera); io.number(selection); io.number(locks);
  io.number(pulse); io.number(period); io.number(remaining); io.number(offset); io.number(delta);
  io.bytes(colors,768); io.bytes(styles,12);
- bool musicPlaying=!loading && music.active && _mixer->isSoundHandleActive(music.handle);
- uint32 musicElapsed=musicPlaying ? music.elapsedBase+_mixer->getSoundElapsedTime(music.handle) : 0;
+ bool musicPlaying=!loading && music.active && (_windows ? _midi.active() : _mixer->isSoundHandleActive(music.handle));
+ // Windows saves are isolated; this field stores MIDI ticks there, PCM milliseconds elsewhere.
+ uint32 musicElapsed=musicPlaying ? (_windows ? _midi.tick() : music.elapsedBase+_mixer->getSoundElapsedTime(music.handle)) : 0;
  if(version>=2) {
+  if(_windows && !loading && musicPlaying) music.loops=_midi.remaining();
   io.number(music.active); io.number(music.persistent); io.number(music.resource); io.number(music.volume); io.number(music.loops);
   io.number(musicPlaying); io.number(musicElapsed);
   if(music.active) {
    Common::Array<byte> raw; uint32 start,size;
-   if(music.resource<308 || music.resource>=353 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
+   if(_windows) {
+    if(music.resource>=45 || !_soundArchive.read(music.resource,raw) || raw.size()<14 || memcmp(raw.data(),"MThd",4)) io.ok=false;
+   } else if(music.resource<308 || music.resource>=353 || !_soundArchive.read(music.resource,raw) || !voicePayload(raw,start,size)) io.ok=false;
   } else if(musicPlaying) io.ok=false;
  } else { music=RoomSound(); musicPlaying=false; musicElapsed=0; }
  if(version>=3) { io.bytes(owned,100); io.number(selectedItem); }
@@ -226,7 +230,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
     (camera!=-1 && !validActor(camera)) || period<=0 || offset<0 || offset>255 || delta < -255 || delta>255) return false;
  if(!loading || !apply) return true;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
- _mixer->stopHandle(_speechHandle); _mixer->stopHandle(_music.handle); _music=music; _music.handle=Audio::SoundHandle(); _roomRunner.reset(); _roomBank=bank; _roomBankId=bankId; _chapter=chapterForBank(bankId); _pendingChapter=_chapter; _worldVariables=vars; _itemPairs=pairs; _inventoryEnabled=inventoryEnabled;
+ _mixer->stopHandle(_speechHandle); _midi.stop(); _mixer->stopHandle(_music.handle); _music=music; _music.handle=Audio::SoundHandle(); _roomRunner.reset(); _roomBank=bank; _roomBankId=bankId; _chapter=chapterForBank(bankId); _pendingChapter=_chapter; _worldVariables=vars; _itemPairs=pairs; _inventoryEnabled=inventoryEnabled;
  _roomRunner.reset(new ScriptRunner(_roomBank,&_worldVariables,this));
  StateIO taskRestore(tasks,true); if(!_roomRunner->syncState(taskRestore)) return false;
  _roomRunner->prioritizeInitialization();
@@ -315,7 +319,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  return renderRoom();
 }
 Common::String PiceEngine::savePrefix() const {
- return ConfMan.getActiveDomainName()+(_mac ? Common::String::format("-mac-%c",_languagePrefix) : Common::String());
+ return ConfMan.getActiveDomainName()+((_mac || _windows) ? Common::String::format("-%s-%c",_mac ? "mac" : "win",_languagePrefix) : Common::String());
 }
 Common::String PiceEngine::saveName(bool automatic) const {
  return savePrefix()+(automatic ? "-pice-autosave.sav" : "-pice-slot0.sav");

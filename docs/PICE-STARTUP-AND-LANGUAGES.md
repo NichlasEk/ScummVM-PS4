@@ -15,7 +15,8 @@ multilingual support.
 
 The engine now detects installed KLANG banks and selects their matching text,
 voice and resource-name indices. Mac edition details and validation limits
-are documented in [PICE-MAC.md](PICE-MAC.md).
+are documented in [PICE-MAC.md](PICE-MAC.md); the Windows 95 multilingual
+release is covered in [PICE-WINDOWS.md](PICE-WINDOWS.md).
 Original executable data includes LANGUAGE_LETTER= and F_KLANG.KRO.
 
 ## Startup and native menu

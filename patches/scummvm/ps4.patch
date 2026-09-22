@@ -759,3 +759,39 @@
 + return true;
 +}
 +#endif
+--- a/backends/platform/sdl/sdl.cpp
++++ b/backends/platform/sdl/sdl.cpp
+@@ -195,7 +195,12 @@
+ 	if (f == kFeatureOpenUrl) return true;
+ #endif
+ 	if (f == kFeatureJoystickDeadzone || f == kFeatureKbdMouseSpeed) {
++		#ifdef __PS4__
++		// Keep console controls available even before controller hotplug.
++		return true;
++#else
+ 		return _eventSource->isJoystickConnected();
++#endif
+ 	}
+ #if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
+ 	/* Even if we are using the 2D graphics manager,
+--- a/gui/options.cpp
++++ b/gui/options.cpp
+@@ -1449,11 +1449,18 @@
+ 
+ 	// Keyboard and joystick mouse speed
+ 	if (g_system->hasFeature(OSystem::kFeatureKbdMouseSpeed)) {
++#ifdef __PS4__
++		const char *stickHelp = "Analog stick pointer speed: 0 slowest, 3 normal, 7 fastest";
++		_kbdMouseSpeedDesc = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedDesc",
++			g_gui.useLowResGUI() ? _("Stick speed:") : _("Stick sensitivity:"), _(stickHelp));
++		_kbdMouseSpeedSlider = new SliderWidget(boss, prefix + "grKbdMouseSpeedSlider", _(stickHelp), kKbdMouseSpeedChanged);
++#else
+ 		if (!g_gui.useLowResGUI())
+ 			_kbdMouseSpeedDesc = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedDesc", _("Pointer Speed:"), _("Speed for keyboard/joystick mouse pointer control"));
+ 		else
+ 			_kbdMouseSpeedDesc = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedDesc", _c("Pointer Speed:", "lowres"), _("Speed for keyboard/joystick mouse pointer control"));
+ 		_kbdMouseSpeedSlider = new SliderWidget(boss, prefix + "grKbdMouseSpeedSlider", _("Speed for keyboard/joystick mouse pointer control"), kKbdMouseSpeedChanged);
++#endif
+ 		_kbdMouseSpeedLabel = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedLabel", Common::U32String("  "), Common::U32String(), ThemeEngine::kFontStyleBold, Common::UNK_LANG, false);
+ 		_kbdMouseSpeedSlider->setMinValue(0);
+ 		_kbdMouseSpeedSlider->setMaxValue(7);

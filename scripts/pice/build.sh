@@ -12,6 +12,19 @@ export SCUMMVM_CONTENT_ID=IV0000-SCVM00003_00-SCUMMVMPICE00001
 export SCUMMVM_TITLE='ScummVM PICE Preview'
 export SCUMMVM_PACKAGE_NAME=ScummVM-PS4-PICE-preview.pkg
 mkdir -p "$root/artifacts/pice" "$SCUMMVM_BUILD_DIR"
+# Remove our generated entry point before refreshing the shared PS4 patch.
+# Only remove the exact maintained block; do not overwrite unrelated edits.
+python3 - "$SCUMMVM_SOURCE_DIR" "$root/scripts/pice/bootstrap.inc" <<'PYUNBOOT'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])/'backends/platform/sdl/posix/posix-main.cpp'
+if p.exists():
+ s=p.read_text(); block=Path(sys.argv[2]).read_text().strip()
+ if block in s:
+  s=s.replace(block,'int res = scummvm_main(argc, argv);')
+  s=s.replace('extern "C" void ps4_refresh_usb_mounts(void);\n','')
+  p.write_text(s)
+PYUNBOOT
 "$root/scripts/prepare-scummvm.sh"
 "$root/scripts/build-ps4-storage.sh"
 "$root/scripts/build-ps4-input.sh"

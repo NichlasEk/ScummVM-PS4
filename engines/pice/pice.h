@@ -19,21 +19,32 @@ public:
  explicit PiceEngine(OSystem *system) : Engine(system), _picture(0), _speech(0), _textColor(255) {}
  Common::Error run() override;
 private:
+ bool _saturn=false;
+ ResourceNames _saturnGraphicsNames;
+ Common::ScopedPtr<Graphics::Font> _japaneseFont;
+ const Graphics::Font &uiFont() const { if(_saturn && _japaneseFont) return *_japaneseFont; return _originalFont; }
+ bool loadSaturnResourceNames();
+ bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) const;
+ int chapterRoomBase(int chapter) const;
+ int chapterRoomCount(int chapter) const;
+ int chapterForBank(uint bank) const;
+ uint objectBase() const { return _saturn ? 1308 : 1306; }
  bool _saturnMovieActive=false;
  uint32 _saturnPauseStart=0,_saturnPausedMs=0;
  void pauseEngineIntern(bool pause) override;
  Common::Error runSaturnPreview();
- bool playSaturnMovie(const Common::String &name,bool audit);
+ bool playSaturnMovie(const Common::String &name,bool audit,bool skippable=true);
  bool _mac=false, _windows=false, _demo=false;
  MusicMidi _midi;
 #ifdef PICE_TESTBENCH
+ bool _testSaturnCaptionCaptured=false;
  bool auditWindowsAssets();
 #endif
  bool playWindowsMovie(const Common::String &name,int16 before,int16 after);
  void syncSoundSettings() override;
  char _languagePrefix='E';
  Common::String _availableLanguages;
- Common::U32String displayText(const Common::String &text) const { return Pice::displayText(text,_mac); }
+ Common::U32String displayText(const Common::String &text) const { return _saturn ? text.decode(Common::kWindows932) : Pice::displayText(text,_mac); }
  bool showPicture(uint position);
  OriginalFont _originalFont;
  SpriteResource _originalCursor;

@@ -16,7 +16,7 @@ static const char *subtitleLanguageName(char prefix) {
  switch(prefix) {
  case 'B': return "Portuguese"; case 'D': return "German"; case 'F': return "French";
  case 'I': return "Italian"; case 'N': return "Dutch"; case 'S': return "Spanish";
- case 'W': return "Swedish"; default: return "English";
+ case 'J': return "Japanese"; case 'W': return "Swedish"; default: return "English";
  }
 }
 
@@ -25,7 +25,11 @@ bool PiceEngine::startupMovies() {
  // corresponding 640x480 S clips. Escape/click skips one clip at a time.
  _frontendMovies=true;
  bool ok=true;
- for(const char *name : {"SINTRO.MUX","SCREDITS.MUX","STITRE.MUX"}) {
+ const char *pcClips[]={"SINTRO.MUX","SCREDITS.MUX","STITRE.MUX"};
+ const char *saturnClips[]={"INFOGRAM.CPK","XING.CPK","XINGCOPY.CPK","VINTRO.CPK"};
+ const char *const *clips=_saturn ? saturnClips : pcClips;
+ for(uint i=0;i<(_saturn ? 4u : 3u);++i) {
+  const char *name=clips[i];
   if(shouldQuit()) break;
   if(!playMovie(name,1,1)) { ok=false; break; }
  }
@@ -47,11 +51,15 @@ bool PiceEngine::mainMenu(bool resumable) {
  Common::Array<byte> data;
  SpriteResource panel;
  // S_PANEL/1: original wooden crate, with no baked-in menu text.
- if(!_graphics.read(1321,data) || !panel.load(data,1321,true) || panel.palette.size()!=768 || panel.frames.empty()) {
+ if(!_graphics.read(_saturn ? 1318 : 1321,data) || !panel.load(data,_saturn ? 1318 : 1321,true) || panel.palette.size()!=768 || panel.frames.empty()) {
   warning("[pice] Cannot decode original main-menu panel"); return false;
  }
  Common::Array<byte> backdrop; backdrop.resize(640*400,0);
- if(!panel.paintFrame(0,64,32,backdrop,640,400)) return false;
+ if(_saturn) {
+  Common::Array<byte> native; native.resize(320*200,0);
+  if(!panel.paintFrame(0,32,16,native,320,200)) return false;
+  for(uint y=0;y<400;++y) for(uint x=0;x<640;++x) backdrop[y*640+x]=native[(y/2)*320+x/2];
+ } else if(!panel.paintFrame(0,64,32,backdrop,640,400)) return false;
  byte oldPalette[768]; _system->getPaletteManager()->grabPalette(oldPalette,0,256);
  Common::Array<Audio::SoundHandle> paused;
  auto pause=[&](Audio::SoundHandle handle) {

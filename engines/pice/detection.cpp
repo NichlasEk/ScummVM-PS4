@@ -26,7 +26,7 @@ static const ADGameDescription descriptions[] = {
   AD_ENTRY2s("KSVGA.KRO", "cabd2c120e30ddd608d25b9c1ea816a9", 10916737,
              "E_KLANG.KRO", "3b1ba68af306305a26fe2f02a2e3fa17", 12707023),
   Common::EN_ANY, Common::kPlatformDOS, ADGF_UNSTABLE | ADGF_DEMO, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
- {"pice", "Saturn Japanese - movies and artwork preview (no gameplay)",
+ {"pice", "Saturn Japanese - experimental gameplay",
   AD_ENTRY2s("KVGA.KRO", "4141f95d6edfceeae776f804e030678a", 15468702,
              "J_KLANG.KRO", "7fa70934c284fef4e0308006d70d8316", 32921880),
   Common::JA_JPN, Common::kPlatformSaturn, ADGF_UNSTABLE, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},

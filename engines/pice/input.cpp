@@ -74,16 +74,17 @@ bool PiceEngine::clickMenu(Common::Point point) {
  if(_activeMenu<0 || _menuChoice!=-1) return false;
  Common::Rect box=dialogueMenuBounds(); box.grow(-8);
  if(!box.contains(point)) return false;
- int row=(point.y-box.top)/_originalFont.getFontHeight(),visible=0;
+ int row=(point.y-box.top)/uiFont().getFontHeight(),visible=0;
  for(uint i=0;i<_menuEnabled[_activeMenu].size();++i) if(_menuEnabled[_activeMenu][i]) {
   if(visible++==row) { _menuChoice=i; debug("[pice] menu selected id=%d option=%u",_activeMenu,i); return true; }
  }
  return false;
 }
 int PiceEngine::hotspotAt(Common::Point point) const {
+ if(_saturn) { point.x/=2; point.y/=2; }
  point.x+=cameraX();
  // Room actors use the original 640x480 anchors, offset into our 640x400 view.
- if(point.y<(!_playerMovement || _player<0 ? 0 : 40) || point.y>=(!_playerMovement || _player<0 ? 400 : 360)) return -1;
+ if(point.y<(!_playerMovement || _player<0 ? 0 : (_saturn ? 20 : 40)) || point.y>=(!_playerMovement || _player<0 ? (_saturn ? 200 : 400) : (_saturn ? 180 : 360))) return -1;
  point.y+=cameraY();
  for(uint i=0;i<_hotspots.size();++i) {
   const Hotspot &h=_hotspots[i]; if(!h.active) continue;
@@ -94,11 +95,11 @@ int PiceEngine::hotspotAt(Common::Point point) const {
    for(uint j=0;j<_actions.size();++j) if(_actions[j].hotspot==int(i)) { interactive=true; break; }
    if(!interactive) continue;
   }
-  if(h.actor==-1) { if(h.bounds.contains(point.x,point.y+40)) return i; }
+  if(h.actor==-1) { if(h.bounds.contains(point.x,point.y+(_saturn ? 0 : 40))) return i; }
   else if(h.actor>=0 && uint(h.actor)<_actors.size()) {
    const RoomActor &a=_actors[h.actor];
    if(a.active && a.sprite.hasSequence(a.sequence) && a.step<a.sprite.sequences[a.sequence].steps.size() &&
-      a.sprite.hitScaledFrame(a.sprite.sequences[a.sequence].steps[a.step].frame,a.feet.x,a.feet.y-40,actorScale(a),point.x,point.y)) return i;
+      a.sprite.hitScaledFrame(a.sprite.sequences[a.sequence].steps[a.step].frame,a.feet.x,a.feet.y-(_saturn ? 0 : 40),actorScale(a),point.x,point.y)) return i;
   }
  }
  return -1;
@@ -225,7 +226,7 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
    if(rightButton || _selectedItem>=0 || _hotspots[spot].actor>=0) return false;
    for(uint i=0;i<_actions.size();++i) if(_actions[i].hotspot==spot) return false;
   }
-  Common::Point target; if(!_navigation.nearest(Common::Point(point.x+cameraX(),point.y+40+cameraY()),target)) return false;
+  Common::Point target; if(!_navigation.nearest(Common::Point(point.x/(_saturn ? 2 : 1)+cameraX(),point.y/(_saturn ? 2 : 1)+(_saturn ? 0 : 40)+cameraY()),target)) return false;
   if(target==_actors[_player].feet) return true;
   Common::Array<int16> args; args.push_back(_player); args.push_back(target.x); args.push_back(target.y); int16 result;
   return invoke(123,Common::String(),args,Common::String(),result);

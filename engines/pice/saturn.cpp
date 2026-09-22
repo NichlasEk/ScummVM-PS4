@@ -4,6 +4,7 @@
 #include "engines/util.h"
 #include "image/codecs/cinepak.h"
 #include "common/config-manager.h"
+#include "common/endian.h"
 #include "common/events.h"
 #include "common/fs.h"
 #include "common/memstream.h"
@@ -16,6 +17,44 @@
 #include "audio/decoders/raw.h"
 #include "audio/audiostream.h"
 namespace Pice {
+bool PiceEngine::loadSaturnResourceNames() {
+ Common::File file; if(!file.open(Common::Path("A.BIN")) || file.size()>2*1024*1024) return false;
+ Common::Array<byte> bytes; bytes.resize(file.size());
+ if(file.read(bytes.data(),bytes.size())!=bytes.size()) return false;
+ for(uint at=0;at+9<bytes.size();at+=4) {
+  uint length=READ_LE_UINT32(bytes.data()+at);
+  if(length<16 || length>4096 || (length-4)%12 || length+5>bytes.size()-at) continue;
+  Common::Array<byte> table; table.resize(length+5); memcpy(table.data(),bytes.data()+at,table.size());
+  ResourceNames names; uint32 a,b,font;
+  if(!names.load(table,_graphics.count()) || !names.resolve("A02",0,a) || a!=0 ||
+     !names.resolve("M02",0,b) || !names.resolve("FONT",0,font)) continue;
+  _saturnGraphicsNames=names;
+  debug("[pice] Saturn original resource directory at=%x groups=%u M02=%u FONT=%u",at,names.count(),b,font);
+  return true;
+ }
+ return false;
+}
+bool PiceEngine::resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) const {
+ if(!_saturn) return Pice::resolveChapterGraphics(name,local,resource);
+ Common::String group=name; group.toUppercase(); if(group.hasSuffix(".PAK")) group.erase(group.size()-4);
+ return local>=0 && _saturnGraphicsNames.resolve(group,local,resource);
+}
+int PiceEngine::chapterRoomBase(int chapter) const {
+ if(!_saturn) return Pice::chapterRoomBase(chapter);
+ uint32 id; return chapter>0 && chapter<=99 && _saturnGraphicsNames.resolve(Common::String::format("M%02d",chapter),2,id) ? int(id) : -1;
+}
+int PiceEngine::chapterRoomCount(int chapter) const {
+ if(!_saturn) return Pice::chapterRoomCount(chapter);
+ Common::String name=Common::String::format("M%02d",chapter);
+ for(uint i=0;i+1<_saturnGraphicsNames.count();++i) if(_saturnGraphicsNames.entry(i).name==name)
+  return _saturnGraphicsNames.entry(i+1).base-_saturnGraphicsNames.entry(i).base-2;
+ return 0;
+}
+int PiceEngine::chapterForBank(uint bank) const {
+ if(!_saturn) return Pice::chapterForBank(bank);
+ for(int ch : {2,3,6,8,9,10,11,12}) if(bank>=uint(chapterRoomBase(ch)) && bank<uint(chapterRoomBase(ch)+chapterRoomCount(ch))) return ch;
+ return -1;
+}
 void PiceEngine::pauseEngineIntern(bool pause) {
  Engine::pauseEngineIntern(pause);
  if(_saturnMovieActive) {
@@ -23,7 +62,7 @@ void PiceEngine::pauseEngineIntern(bool pause) {
   else _saturnPausedMs+=_system->getMillis()-_saturnPauseStart;
  }
 }
-bool PiceEngine::playSaturnMovie(const Common::String &name,bool audit) {
+bool PiceEngine::playSaturnMovie(const Common::String &name,bool audit,bool skippable) {
  Common::File file; FilmIndex film;
  if(!file.open(Common::Path("MOVIE").join(name)) || !readFilmIndex(file,film)) {
   warning("[pice] Invalid Saturn FILM: %s",name.c_str()); return false;
@@ -50,7 +89,7 @@ bool PiceEngine::playSaturnMovie(const Common::String &name,bool audit) {
    Common::Event event;
    while(_eventMan->pollEvent(event)) {
     if(event.type==Common::EVENT_QUIT) quitGame();
-    if(!audit && (event.type==Common::EVENT_LBUTTONDOWN || (event.type==Common::EVENT_KEYDOWN &&
+    if(!audit && skippable && (event.type==Common::EVENT_LBUTTONDOWN || (event.type==Common::EVENT_KEYDOWN &&
        (event.kbd.keycode==Common::KEYCODE_ESCAPE || event.kbd.keycode==Common::KEYCODE_SPACE)))) skipped=true;
    }
    if(shouldQuit() || skipped || audit || _system->getMillis()-start-_saturnPausedMs>=ms) break;

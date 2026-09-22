@@ -62,7 +62,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  uint32 bankHash=checksum(bankBytes),backgroundHash=checksum(backgroundBytes),expectedBank=bankHash,expectedBackground=backgroundHash;
  io.number(expectedBank); io.number(expectedBackground);
  uint16 width,height;
- if(!io.ok || bankHash!=expectedBank || backgroundHash!=expectedBackground || !decodeImageHeader(backgroundBytes,width,height) || width<640 || width>2048 || height>2048) return false;
+ if(!io.ok || bankHash!=expectedBank || backgroundHash!=expectedBackground || !decodeImageHeader(backgroundBytes,width,height) || width<(_saturn ? 320 : 640) || width>2048 || height>2048) return false;
  ScriptResource bank; if(!bank.load(bankBytes) || !vars.syncState(io)) return false;
  io.bytes(tasks,16384); if(!io.ok) return false;
  ScriptRunner candidate(bank,&vars,this); StateIO taskInput(tasks,true);
@@ -221,7 +221,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  } else preloadedAnimations.clear();
  if(version>=14) {
   io.number(cameraFrozen); io.number(cameraRecenter); io.point(cameraPosition);
-  if(cameraPosition.x<0 || cameraPosition.x>MAX(0,int(width)-640) || cameraPosition.y<0 || cameraPosition.y>MAX(0,int(height)-320)) return false;
+  if(cameraPosition.x<0 || cameraPosition.x>MAX(0,int(width)-(_saturn ? 320 : 640)) || cameraPosition.y<0 || cameraPosition.y>MAX(0,int(height)-(_saturn ? 160 : 320))) return false;
  } else { cameraFrozen=false; cameraRecenter=false; cameraPosition=Common::Point(); }
  if(owned.size()!=items.size() || selectedItem < -1 || selectedItem>=int(owned.size()) ||
     (selectedItem>=0 && !owned[selectedItem])) return false;
@@ -319,7 +319,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  return renderRoom();
 }
 Common::String PiceEngine::savePrefix() const {
- return ConfMan.getActiveDomainName()+(_demo ? Common::String("-demo") : Common::String())+((_mac || _windows) ? Common::String::format("-%s-%c",_mac ? "mac" : "win",_languagePrefix) : Common::String());
+ return ConfMan.getActiveDomainName()+(_saturn ? Common::String("-saturn-J") : Common::String())+(_demo ? Common::String("-demo") : Common::String())+((_mac || _windows) ? Common::String::format("-%s-%c",_mac ? "mac" : "win",_languagePrefix) : Common::String());
 }
 Common::String PiceEngine::saveName(bool automatic) const {
  return savePrefix()+(automatic ? "-pice-autosave.sav" : "-pice-slot0.sav");

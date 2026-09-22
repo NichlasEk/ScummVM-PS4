@@ -22,6 +22,20 @@ private:
  byte _shadow=241;
  int _height=0,_ascent=0,_maxWidth=0;
 };
+// External Unicode bitmap font for CJK; no glyph data is linked into the engine.
+class UnicodeBitmapFont : public Graphics::Font {
+public:
+ bool load(const Common::Array<byte> &bytes);
+ int getFontHeight() const override { return 18; }
+ int getMaxCharWidth() const override { return 18; }
+ int getCharWidth(uint32 chr) const override;
+ void drawChar(Graphics::Surface *dst,uint32 chr,int x,int y,uint32 color) const override;
+private:
+ int find(uint32 chr) const;
+ Common::Array<byte> _data;
+ uint32 _count=0;
+};
+bool runUnicodeFontTests();
 bool runFontTests();
 }
 #endif

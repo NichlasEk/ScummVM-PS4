@@ -1,10 +1,15 @@
 # Saturn Japanese edition: resource investigation
 
-Status: **native movie and background preview in the PS4 engine**; gameplay
-is not implemented. A separate unstable Saturn detector recognizes KVGA.KRO
-and J_KLANG.KRO. It enters a clearly labelled preview instead of executing PC
-room scripts. Existing DOS/Mac/Windows/demo paths and save namespaces remain
-separate. Never rename KVGA to KSVGA to bypass edition detection.
+Status: **experimental native Saturn gameplay in the PS4 engine**. The
+opening narration, submarine film, radio sequence and bridge now execute
+Saturn resources and scripts. Walking, examining a character, Japanese
+captions, the engine menu and save/restore have been exercised in shadPS4.
+This is not a completed Saturn playthrough or a physical-PS4 verification.
+The native console menu and full sound-routing equivalence remain unfinished.
+
+Detection recognizes KVGA.KRO and J_KLANG.KRO, then reads the resource directory
+from the user's A.BIN. Existing editions retain separate paths and save names.
+Never rename KVGA to KSVGA to bypass edition detection.
 
 The supplied disc is `Prisoner of Ice - Jashin Kourin (Japan)`, product
 T-26112G, V1.000. Its CUE describes three tracks: MODE1/2352 data, MODE2/2352
@@ -16,11 +21,12 @@ ignored `build/pice-saturn`.
 
 * KVGA.KRO: 1335 resources, 15468702 bytes. Low-resolution graphics; an
   inspected background is 320x158. Resource numbering differs from the
-  SVGA engine: SM02 begins at 1140 and objects at 1308. The current engine's
-  fixed graphics, scripts, UI and coordinate assumptions need adaptation.
+  SVGA engine: M02 begins at 1140 and objects at 1308. The runtime now resolves
+  chapter resources through the embedded native directory.
 * J_KLANG.KRO: 724 resources, 32921880 bytes. Japanese dialogue/inventory
   strings use Shift-JIS, rather than DOS-850 or MacRoman. Native Japanese
-  dialogue font sourcing/rendering remains to be established.
+  captions now render through an external Unicode bitmap font. The original
+  console font source remains to be established.
 * KSOUND.KRO: 353 resources, 93841604 bytes. The disc also has platform sound
   banks in BGM/*.OUT, SMP*/*.SE, JINGLE and VOICE00/VOICE01 XA files. Merely
   reading the KRO does not establish the Saturn runtime's sound routing.
@@ -62,12 +68,8 @@ must preserve their mode/subchannel information; the first-track ISO alone
 is **not a complete playable disc conversion**. The original raw tracks are
 untouched. No claim is made that a plain 2048-byte extraction preserves XA.
 
-Full gameplay support still requires a resource/layout adapter, low-resolution
-room coordinates and composition, Shift-JIS font support, verified room
-voice/music routing, and the separate Saturn UI. Sega FILM playback is now
-implemented by the first runtime milestone below. Validate those against the
-original runtime before advertising Saturn compatibility. Do not include
-commercial font/menu resources in the engine binary as a shortcut.
+The following milestones distinguish tested functionality from the remaining
+compatibility work. No commercial font/menu resources are embedded in the engine.
 
 ## First running milestone (2026-09-22)
 
@@ -108,7 +110,7 @@ Local evidence: `artifacts/pice/saturn-runtime-final.log`,
 `saturn-visible.log`, `saturn-window.png` and `saturn-intro-screen.png`.
 These generated files and all commercial assets stay ignored.
 
-The normal preview plays INFOGRAM, XING, XINGCOPY and VINTRO, then opens the
+With `pice_saturn_media_preview=true`, the optional viewer plays INFOGRAM, XING, XINGCOPY and VINTRO, then opens the
 background viewer. This is a development preview sequence, not a claim to
 reproduce the complete original Saturn boot/menu flow. Cross/left click and
 Circle/right click browse the background layers; D-pad left/right also browse;
@@ -121,7 +123,83 @@ Test-only config keys:
 * `pice_test_saturn_movie=INFOGRAM.CPK`: select a single startup movie.
 * `pice_test_saturn_pause_ms=1500`: pause at frame 10 to verify media timing.
 
-Remaining work: actual Saturn script/resource mapping, actor and scenery
-composition, Japanese text/font decoding, native OUT.BIN menu colors/layout,
-room speech/music routing (including XA), save/load, and a real game playthrough.
-This milestone does not establish physical-PS4 or PS1 compatibility.
+## Native gameplay milestone (2026-09-23)
+
+The engine scans A.BIN for its validated chained-XOR resource directory rather
+than embedding an extracted table. Its 29 groups identify native chapter
+scripts, actor banks, backgrounds and UI resources. M02's bootstrap is 1141,
+its first room 1142, its bridge 1148, and its opening sequence 1181. Native
+`empty\r\n` and `dummy` script slots are recognized as placeholders; unsupported
+instructions are not silently skipped.
+
+Room composition uses native 320x200 coordinates, then doubles the finished
+image to the existing 640x400 presentation. Hit testing and navigation map back
+to the same native coordinates. Cursor, inventory slots and icons are scaled
+consistently. Scripted movies map to native CPK files, pause room audio during
+playback and restore the indexed-color room afterward.
+
+A fresh launch plays INFOGRAM, XING, XINGCOPY and VINTRO before the engine's
+main menu. This is the current development startup sequence; exact Saturn boot
+ordering is not established. New game runs the native chapter bootstrap and
+opening sequence. The functional main menu uses the disc's PANEL artwork with
+English engine controls, not the OUT.BIN console interface.
+
+### Japanese captions
+
+Place an external `PICE-JA.FNT` next to KVGA.KRO. Generate it from a Japanese
+TrueType font you are entitled to use (Pillow required):
+
+```sh
+python3 scripts/pice/make-japanese-font.py /path/to/Japanese.ttf \
+  --latin-font /path/to/Latin.ttf \
+  --output build/pice-saturn/track1-files/PICE-JA.FNT
+```
+
+The optional Latin font supplies ASCII when the Japanese fallback font lacks
+it. The output is a replacement bitmap font, **not the original Saturn font**.
+Neither source fonts nor generated glyphs are part of the engine or package.
+Keep their license terms when distributing a generated font separately.
+
+PJF1 contains a four-byte signature, a little-endian glyph count, then sorted
+38-byte records: Unicode code point (LE32), advance (1..16), reserved zero byte,
+and a 16x16 one-bit bitmap, two bytes per row, most significant bit first.
+The loader validates lengths, ordering, code points and advances before use.
+Synthetic tests cover drawing, outline, clipping and malformed data.
+
+Shift-JIS decoding also needs ScummVM's `encoding.dat`. The PS4 package already
+ships it under `/app0/data`; custom test configurations need
+`extrapath=/app0/data`, as the normal PS4 configuration provides. Missing
+PICE-JA.FNT currently produces a log warning and leaves Japanese glyphs
+unavailable; it does not make the underlying room scripts unplayable.
+
+### Verification and remaining scope
+
+Actual PS4 eboot, visible shadPS4, isolated profile and save namespace:
+
+* Parser/font self-tests pass; all native script entry tables parse apart from
+  the recognized placeholders.
+* Opening bank 1181 runs its four narration pages and voices 636..639.
+* VIN1 plays 271/271 frames and 400,572 PCM bytes, then the radio sequence
+  completes and bank 1148 renders six animated actors.
+* Clicking the bridge character executes the normal walk/examine action;
+  Ryan then walks to another navigation point.
+* A captured rendered frame contains readable Japanese dialogue.
+* Native checkpoint restore and serialization roundtrip pass at bank 1148
+  (18,177 bytes); saving through the resumable main menu also succeeds.
+* Saturn saves use a `-saturn-J` namespace, separate from DOS/Mac/Windows/demo.
+* The final startup build plays all four opening CPK files to completion, then
+  opens the main menu.
+* The same eboot restores the copied DOS bank 1147 checkpoint and passes its
+  19,169-byte snapshot roundtrip (`saturn-game-dos-regression.log`).
+
+Evidence lives in ignored `artifacts/pice/saturn-game-third.log`,
+`saturn-restore-interaction.log`, `saturn-menu-caption.log`,
+`saturn-caption.png`, `saturn-startup-menu.log` and
+`saturn-new-game-final.log`. These are development
+artifacts, not redistributable game content.
+
+Remaining work: native OUT.BIN menu appearance and interactions, original
+Japanese font sourcing, verified platform audio routing including XA,
+comparison of scene composition against original Saturn output, and testing
+later chapters and a complete playthrough. PS1 compatibility cannot be inferred
+from visual similarity; its actual resources still need investigation.

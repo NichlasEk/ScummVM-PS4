@@ -81,3 +81,23 @@ PICE_PROFILE=xdg-pice-main-menu scripts/pice/run-emulator.sh
 
 The launcher builds before running. Q/U shortcuts remain available in game;
 use Load a game to return to the copied saves instead of New game.
+
+## Correction: full New game route
+
+The initial menu implementation inherited the preview's hardcoded room 0
+entry. That is the monster/crate scene, not the first playable scene.
+Original ICE640 code at 0x18d10 and 0x18d19 initializes chapter 2 and room
+39. Bootstrap 1139 at byte 1144 reads context slots 5 and 4 and requests
+that room through opcode 34.
+
+New game now seeds that original context, requires the bootstrap to stop
+normally with a valid destination, and follows the requested room. It no
+longer ignores a failed bootstrap or silently falls back to room 0.
+
+`artifacts/pice/opening-route-check.log` verifies the actual PS4 build:
+bootstrap stopped normally at PC 1154, room 39 (1179), INTRO_A's four
+text-only pages, all 181 Vin1.mux frames without skipping/error, room 22
+(1162), then room 6 (1146). The bridge scene was visually inspected and its
+opening dialogue finished with locks=0, action=-1, exclusive=-1 and
+dialogue=-1. This restores the playable bridge section before the crates;
+it is not a claim to have replayed the entire game from the new start.

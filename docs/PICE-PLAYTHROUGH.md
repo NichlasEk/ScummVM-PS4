@@ -1143,3 +1143,13 @@ Started using `PICE_PROFILE=xdg-pice-main-menu scripts/pice/run-emulator.sh`.
 The isolated frontend-check profile contains test-altered saves/settings;
 do not substitute it for the user's profile. New game reached submarine
 bank 1140 after loading/saving a chapter-3 fixture and replayed Vin12 normally.
+
+
+### Full opening route correction
+
+User found that New game still skipped explanatory text and the playable
+bridge. Removed the historical room-0 preview shortcut: original startup
+selects chapter 2 / room 39, and bootstrap 1139 must supply the destination.
+Tested 1179 -> 1162 -> 1146, four INTRO_A pages, complete Vin1.mux and the
+bridge dialogue releasing input. See PICE-STARTUP-AND-LANGUAGES.md.
+The earlier description of bank 1140 as the first playable scene was wrong.

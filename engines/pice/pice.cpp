@@ -1017,6 +1017,9 @@ bool PiceEngine::createActor(const Common::String &name,int16 local,int16 sequen
 }
 bool PiceEngine::showScriptScene() {
  Common::Array<byte> bytes;
+ // Original startup 0x18d10/0x18d19 selects chapter 2, room 39.
+ // Bootstrap opcode 34 reads that destination through context slots 5/4.
+ _chapter=_pendingChapter=2; _pendingRoom=-1; _roomBankId=chapterRoomBase(2)+39;
  _roomRunner.reset(); _inputLocks=0; _dialogueActor=-1; _narration=false; _pulseOffset=10; _pulseDelta=15;
  _worldVariables=ScriptVariables(); _worldItems.clear(); _items.clear(); _ownedItems.clear(); _itemLabels.clear(); _selectedItem=-1; _actors.clear(); _menus.clear(); _menuEnabled.clear(); _activeMenu=_menuChoice=_lastMenuChoice=-1; _hotspots.clear(); _actions.clear(); _player=-1;
  for(uint i=0;i<_sounds.size();++i) _mixer->stopHandle(_sounds[i].handle);
@@ -1028,7 +1031,8 @@ bool PiceEngine::showScriptScene() {
  uint16 initOpcode=0; bootstrap.word(init.position(0),initOpcode);
  int16 entryMode; _worldVariables.read(true,113,entryMode);
  debug("[pice] bootstrap result=%d pc=%u opcode=%u items=%u entry-mode=%d",int(initResult),init.position(0),initOpcode,_items.size(),entryMode);
- return loadRoom(0);
+ if(initResult!=ScriptRunner::kStopped || _pendingChapter!=2 || _pendingRoom<0) return false;
+ return loadRoom(_pendingRoom);
 }
 bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) {
  if((before!=0 && before!=1) || (after!=0 && after!=1) || name.empty()) return false;

@@ -18,7 +18,8 @@ static uint32 checksum(const Common::Array<byte> &bytes) {
 bool PiceEngine::requestSave(const Common::String &name,int16 local,const Common::String &key) {
  // Original 0x20cf -> main loop 0x18f9c -> 0xe504. Queue the request;
  // serialize only after the requesting task has advanced its PC.
- if(!name.equalsIgnoreCase("G_IceTxt") || local!=2 || key!="SAV00") return false;
+ // Scripts use both the global and localized message-table names.
+ if((!name.equalsIgnoreCase("G_IceTxt") && !name.equalsIgnoreCase("F_IceTxt")) || local!=2 || key!="SAV00") return false;
  _savePending=true; debug("[pice] queued autosave key=%s",key.c_str()); return true;
 }
 bool PiceEngine::snapshotReady() const {

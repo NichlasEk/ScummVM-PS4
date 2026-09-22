@@ -1090,3 +1090,16 @@ No automatic click hooks are configured.
 ACTIVE USER WINDOW is now `.tools/xdg-pice-stone-circle-check`. Preserve
 its ongoing manual progress and new saves. The previous flagstone-check
 profile retains the pre-fix Q save; do not use it as the newest progress.
+
+## Localized autosave message alias (2026-09-22)
+
+During continued manual play, bank1215 init stopped at PC244 opcode152
+while other tasks continued. The operands are `f_IceTxt`, 2, `SAV00`;
+requestSave only accepted `G_IceTxt`. Accept the localized F alias as well,
+retaining the exact message index/key checks and queued-save behavior.
+Regression checks accept the alias and reject an unrelated key. Built
+package and startup tests pass. Current manual stone-circle-check process
+is intentionally left running its existing build so play is not interrupted;
+the alias fix applies on the next launch.
+Isolated chapter3/room33 replay passed PC244 and queued SAV00; evidence:
+`artifacts/pice/autosave-alias-check.log`. Test process stopped afterward.

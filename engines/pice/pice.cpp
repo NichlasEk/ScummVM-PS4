@@ -213,6 +213,9 @@ int16 PiceEngine::storeActor(const RoomActor &actor) {
  _actors.push_back(actor); return _actors.size()-1;
 }
 bool PiceEngine::runActorLifecycleTests() {
+ if(!requestSave("f_IceTxt",2,"SAV00") || !_savePending) return false;
+ _savePending=false;
+ if(requestSave("f_IceTxt",2,"INVALID") || _savePending) return false;
  const int directions[][2]={{0,-10},{10,-10},{10,0},{10,10},{0,10},{-10,10},{-10,0},{-10,-10}};
  for(int i=0;i<8;++i) if(walkDirection(directions[i][0],directions[i][1])!=i) return false;
  if(walkDirection(2,12)!=4 || walkDirection(12,2)!=2) return false;

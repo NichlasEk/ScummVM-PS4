@@ -112,7 +112,7 @@ void PiceEngine::drawLabels() {
   const byte black[]={0,0,0},white[]={255,255,255};
   _system->getPaletteManager()->setPalette(black,0,1);
   _system->getPaletteManager()->setPalette(white,255,1);
-  font->drawString(&menu,_gameCompleted ? "The end" : "Game over",0,2,140,255,Graphics::kTextAlignCenter);
+  font->drawString(&menu,_gameCompleted ? (_demo ? "Demo complete" : "The end") : "Game over",0,2,140,255,Graphics::kTextAlignCenter);
   const char *options[]={"Load latest save", "Load autosave", "Load manual save", "Back to main menu", "Quit"};
   for(uint i=0;i<5;++i) font->drawString(&menu,options[i],0,17+i*12,140,255,Graphics::kTextAlignCenter);
   for(int y=0;y<152;++y) for(int x=0;x<280;++x)
@@ -1078,12 +1078,12 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  _movieSkipped=false;
  Common::File file;
  Common::String movieName=name;
- if(_mac) {
+ if(_mac || _demo) {
   movieName.toUppercase();
   if(movieName.hasPrefix("VFINAL")) movieName=Common::String::format("S%c%s",_languagePrefix,movieName.c_str()+1);
   else if(movieName.hasPrefix("V")) movieName.setChar('S',0);
  }
- if(!file.open(_mac ? Common::Path(movieName) : Common::Path("E_VIDEO").join(name))) { warning("[pice] movie open failed: %s",name.c_str()); return false; }
+ if(!file.open(_mac ? Common::Path(movieName) : _demo ? Common::Path("VIDEO").join(movieName) : Common::Path("E_VIDEO").join(name))) { warning("[pice] movie open failed: %s",name.c_str()); return false; }
  if(file.size()<32 || file.size()>64*1024*1024) return false;
  Common::Array<byte> bytes; bytes.resize(file.size());
  if(file.read(&bytes[0],bytes.size())!=bytes.size()) return false;
@@ -1160,6 +1160,12 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
  return !movie.failed && !shouldQuit();
 }
 bool PiceEngine::loadChapter(int16 chapter,uint room) {
+ if(_demo && chapter!=2 && chapterRoomBase(chapter)>=0 && room<uint(chapterRoomCount(chapter))) {
+  _pendingRoom=-1; _pendingChapter=_chapter;
+  if(!gameOver(0)) return false;
+  _gameCompleted=true; _mixer->stopHandle(_music.handle);
+  debug("[pice] Demo complete at chapter boundary %d",chapter); return true;
+ }
  if((chapter!=3 && chapter!=6 && chapter!=8 && chapter!=9 && chapter!=10 && chapter!=11 && chapter!=12) || room>=uint(chapterRoomCount(chapter))) return false;
  // Chapter-local definitions must be recreated before any destination room.
  _roomRunner.reset(); _actors.clear(); _hotspots.clear(); _actions.clear(); _worldItems.clear();
@@ -1977,6 +1983,7 @@ Common::Error PiceEngine::run() {
  if(!_graphics.open(Common::Path("KSVGA.KRO"))) return Common::Error(Common::kReadingFailed,"Cannot read PICE graphics archive");
  _mac=_graphics.isMac();
  _windows=!_mac && Common::File::exists(Common::Path("KSOUNDW.KRO"));
+ _demo=!_mac && !_windows && _graphics.count()==320;
  _availableLanguages.clear();
  for(const char *p="EBDFINSW";*p;++p)
   if(Common::File::exists(Common::Path(Common::String::format("%c_KLANG.KRO",*p))) &&
@@ -1988,7 +1995,9 @@ Common::Error PiceEngine::run() {
  if(!_language.open(Common::Path(languageArchive)) || !_soundArchive.open(Common::Path(_windows ? "KSOUNDW.KRO" : "KSOUND.KRO")))
   return Common::Error(Common::kReadingFailed,"Cannot read selected PICE language or sound archive");
  if(_language.isMac()!=_mac || _soundArchive.isMac()!=_mac) return Common::Error(Common::kReadingFailed,"Mixed DOS/Mac archives are not supported");
- debug("[pice] edition=%s language=%c",_mac ? "Macintosh" : _windows ? "Windows" : "DOS",_languagePrefix);
+ if(_demo && (!_graphics.useDemoLayout(false) || !_soundArchive.useDemoLayout(true)))
+  return Common::Error(Common::kReadingFailed,"Invalid demo resource layout");
+ debug("[pice] edition=%s language=%c",_mac ? "Macintosh" : _windows ? "Windows" : _demo ? "DOS demo" : "DOS",_languagePrefix);
  Common::Array<byte> uiResource;
  if(!_graphics.read(1318,uiResource) || !_originalFont.load(uiResource) ||
     !_graphics.read(1315,uiResource) || !_originalCursor.load(uiResource,1315))
@@ -2014,7 +2023,7 @@ Common::Error PiceEngine::run() {
  // This audits entry tables only; it does not run scene side effects.
  uint banks=0, entries=0, placeholders=0;
  uint prefixStopped=0, prefixUnsupported=0, prefixInvalid=0, prefixBudget=0, prefixWaiting=0, prefixMoved=0;
- for (uint i=1138;i<1306;++i) {
+ for (uint i=1138;i<(_demo ? 1180U : 1306U);++i) {
   Common::Array<byte> bytes;
   if (!_graphics.read(i,bytes)) return Common::Error(Common::kReadingFailed,"Cannot read script bank");
   if (bytes.size()==5 && memcmp(&bytes[0],"dummy",5)==0) { ++placeholders; continue; }

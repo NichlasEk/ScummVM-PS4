@@ -19,7 +19,7 @@ public:
  explicit PiceEngine(OSystem *system) : Engine(system), _picture(0), _speech(0), _textColor(255) {}
  Common::Error run() override;
 private:
- bool _mac=false, _windows=false;
+ bool _mac=false, _windows=false, _demo=false;
  MusicMidi _midi;
 #ifdef PICE_TESTBENCH
  bool auditWindowsAssets();

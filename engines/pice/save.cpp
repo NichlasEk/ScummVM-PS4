@@ -319,7 +319,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  return renderRoom();
 }
 Common::String PiceEngine::savePrefix() const {
- return ConfMan.getActiveDomainName()+((_mac || _windows) ? Common::String::format("-%s-%c",_mac ? "mac" : "win",_languagePrefix) : Common::String());
+ return ConfMan.getActiveDomainName()+(_demo ? Common::String("-demo") : Common::String())+((_mac || _windows) ? Common::String::format("-%s-%c",_mac ? "mac" : "win",_languagePrefix) : Common::String());
 }
 Common::String PiceEngine::saveName(bool automatic) const {
  return savePrefix()+(automatic ? "-pice-autosave.sav" : "-pice-slot0.sav");

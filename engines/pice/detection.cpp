@@ -22,6 +22,10 @@ static const ADGameDescription descriptions[] = {
   AD_ENTRY2s("KSVGA.KRO", "f933283265f8e8816acac67c9d72da85", 45874865,
              "KSOUNDW.KRO", "bfbfd6fe1f15d4eaa8b7bf71cdd1cf4d", 7160115),
   Common::EN_ANY, Common::kPlatformWindows, ADGF_UNSTABLE, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
+ {"pice", "English SVGA demo",
+  AD_ENTRY2s("KSVGA.KRO", "cabd2c120e30ddd608d25b9c1ea816a9", 10916737,
+             "E_KLANG.KRO", "3b1ba68af306305a26fe2f02a2e3fa17", 12707023),
+  Common::EN_ANY, Common::kPlatformDOS, ADGF_UNSTABLE | ADGF_DEMO, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
  AD_TABLE_END_MARKER
 };
 class PiceDetection : public AdvancedMetaEngineDetection<ADGameDescription> {

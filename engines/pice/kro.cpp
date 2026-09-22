@@ -29,13 +29,27 @@ bool parseKroIndex(Common::SeekableReadStream &s, Common::Array<KroEntry> &out, 
  out = entries;
  return true;
 }
+// Keep logical resource IDs stable across the compact demo and retail archives.
+// Only index records move; missing chapter resources remain absent.
+bool expandDemoIndex(Common::Array<KroEntry> &entries,bool sound) {
+ if(entries.size()!=(sound ? 83U : 320U)) return false;
+ struct Range { uint from,to,count; };
+ const Range graphics[]={{0,0,179},{179,815,67},{246,1138,42},{288,1306,32}};
+ const Range audio[]={{0,0,6},{6,45,68},{74,305,3},{77,308,6}};
+ Common::Array<KroEntry> expanded; expanded.resize(sound ? 353 : 1338);
+ for(uint i=0;i<expanded.size();++i) expanded[i]=KroEntry{};
+ const Range *ranges=sound ? audio : graphics;
+ for(uint r=0;r<4;++r) for(uint i=0;i<ranges[r].count;++i)
+  expanded[ranges[r].to+i]=entries[ranges[r].from+i];
+ entries=expanded; return true;
+}
 bool KroArchive::open(const Common::Path &path) {
  _file.close(); _entries.clear();
  return _file.open(path) && parseKroIndex(_file, _entries, &_mac);
 }
 bool KroArchive::read(uint index, Common::Array<byte> &out) {
  out.clear();
- if (index >= _entries.size()) return false;
+ if (index >= _entries.size() || !_entries[index].size) return false;
  const KroEntry &e = _entries[index];
  if (!_file.seek(e.offset)) return false;
  Common::Array<byte> packed; packed.resize(e.packedSize);

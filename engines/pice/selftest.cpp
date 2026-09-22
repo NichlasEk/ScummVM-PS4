@@ -30,6 +30,21 @@ bool runSelfTests() {
  if (decodeImageHeader(image, w, h)) return false;
  WRITE_LE_UINT16(&image[0], 65535);
  if (decodeImageHeader(image, w, h)) return false;
+ // Verify range boundaries and holes in the demo's virtual resource table.
+ for(uint sound=0;sound<2;++sound) {
+  Common::Array<KroEntry> demo; demo.resize(sound ? 83 : 320);
+  for(uint i=0;i<demo.size();++i) demo[i]=KroEntry{1,1,i+1,0};
+  if(!expandDemoIndex(demo,sound!=0)) return false;
+  if(sound) {
+   if(demo.size()!=353 || demo[45].offset!=7 || demo[112].offset!=74 ||
+      demo[113].size || demo[305].offset!=75 || demo[308].offset!=78 ||
+      demo[313].offset!=83 || demo[314].size) return false;
+  } else if(demo.size()!=1338 || demo[178].offset!=179 || demo[179].size ||
+     demo[815].offset!=180 || demo[881].offset!=246 || demo[882].size ||
+     demo[1138].offset!=247 || demo[1179].offset!=288 || demo[1180].size ||
+     demo[1306].offset!=289 || demo[1337].offset!=320) return false;
+  if(expandDemoIndex(demo,sound!=0)) return false;
+ }
  return true;
 }
 }

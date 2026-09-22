@@ -23,23 +23,23 @@ for p in src.iterdir():
  if p.is_file() and (not (dst/p.name).exists() or not filecmp.cmp(p, dst/p.name, shallow=False)):
   shutil.copyfile(p, dst/p.name)
 COPY
-# Testbench boots the native engine directly with externally mounted game data.
-# This bootstrap is confined to the separate experimental source/build tree.
-python3 - "$SCUMMVM_SOURCE_DIR" <<'PY'
+# Keep the hardware USB bootstrap and emulator entry point in one source.
+python3 - "$SCUMMVM_SOURCE_DIR" "$root/scripts/pice/bootstrap.inc" <<'PYBOOT'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1])/'backends/platform/sdl/posix/posix-main.cpp'
 s=p.read_text()
-if 'PICE_TESTBENCH' not in s:
- s=s.replace('int res = scummvm_main(argc, argv);', '''#ifdef PICE_TESTBENCH
- char arg0[] = "scummvm", arg1[] = "--path=/mnt/usb0", arg2[] = "--debuglevel=3", arg3[] = "--debugflags=detection", arg4[] = "pice";
- char *testArgs[] = {arg0, arg1, arg2, arg3, arg4, nullptr};
- int res = scummvm_main(5, testArgs);
-#else
- int res = scummvm_main(argc, argv);
-#endif''')
- p.write_text(s)
-PY
+declaration='extern "C" void ps4_refresh_usb_mounts(void);'
+if declaration not in s:
+ s=s.replace('extern "C" void ps4_release_usb_mounts(void);', 'extern "C" void ps4_release_usb_mounts(void);\n'+declaration)
+block=Path(sys.argv[2]).read_text().strip()
+if '#ifdef PICE_TESTBENCH' in s:
+ start=s.index('#ifdef PICE_TESTBENCH'); end=s.index('#endif',start)+len('#endif')
+ s=s[:start]+block+s[end:]
+else:
+ s=s.replace('int res = scummvm_main(argc, argv);',block)
+if p.read_text()!=s: p.write_text(s)
+PYBOOT
 fingerprint=$( { sha256sum "$root/scripts/configure-scummvm.sh" "$root/engines/pice/configure.engine"; printf '%s\n' "$SCUMMVM_ENGINES" "$SCUMMVM_EXTRA_CXXFLAGS"; } | sha256sum | cut -d ' ' -f 1)
 if [[ ! -f "$SCUMMVM_BUILD_DIR/config.h" || ! -f "$SCUMMVM_BUILD_DIR/.pice-config-id" ]] || [[ $(cat "$SCUMMVM_BUILD_DIR/.pice-config-id") != "$fingerprint" ]]; then
  "$root/scripts/configure-scummvm.sh" > "$root/artifacts/pice/configure.log" 2>&1

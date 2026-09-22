@@ -9,12 +9,12 @@ if [[ ! -f "$game_dir/KSVGA.KRO" || ! -f "$game_dir/E_KLANG.KRO" ]]; then
 fi
 "$root/scripts/pice/build.sh"
 if [[ ! -x "$root/.tools/shadps4/Shadps4-sdl.AppImage" ]]; then "$root/scripts/setup-emulator.sh"; fi
-export XDG_DATA_HOME="$root/.tools/xdg-pice"
+export XDG_DATA_HOME="$root/.tools/${PICE_PROFILE:-xdg-pice}"
 export XDG_CONFIG_HOME="$root/.tools/config-pice"
 export XDG_CACHE_HOME="$root/.tools/cache-pice"
 python3 - "$root" <<'PY'
-import json, pathlib, shutil, sys
-root=pathlib.Path(sys.argv[1]); profile=root/'.tools/xdg-pice/shadPS4'
+import json, os, pathlib, shutil, sys
+root=pathlib.Path(sys.argv[1]); profile=pathlib.Path(os.environ['XDG_DATA_HOME'])/'shadPS4'
 for d in ['data/scummvm/saves','game_data','input_config']:
  (profile/d).mkdir(parents=True,exist_ok=True)
 for name in ['config.json','users.json']:
@@ -36,6 +36,6 @@ if not ini.exists():
  ini.write_text('[scummvm]\ngui_theme=builtin\nsavepath=/data/scummvm/saves\ngfx_mode=normal\njoystick_num=0\nfullscreen=false\nconfirm_exit=false\nps4_usb_sandbox=false\nenable_unsupported_game_warning=false\n')
 PY
 ulimit -c 0
-printf 'PICE resource preview: original game data mounted separately at /mnt/usb0\n'
+printf 'PICE: original game data mounted separately at /mnt/usb0\n'
 timeout --kill-after=3s "${EMULATOR_TIMEOUT:-0}s" "$root/.tools/shadps4/Shadps4-sdl.AppImage" --fullscreen false \
  --mount "$game_dir" /mnt/usb0 -- "$root/build/scummvm-pice-pkg/eboot.bin" > "$root/artifacts/pice/emulator.log" 2>&1

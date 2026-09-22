@@ -1128,3 +1128,18 @@ hooks removed after launch. User's prior saves remain in stone-circle-check.
 Playback completed all 823 frames (`failed=0`) and entered the terminal
 menu. Ending-check is the remaining open window; the older black-screen
 process was stopped. Full post-ending menu appearance awaits user review.
+
+## 2026-09-22: original startup and main menu
+
+Normal boot now plays SINTRO/SCREDITS/STITRE and opens a wooden main menu
+using original panel 1321. Escape pauses/resumes; ending/death menus have
+Back to main menu. Save/load, new-game confirmation, persistent volume and
+subtitle settings, plus replayable startup/credits/outtakes are implemented.
+See PICE-STARTUP-AND-LANGUAGES.md for controls, test evidence and limitations.
+
+Current clean user profile: `.tools/xdg-pice-main-menu`. Manual/autosave files
+were copied from ending-check and SHA-256 compared; source profiles untouched.
+Started using `PICE_PROFILE=xdg-pice-main-menu scripts/pice/run-emulator.sh`.
+The isolated frontend-check profile contains test-altered saves/settings;
+do not substitute it for the user's profile. New game reached submarine
+bank 1140 after loading/saving a chapter-3 fixture and replayed Vin12 normally.

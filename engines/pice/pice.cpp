@@ -52,7 +52,7 @@ void PiceEngine::drawLabels() {
  if(_scenePreview && _hoverHotspot<0 && _hoverItem<0 && (_roomStatus.contains("stopped") || _roomStatus.contains("failed") || _roomStatus.contains("No valid")))
   font->drawString(screen,_roomStatus,8,365,624,_textColor);
  if(!_scenePreview) font->drawString(screen, _scenePreview ? "Left: act / walk | Right: examine | L1/Q save | R1/U load" : "[ Previous ]       [ Next ]        [ Repeat line ]        [ Exit ]", 8, 385, 624, _textColor);
- if (!_subtitle.empty()) {
+ if (!_subtitle.empty() && (_subtitles || !dialogueActive() || _dialoguePage>=_dialogueVoices.size() || _dialogueVoices[_dialoguePage]==0xffffffff)) {
   // Use a high-contrast, wrapped caption panel. The former one-line GUI
   // label clipped long replies and became tiny when the guest was scaled.
   Common::Array<Common::U32String> lines;
@@ -88,18 +88,18 @@ void PiceEngine::drawLabels() {
   font->drawString(screen,"Click outside / Esc: close",364,MIN(384,64+rows*24),264,_textColor);
  }
  if(_gameOver) {
-  screen->fillRect(Common::Rect(176,144,464,274),0);
-  Graphics::Surface menu; menu.create(140,64,Graphics::PixelFormat::createFormatCLUT8());
-  menu.fillRect(Common::Rect(0,0,140,64),0);
+  screen->fillRect(Common::Rect(176,144,464,298),0);
+  Graphics::Surface menu; menu.create(140,76,Graphics::PixelFormat::createFormatCLUT8());
+  menu.fillRect(Common::Rect(0,0,140,76),0);
   // Room fades can blacken the caption color; terminal menus need their
   // own visible palette entries even after the ending's fade to black.
   const byte black[]={0,0,0},white[]={255,255,255};
   _system->getPaletteManager()->setPalette(black,0,1);
   _system->getPaletteManager()->setPalette(white,255,1);
   font->drawString(&menu,_gameCompleted ? "The end" : "Game over",0,2,140,255,Graphics::kTextAlignCenter);
-  const char *options[]={"Load latest save", "Load autosave", "Load manual save", "Quit"};
-  for(uint i=0;i<4;++i) font->drawString(&menu,options[i],0,17+i*12,140,255,Graphics::kTextAlignCenter);
-  for(int y=0;y<128;++y) for(int x=0;x<280;++x)
+  const char *options[]={"Load latest save", "Load autosave", "Load manual save", "Back to main menu", "Quit"};
+  for(uint i=0;i<5;++i) font->drawString(&menu,options[i],0,17+i*12,140,255,Graphics::kTextAlignCenter);
+  for(int y=0;y<152;++y) for(int x=0;x<280;++x)
    *static_cast<byte *>(screen->getBasePtr(180+x,144+y))=*static_cast<const byte *>(menu.getBasePtr(x/2,y/2));
   menu.free();
  }
@@ -1033,6 +1033,8 @@ bool PiceEngine::showScriptScene() {
 bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) {
  if((before!=0 && before!=1) || (after!=0 && after!=1) || name.empty()) return false;
  for(uint i=0;i<name.size();++i) if(name[i]=='/' || name[i]=='\\' || name[i]==':') return false;
+ byte previousPalette[768]; _system->getPaletteManager()->grabPalette(previousPalette,0,256);
+ _movieSkipped=false;
  Common::File file;
  if(!file.open(Common::Path("E_VIDEO").join(name))) { warning("[pice] movie open failed: %s",name.c_str()); return false; }
  if(file.size()<32 || file.size()>64*1024*1024) return false;
@@ -1064,15 +1066,24 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
   uint32 target=uint64(frame)*movie.divisor*12*1000/1193182;
   do {
    Common::Event event;
-   while(_eventMan->pollEvent(event)) if(event.type==Common::EVENT_QUIT) quitGame();
-   if(shouldQuit() || _system->getMillis()-start>=target) break;
+#ifdef PICE_TESTBENCH
+   if(_frontendMovies && ConfMan.hasKey("pice_test_movie_skip_ms") &&
+      _system->getMillis()-start>=uint32(ConfMan.getInt("pice_test_movie_skip_ms"))) {
+    event.type=Common::EVENT_KEYDOWN; event.kbd.keycode=Common::KEYCODE_ESCAPE; _eventMan->pushEvent(event);
+   }
+#endif
+   while(_eventMan->pollEvent(event)) {
+    if(event.type==Common::EVENT_QUIT) quitGame();
+    if(_frontendMovies && (event.type==Common::EVENT_LBUTTONDOWN || (event.type==Common::EVENT_KEYDOWN && (event.kbd.keycode==Common::KEYCODE_ESCAPE || event.kbd.keycode==Common::KEYCODE_SPACE)))) _movieSkipped=true;
+   }
+   if(shouldQuit() || _movieSkipped || _system->getMillis()-start>=target) break;
    _system->delayMillis(5);
   } while(true);
  };
  if(before) _system->fillScreen(0);
  while(!shouldQuit() && movie.nextFrame()) {
   waitForFrame(movie.frame-1);
-  if(shouldQuit()) break;
+  if(shouldQuit() || _movieSkipped) break;
   // Fit the decoded image to the preview canvas, preserving its aspect ratio.
   uint width=640,height=400;
   if(movie.width*height>movie.height*width) height=width*movie.height/movie.width;
@@ -1088,17 +1099,17 @@ bool PiceEngine::playMovie(const Common::String &name,int16 before,int16 after) 
   _system->getPaletteManager()->setPalette(&movie.palette[0],0,256);
   _system->copyRectToScreen(&screen[0],640,0,0,640,400); _system->updateScreen();
  }
- if(!movie.failed && !shouldQuit()) waitForFrame(movie.frame);
+ if(!movie.failed && !shouldQuit() && !_movieSkipped) waitForFrame(movie.frame);
  _mixer->stopHandle(handle);
  for(uint i=0;i<paused.size();++i) _mixer->pauseHandle(paused[i],false);
  debug("[pice] movie background audio resumed channels=%u",paused.size());
  if(after) _system->fillScreen(0);
- _system->getPaletteManager()->setPalette(&_scenePalette[0],0,256);
+ _system->getPaletteManager()->setPalette(previousPalette,0,256);
  _roomClock=_system->getMillis(); _roomRenderClock=_roomClock;
 #ifdef PICE_TESTBENCH
  _testMovieDone=!movie.failed && !shouldQuit();
 #endif
- debug("[pice] movie completed name=%s frames=%u failed=%d",name.c_str(),movie.frame,movie.failed);
+ debug("[pice] movie completed name=%s frames=%u failed=%d skipped=%d",name.c_str(),movie.frame,movie.failed,_movieSkipped);
  return !movie.failed && !shouldQuit();
 }
 bool PiceEngine::loadChapter(int16 chapter,uint room) {
@@ -1961,8 +1972,9 @@ Common::Error PiceEngine::run() {
  initGraphics(640, 400);
  syncSoundSettings();
  CursorMan.setDefaultArrowCursor(true); CursorMan.showMouse(true);
- if (!showPicture(0)) { CursorMan.popCursor(); return Common::Error(Common::kReadingFailed); }
- // Exercise a text-to-voice mapping from original data; no gameplay trigger yet.
+ _system->fillScreen(0);
+ _subtitles=!ConfMan.hasKey("pice_subtitles") || ConfMan.getBool("pice_subtitles");
+ // Explicit restore flags remain available for isolated regression profiles.
  bool restored=false;
 #ifdef PICE_TESTBENCH
  if(ConfMan.getBool("pice_restore_slot0")) restored=readCheckpoint(false);
@@ -2022,12 +2034,18 @@ Common::Error PiceEngine::run() {
  }
 
 #endif
- if (!restored && !showScriptScene()) { warning("[pice] Room initialization unsupported; staying in background preview"); if (!playDialogueSample()) playSpeech(); }
+ if (!restored) {
+  if(!startupMovies()) warning("[pice] Startup movie unavailable");
+  if(!mainMenu(false)) { CursorMan.popCursor(); return Common::kNoError; }
+ }
 #ifdef PICE_TESTBENCH
  if(ConfMan.hasKey("pice_test_movie") && !playMovie(ConfMan.get("pice_test_movie"),1,1))
   return Common::Error(Common::kUnknownError,"Movie test failed");
 #endif
  bool done = false;
+#ifdef PICE_TESTBENCH
+ bool testPauseDone=false;
+#endif
  while (!shouldQuit() && !done) {
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
@@ -2035,12 +2053,13 @@ Common::Error PiceEngine::run() {
    int change = 0;
    if(_gameOver) {
     int choice=-1;
-    if(event.type==Common::EVENT_LBUTTONDOWN && event.mouse.x>=180 && event.mouse.x<460 && event.mouse.y>=174 && event.mouse.y<270) choice=(event.mouse.y-174)/24;
+    if(event.type==Common::EVENT_LBUTTONDOWN && event.mouse.x>=180 && event.mouse.x<460 && event.mouse.y>=174 && event.mouse.y<294) choice=(event.mouse.y-174)/24;
     if(event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN) choice=0;
     if(choice==0 && !loadLatestSave()) _roomStatus="No valid save available";
     if(choice==1 && !readCheckpoint(true)) _roomStatus="No valid autosave available";
     if(choice==2 && !readCheckpoint(false)) _roomStatus="No valid manual save available";
-    if(choice==3) done=true;
+    if(choice==3 || (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE)) done=!mainMenu(false);
+    if(choice==4) done=true;
     continue;
    }
    if(_activeMenu>=0 && event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) { _menuChoice=-2; continue; }
@@ -2075,7 +2094,7 @@ Common::Error PiceEngine::run() {
    if (event.type == Common::EVENT_KEYDOWN) {
     if (event.kbd.keycode == Common::KEYCODE_F5 && !writeCheckpoint(false)) warning("[pice] Save unavailable or failed");
     if (event.kbd.keycode == Common::KEYCODE_F7 && !readCheckpoint(false) && !readCheckpoint(true)) warning("[pice] No valid checkpoint to load");
-    if (event.kbd.keycode == Common::KEYCODE_ESCAPE) done = true;
+    if (event.kbd.keycode == Common::KEYCODE_ESCAPE) done = !mainMenu(true);
     if (!_scenePreview && event.kbd.keycode == Common::KEYCODE_RIGHT) change = 1;
     if (!_scenePreview && event.kbd.keycode == Common::KEYCODE_LEFT) change = -1;
     if (!_scenePreview && event.kbd.keycode == Common::KEYCODE_SPACE) playSpeech();
@@ -2095,6 +2114,12 @@ Common::Error PiceEngine::run() {
    }
   }
   tickRoom();
+#ifdef PICE_TESTBENCH
+  if(!testPauseDone && ConfMan.getBool("pice_test_pause_menu") && snapshotReady()) {
+   testPauseDone=true; Common::Event pauseEvent; pauseEvent.type=Common::EVENT_KEYDOWN;
+   pauseEvent.kbd.keycode=Common::KEYCODE_ESCAPE; _eventMan->pushEvent(pauseEvent);
+  }
+#endif
   advanceAnimation();
   _system->updateScreen(); _system->delayMillis(10);
  }

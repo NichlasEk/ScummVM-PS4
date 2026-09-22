@@ -55,7 +55,7 @@ static bool table(const Common::Array<byte> &data, uint32 start, uint32 end,
  out.push_back(end);
  return true;
 }
-bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId) {
+bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId,bool staticPanel) {
  archiveId=sourceId; fingerprint=2166136261U;
  for(uint i=0;i<data.size();++i) fingerprint=(fingerprint^data[i])*16777619U;
  frames.clear(); sequences.clear(); palette.clear(); _data.clear(); _images.clear(); _rawImages=false;
@@ -66,11 +66,14 @@ bool SpriteResource::load(const Common::Array<byte> &data,int32 sourceId) {
  if(raw) end=data.size()-4;
  // A zero palette offset denotes a resource using the room palette.
  const uint32 sequenceEnd=p ? p : end;
+ // Native menu panels have frames and bitmaps but no sequence table.
+ bool panel=staticPanel && c==0 && p && !raw;
+ if(panel) c=p;
  if (READ_LE_UINT32(&data[12]) || b < 24 || c < b || sequenceEnd < c || end < sequenceEnd ||
      end != data.size()-(raw ? 4 : 0) || (p && end - p != 768)) return false;
  Common::Array<uint32> frameOffsets, imageOffsets, sequenceOffsets;
  if (!table(data, 24, b, 0, frameOffsets,raw) || !table(data, b, c, 2, imageOffsets,raw) ||
-     !table(data, c, sequenceEnd, 0, sequenceOffsets,raw)) return false;
+     (!panel && !table(data, c, sequenceEnd, 0, sequenceOffsets,raw))) return false;
  SpriteResource parsed; parsed._rawImages=raw; parsed.archiveId=sourceId; parsed.fingerprint=fingerprint;
  for (uint i = 0; i + 1 < frameOffsets.size(); ++i) {
   uint32 start = frameOffsets[i], length = frameOffsets[i+1] - start;
@@ -281,6 +284,19 @@ bool runSpriteTests() {
      parsed.sequences[0].steps[0].ticks != 5 || parsed.sequences[0].steps[0].x != -2 ||
      parsed.palette[7] != 42 || !parsed.image(0, image) || image.mask[1] != 255 ||
      parsed.image(1, image) || image.width) return false;
+ // Menu panels omit the sequence table and must opt into that format.
+ Common::Array<byte> panelBytes;
+ panelBytes.resize(c+768,0);
+ memcpy(&panelBytes[0],&resource[0],c);
+ memcpy(&panelBytes[c],&resource[p],768);
+ WRITE_LE_UINT32(&panelBytes[8],0);
+ WRITE_LE_UINT32(&panelBytes[16],c);
+ WRITE_LE_UINT32(&panelBytes[20],panelBytes.size());
+ SpriteResource panel;
+ if(panel.load(panelBytes) || !panel.load(panelBytes,-1,true) ||
+    panel.frames.size()!=1 || !panel.sequences.empty() || panel.palette[7]!=42) return false;
+ Common::Array<byte> panelCanvas; panelCanvas.resize(16,9);
+ if(!panel.paintFrame(0,3,-2,panelCanvas,4,4) || panelCanvas[1]!=0 || panelCanvas[2]!=7) return false;
  // Bottom anchored composition preserves transparent destination pixels,
  // including when a literal palette-zero pixel lies beside transparency.
  Common::Array<byte> canvas; canvas.resize(16,9);

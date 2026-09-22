@@ -18,6 +18,12 @@ public:
  Common::Error run() override;
 private:
  bool showPicture(uint position);
+ bool mainMenu(bool resumable);
+ bool startupMovies();
+ bool newGame();
+ bool _frontendMovies=false;
+ bool _movieSkipped=false;
+ bool _subtitles=true;
  bool requestSave(const Common::String &name,int16 local,const Common::String &key) override;
  bool snapshot(Common::Array<byte> &bytes,bool loading,bool apply=true);
  bool writeCheckpoint(bool automatic);

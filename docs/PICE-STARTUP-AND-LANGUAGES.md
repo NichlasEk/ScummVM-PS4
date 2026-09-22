@@ -1,6 +1,6 @@
 # Original startup, menu and installed languages
 
-Read-only investigation, 2026-09-22. No startup/menu behavior changed.
+Investigation and implementation, 2026-09-22.
 
 ## Installed language evidence
 
@@ -24,20 +24,60 @@ Original startup code at 0x18df0, 0x18e0a and 0x18e24 invokes vintro.mux,
 vcredits.mux and vtitre.mux respectively. All these clips, including their
 S variants, exist locally. Header inspection confirms SINTRO/SCREDITS/
 STITRE are 640x480, VINTRO is 320x200: the S/V prefix is a resolution
-variant, not a subtitle-language selector. Exact visual contents of each
-startup clip have not yet been reviewed during this investigation.
+variant, not a subtitle-language selector.
 
-Our run path restores a checkpoint or enters showScriptScene directly,
-bypassing this original startup sequence. Restore the startup presentation
-without deleting or overriding existing manual or automatic saves.
+Normal startup now plays SINTRO, SCREDITS and STITRE in that order, then
+opens the main menu. Escape, Space or left click skips the current startup
+or extras clip. Script-triggered gameplay movies retain their existing
+completion semantics. Movie palette restoration also works before any room
+has been initialized.
 
-User supplied the original wooden-crate Main menu reference, containing:
-Return to game, New game, Load a game, Save a game, Options, Exit game.
-Use this visual/layout reference instead of the earlier proposed generic
-pixel-text title menu. Executable data exposes MAIN_PANEL, OPTIONS_PANEL,
-DIVOPT_PANEL, VOLOPT_PANEL, LOAD_PANEL and SAVE_PANEL identifiers. Locate
-and decode the panel assets before claiming the native menu is restored.
+The main menu uses the original KSVGA resource 1321 wooden crate. These
+static panels have no sequence table; SpriteResource accepts this format
+only when explicitly requested, with synthetic parser/rendering coverage.
+Menu text currently uses ScummVM's pixel font, not the original gold serif
+font. No commercial assets are included in the source or package.
 
-Requested future scope: a main-menu return after completion and from pause,
-original logo/film startup, persistent speech/music/effects volumes, subtitle
-visibility and a language selector limited to actual supported data.
+The six main actions are Return to game, New game, Load a game, Save a game,
+Options and Exit game. Escape opens the same menu during gameplay and
+returns from pause. A dialogue-choice menu consumes the first Escape to
+close its choices. Both death and completion menus offer Back to main menu.
+New game and Exit ask for confirmation; load exposes latest/manual/autosave.
+Save a game writes the existing manual Q slot when a valid snapshot can be
+made. Opening a menu never replaces a save. Starting a new game can later
+replace the autosave through normal gameplay.
+
+Menus suspend room ticks and pause active sound handles, restoring speech
+caption timing on resume. Options persist speech/music/effects volumes and
+subtitle visibility. Left/right or clicking the corresponding half of a
+volume row adjusts it. Text-only dialogue remains visible with subtitles
+off. Movie audio is a single mixed effects track, not separate speech/music.
+English is displayed as information; other text packs are not yet supported.
+Films and extras provides startup replay, credits and outtakes.
+
+## Verification and local continuation
+
+- `frontend-check.log`: full original startup clips completed with 709,
+  973 and 603 frames respectively; main/options PPMs visually inspected.
+- `frontend-load-check.log`: ordinary injected menu keys loaded bank 1215,
+  opened pause and resumed without replacing the room.
+- `frontend-newgame-check.log`: saved the isolated test slot, then started a
+  new game from that chapter-3 save; bank 1140 and Vin12 movie reached, with
+  the first playable submarine scene visually inspected.
+- `frontend-settings-check.log`: speech=166 and subtitles=false persisted in
+  scummvm.ini, including the automatically created temporary game target.
+- `frontend-extras-check.log`: restarted with persisted settings; credits
+  and outtakes selected through menu input and skipped through Escape.
+- Built PS4 package; guest parser self-tests pass, including static panels.
+  Logs are local under artifacts/pice, captures under the isolated profile.
+
+Personal ending saves were copied intact to `.tools/xdg-pice-main-menu`;
+original ending/stone-circle profiles remain untouched. This clean profile
+has no automatic restore or input-injection flags. Restart it with:
+
+```sh
+PICE_PROFILE=xdg-pice-main-menu scripts/pice/run-emulator.sh
+```
+
+The launcher builds before running. Q/U shortcuts remain available in game;
+use Load a game to return to the copied saves instead of New game.

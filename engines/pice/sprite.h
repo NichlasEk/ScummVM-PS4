@@ -16,7 +16,7 @@ struct SequenceStep { uint16 frame, ticks; int16 x, y; };
 struct SpriteSequence { Common::Array<SequenceStep> steps; bool valid = true; };
 class SpriteResource {
 public:
- bool load(const Common::Array<byte> &data,int32 archiveId=-1);
+ bool load(const Common::Array<byte> &data,int32 archiveId=-1,bool staticPanel=false);
  int32 archiveId=-1;
  uint32 fingerprint=0;
  bool paintScaledFrame(uint frame,int x,int bottom,uint scale,Common::Array<byte> &canvas,uint width,uint height) const;

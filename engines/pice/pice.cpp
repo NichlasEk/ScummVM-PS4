@@ -371,6 +371,12 @@ bool PiceEngine::runActorLifecycleTests() {
  if(invoke(80,Common::String(),args,Common::String(),result) || _actions.size()!=count) return false;
  args[2]=-1; args[4]=7;
  if(!invoke(80,Common::String(),args,Common::String(),result) || _actions.back().entry!=-1) return false;
+ // Item -1 is a valid fallback-only action, not a wildcard item match.
+ args.clear(); args.push_back(0); args.push_back(-1); args.push_back(-1); args.push_back(10);
+ if(!invoke(81,Common::String(),args,Common::String(),result) || _actions.back().item!=-1 ||
+    _actions.back().matches(9,0) || _actions.back().matches(6,-1)) return false;
+ uint dormantCount=_actions.size(); args[1]=-2;
+ if(invoke(81,Common::String(),args,Common::String(),result) || _actions.size()!=dormantCount) return false;
  // Releasing a background must not reset an independently running fade.
  _scenePixels.resize(16,1); _fadeLevel=27;
  args.clear(); args.push_back(10); args.push_back(0); args.push_back(0); args.push_back(0);
@@ -910,7 +916,9 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
  if(op==58 || op==81) {
   if(args.size()!=4) return false;
   if(args[0]==-1) { result=-1; return true; } // Original optional absent hotspot.
-  if(op==81 && (args[1]<0 || uint(args[1])>=_items.size())) return false;
+  // Original 0x2ee5 stores item -1 as well: a dormant item action can
+  // supply a fallback for other verbs (0x7f64), without matching any item.
+  if(op==81 && (args[1]<-1 || args[1]>=int(_items.size()))) return false;
   // 0x83cb stores a slot in the fixed 50-hotspot table, even when the
   // slot is currently inactive. Bridge re-entry registers Wayne's action
   // without recreating his hotspot; no hit test can select that empty slot.

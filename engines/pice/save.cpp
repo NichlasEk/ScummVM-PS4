@@ -253,6 +253,8 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
   if(_roomRunner->position(20)==3408) _roomRunner->resumeStoppedAt(20,146);
   if(_roomRunner->position(21)==3496) _roomRunner->resumeStoppedAt(21,146);
  }
+ if(bankId==1298 && _roomRunner->position(0)==402 && _roomRunner->resumeStoppedAt(0,6))
+  debug("[pice] resumed stone-circle fallback registration");
  if(bankId==1142 && _roomRunner->position(0)==1610 && _roomRunner->resumeStoppedAt(0,110))
   debug("[pice] resumed optional medal action setup");
  // Resume the exact mine initializer interrupted by the XA4F cart resource.

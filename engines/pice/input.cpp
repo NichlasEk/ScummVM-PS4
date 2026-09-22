@@ -155,6 +155,8 @@ void PiceEngine::updateHover() {
   Common::Point point=_eventMan->getMousePos();
   if(inventoryVisible()) _hoverItem=inventoryAt(point);
   int hit=point.y<40 ? -1 : hotspotAt(point);
+  // Named floor triggers remain discoverable even without click actions.
+  if(hit>=0 && _hotspots[hit].actor<0 && !_hotspots[hit].label.empty()) spot=hit;
   for(uint i=0;i<_actions.size();++i) if(hit>=0 && _actions[i].hotspot==hit && (_actions[i].entry>=0 || _actions[i].fallback>0 || _actions[i].exitChapter>=0)) { spot=hit; break; }
  }
  _hoverHotspot=spot;

@@ -1065,3 +1065,28 @@ ACTIVE USER WINDOW is now `.tools/xdg-pice-flagstone-check`, with the user's
 continued play after the test. Automatic click hooks have been removed
 from its config. Preserve this profile and its new saves; do not restart
 from the older boat-check profile or replace its progress with a test run.
+
+## Stone-circle fallback registration and floor labels (2026-09-22)
+
+Bank 1298 init task 0 stopped at PC402: assignment of opcode81's return,
+with item=-1, approach=-1, entry10, followed by opcode110 fallback10.
+Original registration 0x2ee5/0x83cb permits the sentinel. Matching 0x7f64
+compares the item exactly, so -1 is not a wildcard; its non-item-verb
+fallback is still usable. Accept -1, reject lower values, preserve exact
+matching. Added registration/matching regression checks and exact-PC
+recovery for saved partial initialization.
+
+Named rectangular hotspots such as the flagstone were also filtered out
+by updateHover unless they had action mappings. Their labels now remain
+visible without a mapped action, consistent with pressure-plate walking.
+
+Built package and passed startup self-tests. User pressed Q at the failure;
+backup is `artifacts/pice/before-stone-circle-saves`. Copied that bank1298
+save into `.tools/xdg-pice-stone-circle-check`, restored past PC402, and
+observed subsequent user interactions and completed dialogue lines105/106,
+then line107 and Dietrich kneeling. Evidence: `artifacts/pice/stone-circle-check.log`.
+No automatic click hooks are configured.
+
+ACTIVE USER WINDOW is now `.tools/xdg-pice-stone-circle-check`. Preserve
+its ongoing manual progress and new saves. The previous flagstone-check
+profile retains the pre-fix Q save; do not use it as the newest progress.

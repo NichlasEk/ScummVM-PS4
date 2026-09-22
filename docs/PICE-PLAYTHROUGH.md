@@ -1042,3 +1042,26 @@ Evidence: `artifacts/pice/fire-preload-check.log`. Personal saves backed up
 under `artifacts/pice/before-fire-preload-saves` before testing.
 The manual window remains `.tools/xdg-pice-boat-check`; it now starts from
 its newer autosave, rather than the older boat Q save. No automatic clicks.
+
+## Chapter 12 flagstone click obstruction (2026-09-22)
+
+Bank 1295's named flagstone rectangle is (248,376)-(266,396), with no
+click action: task 8 waits for Ryan to enter it via opcode 112. Picking
+already recognized it, but clickRoom rejected every named hotspot without
+an action and separately rejected floor clicks at view Y >=338. Permit
+plain left-click walking on rectangular hotspots with no action mappings,
+and use the rendered scene's Y360 boundary. Actor hotspots, item uses,
+right-clicks and unmatched mapped actions retain their existing behavior.
+
+Built PS4 package; startup self-tests passed. Copied personal Q save into
+`.tools/xdg-pice-flagstone-check`, clicked mask hotspot 2 to approach the
+left side, then flagstone hotspot 5 through normal clickRoom. The room
+created hotspot 7, "A passage". Subsequent manual interaction entered
+bank 1296, visually showing the outdoor stone circle.
+Evidence: `artifacts/pice/flagstone-check.log`; save backup:
+`artifacts/pice/before-flagstone-saves`.
+
+ACTIVE USER WINDOW is now `.tools/xdg-pice-flagstone-check`, with the user's
+continued play after the test. Automatic click hooks have been removed
+from its config. Preserve this profile and its new saves; do not restart
+from the older boat-check profile or replace its progress with a test run.

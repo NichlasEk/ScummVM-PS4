@@ -225,7 +225,13 @@ bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {
  bool fallbackUsed=selected<0;
  if(selected<0) selected=fallback;
  if(selected<0) {
-  if(!_playerMovement || _player<0 || spot>=0 || point.y<40 || point.y>=338) return false;
+  if(!_playerMovement || _player<0 || point.y<40 || point.y>=360) return false;
+  if(spot>=0) {
+   // Named floor regions can be pressure plates driven by opcode 112,
+   // without a click action. Let a plain left click walk onto them.
+   if(rightButton || _selectedItem>=0 || _hotspots[spot].actor>=0) return false;
+   for(uint i=0;i<_actions.size();++i) if(_actions[i].hotspot==spot) return false;
+  }
   Common::Point target; if(!_navigation.nearest(Common::Point(point.x+cameraX(),point.y+40+cameraY()),target)) return false;
   if(target==_actors[_player].feet) return true;
   Common::Array<int16> args; args.push_back(_player); args.push_back(target.x); args.push_back(target.y); int16 result;

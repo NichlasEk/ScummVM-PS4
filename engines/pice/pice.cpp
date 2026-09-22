@@ -427,6 +427,19 @@ bool PiceEngine::runActorLifecycleTests() {
  _actionEntry=15;
  if(!invoke(51,Common::String(),args,Common::String(),result) || _actors[0].sequence!=2 || _actionEntry!=15) return false;
  _actionEntry=-1; _player=-1;
+ // Preloaded animations exchange ownership, preserve the old resource in
+ // the slot, reject bad sequences without mutation and can swap back.
+ _actors[0].sprite.archiveId=7; _actors[0].resource=7;
+ _actors[0].sprite.sequences.resize(1); _actors[0].sprite.sequences[0].steps.resize(1);
+ SpriteResource preload; preload.archiveId=8; preload.sequences.resize(1); preload.sequences[0].steps.resize(1);
+ _preloadedAnimations.push_back(preload);
+ args.clear(); args.push_back(0); args.push_back(0); args.push_back(1); args.push_back(12); args.push_back(34);
+ if(invoke(146,Common::String(),args,Common::String(),result) || _actors[0].resource!=7 || _preloadedAnimations[0].archiveId!=8) return false;
+ args[2]=0;
+ if(!invoke(146,Common::String(),args,Common::String(),result) || _actors[0].resource!=8 ||
+    _preloadedAnimations[0].archiveId!=7 || _actors[0].feet!=Common::Point(12,34) || !actorBusy(0)) return false;
+ if(!invoke(146,Common::String(),args,Common::String(),result) || _actors[0].resource!=7 || _preloadedAnimations[0].archiveId!=8) return false;
+ _preloadedAnimations.clear(); args.resize(2);
  // A disconnected but valid destination completes without crossing a wall,
  // cancels an old walk, and leaves malformed node references as errors.
  _navigation.clear(); _navigation.node(0,0,0,100); _navigation.node(1,100,0,100);
@@ -761,6 +774,26 @@ bool PiceEngine::invoke(uint16 op,const Common::String &name,const Common::Array
   if(slot==_preloadedAnimations.size()) _preloadedAnimations.push_back(sprite);
   else _preloadedAnimations[slot]=sprite;
   result=slot; debug("[pice] animation preload slot=%u resource=%d",slot,sprite.archiveId); return true;
+ }
+ if(op==146) {
+  // Original 0x1d9b -> 0x1ac83 swaps the actor resource with the preload
+  // slot and starts a finite sequence at absolute coordinates. Scheduler
+  // state 12 (0x4d6) waits for completion; it does not swap back.
+  if(args.size()!=5 || args[0]<0 || uint(args[0])>=_actors.size() || !_actors[args[0]].active ||
+     args[1]<0 || uint(args[1])>=_preloadedAnimations.size()) return false;
+  RoomActor &actor=_actors[args[0]];
+  SpriteResource &preload=_preloadedAnimations[args[1]];
+  if(actor.animationMode==3 || preload.archiveId<0 || !preload.hasSequence(args[2])) return false;
+  SpriteResource previous=actor.sprite;
+  actor.sprite=preload; preload=previous; actor.resource=actor.sprite.archiveId;
+  actor.sequence=args[2]; actor.step=0; actor.node=-1;
+  actor.feet=Common::Point(args[3],args[4]); actor.animationOrigin=actor.feet;
+  actor.frameTicks=MAX<uint16>(1,actor.sprite.sequences[actor.sequence].steps[0].ticks);
+  actor.animationMode=1; actor.animationPaused=false;
+  actor.path.clear(); actor.pathIndex=0; actor.walkDistance=actor.walkProgress=0;
+  result=actor.sequence;
+  debug("[pice] preload-animation actor=%d slot=%d resource=%d sequence=%d",args[0],args[1],actor.resource,actor.sequence);
+  return true;
  }
  if(op==144) {
   // 0x1a943 releases a preload handle without touching room actors.

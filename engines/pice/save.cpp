@@ -248,6 +248,11 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  _actionEntry=-1; _actionContext=-1; _actionHotspot=-1; _actionWalking=false; _hoverHotspot=-1;
  _random.setSeed(seed); _dialogueActor=-1; _narration=false; _closeup=false; _subtitle.clear(); _savePending=false; _pendingRoom=-1;
  // Recover the precise partial initializer left after returning with the medal.
+ // Older builds stopped these fire tasks before applying the resource swap.
+ if(bankId==1295) {
+  if(_roomRunner->position(20)==3408) _roomRunner->resumeStoppedAt(20,146);
+  if(_roomRunner->position(21)==3496) _roomRunner->resumeStoppedAt(21,146);
+ }
  if(bankId==1142 && _roomRunner->position(0)==1610 && _roomRunner->resumeStoppedAt(0,110))
   debug("[pice] resumed optional medal action setup");
  // Resume the exact mine initializer interrupted by the XA4F cart resource.

@@ -1019,3 +1019,26 @@ ACTIVE USER WINDOW now uses .tools/xdg-pice-boat-check (user continued in
 the visible test window). Leave it running; its config has automatic click
 hooks removed for future restarts. Log boat-dialogue-check.log. Preserve any
 new Q there when continuing; original preload-check saves are untouched.
+
+## Chapter 12 fire preload exchange (2026-09-22)
+
+User report: bank 1295 task 20 stopped at PC 3408, opcode 146;
+its companion task 21 also stopped at PC 3496. Original handler 0x1d9b
+calls 0x1ac83 with actor, preload slot, sequence, x, y. It exchanges the
+actor resource with the slot, starts a finite sequence, and yields in
+scheduler state 12 (0x4d6). Completion does not exchange resources back.
+
+Implemented the exchange with prevalidation, absolute positioning and an
+actor wait. Existing actor/preload serialization preserves both sides of
+the exchange; no save layout change is needed. Loading an older snapshot
+can resume only the two exact stopped instructions above. Tests cover
+invalid sequences, reciprocal resource ownership, and saved animation waits.
+
+Runtime: copied the user's boat-check autosave (bank 1295) to
+`.tools/xdg-pice-fire-preload-check`. Both fire actors completed the new
+animations (resources 744 and 742), the room retained its visible fire,
+and tracing showed locks=0, action=-1, exclusive=-1, dialogue=-1.
+Evidence: `artifacts/pice/fire-preload-check.log`. Personal saves backed up
+under `artifacts/pice/before-fire-preload-saves` before testing.
+The manual window remains `.tools/xdg-pice-boat-check`; it now starts from
+its newer autosave, rather than the older boat Q save. No automatic clicks.

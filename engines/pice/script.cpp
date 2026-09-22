@@ -158,7 +158,7 @@ static bool invocationShape(uint16 op,uint &before,uint &after,bool &key) {
  case 88: case 30: case 68: case 69: case 33: case 118: case 50: case 51: case 60: case 97: case 110: case 114: before=2; return true;
  case 119: case 144: case 139: case 149: case 115: case 153: case 82: case 90: case 105: case 67: case 104: case 101: case 83: case 84: case 98: case 56: case 92: case 93: case 100: before=1; return true;
  case 89: case 81: case 58: case 95: before=4; return true;
- case 80: case 109: before=5; return true;
+ case 146: case 80: case 109: before=5; return true;
  case 87: case 64: case 116: case 123: case 135: case 136: before=3; return true;
  case 143: case 32: case 29: case 133: after=1; return true;
  case 137: after=2; return true;
@@ -368,7 +368,7 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if(!_scene->animatedDialogue(textName,key,animationName,args)) { task.active=false; return kUnsupported; }
   task.pc=next; task.actor=-28-args[0]; return kWaiting;
  }
- if(opcode==87 || opcode==98 || opcode==123 || opcode==50 || opcode==51 || opcode==96 || opcode==117) {
+ if(opcode==146 || opcode==87 || opcode==98 || opcode==123 || opcode==50 || opcode==51 || opcode==96 || opcode==117) {
   uint32 actorPC=next+2; int16 actor;
   if(!_bank.expression(actorPC,actor,_variables,_scene) || actor<0) { task.active=false; return kInvalid; }
   if(!value(next,argument)) { task.active=false; return kUnsupported; }
@@ -754,6 +754,7 @@ bool runScriptTests() {
   bool actorBusy(int16 actor) const override { return actor==2 && busy; }
   bool invoke(uint16 opcode,const Common::String &name,const Common::Array<int16> &args,const Common::String &key,int16 &result) override {
    if(opcode==81 && args.size()==4 && args[0]==0 && args[1]==2 && args[2]==-1 && args[3]==11) { ++itemActions; result=0; return true; }
+   if(opcode==146 && args.size()==5 && args[0]==2 && args[1]==0 && args[2]==0 && args[3]==12 && args[4]==34) { result=0; return true; }
    if(opcode==100 && args.size()==1 && args[0]==3) { ++soundCalls; result=3; return true; }
    if(opcode==147 && args.size()==4 && args[0]==2 && args[1]==3 && args[2]==5 && args[3]==1) { ++triggerCalls; result=2; return true; }
    if(opcode==109 && args.size()==5 && args[0]==2 && args[1]==3 && args[2]==75 && args[3]==8 && args[4]==1 && name.empty() && key.empty()) {
@@ -771,6 +772,19 @@ bool runScriptTests() {
    ++palettes; return true;
   }
  } sink;
+ // A preload swap must yield until its finite animation ends, including
+ // after restoring a saved wait, without invoking the swap a second time.
+ const uint16 preloadWords[]={1,146,20,2,20,0,20,0,20,12,20,34,31,20,0};
+ bytes.resize(sizeof(preloadWords)); for(uint i=0;i<sizeof(preloadWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],preloadWords[i]);
+ ScriptResource preloadBank; if(!preloadBank.load(bytes)) return false;
+ ScriptRunner preloadRunner(preloadBank,nullptr,&sink); preloadRunner.start(0);
+ if(preloadRunner.step(0)!=ScriptRunner::kWaiting || preloadRunner.position(0)!=24 || preloadRunner.step(0)!=ScriptRunner::kWaiting) return false;
+ Common::Array<byte> preloadState; StateIO preloadOut(preloadState,false); if(!preloadRunner.syncState(preloadOut)) return false;
+ ScriptRunner restoredPreload(preloadBank,nullptr,&sink); StateIO preloadIn(preloadState,true);
+ if(!restoredPreload.syncState(preloadIn) || !preloadIn.finished() || restoredPreload.step(0)!=ScriptRunner::kWaiting) return false;
+ sink.busy=false;
+ if(restoredPreload.step(0)!=ScriptRunner::kWaiting || restoredPreload.step(0)!=ScriptRunner::kStopped) return false;
+ sink.busy=true;
  // A competing line waits without consuming its operands or killing its task.
  for(uint i=0;i<5;++i) {
   const uint16 ops[]={52,111,122,125,128,129};

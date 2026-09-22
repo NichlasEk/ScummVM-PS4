@@ -65,3 +65,18 @@ round-trip assertion failed with zero snapshot bytes. This is not evidence of
 a successful round trip there; the successful round trip above was bank 1140.
 The interactive profile was cleaned of restore/test flags and restarted through
 the ordinary title menu/new-game flow.
+
+## Radio close-up wait correction
+
+Opcode 128 uses the independent narration channel (original scheduler state
+5). Its returned -27 marker was incorrectly converted with the actor-speech
+encoding, becoming -1 (no wait). Room 22 could therefore enter the bridge
+before voice 107 finished. The runner now waits on narrationBusy(), as opcode
+122 does. A synthetic regression keeps the PC fixed over ten scheduler visits
+while the voice is active, then verifies release after completion.
+
+The rebuilt PS4 target passed its tests under shadPS4 on an isolated Xvfb
+display, leaving the interactive game alone. The full new-game path reached
+room 22, waited during closeup 1020, logged dialogue completion, and only then
+entered bridge bank 1146. Evidence: artifacts/pice/radio-hidden-check.log and
+radio-wait-build.log. No physical-console audio check has been performed yet.

@@ -351,7 +351,9 @@ ScriptRunner::Result ScriptRunner::step(uint index,uint32 elapsedTicks) {
   if(!_bank.string(next,key)) { task.active=false; return kInvalid; }
   int16 actor;
   if(!_scene->closeupDialogue(animationName,textName,key,args,actor)) { task.active=false; return kUnsupported; }
-  task.pc=next; task.actor=-28-actor; return kWaiting;
+  // Close-ups use the independent narration channel (original state 5).
+  // Encoding its -27 sentinel as an actor produced -1 and skipped the wait.
+  task.pc=next; task.actor=-27; return kWaiting;
  }
  if(opcode==129) {
   if(!_scene) { task.active=false; return kUnsupported; }
@@ -722,6 +724,10 @@ bool runScriptTests() {
    ++narrationCalls; narrationPlaying=true; return true;
   }
   bool describeObject(int16 x,int16 y,const Common::String &name,int16 local,const Common::String &key) override { return narrate(x,y,name,local,key); }
+  bool closeupDialogue(const Common::String &animation,const Common::String &text,const Common::String &key,const Common::Array<int16> &args,int16 &actor) override {
+   if(animation!="A" || text!="T" || key!="K" || args.size()!=6) return false;
+   actor=-27; narrationPlaying=true; return true;
+  }
   bool speechBlocked=false;
   bool dialogueBlocked(uint task) const override { return speechBlocked; }
   bool inside=false;
@@ -811,6 +817,17 @@ bool runScriptTests() {
     descriptionRunner.step(0)!=ScriptRunner::kWaiting || sink.narrationCalls!=2) return false;
  sink.narrationPlaying=false;
  if(descriptionRunner.step(0)!=ScriptRunner::kWaiting || descriptionRunner.step(0)!=ScriptRunner::kStopped) return false;
+
+ // A close-up must keep the script blocked until its independent voice ends.
+ const uint16 closeupWords[]={1,128,20,320,20,240,0x0041,20,147,20,320,20,240,0x0054,20,0,0x004b,31,20,0};
+ bytes.resize(sizeof(closeupWords));
+ for(uint i=0;i<sizeof(closeupWords)/2;++i) WRITE_LE_UINT16(&bytes[i*2],closeupWords[i]);
+ ScriptResource closeupBank; if(!closeupBank.load(bytes)) return false;
+ ScriptRunner closeupRunner(closeupBank,nullptr,&sink); closeupRunner.start(0);
+ if(closeupRunner.step(0)!=ScriptRunner::kWaiting || closeupRunner.position(0)!=34) return false;
+ for(uint i=0;i<10;++i) if(closeupRunner.step(0)!=ScriptRunner::kWaiting || closeupRunner.position(0)!=34) return false;
+ sink.narrationPlaying=false;
+ if(closeupRunner.step(0)!=ScriptRunner::kWaiting || closeupRunner.step(0)!=ScriptRunner::kStopped) return false;
 
  // A region wait yields, survives a checkpoint, then releases on entry.
  const uint16 regionWords[]={1,112,20,0,20,2,20,3,25,4,20,42,31,20,0};

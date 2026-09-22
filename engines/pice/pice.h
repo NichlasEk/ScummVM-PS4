@@ -56,7 +56,7 @@ private:
  void restoreRandomState(uint32 state) const override { _random.setSeed(state); }
  bool gameOver(int16 reason) override;
  bool loadLatestSave();
- bool _gameOver=false;
+ bool _gameOver=false,_gameCompleted=false;
  bool pollMenu(int16 menu,bool &ready) override;
  bool clickMenu(Common::Point point);
  Common::Array<Common::Array<byte> > _menuEnabled;

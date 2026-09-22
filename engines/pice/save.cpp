@@ -228,7 +228,7 @@ bool PiceEngine::snapshot(Common::Array<byte> &bytes,bool loading,bool apply) {
  StateIO taskRestore(tasks,true); if(!_roomRunner->syncState(taskRestore)) return false;
  _roomRunner->prioritizeInitialization();
  _navigation=rebuilt; _roomRunner->navigation()=rebuilt;
- _gameOver=false;
+ _gameOver=false; _gameCompleted=false;
  _previousRoom=previousRoom;
  _actors=actors; _items=items; _worldItems=worldItems; _hotspots=hotspots; _actions=actions; _animationSounds=bindings;
  _playerMovement=playerMovement; _cursorItem=-2;

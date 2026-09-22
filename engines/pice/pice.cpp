@@ -91,9 +91,14 @@ void PiceEngine::drawLabels() {
   screen->fillRect(Common::Rect(176,144,464,274),0);
   Graphics::Surface menu; menu.create(140,64,Graphics::PixelFormat::createFormatCLUT8());
   menu.fillRect(Common::Rect(0,0,140,64),0);
-  font->drawString(&menu,"Game over",0,2,140,_textColor,Graphics::kTextAlignCenter);
+  // Room fades can blacken the caption color; terminal menus need their
+  // own visible palette entries even after the ending's fade to black.
+  const byte black[]={0,0,0},white[]={255,255,255};
+  _system->getPaletteManager()->setPalette(black,0,1);
+  _system->getPaletteManager()->setPalette(white,255,1);
+  font->drawString(&menu,_gameCompleted ? "The end" : "Game over",0,2,140,255,Graphics::kTextAlignCenter);
   const char *options[]={"Load latest save", "Load autosave", "Load manual save", "Quit"};
-  for(uint i=0;i<4;++i) font->drawString(&menu,options[i],0,17+i*12,140,_textColor,Graphics::kTextAlignCenter);
+  for(uint i=0;i<4;++i) font->drawString(&menu,options[i],0,17+i*12,140,255,Graphics::kTextAlignCenter);
   for(int y=0;y<128;++y) for(int x=0;x<280;++x)
    *static_cast<byte *>(screen->getBasePtr(180+x,144+y))=*static_cast<const byte *>(menu.getBasePtr(x/2,y/2));
   menu.free();
@@ -1124,6 +1129,12 @@ bool PiceEngine::changeRoom(int16 chapter,int16 room) {
 }
 bool PiceEngine::gameOver(int16 reason) {
  if(reason<0 || reason>=50) return false;
+ // Opcode 131 dispatches into the chapter's global script bank. SM03
+ // (resource 1180), entry 7, plays Sbestoff.mux then invokes 132.
+ // This successful ending is distinct from the ordinary death entries.
+ bool completed=_chapter==3 && reason==7;
+ if(completed && !playMovie("Sbestoff.mux",1,1)) return false;
+ _gameCompleted=completed;
  _menuOpenedAt=_system->getMillis();
  _gameOver=true; _activeMenu=_menuChoice=-1; _dialogueActor=-1; _narration=false; _subtitle.clear();
  _actionEntry=-1; _actionWalking=false;

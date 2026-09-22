@@ -1103,3 +1103,28 @@ is intentionally left running its existing build so play is not interrupted;
 the alias fix applies on the next launch.
 Isolated chapter3/room33 replay passed PC244 and queued SAV00; evidence:
 `artifacts/pice/autosave-alias-check.log`. Test process stopped afterward.
+
+## Successful ending and outtakes (2026-09-22)
+
+Bank1233 ends with opcode131(7). Original 0x19ba stops the room bank and
+starts entry7 in the chapter-global bank. SM03 resource1180 entry7
+(offset334) plays `Sbestoff.mux` with flags1,1, then opcode132. The engine
+previously treated every opcode131 as an immediate death/recovery menu,
+omitting the outtakes. The room's black fade also made the menu's caption
+palette index black, giving the appearance of a permanent black screen.
+
+Handle chapter3 reason7 by playing the original outtakes before entering
+the terminal menu, labelled "The end". Other death reasons retain their
+existing flow. Terminal menu black/white palette entries are now explicit,
+so a room fade cannot hide its controls. Loading clears completion state.
+This is the verified SM03 ending entry, not a generic implementation of
+all chapter-global scripts. No separate credits movie is named by entry7.
+
+Isolated replay: copied the current manual profile into
+`.tools/xdg-pice-ending-check`, loaded chapter3 room51, and verified all
+823 frames and audio of Sbestoff.mux decode before playback. Startup tests
+pass. Evidence: `artifacts/pice/ending-bestoff-check.log`. Temporary chapter
+hooks removed after launch. User's prior saves remain in stone-circle-check.
+Playback completed all 823 frames (`failed=0`) and entered the terminal
+menu. Ending-check is the remaining open window; the older black-screen
+process was stopped. Full post-ending menu appearance awaits user review.

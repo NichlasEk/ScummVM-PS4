@@ -972,3 +972,13 @@ or fade to a permanently black screen. Room 21 script 0 begins with opcode
 58/21, conditional palette selection (96), terrain setup (22), obstacle setup
 (23), actor setup and task activation. Its initialization must execute before
 normal room tasks; reusing INIT.SAV for every room would corrupt progress.
+
+### Pointer walking instead of diagnostic single-stepping
+
+Left-click/Cross now starts the same destination route as right-click/Circle;
+it no longer pauses and single-steps the scene. Accepted walking input resumes
+a user-paused scene, while actual script/render/movement failures remain
+blocked. Dialogue clicks still advance pages. The footer describes the new
+binding. PS4 build passed; the shadPS4 trace shows single-click routes reaching
+(217,164), (200,170), (197,170), and (141,171) automatically. Walking into the
+opening conversation region still starts its scripted approach and dialogue.

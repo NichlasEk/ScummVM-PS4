@@ -81,18 +81,22 @@ Common::Error SotcEngine::run() {
 
  Common::Array<Common::String> dialogueLines; Common::String shownDialogue; unsigned dialoguePage=0;
  int pointerX=0,pointerY=0;
- bool runScene = true; unsigned heldDirection=0;
+ bool runScene = true, sceneFault = false; unsigned heldDirection=0;
  uint32 nextSceneFrame = _system->getMillis() + 100;
  auto sceneStep = [&]() {
-  if (!startupScene.movePlayer(startupMachine)) { runScene=false; return; }
+  if (!startupScene.movePlayer(startupMachine)) { runScene=false; sceneFault=true; redraw=true; return; }
   scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
   bool rendered = startupScene.render(startupPixels,startupStatus,startupMachine);
   unsigned blockedAnimations = rendered ? startupScene.advance(startupMachine) : 1;
   if (!rendered || blockedAnimations) runScene = false;
   for (unsigned i=0;i<startupMachine.count();++i)
    if (startupMachine.task(i)->result >= kUnknownWait) runScene = false;
+  sceneFault=!runScene;
   if (!runScene) debug("[sotc-animation] paused tick=%u unsupported=%u",scriptTicks,blockedAnimations);
   redraw = true;
+ };
+ auto resumeScene = [&]() {
+  if (!sceneFault) { runScene=true; nextSceneFrame=_system->getMillis()+100; }
  };
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
@@ -189,7 +193,7 @@ Common::Error SotcEngine::run() {
    } else { shownDialogue.clear(); dialogueLines.clear(); dialoguePage=0; }
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, showStartup ? (!startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "D-pad: walk  Circle: destination") : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
+   font->drawString(&surface, showStartup ? (!startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
    if (showStartup && pointerY<400 && pointerX<640 && pointerX>=0 && pointerY>=0) {
     int px=pointerX/2,py=pointerY/2;
     for (int d=-3;d<=3;++d) {
@@ -235,29 +239,31 @@ Common::Error SotcEngine::run() {
      }
     }
     if (direction && (pressed || released)) {
-     if (startupScene.scriptWalking()) continue;
+     if (sceneFault || startupScene.scriptWalking() || !startupScene.dialogueText().empty()) continue;
      if (released && heldDirection!=direction) continue;
      startupScene.cancelRoute();
      heldDirection=pressed ? direction : 0;
-     if (!startupScene.walk(pressed ? direction : 0,startupMachine)) runScene=false;
+     if (!startupScene.walk(pressed ? direction : 0,startupMachine)) { runScene=false; sceneFault=true; }
+     else if (pressed) resumeScene();
      redraw=true; continue;
     }
    }
-   if (showStartup && event.type==Common::EVENT_RBUTTONDOWN) {
+   if (showStartup && (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN)) {
+    if (sceneFault) continue;
+    if (!startupScene.dialogueText().empty()) {
+     if (event.type==Common::EVENT_LBUTTONDOWN) {
+      if (dialoguePage+8<dialogueLines.size()) dialoguePage+=8;
+      else startupScene.finishDialogue();
+      resumeScene(); redraw=true;
+     }
+     continue;
+    }
     if (startupScene.scriptWalking()) continue;
     if (event.mouse.y>=0 && event.mouse.y<400 && event.mouse.x>=0 && event.mouse.x<640) {
-     startupScene.destination(event.mouse.x/2,event.mouse.y/2,startupMachine);
+     if (startupScene.destination(event.mouse.x/2,event.mouse.y/2,startupMachine)) resumeScene();
      heldDirection=0; redraw=true;
     }
     continue;
-   }
-   if (showStartup && event.type == Common::EVENT_LBUTTONDOWN) {
-    if (!startupScene.dialogueText().empty()) {
-     if (dialoguePage+8<dialogueLines.size()) dialoguePage+=8;
-     else startupScene.finishDialogue();
-     redraw=true; continue;
-    }
-    runScene=false; sceneStep(); continue;
    }
    if (showStartup && !(event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)) continue;
 

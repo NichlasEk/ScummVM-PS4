@@ -828,3 +828,31 @@ python3 scripts/sotc/audit-route.py build/sotc-DOS/disc-files/SHADOW/INIT.SAV
 Remaining fidelity work includes original destination flags, mode-1 transition
 delay, collision response/detour choices, moving-actor replanning and room exits.
 This route implementation deliberately makes no claim of original path choice.
+
+### Script-controlled player movement and input locks
+
+Opcodes 18/19 now bind player control state through the scene host. Original
+0xaa6e reads a byte: zero sets all four directional mask bits and stops player
+motion; 1..4 OR the original mask values 1,8,2,4. Unsupported table indices
+are rejected. Opcode 19 (0xaac9) clears the mask and exits scripted mode 2.
+The diagnostic applies standing animation immediately; original mode-1 delay
+is still pending. Manual input cannot cancel a script-owned route.
+
+Opcode 36 (0xa06f) consumes doubled byte X and byte Y, starts a destination and
+sets task wait bit 1. The scheduler checks movement completion (0xaf9b), while
+continuing to update other wait conditions, then clears bit 1 and selects
+sequence zero before proceeding. Player routes are supported through the
+existing collision-aware diagnostic planner; other actors explicitly report
+host unavailable. Unreachable scripted goals stop at the command instead of
+being silently skipped. Original path choice/failure behavior remains pending.
+
+VM tests cover missing/rejecting hosts, malformed input, control lock/unlock,
+movement start/yield, repeated waits and completion. Route regression passes.
+In the actual PS4 package under shadPS4, entering the trigger now sets mask 15,
+walks actor 0 to (104,171) through 27 clear steps, arrives, resumes task 1,
+and starts sequence 3. The next unsupported instruction is opcode 1 at PC 34,
+with zero unsupported animation formats. Local trace:
+`artifacts/sotc/script-movement-live.log`. This is emulator evidence, not a
+physical PS4 or complete scene-playthrough claim.
+
+Next: opcode 1 at 0x9bbc and the subsequent commands in task 1's scene sequence.

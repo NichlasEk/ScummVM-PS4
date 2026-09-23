@@ -31,7 +31,7 @@ Common::String stepStartupScripts(ScriptMachine &machine, unsigned tick) {
 bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, ScriptMachine &machine) {
  pixels.clear(); status = "INIT.SAV unavailable";
  Common::Array<byte> save, scripts;
- _ready = false;
+ _ready = false; _machine=&machine; cancelRoute();
  StartState &state = _state;
  if (!readFile("INIT.SAV", save) || !state.load(Cc4View(save.data(), save.size()))) return false;
  unsigned bank = state.word(0x2df2), blockIndex = state.word(0x2df8), background = state.word(0x2e14);
@@ -75,6 +75,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
   _visible[i] = state.word(a+26)!=0;
   _animations[i] = {state.word(a+12), state.word(a+16), state.word(a+6), state.byte(a+20)};
  }
+ _inputLocks=state.word(0x2e28);
  _walkDirection=state.word(0x2e5c); _walking=false;
  _ready=true;
  return render(pixels,status,machine);
@@ -144,8 +145,34 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
  status = Common::String::format("INIT scene: %u drawn, %u unsupported", rendered, unsupported);
  return unsupported == 0;
 }
-bool StartupScene::walk(unsigned direction, ScriptMachine &machine) {
- if (!_ready || direction>4 || _animations[0].mode==2) return false;
+bool StartupScene::control(unsigned value,bool unlock,ScriptActor &actor) {
+ if (!_ready || value>4) return false;
+ if (unlock) {
+  _inputLocks=0;
+  if (_animations[0].mode==2) _animations[0].mode=0;
+ } else if (value) {
+  const unsigned masks[5]={0,1,8,2,4};
+  _inputLocks|=masks[value];
+ } else {
+  // Original 18/0 stops actor 0 and disables all direction input.
+  unsigned seq=_walkDirection-1,slot=_slots[0];
+  if (_animations[0].mode!=2) {
+   if (slot>=20) return false;
+   unsigned count=va2SequenceLength(_actorData[slot].data(),_actorData[slot].size(),seq);
+   if (!count) return false;
+   actor.step=0; actor.steps=count; _animations[0].sequence=seq;
+   _animations[0].mode=0; _animations[0].gate=255;
+  }
+  cancelRoute(); _walking=false; _inputLocks=15;
+ }
+ debug("[sotc-control] mask=%u unlock=%u",_inputLocks,unsigned(unlock));
+ return true;
+}
+bool StartupScene::walk(unsigned direction, ScriptMachine &machine,bool scripted) {
+ if (!_ready || direction>4) return false;
+ const unsigned masks[5]={0,1,8,2,4};
+ if (!scripted && direction && (_inputLocks & masks[direction])) return true;
+ if (_animations[0].mode==2) return false;
  bool moving=direction!=0;
  if (moving==_walking && (!moving || direction==_walkDirection)) return true;
  unsigned facing=moving ? direction : _walkDirection;
@@ -183,22 +210,44 @@ unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMa
  }
  return collision;
 }
-bool StartupScene::destination(int x,int y,ScriptMachine &machine) {
+bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted) {
  cancelRoute();
- if (!_ready || _animations[0].mode==2) return false;
+ if (!_ready || (!scripted && _inputLocks) || _animations[0].mode==2) return false;
  walk(0,machine);
  const ScriptActor &a=*machine.actor(0);
  bool found=_route.find(a.x,a.y,x,y,[&](int nx,int ny,unsigned d) { return collisionAt(nx,ny,d,machine)==0; });
- _following=found && _route.count;
+ _following=found && _route.count; _scriptRoute=scripted && _following;
  debug("[sotc-route] target=%d,%d found=%u steps=%u",x,y,unsigned(found),_route.count);
  return found;
 }
+bool StartupScene::move(unsigned id,unsigned x,unsigned y,bool &pending) {
+ if (!_ready || !_machine || id!=0) return false;
+ // Only player routes are wired; never silently move an unsupported actor.
+ unsigned oldMode=_animations[0].mode; _animations[0].mode=0;
+ if (!destination(x,y,*_machine,true)) { _animations[0].mode=oldMode; return false; }
+ pending=_following; return true;
+}
+bool StartupScene::movementPending(unsigned id,bool &pending) {
+ if (!_ready || id!=0) return false;
+ pending=_following && _visible[0];
+ if (!pending) {
+  // Original 0xaf9b selects sequence zero when movement wait completes.
+  unsigned slot=_slots[0]; if (slot>=20) return false;
+  unsigned count=va2SequenceLength(_actorData[slot].data(),_actorData[slot].size(),0);
+  if (!count) return false;
+  ScriptActor actor=*_machine->actor(0); actor.step=0; actor.steps=count;
+  _animations[0].sequence=0; _animations[0].gate=255; _machine->setActor(0,actor);
+ }
+ return true;
+}
 bool StartupScene::movePlayer(ScriptMachine &machine) {
+ const unsigned masks[5]={0,1,8,2,4};
+ if (!_scriptRoute && _walking && (_inputLocks & masks[_walkDirection])) { cancelRoute(); return walk(0,machine); }
  if (_following) {
   if (!_route.count || _animations[0].mode==2) { cancelRoute(); return walk(0,machine); }
   const ScriptActor &a=*machine.actor(0); unsigned p=_route.points[_route.count-1];
   unsigned d=int(p%320)>a.x ? 2 : int(p%320)<a.x ? 4 : int(p/320)>a.y ? 3 : 1;
-  if (!walk(d,machine)) { cancelRoute(); return false; }
+  if (!walk(d,machine,_scriptRoute)) { cancelRoute(); return false; }
  }
  if (!_walking) return true;
  if (_animations[0].mode==2) { _walking=false; return true; }

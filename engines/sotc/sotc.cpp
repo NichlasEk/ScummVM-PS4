@@ -195,7 +195,7 @@ Common::Error SotcEngine::run() {
    if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup) redraw=true; }
    if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) debug("[sotc-input] type=%u key=%u",unsigned(event.type),unsigned(event.kbd.keycode));
    if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_F8) {
-    if (startupAvailable) { startupScene.cancelRoute(); startupScene.walk(0,startupMachine); heldDirection=0; showStartup = !showStartup; pal = 0; redraw = true; }
+    if (startupAvailable) { if (!startupScene.scriptWalking()) { startupScene.cancelRoute(); startupScene.walk(0,startupMachine); } heldDirection=0; showStartup = !showStartup; pal = 0; redraw = true; }
     continue;
    }
    if (showStartup && event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_a) {
@@ -224,6 +224,7 @@ Common::Error SotcEngine::run() {
      }
     }
     if (direction && (pressed || released)) {
+     if (startupScene.scriptWalking()) continue;
      if (released && heldDirection!=direction) continue;
      startupScene.cancelRoute();
      heldDirection=pressed ? direction : 0;
@@ -232,6 +233,7 @@ Common::Error SotcEngine::run() {
     }
    }
    if (showStartup && event.type==Common::EVENT_RBUTTONDOWN) {
+    if (startupScene.scriptWalking()) continue;
     if (event.mouse.y>=0 && event.mouse.y<400 && event.mouse.x>=0 && event.mouse.x<640) {
      startupScene.destination(event.mouse.x/2,event.mouse.y/2,startupMachine);
      heldDirection=0; redraw=true;

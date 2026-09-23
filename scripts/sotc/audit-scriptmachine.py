@@ -24,6 +24,11 @@ struct TestSound : Sotc::ScriptSound {
 } sound;
 struct TestAnimation : Sotc::ScriptAnimation {
  bool accept=false; unsigned calls=0;
+ bool moving=false;
+ bool move(unsigned actor,unsigned x,unsigned y,bool &pending) override {if (!accept || actor!=0 || x!=104 || y!=171) return false; pending=moving=true; return true;}
+ bool movementPending(unsigned actor,bool &pending) override {if (!accept || actor!=0) return false; pending=moving; return true;}
+ unsigned lock=0;
+ bool control(unsigned value,bool unlock,Sotc::ScriptActor &) override {if (!accept) return false; lock=unlock ? 0 : value ? lock|(1u<<value) : 15; return true;}
  bool hide(unsigned) override {return accept;}
  bool reset(unsigned,Sotc::ScriptActor &actor) override {if (!accept) return false; actor={0,0,4,2,0,1}; return true;}
  bool resource(unsigned,unsigned index) override {return accept && index==13;}
@@ -32,6 +37,8 @@ struct TestAnimation : Sotc::ScriptAnimation {
   actor.step=0; actor.steps=2; return true;
  }
 } animation;
+extern "C" void finishMove() { animation.moving=false; }
+extern "C" unsigned controlLock() {return animation.lock;}
 extern "C" void animationHost(bool enabled,bool accept) {
  animation.calls=0; animation.accept=accept; vm.setAnimation(enabled ? &animation : nullptr);
 }
@@ -167,6 +174,28 @@ extern "C" bool info(unsigned i,unsigned *out) {
             assert lib.visit(1) == 1 and info()[0] == 2
             assert lib.soundCalls() == 1 and lib.soundLast() == sample
     lib.soundHost(False, False)
+    fixture([36,52,171,2])
+    lib.animationHost(False,False)
+    assert lib.visit(1)==11 and info()[0]==0
+    lib.animationHost(True,True)
+    assert lib.visit(1)==4 and info()[0]==3 and info()[1]&1
+    assert lib.visit(1)==4 and info()[0]==3
+    lib.finishMove()
+    assert lib.visit(1)==1 and not info()[1]&1
+    fixture([36,52])
+    assert lib.visit(1)==7 and info()[0]==0
+    fixture([18,0,19,2])
+    lib.animationHost(False,False)
+    assert lib.visit(1)==11 and info()[0]==0
+    lib.animationHost(True,False)
+    assert lib.visit(1)==11 and info()[0]==0
+    lib.animationHost(True,True)
+    assert lib.visit(1)==1 and info()[0]==3 and lib.controlLock()==0
+    fixture([18,0,2])
+    assert lib.visit(1)==1 and lib.controlLock()==15
+    for script in ([18],[18,5,2],[18,255,2]):
+        fixture(script)
+        assert lib.visit(1)==7 and info()[0]==0
     for opcode, argument in ((90,5),(91,13)):
         fixture([opcode,argument,2])
         lib.animationHost(False,False)

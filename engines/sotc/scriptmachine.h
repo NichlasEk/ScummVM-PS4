@@ -22,6 +22,9 @@ public:
  virtual ~ScriptAnimation() {}
  virtual bool sequence(unsigned actor, unsigned sequence, ScriptActor &state) = 0;
  virtual bool hide(unsigned actor) = 0;
+ virtual bool move(unsigned,unsigned,unsigned,bool &) { return false; }
+ virtual bool movementPending(unsigned,bool &) { return false; }
+ virtual bool control(unsigned, bool, ScriptActor &) { return false; }
  virtual bool reset(unsigned, ScriptActor &) { return false; }
  virtual bool resource(unsigned, unsigned) { return false; }
 };
@@ -118,7 +121,13 @@ public:
   if (index >= _count) return kInvalidScript;
   ScriptTask &t = _tasks[index];
   if (t.flags & 0x20) return t.result = kDisabled;
-  if (t.flags & ~0x26U) return t.result = kUnknownWait;
+  if (t.flags & ~0x27U) return t.result = kUnknownWait;
+  bool movementWaiting=false;
+  if (t.flags & 1) {
+   bool pending=false;
+   if (!_animation || !_animation->movementPending(t.actor,pending)) return t.result=kAnimationUnavailable;
+   if (pending) movementWaiting=true; else t.flags &= ~1U;
+  }
   bool timerWaiting = false, animationWaiting = false;
   if (t.flags & 2) {
    if (t.timer) --t.timer;
@@ -129,6 +138,7 @@ public:
    const ScriptActor &a = _actors[t.actor];
    if (a.step == ((a.steps - 1) & 65535)) t.flags &= ~4U; else animationWaiting = true;
   }
+  if (movementWaiting) return t.result=kRegionWait;
   if (timerWaiting) return t.result = kTimerWait;
   if (animationWaiting) return t.result = kAnimationWait;
   for (unsigned i = 0; i < budget; ++i) {
@@ -147,6 +157,17 @@ public:
     if (!compare(a, b, op.comparison)) next = op.target;
     break;
    }
+   case 36: {
+    if (t.actor>=11) return t.result=kInvalidScript;
+    bool pending=false;
+    if (!_animation || !_animation->move(t.actor,op.argument,op.value,pending)) return t.result=kAnimationUnavailable;
+    if (pending) { t.flags|=1; t.pc=next; ++t.executed; return t.result=kRegionWait; }
+    break;
+   }
+   case 18: case 19:
+    if (op.opcode==18 && op.argument>4) return t.result=kInvalidScript;
+    if (!_animation || !_animation->control(op.argument,op.opcode==19,_actors[0])) return t.result=kAnimationUnavailable;
+    break;
    case 7:
     if (t.actor >= 11) return t.result = kInvalidScript;
     _actors[t.actor].x = op.argument; _actors[t.actor].y = op.value;

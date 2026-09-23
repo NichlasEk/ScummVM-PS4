@@ -3,6 +3,7 @@
 #include "sotc/poserenderer.h"
 #include "sotc/animation.h"
 #include "sotc/script.h"
+#include "sotc/dialogue.h"
 #include "common/textconsole.h"
 #include "common/debug.h"
 namespace Sotc {
@@ -22,9 +23,26 @@ bool OpeningScene::start(Cc4View archive,unsigned pc,const Common::Array<byte> &
  debug("[sotc-opening] animated task starts pc=%u",pc);
  return true;
 }
+bool OpeningScene::startStory(Cc4View archive,Cc4View text) {
+ for (unsigned i=0;i<11;++i) _actors[i]=Actor();
+ for (unsigned i=0;i<3;++i) _tasks[i]=Task();
+ _done=_failed=_talking=false; _story=true; _dialogue.clear();
+ _brightness=_fade=_fadeStep=_fadeClock=_clock=0; _activeTask=0;
+ if (!text.data || !text.size || !_resources.open("A05.PAK") || !_rooms.open("D05.PAK")) return fail("story resources missing");
+ _textFile.resize(text.size); memcpy(_textFile.data(),text.data,text.size);
+ Cc4View room,script;
+ if (!cc4Entry(archive,4,1,room)) return fail("story room missing");
+ for (unsigned i=0;i<2;++i) {
+  if (!cc4Entry(room,2,i,script)) return fail("story task missing");
+  _tasks[i].script.resize(script.size); memcpy(_tasks[i].script.data(),script.data,script.size);
+ }
+ _tasks[0].enabled=true;
+ _background.resize(64000); memset(_background.data(),0,64000); _pixels=_background;
+ return commands(0) && render();
+}
 bool OpeningScene::commands(unsigned id) {
  _activeTask=id; Task &task=_tasks[id];
- if (!task.enabled) return true;
+ if (!task.enabled || _talking) return true;
  Common::Array<byte> &_script=task.script;
  unsigned &_pc=task.pc,&_actor=task.actor,&_wait=task.wait,&_waitingActor=task.waitingActor;
  if (_waitingActor<11) {
@@ -37,6 +55,10 @@ bool OpeningScene::commands(unsigned id) {
  for (unsigned budget=0;budget<128;++budget) {
   if (_pc>=_script.size()) return fail("truncated instruction");
   unsigned op=_script[_pc];
+  if (_story && op==92 && _script.size()-_pc>=2 && _script[_pc+1]==1) {
+   debug("[sotc-story] first passage complete at pc=%u; player movement passage pending",_pc);
+   _done=true; return true;
+  }
   if (op==3 || op==10) {
    ScriptInstruction instruction;
    if (decodeScript(Cc4View(_script.data(),_script.size()),_pc,instruction)!=kInstruction) return fail("invalid branch");
@@ -44,11 +66,29 @@ bool OpeningScene::commands(unsigned id) {
    _pc=(op==3 || _randomValue!=instruction.value) ? instruction.target : instruction.next;
    continue;
   }
-  unsigned width=op==41 || op==2 ? 1 : op==7 || op==45 || op==100 ? 3 : 2;
+  unsigned width=op==41 || op==2 ? 1 : op==82 ? 5 : op==7 || op==45 || op==100 || op==70 ? 3 : 2;
   if (_script.size()-_pc<width) return fail("truncated operand");
   unsigned value=width>1 ? _script[_pc+1] : 0;
   Actor &a=_actors[_actor];
   switch (op) {
+  case 96: _speechBank=value; break;
+  case 77: if (!_sound.music(value)) return fail("music unavailable"); break;
+  case 18: case 92:
+   if (!_story || _actor!=0 || value!=0) return fail("unsupported player setup");
+   break; // Player is hidden and inactive during this supported story prefix.
+  case 69: _textColor=value; break;
+  case 70: _textX=value*2; _textY=_script[_pc+2]; break;
+  case 82: {
+   if (!_story || value!=_actor || _script[_pc+4]!=255) return fail("unsupported story dialogue mode");
+   unsigned text=unsigned(_script[_pc+2])|(unsigned(_script[_pc+3])<<8),length=0; byte decoded[16384];
+   if (!dialogueRecord(Cc4View(_textFile.data(),_textFile.size()),_speechBank+3,text,decoded,sizeof(decoded),length) || length<2) return fail("invalid story text");
+   _dialogue.clear();
+   for (unsigned i=1;i<length-(decoded[length-1]==0 ? 1 : 0);++i) _dialogue+=decoded[i] ? char(decoded[i]) : '\n';
+   _talking=true;
+   if (!_sound.speech(_speechBank,text)) warning("[sotc-story] text=%u: %s",text,"speech unavailable; retaining subtitles");
+   debug("[sotc-story] bank=%u speaker=%u text=%u",_speechBank,_actor,text);
+   break;
+  }
   case 44:
    if (id!=2 || value!=1) return fail("unsupported room transition");
    debug("[sotc-opening] opening block complete; next story block=%u",value);
@@ -88,6 +128,7 @@ bool OpeningScene::commands(unsigned id) {
    if (!_rooms.load(value*2,_background) || _background.size()!=64000) return fail("missing background");
    break;
   case 87: case 88: {
+   if (_story && !_actor && op==88 && value==3) break; // Hidden player's idle selection; no actor-zero drawing yet.
    unsigned count=va2SequenceLength(a.data.data(),a.data.size(),value);
    SequenceStep first;
    if (!count || !va2Step(a.data.data(),a.data.size(),value,0,first)) return fail("invalid sequence");
@@ -104,7 +145,7 @@ bool OpeningScene::commands(unsigned id) {
   default: return fail("unsupported instruction");
   }
   _pc+=width;
-  if (_fade || _wait || _waitingActor<11) return true;
+  if (_fade || _wait || _waitingActor<11 || _talking) return true;
  }
  return fail("instruction budget exceeded");
 }
@@ -159,7 +200,7 @@ void OpeningScene::advance(unsigned elapsed) {
  if (_clock>1000) _clock=1000;
  while (_clock>=100 && !_done && !_fade) {
   _clock-=100;
-  for (unsigned i=1;i<3;++i) if (!commands(i) || _done) return;
+  for (unsigned i=_story ? 0 : 1;i<3;++i) if (!commands(i) || _done) return;
   if (!render() || !advanceActors()) return;
  }
 }

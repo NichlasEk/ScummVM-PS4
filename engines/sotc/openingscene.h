@@ -24,7 +24,10 @@ class OpeningScene {
  SoundEffects &_sound;
  unsigned _activeTask=2,_randomValue=0; uint32 _randomState=1;
  unsigned _brightness=0,_fade=0,_fadeStep=0,_fadeClock=0,_clock=0;
- bool _done=false,_failed=false;
+ bool _done=false,_failed=false,_story=false,_talking=false;
+ unsigned _speechBank=0,_textX=0,_textY=0,_textColor=7;
+ Common::Array<byte> _textFile;
+ Common::String _dialogue;
  bool commands(unsigned id);
  bool render();
  bool advanceActors();
@@ -32,6 +35,12 @@ class OpeningScene {
 public:
  explicit OpeningScene(SoundEffects &sound) : _sound(sound) {}
  bool start(Cc4View archive,unsigned pc,const Common::Array<byte> &background);
+ bool startStory(Cc4View archive,Cc4View text);
+ const Common::String &dialogueText() const { return _dialogue; }
+ unsigned textX() const { return _textX; }
+ unsigned textY() const { return _textY; }
+ unsigned textColor() const { return _textColor; }
+ void finishDialogue() { _talking=false; _dialogue.clear(); _sound.stopSpeech(); }
  void advance(unsigned elapsed);
  bool done() const { return _done; }
  bool failed() const { return _failed; }

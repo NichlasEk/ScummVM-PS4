@@ -1144,3 +1144,36 @@ returned to the menu. Captured owl, tentacle, eye/fire and credit scenes;
 local evidence is `artifacts/sotc/full-opening-live.log` and
 `full-opening-00.png` through `full-opening-18.png`. No physical-PS4 run is
 claimed for this slice.
+
+## Story opening: first spoken passage
+
+New game now runs the first passage of R05 block 1 before entering the
+existing outdoor preview. It reads the original BUREAU/PORTE/CIGAR assets,
+D04.NAR speech record 0 and E.CC4 bank 7 record 0, then runs the original
+cigar sequences, fades and CREDITS sequence 8 (London). Dialogue waits for
+click/Cross; Options skips this passage. Speech and intro music are stopped
+when handing over to the outdoor scene. Resources remain external.
+
+Opcode 70 reads a doubled byte X coordinate and byte Y coordinate, not a
+16-bit X. The subtitle overlay uses that anchor and opcode 69's palette
+color, with the existing GUI font and bounded pagination; its box layout
+is approximate, not the original renderer.
+
+This is deliberately only the first passage: playback ends at task 1 PC 61,
+before opcode 92 makes player zero visible. The remaining office dialogue,
+portraits, walking and clipping are still pending. It currently hands over
+to the same outdoor INIT.SAV preview rather than claiming the whole story
+block is implemented. The top-edge action bar remains pending too.
+
+Validation: actual C++ OpeningScene with external assets holds the first
+line for 16 simulated seconds until confirmation, checks text anchor
+150/10, palette index 147 and speech bank 4/record 0, and reaches the
+supported boundary after 15,232 ms excluding that hold. The complete
+animated block 0 regression still passes twice at 165,280 ms and 546 frame
+changes; missing resources still fail explicitly. PS4 build/package passes.
+The rebuilt PS4 binary in shadPS4 displayed the plaque and first subtitle,
+logged the active original speech stream, ran CIGAR and credit sequence 8,
+and returned to the outdoor scene with zero stopped scripts at tick 26.
+Evidence: local story-office.png, story-after-dialogue.png,
+story-regression.txt and story-live.log under artifacts/sotc. No physical
+PS4 validation or full story-block completion is claimed.

@@ -102,7 +102,7 @@ Common::Error SotcEngine::run() {
   }
  }
  OpeningClock openingClock(openingPlan);
- OpeningScene animatedOpening(sound); bool openingAnimated=false;
+ OpeningScene animatedOpening(sound); bool openingAnimated=false, showStory=false;
  uint32 openingLast=_system->getMillis(); unsigned openingMusicClock=0;
  if (showOpening) debug("[sotc-opening] logos from R05/D05 followed by supported animated prefix");
  else warning("[sotc-opening] Logo prefix unavailable; opening menu directly");
@@ -112,6 +112,7 @@ Common::Error SotcEngine::run() {
  };
 
  Common::Array<Common::String> dialogueLines; Common::String shownDialogue; unsigned dialoguePage=0;
+ Common::Array<Common::String> storyLines; Common::String storyText; unsigned storyPage=0;
  int pointerX=0,pointerY=0;
  bool runScene = true, sceneFault = false; unsigned heldDirection=0;
  uint32 nextSceneFrame = _system->getMillis() + 100;
@@ -130,6 +131,12 @@ Common::Error SotcEngine::run() {
  auto resumeScene = [&]() {
   if (!sceneFault) { runScene=true; nextSceneFrame=_system->getMillis()+100; }
  };
+ auto finishStory=[&]() {
+  showStory=false; sound.stopSpeech(); sound.music(255); sound.effect(255);
+  scriptStatus=stepStartupScripts(startupMachine,++scriptTicks);
+  nextSceneFrame=_system->getMillis()+100; redraw=true;
+  debug("[sotc-story] returning to opening gameplay scene");
+ };
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
   if (showOpening) {
@@ -146,8 +153,15 @@ Common::Error SotcEngine::run() {
     if (!openingAnimated) finishOpening();
    }
   }
+  if (showStory) {
+   uint32 now=_system->getMillis(); animatedOpening.advance(now-openingLast); openingLast=now; redraw=true;
+   if (animatedOpening.done()) {
+    if (animatedOpening.failed()) { surface.free(); return Common::Error(Common::kUnknownError,"Story script could not continue"); }
+    finishStory();
+   }
+  }
   // Diagnostic 10 Hz preview cadence; original scene pacing is not yet bound.
-  if (!mainMenu && showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
+  if (!showStory && !mainMenu && showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
    sceneStep(); nextSceneFrame=_system->getMillis()+100;
   }
   if (reload) {
@@ -262,12 +276,22 @@ Common::Error SotcEngine::run() {
      if (py+d>=0 && py+d<240) *static_cast<byte *>(surface.getBasePtr(px,py+d))=7;
     }
    }
-   if (showOpening) {
+   if (showOpening || showStory) {
     surface.fillRect(Common::Rect(320,240),0);
-    memcpy(surface.getBasePtr(0,20),openingAnimated ? animatedOpening.pixels().data() : openingImages[openingClock.logo()].data(),64000);
-    byte faded[768]; unsigned brightness=openingAnimated ? animatedOpening.brightness() : openingClock.brightness();
+    memcpy(surface.getBasePtr(0,20),(openingAnimated || showStory) ? animatedOpening.pixels().data() : openingImages[openingClock.logo()].data(),64000);
+    byte faded[768]; unsigned brightness=(openingAnimated || showStory) ? animatedOpening.brightness() : openingClock.brightness();
     for (unsigned i=0;i<768;++i) faded[i]=palette[i]*brightness/255;
     _system->getPaletteManager()->setPalette(faded,0,256);
+    if (showStory && !animatedOpening.dialogueText().empty()) {
+     if (storyText!=animatedOpening.dialogueText()) {
+      storyText=animatedOpening.dialogueText(); storyPage=0; storyLines.clear(); font->wordWrapText(storyText,300,storyLines);
+     }
+     unsigned end=MIN<unsigned>(storyPage+8,storyLines.size());
+     int left=CLIP<int>(int(animatedOpening.textX())-150,0,20),top=CLIP<int>(20+animatedOpening.textY(),20,120);
+     surface.fillRect(Common::Rect(left,top,left+300,top+4+(end-storyPage)*font->getFontHeight()),0);
+     for (unsigned i=storyPage;i<end;++i) font->drawString(&surface,storyLines[i],left,top+2+(i-storyPage)*font->getFontHeight(),300,animatedOpening.textColor(),Graphics::kTextAlignCenter);
+    } else { storyText.clear(); storyLines.clear(); storyPage=0; }
+
    }
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
@@ -277,6 +301,15 @@ Common::Error SotcEngine::run() {
   while (_eventMan->pollEvent(event)) {
    if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup || mainMenu) redraw=true; }
    if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) debug("[sotc-input] type=%u key=%u",unsigned(event.type),unsigned(event.kbd.keycode));
+   if (showStory) {
+    if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) finishStory();
+    else if (!animatedOpening.dialogueText().empty() &&
+      (event.type==Common::EVENT_LBUTTONDOWN || (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN))) {
+     if (storyPage+8<storyLines.size()) storyPage+=8; else animatedOpening.finishDialogue();
+     redraw=true;
+    }
+    continue;
+   }
    if (showOpening) {
     if (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN ||
         (event.type==Common::EVENT_KEYDOWN && (event.kbd.keycode==Common::KEYCODE_RETURN || event.kbd.keycode==Common::KEYCODE_ESCAPE)) ||
@@ -326,7 +359,16 @@ Common::Error SotcEngine::run() {
        if (!startupAvailable) { surface.free(); _mixer->pauseAll(false); return Common::Error(Common::kReadingFailed,"Cannot load opening scene"); }
        showStartup=true; scriptTicks=0; heldDirection=0; sceneFault=false; runScene=true;
        shownDialogue.clear(); dialogueLines.clear(); dialoguePage=0; pal=0;
-       scriptStatus=stepStartupScripts(startupMachine,++scriptTicks);
+       Common::File storyFile; Common::Array<byte> storyBytes;
+       if (!storyFile.open(Common::Path("E.CC4")) || storyFile.size()<1 || storyFile.size()>4*1024*1024) {
+        surface.free(); return Common::Error(Common::kReadingFailed,"Cannot read story subtitles");
+       }
+       storyBytes.resize(storyFile.size());
+       if (storyFile.read(storyBytes.data(),storyBytes.size())!=storyBytes.size() ||
+           !animatedOpening.startStory(Cc4View(openingScript.data(),openingScript.size()),Cc4View(storyBytes.data(),storyBytes.size()))) {
+        surface.free(); return Common::Error(Common::kReadingFailed,"Cannot initialize story scene");
+       }
+       showStory=true; openingLast=_system->getMillis(); storyText.clear(); storyLines.clear(); storyPage=0;
        mainMenu=false; _mixer->pauseAll(false); nextSceneFrame=_system->getMillis()+100;
        debug("[sotc-menu] New game: opening scene reset");
       }

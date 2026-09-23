@@ -107,7 +107,8 @@ backgrounds across D00–D09. Physical PS4 hardware has not been tested yet.
 
 The viewer now overlays figures from A00–A09 on the selected background.
 Original indexed pixels and an explicit transparency mask preserve opaque
-palette index zero. Placement is a fixed preview position, not scene-derived.
+palette index zero. The base position is a preview anchor, not scene-derived. Sequence movement is
+now applied relative to that anchor (see executable findings below).
 Triangle (C in the emulator) toggles the overlay; R1/U selects the next figure
 and L1/Q selects the previous one. Background and palette controls are unchanged.
 
@@ -146,9 +147,9 @@ L3/X selects the previous sequence and R3/M the next. A resource's first
 multi-step sequence is selected automatically. Resources with empty sequence
 records retain raw-frame browsing.
 
-Observed sequence records have a big-endian 16-bit entry count followed by
-8-byte steps: little-endian pose reference, a candidate duration field, and two
-signed candidate movement fields. Pose records use an analogous count and
+Sequence records have a header byte followed by an 8-bit entry count, then
+8-byte steps: little-endian pose reference, a render-control word, and signed
+X/Y movement fields. Pose records use an analogous header and
 8-byte layer descriptors. The supported layer mode is 01 01, followed by a
 frame reference (high bit treated as horizontal mirroring) and signed X/Y
 placement. Other layer modes and additional record payloads are rejected as
@@ -156,9 +157,10 @@ unsupported, without partially drawing a pose. Empty poses are valid.
 
 Placement is bottom-relative around a fixed preview anchor, inferred from the
 observed offsets. This still needs original-runtime comparison. The viewer
-**still uses 150 ms per step**: the candidate duration unit, zero-duration
-semantics, movement, script-selected sequences and loop rules are not known
-well enough to execute. Preview sequences loop for inspection only.
+**still uses 150 ms per step**: original cadence, special render modes,
+script-selected sequences and loop rules are not yet implemented. Movement
+is now verified against the executable and applied. Preview sequences loop
+for inspection only, resetting their displacement each cycle.
 
 The extended `audit-va2.py` checks sequence boundaries, pose references and
 out-of-range steps, plus known Stubbs walking sequences and mirrored poses.
@@ -172,3 +174,44 @@ PS4 validation: rebuilt SCVM00004, booted in shadPS4, captured Stubbs walking
 sequence 5, and verified the R3/M input changes sequence 4 to 5. Screenshot:
 `artifacts/sotc/ps4-sequence.png`; log: `artifacts/sotc/sequence-live.log`.
 The preview is not yet an interactive game or an original-speed animation VM.
+
+## Executable-backed movement and control-word correction
+
+Inspected the user's European DOS SHADOW.EXE (SHA256
+`26d6fc54a27e0bf17ea34a355aa9bf087c8f13dfb5d613d5d1d535190da9ab5b`).
+The MZ load image begins at file offset 0x1c00. Offsets below are relative to
+that load image, **not** file offsets or relocated runtime addresses.
+
+- 0x6e4c–0x6ec2: lookup via the VA2 section table followed by its record table.
+- 0x1662–0x166b: sequence count is read as a byte at record +1; the earlier
+  big-endian-word interpretation was only accidentally equivalent for the
+  observed zero first byte. Nonzero header flags remain unsupported.
+- 0xc0de–0xc0fa: step +2 is split into a high two-bit render mode and low
+  14-bit parameter. It must not be treated as a plain millisecond/tick delay.
+- 0xc11e–0xc141: add step +4 and +6 into X/Y, inclusively through the selected
+  step. Additions use 16-bit words. The preview now reproduces these prefix
+  sums and their wrapping, rather than adding a delta on each redraw.
+- 0xc143–0xc254: four render-mode branches. Mode 1 references the following
+  pose and maintains a substep counter. Modes 2/3 pass the parameter to other
+  rendering routines. Their full effects have not been implemented; the
+  preview explicitly marks nonzero modes unsupported instead of silently
+  treating them as mode 0.
+- 0x136cf–0x136e8: PIT divisor programming exists, but its relationship to
+  animation cadence has not been established. It is not evidence for 150 ms.
+
+Reproduce the read-only inspection (requires objdump; rejects unknown EXE
+revisions before applying these offsets):
+
+```sh
+python3 scripts/sotc/inspect-executable.py build/sotc-DOS/disc-files/SHADOW.EXE > artifacts/sotc/sequence-routines.txt
+```
+
+The extended animation audit verifies inclusive displacement, negative values,
+16-bit wrapping, truncated sequence input, index bounds and restart without
+accumulated drift. Stubbs sequence 5 has X positions relative to its anchor:
+1, 7, 10, 14, 16, 19, 20, 26, 28, 32, 35, 38. There are 168 valid steps using
+special render modes across the current resources; they remain unsupported.
+
+Rebuilt the PS4 package and verified sequence 5 visually in shadPS4 at steps
+3 and 8: `artifacts/sotc/ps4-motion-0.png` and `ps4-motion-1.png`. This is still
+sequence inspection, not navigation, collision detection or gameplay.

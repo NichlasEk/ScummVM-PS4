@@ -78,10 +78,12 @@ Common::Error SotcEngine::run() {
    Common::String actorTitle = "Triangle: show frames";
    if (showActor && !actorEntries.empty()) {
     bool decoded = true;
-    SequenceStep step;
+    SequenceStep step; int motionX = 0, motionY = 0;
     const uint8_t *poseRecord = nullptr; unsigned layers = 1;
     if (steps) decoded = va2Step(actorData.data(), actorData.size(), sequence, actorFrame, step)
-      && va2Record(actorData.data(), actorData.size(), 0, step.pose, poseRecord, layers);
+      && va2Record(actorData.data(), actorData.size(), 0, step.pose, poseRecord, layers)
+      && va2Position(actorData.data(), actorData.size(), sequence, actorFrame, motionX, motionY)
+      && (step.control >> 14) == 0; // Special render modes need their own implementation.
     // Validate every layer before drawing, so unsupported poses never appear partial.
     for (unsigned pass = 0; decoded && pass < 2; ++pass) for (unsigned i = 0; decoded && i < layers; ++i) {
      PoseLayer layer; layer.frame = actorFrame; layer.mirror = false; layer.x = 0; layer.y = 0;
@@ -90,8 +92,8 @@ Common::Error SotcEngine::run() {
      if (!va2Frame(actorData.data(), actorData.size(), layer.frame, actorPixels.data(), actorMask.data(), actorPixels.size(), width, height)) { decoded = false; break; }
      if (!pass) continue;
      // Preview anchor is fixed; bottom-relative placement is inferred from poses.
-     int left = steps ? 160 + layer.x : (320 - int(width)) / 2;
-     int top = 170 + layer.y - int(height);
+     int left = steps ? 160 + motionX + layer.x : (320 - int(width)) / 2;
+     int top = 170 + motionY + layer.y - int(height);
      for (unsigned y = 0; y < height; ++y) for (unsigned x = 0; x < width; ++x) {
       int dx = left + x, dy = top + y;
       unsigned sx = layer.mirror ? width - 1 - x : x;

@@ -26,6 +26,8 @@ extern "C" bool unpack(const uint8_t*s,unsigned n,uint8_t*d,unsigned m,unsigned 
 extern "C" unsigned sequences(const uint8_t*p,unsigned n) {return Sotc::va2Records(p,n,2);}
 extern "C" unsigned steps(const uint8_t*p,unsigned n,unsigned s) {return Sotc::va2SequenceLength(p,n,s);}
 extern "C" int pose(const uint8_t*p,unsigned n,unsigned s,unsigned i) {Sotc::SequenceStep r;return Sotc::va2Step(p,n,s,i,r) ? int(r.pose) : -1;}
+extern "C" int position(const uint8_t*p,unsigned n,unsigned s,unsigned i,int axis) {int x,y;return Sotc::va2Position(p,n,s,i,x,y) ? (axis ? y : x) : 1000000;}
+extern "C" int control(const uint8_t*p,unsigned n,unsigned s,unsigned i) {Sotc::SequenceStep r;return Sotc::va2Step(p,n,s,i,r) ? int(r.control) : -1;}
 extern "C" int mirror(const uint8_t*p,unsigned n,unsigned pose) {Sotc::PoseLayer r;return Sotc::va2Layer(p,n,pose,0,r) ? int(r.mirror) : -1;}
 extern "C" unsigned count(const uint8_t*p,unsigned n) {return Sotc::va2FrameCount(p,n);}
 extern "C" bool frame(const uint8_t*p,unsigned n,unsigned i,uint8_t*d,uint8_t*m,unsigned cap,unsigned*w,unsigned*h) {return Sotc::va2Frame(p,n,i,d,m,cap,*w,*h);}
@@ -54,6 +56,15 @@ extern "C" bool frame(const uint8_t*p,unsigned n,unsigned i,uint8_t*d,uint8_t*m,
     assert not decode(fixture, 1)
     for stop in range(len(fixture)):
         assert not decode(fixture[:stop], 0)
+    # The original performs 16-bit additions, including the current step.
+    movement = struct.pack('<4I', 16, 24, 32, 56) + (struct.pack('<IH', 6, 0) + b'\0\0') * 2
+    movement += struct.pack('<IH', 6, 0) + b'\0\2'
+    movement += struct.pack('<HHhh', 0, 0x8001, 32767, -32768) + struct.pack('<HHhh', 0, 1, 1, -1)
+    assert lib.position(movement, len(movement), 0, 0, 0) == 32767
+    assert lib.position(movement, len(movement), 0, 1, 0) == -32768
+    assert lib.position(movement, len(movement), 0, 1, 1) == 32767
+    assert lib.control(movement, len(movement), 0, 0) == 0x8001
+    assert lib.position(movement, len(movement) - 1, 0, 1, 0) == 1000000
     damaged = bytearray(fixture)
     damaged[32] = 255  # Copy run larger than the output row.
     assert not decode(bytes(damaged), 0)
@@ -75,21 +86,29 @@ extern "C" bool frame(const uint8_t*p,unsigned n,unsigned i,uint8_t*d,uint8_t*m,
             sequences = lib.sequences(data, len(data))
             sequence_steps = 0
             unsupported_steps = 0
+            special_render_steps = 0
             for sequence in range(sequences):
                 steps = lib.steps(data, len(data), sequence)
                 for step in range(steps):
                     unsupported_steps += lib.pose(data, len(data), sequence, step) < 0
+                    control = lib.control(data, len(data), sequence, step)
+                    special_render_steps += control >= 0 and (control >> 14) != 0
                 assert lib.pose(data, len(data), sequence, steps) == -1
                 sequence_steps += steps
             if path.name == 'A00.PAK' and entry['name'] == 'STUBBS0.VA2':
                 assert sequences == 11
+                assert [lib.position(data, len(data), 5, i, 0) for i in range(12)] == [1, 7, 10, 14, 16, 19, 20, 26, 28, 32, 35, 38]
+                assert lib.position(data, len(data), 4, 0, 1) == -1
+                assert lib.position(data, len(data), 5, 12, 0) == 1000000
+                assert lib.position(data, len(data), 5, 0, 0) == 1  # Restart cannot drift.
+                assert lib.control(data, len(data), 5, 0) == 1
                 assert [lib.pose(data, len(data), 4, i) for i in range(12)] == list(range(4, 16))
                 assert [lib.pose(data, len(data), 5, i) for i in range(12)] == list(range(16, 28))
                 assert lib.mirror(data, len(data), 0) == 0
                 assert lib.mirror(data, len(data), 10) == 1
                 for stop in (0, 15, len(data) // 2, len(data) - 1):
                     assert lib.pose(data, stop, 4, 0) == -1
-            results.append(dict(sequences=sequences, sequence_steps=sequence_steps, unsupported_steps=unsupported_steps,archive=path.name, name=entry['name'], frames=count,
+            results.append(dict(special_render_steps=special_render_steps, sequences=sequences, sequence_steps=sequence_steps, unsupported_steps=unsupported_steps,archive=path.name, name=entry['name'], frames=count,
                                 decoded=supported, unsupported=count-supported,
                                 directory_supported=bool(count)))
 if not results:

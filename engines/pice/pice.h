@@ -13,27 +13,31 @@
 #include "pice/lipsync.h"
 #include "pice/font.h"
 #include "pice/midi.h"
+namespace Video { class VideoDecoder; }
 namespace Pice {
 class PiceEngine : public Engine, public ScriptSceneSink {
 public:
  explicit PiceEngine(OSystem *system) : Engine(system), _picture(0), _speech(0), _textColor(255) {}
  Common::Error run() override;
 private:
- bool _saturn=false;
- ResourceNames _saturnGraphicsNames;
+ bool _console=false, _ps1=false;
+ bool playPS1Movie(const Common::String &name,bool skippable,bool audit=false);
+ bool runPS1MovieTests();
+ Video::VideoDecoder *_ps1Movie=nullptr;
+ ResourceNames _consoleGraphicsNames;
  Common::ScopedPtr<Graphics::Font> _japaneseFont;
- const Graphics::Font &uiFont() const { if(_saturn && _japaneseFont) return *_japaneseFont; return _originalFont; }
- bool loadSaturnResourceNames();
+ const Graphics::Font &uiFont() const { if(_console && _japaneseFont) return *_japaneseFont; return _originalFont; }
+ bool loadConsoleResourceNames();
  bool loadSaturnMenuButton();
  void drawSaturnMenuButton(Graphics::Surface *screen,const byte *palette);
  Common::Array<byte> _saturnMenuPixels, _saturnMenuColors;
- bool saturnMenuVisible() const { return _saturn && _scenePreview && !_gameOver && !_saturnMenuPixels.empty(); }
+ bool saturnMenuVisible() const { return _console && _scenePreview && !_gameOver && !_saturnMenuPixels.empty(); }
  Common::Rect saturnMenuBounds() const { return Common::Rect(552,-36,632,-4); }
  bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) const;
  int chapterRoomBase(int chapter) const;
  int chapterRoomCount(int chapter) const;
  int chapterForBank(uint bank) const;
- uint objectBase() const { return _saturn ? 1308 : 1306; }
+ uint objectBase() const { return _console ? 1308 : 1306; }
  bool _saturnMovieActive=false;
  uint32 _saturnPauseStart=0,_saturnPausedMs=0;
  void pauseEngineIntern(bool pause) override;
@@ -49,7 +53,7 @@ private:
  void syncSoundSettings() override;
  char _languagePrefix='E';
  Common::String _availableLanguages;
- Common::U32String displayText(const Common::String &text) const { return _saturn ? text.decode(Common::kWindows932) : Pice::displayText(text,_mac); }
+ Common::U32String displayText(const Common::String &text) const { return _console ? text.decode(Common::kWindows932) : Pice::displayText(text,_mac); }
  bool showPicture(uint position);
  OriginalFont _originalFont;
  SpriteResource _originalCursor;

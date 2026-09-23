@@ -201,8 +201,8 @@ artifacts, not redistributable game content.
 Remaining work: native OUT.BIN menu appearance and interactions, original
 Japanese font sourcing, verified platform audio routing including XA,
 comparison of scene composition against original Saturn output, and testing
-later chapters and a complete playthrough. PS1 compatibility cannot be inferred
-from visual similarity; its actual resources still need investigation.
+later chapters and a complete playthrough. A separate experimental PS1 adapter now reuses the verified shared archives;
+see [PICE-PS1.md](PICE-PS1.md) for its STR movies, saves and test coverage.
 
 ## Saturn MENU shortcut
 

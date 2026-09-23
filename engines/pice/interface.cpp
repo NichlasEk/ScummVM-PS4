@@ -42,7 +42,7 @@ bool PiceEngine::originalCursor(uint frame) {
  if(transparent==256) return false;
  for(uint i=0;i<low.size();++i) if(low[i]!=high[i]) low[i]=transparent;
  CursorMan.replaceCursorPalette(&_originalCursor.palette[0],0,256);
- if(_saturn) {
+ if(_console) {
   Common::Array<byte> doubled; doubled.resize(low.size()*4);
   for(int y=0;y<bounds.height()*2;++y) for(int x=0;x<bounds.width()*2;++x) doubled[y*bounds.width()*2+x]=low[(y/2)*bounds.width()+x/2];
   CursorMan.replaceCursor(doubled.data(),bounds.width()*2,bounds.height()*2,CLIP(-bounds.left,0,int(bounds.width())-1)*2,CLIP(-bounds.top,0,int(bounds.height())-1)*2,transparent,false);

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/pice.h"
+#include "video/video_decoder.h"
 #include "pice/film.h"
 #include "engines/util.h"
 #include "image/codecs/cinepak.h"
@@ -61,8 +62,8 @@ void PiceEngine::drawSaturnMenuButton(Graphics::Surface *screen,const byte *pale
   if(pixel) *static_cast<byte *>(screen->getBasePtr(box.left+x,box.top+y))=mapped[pixel];
  }
 }
-bool PiceEngine::loadSaturnResourceNames() {
- Common::File file; if(!file.open(Common::Path("A.BIN")) || file.size()>2*1024*1024) return false;
+bool PiceEngine::loadConsoleResourceNames() {
+ Common::File file; if(!file.open(Common::Path(_ps1 ? "SLPS_011.29" : "A.BIN")) || file.size()>2*1024*1024) return false;
  Common::Array<byte> bytes; bytes.resize(file.size());
  if(file.read(bytes.data(),bytes.size())!=bytes.size()) return false;
  for(uint at=0;at+9<bytes.size();at+=4) {
@@ -72,35 +73,36 @@ bool PiceEngine::loadSaturnResourceNames() {
   ResourceNames names; uint32 a,b,font;
   if(!names.load(table,_graphics.count()) || !names.resolve("A02",0,a) || a!=0 ||
      !names.resolve("M02",0,b) || !names.resolve("FONT",0,font)) continue;
-  _saturnGraphicsNames=names;
-  debug("[pice] Saturn original resource directory at=%x groups=%u M02=%u FONT=%u",at,names.count(),b,font);
+  _consoleGraphicsNames=names;
+  debug("[pice] Console original resource directory at=%x groups=%u M02=%u FONT=%u",at,names.count(),b,font);
   return true;
  }
  return false;
 }
 bool PiceEngine::resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) const {
- if(!_saturn) return Pice::resolveChapterGraphics(name,local,resource);
+ if(!_console) return Pice::resolveChapterGraphics(name,local,resource);
  Common::String group=name; group.toUppercase(); if(group.hasSuffix(".PAK")) group.erase(group.size()-4);
- return local>=0 && _saturnGraphicsNames.resolve(group,local,resource);
+ return local>=0 && _consoleGraphicsNames.resolve(group,local,resource);
 }
 int PiceEngine::chapterRoomBase(int chapter) const {
- if(!_saturn) return Pice::chapterRoomBase(chapter);
- uint32 id; return chapter>0 && chapter<=99 && _saturnGraphicsNames.resolve(Common::String::format("M%02d",chapter),2,id) ? int(id) : -1;
+ if(!_console) return Pice::chapterRoomBase(chapter);
+ uint32 id; return chapter>0 && chapter<=99 && _consoleGraphicsNames.resolve(Common::String::format("M%02d",chapter),2,id) ? int(id) : -1;
 }
 int PiceEngine::chapterRoomCount(int chapter) const {
- if(!_saturn) return Pice::chapterRoomCount(chapter);
+ if(!_console) return Pice::chapterRoomCount(chapter);
  Common::String name=Common::String::format("M%02d",chapter);
- for(uint i=0;i+1<_saturnGraphicsNames.count();++i) if(_saturnGraphicsNames.entry(i).name==name)
-  return _saturnGraphicsNames.entry(i+1).base-_saturnGraphicsNames.entry(i).base-2;
+ for(uint i=0;i+1<_consoleGraphicsNames.count();++i) if(_consoleGraphicsNames.entry(i).name==name)
+  return _consoleGraphicsNames.entry(i+1).base-_consoleGraphicsNames.entry(i).base-2;
  return 0;
 }
 int PiceEngine::chapterForBank(uint bank) const {
- if(!_saturn) return Pice::chapterForBank(bank);
+ if(!_console) return Pice::chapterForBank(bank);
  for(int ch : {2,3,6,8,9,10,11,12}) if(bank>=uint(chapterRoomBase(ch)) && bank<uint(chapterRoomBase(ch)+chapterRoomCount(ch))) return ch;
  return -1;
 }
 void PiceEngine::pauseEngineIntern(bool pause) {
  Engine::pauseEngineIntern(pause);
+ if(_ps1Movie) _ps1Movie->pauseVideo(pause);
  if(_saturnMovieActive) {
   if(pause) _saturnPauseStart=_system->getMillis();
   else _saturnPausedMs+=_system->getMillis()-_saturnPauseStart;

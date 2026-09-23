@@ -26,9 +26,9 @@ bool PiceEngine::startupMovies() {
  _frontendMovies=true;
  bool ok=true;
  const char *pcClips[]={"SINTRO.MUX","SCREDITS.MUX","STITRE.MUX"};
- const char *saturnClips[]={"INFOGRAM.CPK","XING.CPK","XINGCOPY.CPK","VINTRO.CPK"};
- const char *const *clips=_saturn ? saturnClips : pcClips;
- for(uint i=0;i<(_saturn ? 4u : 3u);++i) {
+ const char *consoleClips[]={"INFOGRAM.CPK","XING.CPK","XINGCOPY.CPK","VINTRO.CPK"};
+ const char *const *clips=_console ? consoleClips : pcClips;
+ for(uint i=0;i<(_console ? 4u : 3u);++i) {
   const char *name=clips[i];
   if(shouldQuit()) break;
   if(!playMovie(name,1,1)) { ok=false; break; }
@@ -51,11 +51,11 @@ bool PiceEngine::mainMenu(bool resumable) {
  Common::Array<byte> data;
  SpriteResource panel;
  // S_PANEL/1: original wooden crate, with no baked-in menu text.
- if(!_graphics.read(_saturn ? 1318 : 1321,data) || !panel.load(data,_saturn ? 1318 : 1321,true) || panel.palette.size()!=768 || panel.frames.empty()) {
+ if(!_graphics.read(_console ? 1318 : 1321,data) || !panel.load(data,_console ? 1318 : 1321,true) || panel.palette.size()!=768 || panel.frames.empty()) {
   warning("[pice] Cannot decode original main-menu panel"); return false;
  }
  Common::Array<byte> backdrop; backdrop.resize(640*400,0);
- if(_saturn) {
+ if(_console) {
   Common::Array<byte> native; native.resize(320*200,0);
   if(!panel.paintFrame(0,32,16,native,320,200)) return false;
   for(uint y=0;y<400;++y) for(uint x=0;x<640;++x) backdrop[y*640+x]=native[(y/2)*320+x/2];
@@ -76,7 +76,7 @@ bool PiceEngine::mainMenu(bool resumable) {
  int selection=resumable ? 0 : 1;
  Common::String notice;
  const Graphics::Font *font=FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
- if(!_saturn || !originalCursor(33)) CursorMan.setDefaultArrowCursor(false);
+ if(!_console || !originalCursor(33)) CursorMan.setDefaultArrowCursor(false);
  CursorMan.showMouse(true); _hotCursor=false; _cursorItem=-1; _cursorNeedsRefresh=true;
  debug("[pice] main menu opened resumable=%d manual=%d autosave=%d",resumable,manual,automatic);
 #ifdef PICE_TESTBENCH

@@ -19,6 +19,10 @@
      snprintf(resource, sizeof(resource), "%s/KVGA.KRO", candidate);
      probe = fopen(resource, "rb");
     }
+    if (!probe) {
+     snprintf(resource, sizeof(resource), "%s/DATA/KVGA.KRO", candidate);
+     probe = fopen(resource, "rb");
+    }
     if (!probe) continue;
     fclose(probe); found = true;
     snprintf(gamePath, sizeof(gamePath), "%s", candidate);

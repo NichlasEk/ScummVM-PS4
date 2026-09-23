@@ -30,6 +30,9 @@ static const ADGameDescription descriptions[] = {
   AD_ENTRY2s("KVGA.KRO", "4141f95d6edfceeae776f804e030678a", 15468702,
              "J_KLANG.KRO", "7fa70934c284fef4e0308006d70d8316", 32921880),
   Common::JA_JPN, Common::kPlatformSaturn, ADGF_UNSTABLE, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
+ {"pice", "PlayStation Japanese - experimental gameplay",
+  AD_ENTRY1s("SLPS_011.29", "ef534fb037ffd910c911107589454d6b", 518144),
+  Common::JA_JPN, Common::kPlatformPSX, ADGF_UNSTABLE, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
  AD_TABLE_END_MARKER
 };
 class PiceDetection : public AdvancedMetaEngineDetection<ADGameDescription> {

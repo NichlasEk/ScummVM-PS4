@@ -11,7 +11,7 @@ class ScriptMachine;
 class StartupScene : public ScriptAnimation {
  StartState _state;
  Common::Array<byte> _background, _scenery, _actorData[20];
- struct Animation { unsigned sequence, substep, mode, gate; } _animations[11];
+ struct Animation { unsigned sequence, substep, mode, gate, base, direction; } _animations[11];
  ScriptMachine *_machine=nullptr;
  Route _route; bool _following=false, _scriptRoute=false;
  unsigned collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine) const;
@@ -31,6 +31,7 @@ public:
  bool scriptWalking() const { return _scriptRoute; }
  void cancelRoute() { _following=false; _scriptRoute=false; _route.count=0; }
  bool movePlayer(ScriptMachine &machine);
+ bool face(unsigned actor,unsigned direction) override;
  bool control(unsigned value,bool unlock,ScriptActor &actor) override;
  bool hide(unsigned actor) override;
  bool reset(unsigned actor, ScriptActor &state) override;

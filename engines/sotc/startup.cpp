@@ -73,7 +73,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
   _clips[i][0]=state.word(a+44); _clips[i][1]=state.byte(a+48);
   _clips[i][2]=state.word(a+46); _clips[i][3]=state.byte(a+49);
   _visible[i] = state.word(a+26)!=0;
-  _animations[i] = {state.word(a+12), state.word(a+16), state.word(a+6), state.byte(a+20)};
+  _animations[i] = {state.word(a+12), state.word(a+16), state.word(a+6), state.byte(a+20), state.word(a+4), state.word(a+8)};
  }
  _inputLocks=state.word(0x2e28);
  _walkDirection=state.word(0x2e5c); _walking=false;
@@ -145,6 +145,16 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
  status = Common::String::format("INIT scene: %u drawn, %u unsupported", rendered, unsupported);
  return unsupported == 0;
 }
+bool StartupScene::face(unsigned id,unsigned direction) {
+ if (!_ready || id>=11 || direction>4) return false;
+ Animation &a=_animations[id];
+ // Opcode 1 clears scripted mode before 0x797b considers a direction change.
+ a.mode=0;
+ if (direction && direction!=a.direction) { a.direction=direction; a.mode=1; }
+ if (!id) _walkDirection=a.direction;
+ debug("[sotc-face] actor=%u direction=%u mode=%u",id,a.direction,a.mode);
+ return true;
+}
 bool StartupScene::control(unsigned value,bool unlock,ScriptActor &actor) {
  if (!_ready || value>4) return false;
  if (unlock) {
@@ -161,7 +171,7 @@ bool StartupScene::control(unsigned value,bool unlock,ScriptActor &actor) {
    unsigned count=va2SequenceLength(_actorData[slot].data(),_actorData[slot].size(),seq);
    if (!count) return false;
    actor.step=0; actor.steps=count; _animations[0].sequence=seq;
-   _animations[0].mode=0; _animations[0].gate=255;
+   _animations[0].mode=0; _animations[0].gate=255; _animations[0].base=0;
   }
   cancelRoute(); _walking=false; _inputLocks=15;
  }
@@ -185,6 +195,7 @@ bool StartupScene::walk(unsigned direction, ScriptMachine &machine,bool scripted
  if (!count || !va2Step(data.data(),data.size(),sequenceIndex,0,step)) return false;
  ScriptActor actor=*machine.actor(0); actor.step=0; actor.steps=count;
  _animations[0].sequence=sequenceIndex; _animations[0].mode=0; _animations[0].gate=255;
+ _animations[0].base=moving ? 4 : 0; _animations[0].direction=facing;
  _walkDirection=facing; _walking=moving;
  machine.setActor(0,actor);
  debug("[sotc-walk] direction=%u moving=%u sequence=%u",facing,unsigned(moving),sequenceIndex);
@@ -296,7 +307,7 @@ bool StartupScene::reset(unsigned id, ScriptActor &actor) {
  // then installs resource slot 255. The following 91/87 bind and start it.
  unsigned count=va2SequenceLength(_actorData[0].data(),_actorData[0].size(),0);
  actor={0,0,4,2,0,count};
- _animations[id]={0,0,1,255}; _slots[id]=255; _collisionBypass[id]=false; _visible[id]=true; _inDrawList[id]=true;
+ _animations[id]={0,0,1,255,0,1}; _slots[id]=255; _collisionBypass[id]=false; _visible[id]=true; _inDrawList[id]=true;
  _clips[id][0]=_clips[id][1]=0; _clips[id][2]=319; _clips[id][3]=199;
  return true;
 }
@@ -343,6 +354,14 @@ unsigned StartupScene::advance(ScriptMachine &machine) {
   const Common::Array<byte> &data=_actorData[slot];
   Animation &animation=_animations[id];
   ScriptActor actor=*machine.actor(id);
+  if (animation.mode==1) {
+   // 0x7afc transitions after rendering, without also advancing a frame.
+   unsigned seq=(animation.base+animation.direction-1)&65535;
+   unsigned count=va2SequenceLength(data.data(),data.size(),seq);
+   if (!count) { ++unsupported; continue; }
+   animation.sequence=seq; animation.mode=0; animation.gate=255;
+   actor.step=0; actor.steps=count; machine.setActor(id,actor); continue;
+  }
   SequenceStep step;
   if (!va2Step(data.data(),data.size(),animation.sequence,actor.step,step) ||
       !advanceAnimation(step.control,animation.mode,animation.gate,actor.steps,actor.step,animation.substep)) {

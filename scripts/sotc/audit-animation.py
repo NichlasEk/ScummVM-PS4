@@ -88,3 +88,24 @@ for index in (1,5,10):
     assert struct.unpack_from('<HH',moved,0)==(510,199)
     assert moved[4:]==raw[4:]
 print('Original reset defaults and absolute actor positions matched: 3 actors')
+
+# Opcode 1 clears mode before the original direction setter, then mode 1
+# transitions after drawing. Confirm zero/unchanged direction and both bases.
+for base in (0,4):
+    for facing in range(1,5):
+        for direction in range(5):
+            raw=bytearray(52)
+            struct.pack_into('<HHH',raw,4,base,0,facing)
+            struct.pack_into('<HHHH',raw,12,9,3,2,4)
+            u.mem_write(actor,bytes(raw))
+            call(0x797b,[0x2e54,0x17c4,direction])
+            changed=bool(direction and direction!=facing)
+            result=bytes(u.mem_read(actor,52))
+            assert struct.unpack_from('<HH',result,6)==(int(changed),direction if changed else facing)
+            if changed:
+                call(0x7afc,[0x2e54,0x17c4])
+                result=bytes(u.mem_read(actor,52))
+                assert struct.unpack_from('<H',result,6)[0]==0
+                assert struct.unpack_from('<HHHH',result,12)==(base+direction-1,0,2,7)
+                assert result[20]==255
+print('Original facing and deferred sequence transitions matched: 40 cases')

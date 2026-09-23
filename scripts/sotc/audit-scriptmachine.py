@@ -29,6 +29,7 @@ struct TestAnimation : Sotc::ScriptAnimation {
  bool movementPending(unsigned actor,bool &pending) override {if (!accept || actor!=0) return false; pending=moving; return true;}
  unsigned lock=0;
  bool control(unsigned value,bool unlock,Sotc::ScriptActor &) override {if (!accept) return false; lock=unlock ? 0 : value ? lock|(1u<<value) : 15; return true;}
+ bool face(unsigned,unsigned) override {return accept;}
  bool hide(unsigned) override {return accept;}
  bool reset(unsigned,Sotc::ScriptActor &actor) override {if (!accept) return false; actor={0,0,4,2,0,1}; return true;}
  bool resource(unsigned,unsigned index) override {return accept && index==13;}
@@ -174,6 +175,17 @@ extern "C" bool info(unsigned i,unsigned *out) {
             assert lib.visit(1) == 1 and info()[0] == 2
             assert lib.soundCalls() == 1 and lib.soundLast() == sample
     lib.soundHost(False, False)
+    for direction in range(5):
+        fixture([1,direction,2])
+        lib.animationHost(False,False)
+        assert lib.visit(1)==11 and info()[0]==0
+        lib.animationHost(True,False)
+        assert lib.visit(1)==11 and info()[0]==0
+        lib.animationHost(True,True)
+        assert lib.visit(1)==1 and info()[0]==2
+    for script in ([1],[1,5,2],[21,11,1,4,2]):
+        fixture(script)
+        assert lib.visit(1)==7 and info()[0]==0
     fixture([36,52,171,2])
     lib.animationHost(False,False)
     assert lib.visit(1)==11 and info()[0]==0

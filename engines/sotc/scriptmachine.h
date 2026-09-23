@@ -24,6 +24,7 @@ public:
  virtual bool hide(unsigned actor) = 0;
  virtual bool move(unsigned,unsigned,unsigned,bool &) { return false; }
  virtual bool movementPending(unsigned,bool &) { return false; }
+ virtual bool face(unsigned,unsigned) { return false; }
  virtual bool control(unsigned, bool, ScriptActor &) { return false; }
  virtual bool reset(unsigned, ScriptActor &) { return false; }
  virtual bool resource(unsigned, unsigned) { return false; }
@@ -157,6 +158,10 @@ public:
     if (!compare(a, b, op.comparison)) next = op.target;
     break;
    }
+   case 1:
+    if (t.actor>=11 || op.argument>4) return t.result=kInvalidScript;
+    if (!_animation || !_animation->face(t.actor,op.argument)) return t.result=kAnimationUnavailable;
+    break;
    case 36: {
     if (t.actor>=11) return t.result=kInvalidScript;
     bool pending=false;

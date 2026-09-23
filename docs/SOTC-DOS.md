@@ -856,3 +856,24 @@ with zero unsupported animation formats. Local trace:
 physical PS4 or complete scene-playthrough claim.
 
 Next: opcode 1 at 0x9bbc and the subsequent commands in task 1's scene sequence.
+
+### Opcode 1: actor facing
+
+Opcode 1 (0x9bbc) now dispatches the byte direction to the bound actor.
+It clears scripted mode before applying original 0x797b semantics: zero or
+unchanged direction preserves the facing; a changed direction enters mode 1.
+The scene now tracks actor direction and animation base from INIT.SAV, resets
+them with actor initialization, and updates them during diagnostic walking.
+For ordinary actors 0..9, the mode-1 update follows 0x7afc: after rendering,
+select base+direction-1, reset frame/count/gate, preserve interpolation substep,
+and return without another frame advance. Actor 10's special update controller
+remains unimplemented as previously documented.
+
+Validation: VM tests cover directions 0..4, missing/rejecting host, truncated
+operands and invalid direction/actor. Executing the original direction setter
+and deferred update in Unicorn confirms 40 cases across standing/walking bases;
+the existing 384 frame/subframe and three reset tests also pass. Pose regression
+passes. Actual PS4 build in shadPS4 reaches (104,171), executes actor 0 direction
+4, binds actor 1, then stops at opcode 5, task 1 PC 38. Zero unsupported
+animation formats. Evidence: `artifacts/sotc/facing-live.log` (local ignored).
+Next is opcode 5's one-coordinate actor destination command (0xa184).

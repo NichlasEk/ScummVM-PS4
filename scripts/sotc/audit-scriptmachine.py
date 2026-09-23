@@ -22,6 +22,12 @@ extern "C" bool load(const uint8_t *s,unsigned n,const uint8_t *b,unsigned m) {
  return state.load(Sotc::Cc4View(s,n)) && vm.load(state,Sotc::Cc4View(b,m));
 }
 extern "C" int visit(unsigned i) {return vm.visit(i);}
+extern "C" void seed(unsigned s) {vm.seedRandom(s);}
+extern "C" unsigned rng() {return vm.randomState();}
+extern "C" unsigned randomValue() {unsigned v; return vm.randomValue(v) ? v : 65536;}
+extern "C" void event(bool p) {vm.setEventPending(p);}
+extern "C" bool pending() {return vm.eventPending();}
+extern "C" unsigned rect(unsigned j) {return vm.task(1)->rectangle[j];}
 extern "C" void tick() {vm.tick();}
 extern "C" bool actor(unsigned i,int x,int y,unsigned step,unsigned count) {
  Sotc::ScriptActor a={x,y,4,2,step,count}; return vm.setActor(i,a);
@@ -37,6 +43,7 @@ extern "C" bool info(unsigned i,unsigned *out) {
     lib = c.CDLL(str(temp / 'test.so'))
     lib.load.restype = lib.actor.restype = lib.info.restype = c.c_bool
     lib.load.argtypes = [c.c_char_p, c.c_uint, c.c_char_p, c.c_uint]
+    lib.rng.restype = c.c_uint
     def info(i=1):
         out = (c.c_uint * 7)()
         assert lib.info(i, out)
@@ -95,6 +102,37 @@ extern "C" bool info(unsigned i,unsigned *out) {
     assert lib.visit(17) == 7
     assert not lib.actor(11, 0, 0, 0, 1)
 
+    for seed in (0, 1, 0xffffffff, 123456789):
+        for limit in (0, 1, 2, 255):
+            fixture([79, limit, 9, 0, 3, 251, 255])
+            lib.seed(c.c_uint(seed))
+            expected = seed
+            for _ in range(4):
+                if limit >= 2:
+                    expected = (expected * 0x015a4e35 + 1) & 0xffffffff
+                assert lib.visit(1) == 2
+                assert lib.rng() == expected
+                assert lib.randomValue() == (((expected >> 16) & 32767) % limit if limit >= 2 else 0)
+    # Variable 33 is shared across tasks and can drive comparisons.
+    fixture([79, 1, 27, 2, 2], extra=[10, 33, 0, 0, 12, 0, 3, 0, 2, 255])
+    lib.tick()
+    assert info(2)[5] == 1
+    for pending, x, expected_pc, remains in ((False, 110, 10, False), (True, 200, 10, True), (True, 110, 7, False)):
+        fixture([66, 55, 154, 63, 199, 5, 0, 2, 0, 0, 2], rectangle=(1, 2, 3, 4))
+        lib.actor(0, x, 154, 0, 1)
+        lib.event(pending)
+        assert lib.visit(1) == 1 and info()[0] == expected_pc
+        assert bool(lib.pending()) == remains
+        assert [lib.rect(j) for j in range(4)] == ([110, 154, 126, 199] if pending else [1, 2, 3, 4])
+    for pending in (False, True):
+        fixture([64, 3, 0, 2, 2])
+        lib.event(pending)
+        assert lib.visit(1) == 1 and info()[0] == (3 if pending else 4)
+        assert not lib.pending()
+    for script in ([66, 1, 2], [66, 1, 2, 3, 4, 255, 127], [79]):
+        fixture(script)
+        assert lib.visit(1) == 7 and info()[0] == 0
+
     save = (args.directory / 'INIT.SAV').read_bytes()
     state = bytes(v ^ ((i + 1) * 5 & 255) for i, v in enumerate(save[64:]))
     bank, room = (struct.unpack_from('<H', state, a - 0x2dee)[0] for a in (0x2df2, 0x2df8))
@@ -105,6 +143,7 @@ extern "C" bool info(unsigned i,unsigned *out) {
     lib.tick()
     result = [dict(zip(('pc', 'flags', 'timer', 'actor', 'opcode', 'result', 'executed'), info(i)), task=i) for i in range(15)]
     assert result[1]['result'] == 4 and result[1]['pc'] == 14
-    assert [(r['task'], r['opcode']) for r in result if r['result'] == 6] == [(5, 66), (8, 79), (12, 99), (14, 79)]
+    assert [(r['task'], r['pc'], r['opcode']) for r in result if r['result'] >= 5] == [(12, 2, 99), (14, 46, 77)]
+    assert sum(2 <= r['result'] <= 4 for r in result) == 7
     assert sum(r['result'] == 1 for r in result) == 6
     print(json.dumps(result, indent=2))

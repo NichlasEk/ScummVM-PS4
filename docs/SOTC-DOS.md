@@ -458,7 +458,7 @@ X minus/plus actor byte +0x15; top is Y minus byte +0x16; bottom is Y.
 opcode 40 at local PC 14 for rectangle (110,154)..(126,199). The original
 player at (220,151) is outside it, so remaining there is correct behavior.
 
-The first real scheduling pass produces:
+Before event/random support, the first real scheduling pass produced:
 
 - six disabled tasks, as saved;
 - five waiting tasks (one region and four animation waits);
@@ -488,3 +488,37 @@ opcode 79 invokes the original random-range helper and stores variable 33;
 opcode 99 manages music. These are identified from their handlers but not yet
 implemented. Actor movement/input, animation updates, audio and additional
 commands are required before this can become gameplay.
+
+
+### Event conditions and original random generator
+
+Implemented opcodes 64 (pending event), 66 (pending event plus actor-0
+footprint rectangle), and 79 (random range, shared runtime variable 33).
+The EXE handlers at 0xa713/0xa734 consume the event only on success; an
+absent event must not overwrite the task rectangle. The diagnostic step
+button remains separate from game events. Actual input production still
+needs binding; the VM exposes an explicit event setter for now.
+
+Opcode 79 calls 0x7051, which uses Borland rand at 0x17b5f:
+`state = state * 0x015a4e35 + 1` modulo 2^32, then
+`((state >> 16) & 0x7fff) % range`. Ranges 0 and 1 return zero without
+advancing the generator. **The preview uses explicit diagnostic seed 1**;
+the original startup seed source has not been wired, so this is not a claim
+of identical random choices across original and preview launches. Variable
+33 is unknown until the first random command rather than inventing a value.
+
+The supplied INIT.SAV now reaches seven waiting tasks and two unsupported
+stops on its first pass: task 12 at PC 2/opcode 99 (music), and task 14 at
+PC 46/opcode 77. Tasks 5 and 8 correctly return to their timer loops.
+Tests cover repeatable RNG sequences/overflow, range 0/1, variable sharing,
+event consumption/miss, preserving rectangles without an event, malformed
+operands and the new exact INIT.SAV result. The CC4 decoder audit passes.
+Evidence: `artifacts/sotc/vm-events-audit.json`, `cc4-events-audit.json`.
+
+Next: decode opcode 77, then bind actual actor animation and music rather
+than treating those commands as no-ops. Movement and input are still absent.
+
+PS4 package built successfully and tested in shadPS4: first-pass results
+match the native audit; Cross/N advances to tick 2 with tasks 5/8 executing
+another timer loop. Screenshot `artifacts/sotc/events-step.png`, log
+`artifacts/sotc/events-live.log`. No physical PS4 validation in this step.

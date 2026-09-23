@@ -23,6 +23,7 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
  switch (out.opcode) {
  case 2: // Disable current task, without advancing original IP (0x9f9f).
   return kInstruction;
+ case 64: // Pending event, branch when absent (0xa713).
  case 3: // Relative jump; displacement base is the operand, not its end.
   break;
  case 10: { // Compare variable with literal/variable, branch when false.
@@ -47,12 +48,15 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   return kInstruction;
  case 39:
   out.next = p; return kInstruction;
+ case 66: // Event plus footprint rectangle, then false-branch displacement.
  case 40:
   if (v.size - p < 4) return kTruncated;
   for (unsigned i = 0; i < 4; ++i) out.rectangle[i] = v.data[p + i] * ((i & 1) ? 1 : 2);
-  out.next = p + 4; return kInstruction;
+  p += 4;
+  if (out.opcode == 66) break;
+  out.next = p; return kInstruction;
  case 1: case 4: case 5: case 9: case 21: case 27: case 28: case 58: case 59:
- case 80: case 87: case 88: case 96:
+ case 79: case 80: case 87: case 88: case 96:
   if (p >= v.size) return kTruncated;
   out.argument = v.data[p++]; out.next = p;
   return kInstruction;

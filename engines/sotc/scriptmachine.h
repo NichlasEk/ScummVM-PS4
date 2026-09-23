@@ -23,8 +23,12 @@ class ScriptMachine {
  ScriptTask _tasks[17];
  ScriptActor _actors[11];
  unsigned _count;
+ uint32_t _randomState;
+ unsigned _randomValue;
+ bool _randomKnown, _eventPending;
  static int signed16(unsigned v) { v &= 65535; return v < 32768 ? int(v) : int(v) - 65536; }
  bool variable(unsigned id, unsigned &value) const {
+  if (id == 33) { value = _randomValue; return _randomKnown; }
   unsigned address;
   if (id == 0) address = 0x2df6;
   else if (id == 34) address = 0x2df0;
@@ -52,7 +56,13 @@ class ScriptMachine {
   }
  }
 public:
- ScriptMachine() : _count(0) {}
+ ScriptMachine() : _count(0), _randomState(1), _randomValue(0), _randomKnown(false), _eventPending(false) {}
+ // Explicit diagnostic seed: original startup seed source is not yet bound.
+ void seedRandom(uint32_t seed) { _randomState = seed; }
+ uint32_t randomState() const { return _randomState; }
+ bool randomValue(unsigned &value) const { value = _randomValue; return _randomKnown; }
+ void setEventPending(bool pending) { _eventPending = pending; }
+ bool eventPending() const { return _eventPending; }
  ScriptMachine(const ScriptMachine &) = delete;
  ScriptMachine &operator=(const ScriptMachine &) = delete;
  unsigned count() const { return _count; }
@@ -64,6 +74,7 @@ public:
  }
  bool load(const StartState &state, Cc4View block) {
   _count = 0;
+  _randomState = 1; _randomValue = 0; _randomKnown = false; _eventPending = false;
   if (!state.valid() || block.size > sizeof(_block) || cc4Count(block, 2) != state.word(0x2e02) || !state.word(0x2e02)) return false;
   for (unsigned i = 0; i < block.size; ++i) _block[i] = block.data[i];
   block.data = _block;
@@ -130,6 +141,25 @@ public:
    case 40:
     for (unsigned j = 0; j < 4; ++j) t.rectangle[j] = op.rectangle[j];
     if (!overlaps(t)) return t.result = kRegionWait;
+    break;
+   case 64: case 66:
+    if (!_eventPending) next = op.target;
+    else {
+     if (op.opcode == 66) {
+      for (unsigned j = 0; j < 4; ++j) t.rectangle[j] = op.rectangle[j];
+     }
+     if (op.opcode == 66 && !overlaps(t)) next = op.target;
+     else _eventPending = false;
+    }
+    break;
+   case 79:
+    // Borland rand at 0x17b5f; range helper 0x7051 does not draw for 0/1.
+    _randomValue = 0;
+    if (op.argument >= 2) {
+     _randomState = _randomState * uint32_t(0x015a4e35) + 1;
+     _randomValue = ((_randomState >> 16) & 0x7fff) % op.argument;
+    }
+    _randomKnown = true;
     break;
    case 39:
     if (overlaps(t)) return t.result = kRegionWait;

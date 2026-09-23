@@ -239,3 +239,18 @@ F8 reloads input configuration; F7 toggles mouse capture/release. WASD and N/B
 remain alternatives. This is emulator input emulation, not direct native mouse
 support on the physical PS4. No automatic test keys are left in the interactive
 Saturn profile.
+
+### Native pointer frames
+
+Saturn CURSOR has 43 frames. Its normal arrow and pointing hand are frames
+32 and 33 (images 25 and 33), rather than PC frames 25 and 26. The latter
+select unrelated small horizontal symbols in the Saturn archive. Interactive
+room/inventory targets and the MENU shortcut now select the native hand; the
+resumable menu also uses it. Cursor state is explicitly refreshed after leaving
+the menu, even if the previous and next hover states are both noninteractive.
+Selected inventory objects still provide their own cursor images.
+
+The rebuilt PS4 eboot passed its self-tests and restored the bridge; opening the
+resumable menu was exercised in `saturn-cursor-live.log`. The ignored inspection
+atlas `saturn-cursors.png` identifies the native source images. All pointer
+artwork continues to come from the user's KVGA.KRO.

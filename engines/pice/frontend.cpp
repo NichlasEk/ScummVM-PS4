@@ -76,7 +76,8 @@ bool PiceEngine::mainMenu(bool resumable) {
  int selection=resumable ? 0 : 1;
  Common::String notice;
  const Graphics::Font *font=FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
- CursorMan.setDefaultArrowCursor(false); CursorMan.showMouse(true); _hotCursor=false; _cursorItem=-1;
+ if(!_saturn || !originalCursor(33)) CursorMan.setDefaultArrowCursor(false);
+ CursorMan.showMouse(true); _hotCursor=false; _cursorItem=-1; _cursorNeedsRefresh=true;
  debug("[pice] main menu opened resumable=%d manual=%d autosave=%d",resumable,manual,automatic);
 #ifdef PICE_TESTBENCH
  uint testKey=0; uint32 nextTestKey=opened+500; Common::String testKeys=ConfMan.get(resumable ? "pice_test_pause_keys" : "pice_test_frontend_keys");

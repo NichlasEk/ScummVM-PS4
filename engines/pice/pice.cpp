@@ -2046,7 +2046,7 @@ Common::Error PiceEngine::run() {
  debug("[pice] edition=%s language=%c",_saturn ? "Saturn" : _mac ? "Macintosh" : _windows ? "Windows" : _demo ? "DOS demo" : "DOS",_languagePrefix);
  Common::Array<byte> uiResource;
  if(!_graphics.read(_saturn ? 1138 : 1318,uiResource) || !_originalFont.load(uiResource) ||
-    !_graphics.read(_saturn ? 1135 : 1315,uiResource) || !_originalCursor.load(uiResource,1315))
+    !_graphics.read(_saturn ? 1135 : 1315,uiResource) || !_originalCursor.load(uiResource,_saturn ? 1135 : 1315))
   return Common::Error(Common::kReadingFailed,"Cannot read original PICE interface resources");
  bool nativeSaturn=_saturn; _saturn=false;
  bool lifecycleTests=runActorLifecycleTests(); _saturn=nativeSaturn;

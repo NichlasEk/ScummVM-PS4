@@ -137,7 +137,7 @@ private:
  void refreshInventoryLabels();
  bool inventoryVisible() const;
  int inventoryAt(Common::Point point) const;
- bool _hotCursor=false;
+ bool _hotCursor=false, _cursorNeedsRefresh=true;
  int _cursorItem=-1;
  bool _playerMovement=true;
  void updateHover();

@@ -191,10 +191,12 @@ void PiceEngine::updateHover() {
   }
  }
  bool reset=_cursorItem!=-1; _cursorItem=-1;
- bool hot=spot>=0 || _hoverItem>=0 || _activeMenu>=0;
- if(!reset && hot==_hotCursor) return;
- _hotCursor=hot;
- if(!originalCursor(hot ? 26 : 25)) CursorMan.setDefaultArrowCursor(false);
+ bool hot=spot>=0 || _hoverItem>=0 || _activeMenu>=0 ||
+  (saturnMenuVisible() && saturnMenuBounds().contains(pointerPosition()));
+ if(!reset && !_cursorNeedsRefresh && hot==_hotCursor) return;
+ _hotCursor=hot; _cursorNeedsRefresh=false;
+ // Saturn CURSOR adds seven frames before the normal arrow and pointing hand.
+ if(!originalCursor(_saturn ? (hot ? 33 : 32) : (hot ? 26 : 25))) CursorMan.setDefaultArrowCursor(false);
 
 }
 bool PiceEngine::clickRoom(Common::Point point,bool rightButton) {

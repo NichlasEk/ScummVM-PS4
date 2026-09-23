@@ -102,7 +102,20 @@ Common::Error SotcEngine::run() {
   }
  }
  OpeningClock openingClock(openingPlan);
- OpeningScene animatedOpening(sound); bool openingAnimated=false, showStory=false;
+ OpeningScene animatedOpening(sound), cdOpening(sound); bool openingAnimated=false, showStory=false, showCd=false;
+ Common::Array<byte> cdScript,cdText,cdPalettes[2];
+ auto readCinematicFile=[](const char *name,Common::Array<byte> &out) {
+  Common::File file;
+  if (!file.open(Common::Path(name)) || file.size()<1 || file.size()>4*1024*1024) return false;
+  out.resize(file.size()); return file.read(out.data(),out.size())==out.size();
+ };
+ if (showOpening && readCinematicFile("R09.CC4",cdScript)) {
+  if (!readCinematicFile("E.CC4",cdText) || !resources.load(8,cdPalettes[0]) || !resources.load(7,cdPalettes[1]) ||
+      cdPalettes[0].size()!=768 || cdPalettes[1].size()!=768 ||
+      !cdOpening.startCd(Cc4View(cdScript.data(),cdScript.size()),Cc4View(cdText.data(),cdText.size())))
+   return Common::Error(Common::kReadingFailed,"Cannot initialize CD opening");
+  showCd=true; debug("[sotc-cd] starting before R05 logos");
+ }
  uint32 openingLast=_system->getMillis(); unsigned openingMusicClock=0;
  if (showOpening) debug("[sotc-opening] logos from R05/D05 followed by supported animated prefix");
  else warning("[sotc-opening] Logo prefix unavailable; opening menu directly");
@@ -137,9 +150,21 @@ Common::Error SotcEngine::run() {
   nextSceneFrame=_system->getMillis()+100; redraw=true;
   debug("[sotc-story] returning to opening gameplay scene");
  };
+ auto finishCd=[&]() {
+  showCd=false; sound.stopSpeech(); sound.music(255); sound.effect(255);
+  storyText.clear(); storyLines.clear(); storyPage=0; openingLast=_system->getMillis(); redraw=true;
+  debug("[sotc-cd] finished or skipped; starting R05 logos");
+ };
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
-  if (showOpening) {
+  if (showCd) {
+   uint32 now=_system->getMillis(); cdOpening.advance(now-openingLast); openingLast=now; redraw=true;
+   if (cdOpening.done()) {
+    if (cdOpening.failed()) { surface.free(); return Common::Error(Common::kUnknownError,"CD opening script could not continue"); }
+    finishCd();
+   }
+  }
+  if (showOpening && !showCd) {
    uint32 now=_system->getMillis(); unsigned elapsed=now-openingLast; openingLast=now;
    if (openingAnimated) animatedOpening.advance(elapsed); else openingClock.advance(elapsed);
    openingMusicClock+=elapsed;
@@ -276,20 +301,22 @@ Common::Error SotcEngine::run() {
      if (py+d>=0 && py+d<240) *static_cast<byte *>(surface.getBasePtr(px,py+d))=7;
     }
    }
-   if (showOpening || showStory) {
+   if (showOpening || showStory || showCd) {
+    OpeningScene &cinematic=showCd ? cdOpening : animatedOpening;
     surface.fillRect(Common::Rect(320,240),0);
-    memcpy(surface.getBasePtr(0,20),(openingAnimated || showStory) ? animatedOpening.pixels().data() : openingImages[openingClock.logo()].data(),64000);
-    byte faded[768]; unsigned brightness=(openingAnimated || showStory) ? animatedOpening.brightness() : openingClock.brightness();
-    for (unsigned i=0;i<768;++i) faded[i]=palette[i]*brightness/255;
+    memcpy(surface.getBasePtr(0,20),(showCd || openingAnimated || showStory) ? cinematic.pixels().data() : openingImages[openingClock.logo()].data(),64000);
+    byte faded[768]; unsigned brightness=(showCd || openingAnimated || showStory) ? cinematic.brightness() : openingClock.brightness();
+    const Common::Array<byte> &scenePalette=showCd ? cdPalettes[cdOpening.cdBlock()==0 ? 0 : 1] : palette;
+    for (unsigned i=0;i<768;++i) faded[i]=scenePalette[i]*brightness/255;
     _system->getPaletteManager()->setPalette(faded,0,256);
-    if (showStory && !animatedOpening.dialogueText().empty()) {
-     if (storyText!=animatedOpening.dialogueText()) {
-      storyText=animatedOpening.dialogueText(); storyPage=0; storyLines.clear(); font->wordWrapText(storyText,300,storyLines);
+    if ((showStory || showCd) && !cinematic.dialogueText().empty()) {
+     if (storyText!=cinematic.dialogueText()) {
+      storyText=cinematic.dialogueText(); storyPage=0; storyLines.clear(); font->wordWrapText(storyText,300,storyLines);
      }
      unsigned end=MIN<unsigned>(storyPage+8,storyLines.size());
-     int left=CLIP<int>(int(animatedOpening.textX())-150,0,20),top=CLIP<int>(20+animatedOpening.textY(),20,120);
+     int left=CLIP<int>(int(cinematic.textX())-150,0,20),top=CLIP<int>(20+cinematic.textY(),20,120);
      surface.fillRect(Common::Rect(left,top,left+300,top+4+(end-storyPage)*font->getFontHeight()),0);
-     for (unsigned i=storyPage;i<end;++i) font->drawString(&surface,storyLines[i],left,top+2+(i-storyPage)*font->getFontHeight(),300,animatedOpening.textColor(),Graphics::kTextAlignCenter);
+     for (unsigned i=storyPage;i<end;++i) font->drawString(&surface,storyLines[i],left,top+2+(i-storyPage)*font->getFontHeight(),300,cinematic.textColor(),Graphics::kTextAlignCenter);
     } else { storyText.clear(); storyLines.clear(); storyPage=0; }
 
    }
@@ -301,6 +328,16 @@ Common::Error SotcEngine::run() {
   while (_eventMan->pollEvent(event)) {
    if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup || mainMenu) redraw=true; }
    if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) debug("[sotc-input] type=%u key=%u",unsigned(event.type),unsigned(event.kbd.keycode));
+   if (showCd) {
+    if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) finishCd();
+    else if (event.type==Common::EVENT_LBUTTONDOWN || (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN)) {
+     if (cdOpening.dialogueText().empty()) finishCd();
+     else if (storyPage+8<storyLines.size()) storyPage+=8;
+     else cdOpening.finishDialogue();
+     redraw=true;
+    }
+    continue;
+   }
    if (showStory) {
     if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) finishStory();
     else if (!animatedOpening.dialogueText().empty() &&

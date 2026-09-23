@@ -31,25 +31,47 @@ inline void warning(const char *message,unsigned pc,const char *reason) {fprintf
 namespace Sotc {
 struct Entry {Common::String name;};
 struct TestResource {std::vector<byte> data;Entry entry;};
-extern std::vector<TestResource> resources[3];
+extern std::vector<TestResource> resources[5];
 class Pak {
  unsigned rooms=0;
 public:
  std::vector<Entry> entries;
- bool open(const Common::String &name) {rooms=name=="RES.PAK" ? 2 : name=="D05.PAK" ? 1 : 0; entries.clear(); for(auto &r:resources[rooms])entries.push_back(r.entry);return true;}
+ bool open(const Common::String &name) {rooms=name=="A09.PAK" ? 3 : name=="D09.PAK" ? 4 : name=="RES.PAK" ? 2 : name=="D05.PAK" ? 1 : 0; entries.clear(); for(auto &r:resources[rooms])entries.push_back(r.entry);return true;}
  bool load(unsigned i,std::vector<byte> &out) const {if(i>=resources[rooms].size())return false;out=resources[rooms][i].data;return !out.empty();}
 };
-class SoundEffects {public: unsigned bank=999,text=999; bool music(unsigned) {return true;} bool speech(unsigned b,unsigned t) {bank=b;text=t;return true;} void stopSpeech() {} bool effect(unsigned) {return true;} bool repeatedEffect(unsigned i,unsigned n) {return i==34 && n==3;}};
+class SoundEffects {public: unsigned bank=999,text=999; bool speaking=false; bool music(unsigned) {return true;} bool speech(unsigned b,unsigned t) {bank=b;text=t;speaking=true;return true;} void stopSpeech() {speaking=false;} bool speechActive() const {return speaking;} bool effect(unsigned) {return true;} bool repeatedEffect(unsigned i,unsigned n) {return i==34 && n==3;}};
 }
 ''')
  (t/'test.cpp').write_text(r'''
 #include "sotc/openingscene.h"
 #include "sotc/opening.h"
 #include "sotc/explode.h"
-namespace Sotc {std::vector<TestResource> resources[3];}
+namespace Sotc {std::vector<TestResource> resources[5];}
 extern "C" bool unpack(const uint8_t*p,unsigned n,uint8_t*out,unsigned size,unsigned flags) {return Sotc::explode(p,n,out,size,flags);}
 extern "C" void resource(unsigned bank,unsigned id,const uint8_t*p,unsigned n,const char *name) {
  auto &r=Sotc::resources[bank];if(r.size()<=id)r.resize(id+1);r[id].data.assign(p,p+n);r[id].entry.name=name;
+}
+extern "C" int cd(const uint8_t*p,unsigned n,const uint8_t*t,unsigned tn) {
+ Sotc::SoundEffects sound;Sotc::OpeningScene scene(sound);
+ if(!scene.startCd(Sotc::Cc4View(p,n),Sotc::Cc4View(t,tn)))return -1;
+ unsigned lines=0,mask=0,visited=0,last=999; const unsigned blocks[]={0,1,2,3,5,6,7,6,8}; const unsigned expected[]={0,1,3,4,5,6,12};
+ for(unsigned ms=0;ms<600000;ms+=16) {
+  scene.advance(16);mask|=1U<<scene.cdBlock();
+  if(scene.cdBlock()!=last) {
+   last=scene.cdBlock();
+   if(visited>=9 || last!=blocks[visited++])return -7;
+  }
+  if(!scene.dialogueText().empty()) {
+   if(lines>=7 || sound.bank!=5 || sound.text!=expected[lines++])return -2;
+   const auto text=scene.dialogueText();
+   for(unsigned i=0;i<200;++i)scene.advance(16);
+   if(scene.dialogueText()!=text || scene.done())return -5;
+   sound.speaking=false;scene.advance(16);
+   if(!scene.dialogueText().empty())return -6;
+  }
+  if(scene.done())return scene.failed() || lines!=7 || mask!=495 || visited!=9 ? -3 : int(ms);
+ }
+ return -4;
 }
 extern "C" int story(const uint8_t*p,unsigned n,const uint8_t*t,unsigned tn) {
  Sotc::SoundEffects sound;Sotc::OpeningScene scene(sound);
@@ -89,7 +111,7 @@ extern "C" int run(const uint8_t*p,unsigned n,unsigned *changes) {
  lib.resource.argtypes=[c.c_uint,c.c_uint,c.c_char_p,c.c_uint,c.c_char_p]
  lib.run.argtypes=[c.c_char_p,c.c_uint,c.POINTER(c.c_uint)];lib.run.restype=c.c_int
  loaded={}
- for bank,name in enumerate(['A05.PAK','D05.PAK','RES.PAK']):
+ for bank,name in enumerate(['A05.PAK','D05.PAK','RES.PAK','A09.PAK','D09.PAK']):
   path=a.directory/name;raw=path.read_bytes()
   for e in pak.inspect(path)['entries']:
    data=raw[e['payload']:e['payload']+e['packed']]
@@ -118,6 +140,14 @@ extern "C" int run(const uint8_t*p,unsigned n,unsigned *changes) {
  lib.resource(0,16,b'',0,b'missing portrait')
  assert lib.story(script,len(script),text,len(text))==-4
  data,name=loaded[0,16];lib.resource(0,16,data,len(data),name)
+ cdscript=(a.directory/'R09.CC4').read_bytes()
+ lib.cd.argtypes=[c.c_char_p,c.c_uint,c.c_char_p,c.c_uint];lib.cd.restype=c.c_int
+ cd_ms=lib.cd(cdscript,len(cdscript),text,len(text))
+ assert cd_ms>=0,cd_ms
+ broken=bytearray(cdscript);block=int.from_bytes(broken[:4],'little');init=int.from_bytes(broken[block:block+2],'little');broken[block+init]=254
+ assert lib.cd(bytes(broken),len(broken),text,len(text))==-1
+ assert lib.cd(cdscript[:4],4,text,len(text))==-1
+ print(f'CD opening completed in {cd_ms} ms, seven speech records and all eight scene IDs verified')
  # Missing actor data must stop visibly; it must not silently continue the script.
  lib.resource(0,17,b'',0,b'missing credits')
  assert lib.run(script,len(script),c.byref(changes))==-4

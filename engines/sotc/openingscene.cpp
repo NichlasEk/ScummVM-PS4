@@ -32,12 +32,47 @@ bool OpeningScene::selectSequence(unsigned id,unsigned sequence,unsigned mode) {
 }
 void OpeningScene::finishDialogue() {
  _talking=false; _dialogue.clear(); _sound.stopSpeech();
+ if (_restoreTalk) {
+  if (!selectSequence(_speaker,_talkSequence,_talkMode)) return;
+  _actors[_speaker].step=_talkStep; _actors[_speaker].gate=_talkGate; _restoreTalk=false;
+ }
  if (_portrait) { _actors[10].visible=false; _actors[_speaker].visible=_speakerVisible; _portrait=false; }
+}
+bool OpeningScene::loadCdBlock(unsigned block) {
+ Cc4View room,script;
+ if (!cc4Entry(Cc4View(_archive.data(),_archive.size()),4,block,room)) return fail("missing CD scene");
+ unsigned count=cc4Count(room,2);
+ if (!count || count>4) return fail("invalid CD task count");
+ for (unsigned i=0;i<4;++i) _tasks[i]=Task();
+ for (unsigned i=1;i<11;++i) _actors[i].visible=false;
+ for (unsigned i=0;i<count;++i) {
+  if (!cc4Entry(room,2,i,script)) return fail("missing CD task");
+  _tasks[i].script.resize(script.size); memcpy(_tasks[i].script.data(),script.data,script.size);
+ }
+ _previousBlock=_block; _block=block; _taskCount=count; _nextBlock=256;
+ _tasks[0].enabled=true; _activeTask=0; _obstacles.clear();
+ _background.resize(64000); memset(_background.data(),0,64000); _pixels=_background;
+ debug("[sotc-cd] scene=%u previous=%u tasks=%u",block,_previousBlock,count);
+ return commands(0) && render();
+}
+bool OpeningScene::startCd(Cc4View archive,Cc4View text) {
+ for (unsigned i=0;i<11;++i) _actors[i]=Actor();
+ for (unsigned i=0;i<4;++i) _tasks[i]=Task();
+ _cd=true; _story=false; _done=_failed=_talking=_portrait=_restoreTalk=false; _dialogue.clear();
+ _block=0; _brightness=_fade=_fadeStep=_fadeClock=_clock=0; _textX=150; _textY=10; _textColor=21;
+ if (!archive.data || !archive.size || !text.data || !text.size) return fail("CD script/text missing");
+ _textFile.resize(text.size); memcpy(_textFile.data(),text.data,text.size);
+ Pak common;
+ if (!common.open("RES.PAK") || !common.load(2,_actors[0].data) || !selectSequence(0,0,0)) return fail("CD player resource missing");
+ _actors[0].x=160; _actors[0].y=190;
+ _archive.resize(archive.size); memcpy(_archive.data(),archive.data,archive.size);
+ if (!_resources.open("A09.PAK") || !_rooms.open("D09.PAK")) return fail("CD resources missing");
+ return loadCdBlock(0);
 }
 bool OpeningScene::startStory(Cc4View archive,Cc4View text) {
  for (unsigned i=0;i<11;++i) _actors[i]=Actor();
- for (unsigned i=0;i<3;++i) _tasks[i]=Task();
- _done=_failed=_talking=_portrait=false; _story=true; _dialogue.clear();
+ for (unsigned i=0;i<4;++i) _tasks[i]=Task();
+ _done=_failed=_talking=_portrait=false; _story=true; _cd=false; _taskCount=3; _restoreTalk=false; _dialogue.clear();
  _brightness=_fade=_fadeStep=_fadeClock=_clock=0; _activeTask=0;
  if (!text.data || !text.size || !_resources.open("A05.PAK") || !_rooms.open("D05.PAK")) return fail("story resources missing");
  _textFile.resize(text.size); memcpy(_textFile.data(),text.data,text.size);
@@ -58,7 +93,8 @@ bool OpeningScene::startStory(Cc4View archive,Cc4View text) {
 }
 bool OpeningScene::commands(unsigned id) {
  _activeTask=id; Task &task=_tasks[id];
- if (!task.enabled || _talking) return true;
+ if (!task.enabled || (task.waitingDialogue && _talking)) return true;
+ task.waitingDialogue=false;
  Common::Array<byte> &_script=task.script;
  unsigned &_pc=task.pc,&_actor=task.actor,&_wait=task.wait,&_waitingActor=task.waitingActor;
  if (_actors[_actor].moving) return true;
@@ -72,25 +108,46 @@ bool OpeningScene::commands(unsigned id) {
  for (unsigned budget=0;budget<128;++budget) {
   if (_pc>=_script.size()) return fail("truncated instruction");
   unsigned op=_script[_pc];
-  if (op==3 || op==10) {
+  if (op==3 || op==10 || (_cd && (op==6 || op==32))) {
    ScriptInstruction instruction;
    if (decodeScript(Cc4View(_script.data(),_script.size()),_pc,instruction)!=kInstruction) return fail("invalid branch");
-   if (op==10 && (instruction.variable!=33 || instruction.valueIsVariable || instruction.comparison!=0)) return fail("unsupported comparison");
-   _pc=(op==3 || _randomValue!=instruction.value) ? instruction.target : instruction.next;
+   if (op==32) {
+    unsigned v=instruction.variable;
+    if (instruction.valueIsVariable || v<2 || v>30 || v%3==1) return fail("unsupported CD variable write");
+    Actor &target=_actors[(v-1)/3]; int &coordinate=v%3==2 ? target.x : target.y;
+    unsigned sum=(unsigned(coordinate)+instruction.value)&65535; coordinate=sum<32768 ? int(sum) : int(sum)-65536;
+    _pc=instruction.next;
+   } else if (op==6) {
+    task.loop=(task.loop+1)&65535;
+    _pc=task.loop<instruction.argument ? instruction.target : instruction.next;
+    if (task.loop>=instruction.argument) task.loop=0;
+   } else {
+    unsigned variable=instruction.variable==0 && _cd ? _previousBlock : _randomValue;
+    if (op==10 && ((instruction.variable!=33 && !(_cd && instruction.variable==0)) || instruction.valueIsVariable || instruction.comparison!=0)) return fail("unsupported comparison");
+    _pc=(op==3 || variable!=instruction.value) ? instruction.target : instruction.next;
+   }
    continue;
   }
   unsigned width=op==41 || op==2 ? 1 : op==89 ? 6 : op==82 ? 5 : op==42 || op==7 || op==45 || op==100 || op==70 ? 3 : 2;
   if (_script.size()-_pc<width) return fail("truncated operand");
   unsigned value=width>1 ? _script[_pc+1] : 0;
+  if (_cd && op==23) {
+   width=2+value*5;
+   if (value>11 || width>_script.size()-_pc) return fail("invalid CD obstacle table");
+  }
   Actor &a=_actors[_actor];
   switch (op) {
+  case 23:
+   if (!_cd) return fail("unsupported obstacle table");
+   // Original 0x9cc0 collision metadata. No player walking is enabled in R09.
+   _obstacles.resize(width-2); memcpy(_obstacles.data(),_script.data()+_pc+2,width-2); break;
   case 96: _speechBank=value; break;
   case 77: if (!_sound.music(value)) return fail("music unavailable"); break;
   case 18:
-   if (!_story || value!=0) return fail("unsupported player control");
+   if ((!_story && !_cd) || value!=0) return fail("unsupported player control");
    _actors[0].moving=false; break; // Script owns the player throughout this scene.
   case 92:
-   if (!_story || value>1) return fail("unsupported draw flag");
+   if ((!_story && !_cd) || value>1) return fail("unsupported draw flag");
    a.visible=value!=0; break;
   case 42: a.clipLeft=value*2; a.clipRight=_script[_pc+2]*2; break;
   case 4: case 5: {
@@ -105,7 +162,7 @@ bool OpeningScene::commands(unsigned id) {
   case 69: _textColor=value; break;
   case 70: _textX=value*2; _textY=_script[_pc+2]; break;
   case 82: case 89: {
-   if (!_story || value>=10 || (op==82 && _script[_pc+4]!=255)) return fail("unsupported story dialogue mode");
+   if ((!_story && !_cd) || value>=10 || (!_cd && op==82 && _script[_pc+4]!=255)) return fail("unsupported story dialogue mode");
    if (op==89) {
     _actors[10]=Actor(); Actor &portrait=_actors[10];
     if (!_resources.load(_script[_pc+5],portrait.data)) return fail("portrait resource missing");
@@ -113,16 +170,23 @@ bool OpeningScene::commands(unsigned id) {
     if (!selectSequence(10,_script[_pc+4])) return false;
     _speaker=value; _speakerVisible=_actors[value].visible; _actors[value].visible=false; _portrait=true;
    }
+   if (op==82 && _script[_pc+4]!=255) {
+    _speaker=value; const Actor &speaker=_actors[value];
+    _talkSequence=speaker.sequence; _talkStep=speaker.step; _talkGate=speaker.gate; _talkMode=speaker.mode;
+    if (!selectSequence(value,_script[_pc+4])) return false;
+    _restoreTalk=true;
+   }
    unsigned text=unsigned(_script[_pc+2])|(unsigned(_script[_pc+3])<<8),length=0; byte decoded[16384];
    if (!dialogueRecord(Cc4View(_textFile.data(),_textFile.size()),_speechBank+3,text,decoded,sizeof(decoded),length) || length<2) return fail("invalid story text");
    _dialogue.clear();
    for (unsigned i=1;i<length-(decoded[length-1]==0 ? 1 : 0);++i) _dialogue+=decoded[i] ? char(decoded[i]) : '\n';
-   _talking=true;
+   _talking=true; task.waitingDialogue=true; _dialogueClock=0;
    if (!_sound.speech(_speechBank,text)) warning("[sotc-story] text=%u: %s",text,"speech unavailable; retaining subtitles");
    debug("[sotc-story] bank=%u speaker=%u text=%u",_speechBank,value,text);
    break;
   }
   case 44:
+   if (_cd) { _nextBlock=value; break; }
    if (_story) {
     if (id!=1 || value!=0 || _script.size()-_pc<5 || _script[_pc+2]!=80 || _script[_pc+3]!=0 || _script[_pc+4]!=2)
      return fail("unsupported story transition");
@@ -132,16 +196,19 @@ bool OpeningScene::commands(unsigned id) {
    if (id!=2 || value!=1) return fail("unsupported room transition");
    debug("[sotc-opening] opening block complete; next story block=%u",value);
    _done=true; return true;
+  case 80:
+   if (!_cd || value!=5 || _nextBlock!=0) return fail("unsupported CD bank transition");
+   debug("[sotc-cd] complete; next bank=5 block=0"); _done=true; return true;
   case 100:
    if (!_sound.repeatedEffect(value,_script[_pc+2])) return fail("repeated sample unavailable");
    break;
   case 2: task.enabled=false; return true;
   case 27:
-   if (value!=1) return fail("unsupported task activation");
-   _tasks[value].pc=0; _tasks[value].wait=0; _tasks[value].waitingActor=11; _tasks[value].enabled=true;
+   if ((!_cd && value!=1) || value>=_taskCount) return fail("unsupported task activation");
+   _tasks[value].pc=0; _tasks[value].actor=0; _tasks[value].loop=0; _tasks[value].waitingDialogue=false; _tasks[value].wait=0; _tasks[value].waitingActor=11; _tasks[value].enabled=true;
    debug("[sotc-opening] task=%u activated",value); break;
   case 28:
-   if (value!=1) return fail("unsupported task deactivation");
+   if ((!_cd && value!=1) || value>=_taskCount) return fail("unsupported task deactivation");
    _tasks[value].enabled=false; debug("[sotc-opening] task=%u disabled",value); break;
   case 79:
    _randomValue=0;
@@ -224,6 +291,10 @@ bool OpeningScene::advanceActors() {
 }
 void OpeningScene::advance(unsigned elapsed) {
  if (_done) return;
+ if (_cd && _talking) {
+  _dialogueClock+=elapsed;
+  if (_dialogueClock>=2500 && !_sound.speechActive()) finishDialogue();
+ }
  if (_fade) {
   _fadeClock+=elapsed;
   while (_fadeClock>=16 && _fade) {
@@ -238,7 +309,8 @@ void OpeningScene::advance(unsigned elapsed) {
  if (_clock>1000) _clock=1000;
  while (_clock>=100 && !_done && !_fade) {
   _clock-=100;
-  for (unsigned i=_story ? 0 : 1;i<3;++i) if (!commands(i) || _done) return;
+  for (unsigned i=(_story || _cd) ? 0 : 1;i<_taskCount;++i) if (!commands(i) || _done) return;
+  if (_cd && _nextBlock!=256) { loadCdBlock(_nextBlock); return; }
   for (unsigned i=0;i<11;++i) {
    Actor &a=_actors[i]; if (!a.moving || _talking) continue;
    SequenceStep step;

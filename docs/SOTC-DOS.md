@@ -1220,3 +1220,47 @@ commands including its counters and multi-task scenes, then chain into R05.
 A raw COTE3 preview with CDINTRO.PAL identifies the image but contains wrong
 colors in places; palette setup still needs investigation. Do not claim the
 CD opening works yet. All these resources remain external and ignored.
+
+## CD opening connected before R05
+
+Boot now starts the supplied R09.CC4/A09.PAK/D09.PAK CD sequence before the
+existing R05 logos and animated credits. The script runs scene order
+0,1,2,3,5,6,7,6,8, including the return to the hospital doorway, then its
+`44 0; 80 5` request hands over to R05 block 0. New game still runs the
+separate office story before the outdoor preview.
+
+Palette tracing corrected the earlier raw preview: original 0xb38b..0xb484
+copies RES.PAK resource 8 (PALI0.PAL) for R09 scene 0, and resource 7
+(CDINTRO.PAL) for scene 1 onward. Startup loads those resources at
+0xd02..0xd35. The lighthouse now matches the reference colors; handing over
+to R05 restores CTU.PAL through the existing renderer.
+
+The opening scheduler now supports up to four tasks, counted loops,
+actor-coordinate additions, previous-scene comparisons (variable 0),
+deferred scene changes and the bank-5 handoff. Opcode 23's bounded collision
+metadata is retained; R09 has no enabled player walking to apply it to.
+Speaking sequences restore their prior animation after dialogue. Only the
+speaking task waits for dialogue, allowing parallel ambience tasks to run.
+D05.NAR records 0,1,3,4,5,6,12 accompany E.CC4 bank 8 subtitles. CD dialogue
+advances automatically once speech finishes, with a minimum 2.5-second text
+hold; click/Cross advances a line, or skips to the logos between lines.
+Options skips directly to the logos. Office dialogue remains click-driven.
+Missing R09 permits the previous start path; malformed present CD resources
+or unsupported commands report failure instead of silently skipping scenes.
+
+Validation: the actual C++ player with external assets follows all nine scene
+visits and seven speech records in order. The host test keeps speech active
+beyond the minimum hold, checks that the line stays, then releases the mixer
+stub and verifies automatic continuation. Corrupt/truncated CD scripts fail;
+existing office, full R05 animation and missing-resource regressions pass.
+The CD script test takes 119,776 simulated milliseconds excluding inserted
+speech holds. PS4 build/package succeeds. Animation/fade pacing and subtitle
+layout remain approximate; no original assets are embedded in the engine.
+
+Live validation: the rebuilt PS4 eboot in shadPS4 ran the entire CD opening
+without input, including every spoken record and both doorway visits,
+logged `complete; next bank=5 block=0`, then started R05 logos and its animated
+credit sequence. Captures show Boleskin, the hospital and the R05 handoff.
+Evidence remains local: cd-regression.txt, cd-live.log, cd-live-01.png,
+cd-live-02.png and cd-live-handoff.png under artifacts/sotc. This is emulator
+validation, not a physical-PS4 run.

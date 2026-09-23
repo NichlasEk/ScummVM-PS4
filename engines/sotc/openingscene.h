@@ -19,9 +19,10 @@ class OpeningScene {
  Pak _resources, _rooms;
  struct Task {
   Common::Array<byte> script;
-  unsigned pc=0,actor=0,wait=0,waitingActor=11;
+  unsigned pc=0,actor=0,wait=0,waitingActor=11,loop=0;
+  bool waitingDialogue=false;
   bool enabled=false;
- } _tasks[3];
+ } _tasks[4];
  Common::Array<byte> _background,_pixels;
  SoundEffects &_sound;
  unsigned _activeTask=2,_randomValue=0; uint32 _randomState=1;
@@ -30,6 +31,11 @@ class OpeningScene {
  unsigned _speechBank=0,_textX=0,_textY=0,_textColor=7;
  Common::Array<byte> _textFile;
  Common::String _dialogue;
+ bool _cd=false,_restoreTalk=false;
+ unsigned _block=0,_previousBlock=0,_nextBlock=256,_taskCount=3,_dialogueClock=0;
+ unsigned _talkSequence=0,_talkStep=0,_talkGate=255,_talkMode=2;
+ Common::Array<byte> _archive,_obstacles;
+ bool loadCdBlock(unsigned block);
  bool _portrait=false,_speakerVisible=false; unsigned _speaker=0;
  bool selectSequence(unsigned id,unsigned sequence,unsigned mode=2);
  bool commands(unsigned id);
@@ -40,6 +46,8 @@ public:
  explicit OpeningScene(SoundEffects &sound) : _sound(sound) {}
  bool start(Cc4View archive,unsigned pc,const Common::Array<byte> &background);
  bool startStory(Cc4View archive,Cc4View text);
+ bool startCd(Cc4View archive,Cc4View text);
+ unsigned cdBlock() const { return _block; }
  const Common::String &dialogueText() const { return _dialogue; }
  unsigned textX() const { return _textX; }
  unsigned textY() const { return _textY; }

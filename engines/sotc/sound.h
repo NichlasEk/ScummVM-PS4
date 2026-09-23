@@ -16,6 +16,7 @@ public:
  explicit SoundEffects(Audio::Mixer *mixer) : _mixer(mixer), _music(mixer), _opened(false) {}
  ~SoundEffects() override { _mixer->stopHandle(_handle); stopSpeech(); }
  bool speech(unsigned bank,unsigned index) override;
+ bool speechActive() const { return _mixer->isSoundHandleActive(_speechHandle); }
  void stopSpeech() override { _mixer->stopHandle(_speechHandle); }
  bool effect(unsigned index) override;
  bool repeatedEffect(unsigned index,unsigned count);

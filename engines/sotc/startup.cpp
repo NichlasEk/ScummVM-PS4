@@ -3,6 +3,7 @@
 #include "sotc/startstate.h"
 #include "sotc/sequence.h"
 #include "sotc/poserenderer.h"
+#include "sotc/scriptmachine.h"
 #include "sotc/pak.h"
 #include "common/file.h"
 #include "common/debug.h"
@@ -13,7 +14,17 @@ static bool readFile(const char *name, Common::Array<byte> &data) {
  if (!file.open(Common::Path(name)) || file.size() < 1 || file.size() > 4 * 1024 * 1024) return false;
  data.resize(file.size()); return file.read(data.data(), data.size()) == data.size();
 }
-bool loadStartupScene(Common::Array<byte> &pixels, Common::String &status) {
+Common::String stepStartupScripts(ScriptMachine &machine, unsigned tick) {
+ machine.tick(); unsigned waiting = 0, stopped = 0;
+ for (unsigned i = 0; i < machine.count(); ++i) {
+  const ScriptTask &task = *machine.task(i);
+  if (task.result >= kTimerWait && task.result <= kRegionWait) ++waiting;
+  else if (task.result >= kUnknownWait) ++stopped;
+  debug("[sotc-vm] tick=%u task=%u pc=%u op=%u flags=%02x result=%u executed=%u", tick, i, task.pc, task.opcode, task.flags, unsigned(task.result), task.executed);
+ }
+ return Common::String::format("Script tick %u: %u waiting, %u stopped", tick, waiting, stopped);
+}
+bool loadStartupScene(Common::Array<byte> &pixels, Common::String &status, ScriptMachine &machine) {
  pixels.clear(); status = "INIT.SAV unavailable";
  Common::Array<byte> save, scripts;
  StartState state;
@@ -23,6 +34,7 @@ bool loadStartupScene(Common::Array<byte> &pixels, Common::String &status) {
  Cc4View block;
  if (!readFile(roomName.c_str(), scripts) || !cc4Entry(Cc4View(scripts.data(), scripts.size()), 4, blockIndex, block) ||
      cc4Count(block, 2) != state.word(0x2e02)) return false;
+ if (!machine.load(state, block)) return false;
  // Verify every rebased PC before rendering any of this snapshot.
  for (unsigned i = 0; i < state.word(0x2e02); ++i) {
   uint32_t pc;

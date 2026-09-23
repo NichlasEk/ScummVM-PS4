@@ -4,6 +4,8 @@
 #include "common/array.h"
 #include "common/str.h"
 namespace Sotc {
-bool loadStartupScene(Common::Array<byte> &pixels, Common::String &status);
+class ScriptMachine;
+bool loadStartupScene(Common::Array<byte> &pixels, Common::String &status, ScriptMachine &machine);
+Common::String stepStartupScripts(ScriptMachine &machine, unsigned tick);
 }
 #endif

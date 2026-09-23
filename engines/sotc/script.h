@@ -11,8 +11,9 @@ struct ScriptInstruction {
  int32_t target;
  unsigned argument, variable, comparison, value;
  bool valueIsVariable;
+ unsigned rectangle[4];
  ScriptInstruction() : opcode(0), next(0), target(-1), argument(0),
-  variable(0), comparison(0), value(0), valueIsVariable(false) {}
+  variable(0), comparison(0), value(0), valueIsVariable(false), rectangle{0, 0, 0, 0} {}
 };
 inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out) {
  out = ScriptInstruction(); out.next = pc;
@@ -44,7 +45,13 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   if (v.size - p < out.argument * 2) return kTruncated;
   out.next = p + out.argument * 2;
   return kInstruction;
- case 1: case 4: case 5: case 27: case 28: case 58: case 59:
+ case 39:
+  out.next = p; return kInstruction;
+ case 40:
+  if (v.size - p < 4) return kTruncated;
+  for (unsigned i = 0; i < 4; ++i) out.rectangle[i] = v.data[p + i] * ((i & 1) ? 1 : 2);
+  out.next = p + 4; return kInstruction;
+ case 1: case 4: case 5: case 9: case 21: case 27: case 28: case 58: case 59:
  case 80: case 87: case 88: case 96:
   if (p >= v.size) return kTruncated;
   out.argument = v.data[p++]; out.next = p;

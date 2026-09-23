@@ -8,6 +8,7 @@
 #include "sotc/sequence.h"
 #include "sotc/script.h"
 #include "sotc/startup.h"
+#include "sotc/scriptmachine.h"
 #include "common/file.h"
 #include "common/events.h"
 #include "common/textconsole.h"
@@ -70,7 +71,9 @@ Common::Error SotcEngine::run() {
  uint32 nextFrame = 0;
  unsigned sequence = 0;
  Common::Array<byte> startupPixels; Common::String startupStatus;
- bool startupAvailable = loadStartupScene(startupPixels, startupStatus), showStartup = startupAvailable;
+ ScriptMachine startupMachine; unsigned scriptTicks = 0; Common::String scriptStatus;
+ bool startupAvailable = loadStartupScene(startupPixels, startupStatus, startupMachine), showStartup = startupAvailable;
+ if (startupAvailable) scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
 
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
@@ -148,12 +151,12 @@ Common::Error SotcEngine::run() {
    }
    if (showStartup) {
     memcpy(surface.getBasePtr(0, 0), startupPixels.data(), 64000);
-    title = startupStatus; actorTitle = "Original start snapshot - not gameplay";
+    title = "Start snapshot - not gameplay"; actorTitle = scriptStatus;
    }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, showStartup ? "Options/F8: resources  Touchpad: exit" : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
+   font->drawString(&surface, showStartup ? "Cross/click: script step  Options: view" : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
    if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
@@ -163,6 +166,9 @@ Common::Error SotcEngine::run() {
    if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_F8) {
     if (startupAvailable) { showStartup = !showStartup; pal = 0; redraw = true; }
     continue;
+   }
+   if (showStartup && event.type == Common::EVENT_LBUTTONDOWN) {
+    scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks); redraw = true; continue;
    }
    if (showStartup && !(event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)) continue;
 

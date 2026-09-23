@@ -422,3 +422,69 @@ Original task 1 resumes on opcode 40 at script-local PC 14: 0xa9fc reads four
 byte coordinates (doubling X), stores the rectangle at task +0x0e..+0x14,
 and rewinds five bytes/yields when predicate 0xa904 is false. Trace that
 predicate next before implementing its behavior.
+
+
+## First bounded script scheduler
+
+`scriptmachine.h` now restores task PCs/actor bindings/wait flags/timers from
+INIT.SAV and owns a bounded copy of the current CC4 block. No saved pointers
+are followed, and task 0 is not automatically restarted. One scheduler visit
+runs each task 1..N-1, matching 0xb31c. The scene remains a static snapshot:
+this is controlled VM stepping, not a playable room yet.
+
+Implemented command behavior:
+
+- 2: disable current task, retain IP.
+- 3: signed jump relative to the displacement operand.
+- 9: set timer, advance IP, yield (even for zero delay).
+- 10: compare and branch using signed comparisons / bit tests from 0x906b.
+  Saved variables 0/34 and in-range saved variable banks are readable;
+  runtime variables and actor aliases explicitly stop as unknown.
+- 21: bind task to actor.
+- 27/28: restart or disable another task, with original scheduler ordering.
+- 39/40: wait until the player's footprint leaves/enters a stored rectangle.
+  Coordinates use byte X * 2 and byte Y; edge contact counts as overlap.
+
+Timer flag 0x02 decrements once per scheduler visit and clears at zero.
+Animation flag 0x04 clears when the externally supplied actor step equals
+step-count minus one. Actual animation advancement and original tick cadence
+are not connected yet. Other wait types stop explicitly. Every task has an
+instruction budget, so a cyclic jump cannot lock the emulator. Unknown
+commands retain their PC; there are no guessed operand skips.
+
+0xa904 uses **actor 0's footprint**, not the mouse cursor: left/right are
+X minus/plus actor byte +0x15; top is Y minus byte +0x16; bottom is Y.
+0x134ac performs inclusive signed rectangle overlap. Initial task 1 waits on
+opcode 40 at local PC 14 for rectangle (110,154)..(126,199). The original
+player at (220,151) is outside it, so remaining there is correct behavior.
+
+The first real scheduling pass produces:
+
+- six disabled tasks, as saved;
+- five waiting tasks (one region and four animation waits);
+- four explicit unsupported-command stops: task 5 opcode 66, tasks 8/14
+  opcode 79, task 12 opcode 99. Saved one-tick timers have expired correctly.
+
+The engine performs one visit at load. Cross / left click steps another
+visit (N on the configured shadPS4 keyboard mapping). The status line reports
+waiting/stopped counts; detailed `[sotc-vm]` logs include task, PC, opcode,
+flags, result and executed-command count. This button is diagnostic input;
+it does not move the player or dispatch game mouse events.
+
+```sh
+python3 scripts/sotc/audit-scriptmachine.py build/sotc-DOS/disc-files/SHADOW > artifacts/sotc/vm-audit.json
+```
+
+Tests use the real scheduler: timer countdown/yield, inclusive footprint
+boundaries, leave-region waits, signed comparisons, bit tests, a cyclic-jump
+budget, unsupported/invalid commands preserving PC, animation completion,
+restart ordering, unknown wait flags and the supplied INIT.SAV's exact first
+visit. CC4 decoder regression audit also passes. PS4 package built and run in
+shadPS4; Cross/N verified tick 1→2 without changing blocked PCs. Evidence:
+`artifacts/sotc/vm-live.log` and `vm-step.png`. No physical PS4 test.
+
+Next blockers: opcode 66 checks runtime input event 0x60e2 plus a predicate;
+opcode 79 invokes the original random-range helper and stores variable 33;
+opcode 99 manages music. These are identified from their handlers but not yet
+implemented. Actor movement/input, animation updates, audio and additional
+commands are required before this can become gameplay.

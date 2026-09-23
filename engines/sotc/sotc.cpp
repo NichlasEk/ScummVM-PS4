@@ -86,7 +86,8 @@ Common::Error SotcEngine::run() {
   return Common::Error(Common::kReadingFailed,"Cannot load original toolbar");
  Journal journal; bool showJournal=false,showInventory=false;
  Common::Array<unsigned> inventoryIds;Common::Array<Common::String> inventoryNames;unsigned inventorySelection=0;
- Common::Array<byte> journalFont,journalText;
+ Common::Array<byte> journalFont,journalText,inventoryIcons;unsigned inventoryIcon=0;
+ if(!resources.load(4,inventoryIcons))return Common::Error(Common::kReadingFailed,"Cannot load inventory icons");
  Common::File journalFile;
  if(!resources.load(0,journalFont) || !journalFile.open(Common::Path("E.CC4")) || journalFile.size()>4*1024*1024)
   return Common::Error(Common::kReadingFailed,"Cannot load diary resources");
@@ -366,16 +367,13 @@ Common::Error SotcEngine::run() {
    }
    if (!mainMenu && showStartup && !showStory && toolbar.visible() && startupScene.dialogueText().empty()) {
     if (!toolbar.render()) { surface.free(); return Common::Error(Common::kUnknownError,"Cannot draw toolbar"); }
-    memcpy(surface.getBasePtr(0,0),toolbar.pixels().data(),320*40);
+    Common::Array<byte> barPixels=toolbar.pixels();PoseRenderer barRenderer(barPixels);
+    if(!barRenderer.pose(inventoryIcons,inventoryIcon,194,11,180,0,224,39)) {
+     surface.free();return Common::Error(Common::kReadingFailed,"Cannot draw inventory icon");
+    }
+    memcpy(surface.getBasePtr(0,0),barPixels.data(),320*40);
     surface.fillRect(Common::Rect(0,225,320,240),0);
     font->drawString(&surface,toolbar.hover()==6 ? "Menu / settings" : toolbar.hover()==1 ? "Take the object in view" : toolbar.hover()==4 ? "Inventory / notebook" : "This action is not available in the preview yet",0,227,320,7,Graphics::kTextAlignCenter);
-   }
-   if ((mainMenu || showStartup) && pointerY<480 && pointerX<640 && pointerX>=0 && pointerY>=0) {
-    int px=pointerX/2,py=pointerY/2;
-    for (int d=-3;d<=3;++d) {
-     if (px+d>=0 && px+d<320) *static_cast<byte *>(surface.getBasePtr(px+d,py))=7;
-     if (py+d>=0 && py+d<240) *static_cast<byte *>(surface.getBasePtr(px,py+d))=7;
-    }
    }
    if (showOpening || showStory || showCd) {
     OpeningScene &cinematic=showCd ? cdOpening : animatedOpening;
@@ -439,6 +437,8 @@ Common::Error SotcEngine::run() {
    if(showInventory) {
     surface.fillRect(Common::Rect(20,35,300,195),0);surface.frameRect(Common::Rect(20,35,300,195),7);
     font->drawString(&surface,"Select an item to read / use",25,40,270,7,Graphics::kTextAlignCenter);
+    surface.fillRect(Common::Rect(0,200,320,240),0);
+    font->drawString(&surface,"D-pad: select  Cross: read/use  Circle: close",0,218,320,7,Graphics::kTextAlignCenter);
     unsigned first=inventorySelection/8*8;
     for(unsigned i=first;i<inventoryIds.size() && i<first+8;++i) {
      int y=58+(i-first)*16;
@@ -453,19 +453,43 @@ Common::Error SotcEngine::run() {
     surface.fillRect(Common::Rect(0,200,320,240),0);
     font->drawString(&surface,"Left / Right: pages   Circle / Esc: close",0,217,320,7,Graphics::kTextAlignCenter);
    }
+   if ((mainMenu || showStartup) && pointerY<480 && pointerX<640 && pointerX>=0 && pointerY>=0) {
+    int px=pointerX/2,py=pointerY/2;
+    for (int d=-3;d<=3;++d) {
+     if (px+d>=0 && px+d<320) *static_cast<byte *>(surface.getBasePtr(px+d,py))=7;
+     if (py+d>=0 && py+d<240) *static_cast<byte *>(surface.getBasePtr(px,py+d))=7;
+    }
+   }
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
    if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
   }
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
+   if(event.type==Common::EVENT_MOUSEMOVE) {pointerX=event.mouse.x;pointerY=event.mouse.y;redraw=true;}
+   // Normalize controller events before modal menus consume them.
+   if((showInventory || showJournal) && event.type==Common::EVENT_JOYBUTTON_DOWN) {
+    Common::KeyCode key=Common::KEYCODE_INVALID;
+    switch(event.joystick.button) {
+    case Common::JOYSTICK_BUTTON_A:key=Common::KEYCODE_RETURN;break;
+    case Common::JOYSTICK_BUTTON_B:key=Common::KEYCODE_ESCAPE;break;
+    case Common::JOYSTICK_BUTTON_DPAD_UP:key=Common::KEYCODE_UP;break;
+    case Common::JOYSTICK_BUTTON_DPAD_DOWN:key=Common::KEYCODE_DOWN;break;
+    case Common::JOYSTICK_BUTTON_DPAD_LEFT:key=Common::KEYCODE_LEFT;break;
+    case Common::JOYSTICK_BUTTON_DPAD_RIGHT:key=Common::KEYCODE_RIGHT;break;
+    default:break;
+    }
+    if(key!=Common::KEYCODE_INVALID){event.type=Common::EVENT_KEYDOWN;event.kbd.keycode=key;event.kbdRepeat=false;}
+   }
    if(showInventory) {
-    bool close=event.type==Common::EVENT_RBUTTONDOWN,confirm=false;int delta=0;
+    // The PS4 backend maps Cross to a left click. Confirm the highlighted
+    // row even when the pointer is still over the toolbar after D-pad selection.
+    bool close=event.type==Common::EVENT_RBUTTONDOWN,confirm=event.type==Common::EVENT_LBUTTONDOWN;int delta=0;
     if(event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat) {
      close=event.kbd.keycode==Common::KEYCODE_ESCAPE;
      if(event.kbd.keycode==Common::KEYCODE_UP)delta=-1;
      if(event.kbd.keycode==Common::KEYCODE_DOWN)delta=1;
-     confirm=event.kbd.keycode==Common::KEYCODE_RETURN;
+     confirm=event.kbd.keycode==Common::KEYCODE_RETURN || event.kbd.keycode==Common::KEYCODE_SPACE;
     }
     if(event.type==Common::EVENT_MOUSEMOVE || event.type==Common::EVENT_LBUTTONDOWN) {
      int x=event.mouse.x/2,y=event.mouse.y/2;
@@ -476,7 +500,7 @@ Common::Error SotcEngine::run() {
     }
     if(delta && !inventoryIds.empty()){inventorySelection=(inventorySelection+inventoryIds.size()+delta)%inventoryIds.size();redraw=true;}
     if(confirm && inventorySelection<inventoryIds.size()) {
-     unsigned id=inventoryIds[inventorySelection];
+     unsigned id=inventoryIds[inventorySelection];inventoryIcon=id;
      if(id==0) {showJournal=journal.open(startupMachine.journalProgress());close=true;}
      else if(startupMachine.useObject(id)){close=true;resumeScene();}
     }

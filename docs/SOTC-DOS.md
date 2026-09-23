@@ -1474,3 +1474,13 @@ animation and using Boleskine's diary through the original reading script
 (local[1] becomes 65535). ASan/UBSan and VM audit pass; PS4 package builds.
 The user confirmed dashed gaze and passing the pickup stop in shadPS4; the
 new inventory selector still needs user playtesting. No physical-PS4 claim.
+
+Modal-input follow-up: inventory and journal now update the pointer before
+consuming input and draw it after the panels. PS4 Cross is mapped to a mouse
+click, so inventory confirmation accepts the highlighted row even when the
+pointer remains over the toolbar after D-pad navigation. Controller A/B and
+D-pad events are also normalized for both modals. The toolbar now draws the
+selected original OBJECTS.VA2 pose (Notebook initially) in its fifth slot.
+Validated with the actual PS4 build in shadPS4: open the fifth icon, confirm
+Notebook with Cross while the pointer remains above the list, then browse
+left/right. The notebook is left open at pages 3/4 for user testing.

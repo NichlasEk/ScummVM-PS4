@@ -56,6 +56,7 @@ static std::vector<byte> state(ScriptMachine &m,StartupScene &scene) {
  assert(scene.roomSnapshot(s,m));assert(m.snapshot(s));assert(scene.snapshot(s));data.resize(s.size());return data;
 }
 int main() {
+ std::cout.setf(std::ios::unitbuf);
  ScriptMachine m; StartupScene scene; Common::Array<byte> pixels;Common::String status;
  m.setSound(&sound);m.setAnimation(&scene);assert(scene.load(pixels,status,m));
  Common::SaveFileManager files;SaveState saved;saved.ticks=47;
@@ -236,6 +237,30 @@ int main() {
  assert(scene.bank()==1 && scene.room()==0);
  for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);
  std::cout<<"Hall door interaction and bottom-edge click enter room 0 without stops\n";
+ // Inspect the foyer's bench using the same event source as the toolbar.
+ assert(scene.destination(86,140,m));
+ for(unsigned tick=0;tick<250;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ assert(scene.examine());bool examined=false;
+ for(unsigned tick=0;tick<100;++tick){assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}
+  if(!scene.dialogueText().empty()){std::cout<<"Foyer examine: "<<scene.dialogueText()<<"\n";examined=true;assert(!scene.examine());scene.finishDialogue();}
+  assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+ }
+ assert(examined);assert(!m.eventPending());
+ // The path crosses the foyer door region and invokes its scripted return.
+ assert(scene.examine());assert(scene.destination(160,180,m));assert(!m.eventPending());
+ for(unsigned tick=0;tick<250;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ assert(scene.bank()==1 && scene.room()==1);
+ assert(scene.destination(160,220,m));
+ for(unsigned tick=0;tick<400;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ assert(scene.bank()==1 && scene.room()==0);
+ assert(scene.destination(160,220,m));
+ for(unsigned tick=0;tick<400;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ std::cout<<"House departure bank="<<scene.bank()<<" room="<<scene.room()<<std::endl;
+ assert(scene.bank()==0 && scene.room()==17);
+ before=state(m,scene);assert(writeQuickSave(files,"outside",m,scene,saved));
+ assert(readQuickSave(files,"hall",m,scene,saved,pixels,status));
+ assert(readQuickSave(files,"outside",m,scene,saved,pixels,status));assert(state(m,scene)==before);
+ for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);
  std::cout<<"Exit probe bank="<<scene.bank()<<" room="<<scene.room()<<" x="<<m.actor(0)->x<<" y="<<m.actor(0)->y<<"\n";
  std::cout<<"Object facing, pickup and inventory save restore passed\n";
  std::cout<<"Door probe ends in bank "<<scene.bank()<<" room "<<scene.room()<<"\n";

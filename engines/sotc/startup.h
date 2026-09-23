@@ -40,6 +40,7 @@ public:
  bool background(unsigned index) override;
  int lookedObject(int &x,int &y) const;
  bool takeObject(Common::String &label);
+ bool examine();
  bool inventoryLabel(unsigned id,Common::String &label);
  bool objectLabel(unsigned slot,Common::String &label);
  unsigned exitDirection(int x,int y) const;

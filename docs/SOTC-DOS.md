@@ -1529,3 +1529,28 @@ Live shadPS4 verification: original yellow down-arrow visible at the hall exit;
 Cross/click follows it into bank 1/room 0 with 0 stopped scripts. Screenshot:
 `artifacts/sotc/hall-original-arrow.png` (ignored local artifact). The running
 hall checkpoint is retained for user testing, replacing the paused fault state.
+
+### Examine action and leaving Cobble's house (2026-09-23)
+
+Connected the fourth toolbar icon (eye) to the original event at DS:60e2,
+consumed by script opcodes 64/66. SHADOW.EXE at 0x4394 sets that event and
+selects toolbar index 3; 0x4419 is its menu confirmation path. Space is an
+additional keyboard shortcut. Examine stops ordinary click walking, respects
+script control locks/dialogue/choices, and uses the player's footprint as the
+original predicates require. No room-specific response text is synthesized.
+An unconsumed request is cleared by a new walking command to avoid delayed
+inspection after moving elsewhere.
+
+The foyer's bench now responds with its original text 44. Testing the onward
+path also exposed room 0/task 3 opcode 36 at PC 23: a two-coordinate scripted
+destination could lie behind an exit boundary, where the exact route failed.
+Such destinations now stop at the first exit tile, as the existing axis-only
+exit routing already does. The original room request still happens on movement.
+
+ASan/UBSan save audit covers examination and event consumption, refusal during
+dialogue, cancel-on-walk, foyer-to-hall return, hall-to-foyer return, departure
+to bank 0/room 17, and exact restoration of an outdoor save. Original story
+flags and exit records determine the bank; no flags are forced to leave.
+PS4 package rebuilt and launched in shadPS4. The fourth toolbar icon was
+activated with Cross at the bench; the original "Doctor COBBLE has good taste,
+I must say." response appeared. Evidence: `artifacts/sotc/examine-live.png`.

@@ -133,6 +133,12 @@ bool StartupScene::objectLabel(unsigned slot,Common::String &label) {
     _state.word(p),decoded,sizeof(decoded),size))return false;
  label.clear();for(unsigned i=1;i<size && decoded[i];++i)label+=char(decoded[i]);return true;
 }
+bool StartupScene::examine() {
+ if(!_ready || !_machine || _inputLocks || _scriptRoute || _talking || _machine->choiceCount())return false;
+ cancelRoute();if(!walk(0,*_machine))return false;
+ _machine->setEventPending(true);
+ return true;
+}
 bool StartupScene::takeObject(Common::String &label) {
  int x,y,slot=lookedObject(x,y);if(slot<0 || _inputLocks || _scriptRoute)return false;
  unsigned p=0x32fe + unsigned(slot)*8;
@@ -473,6 +479,7 @@ bool StartupScene::control(unsigned value,bool unlock,ScriptActor &actor) {
  return true;
 }
 bool StartupScene::walk(unsigned direction, ScriptMachine &machine,bool scripted) {
+ if(direction && !scripted)machine.setEventPending(false);
  if (!_ready || direction>4) return false;
  const unsigned masks[5]={0,1,8,2,4};
  if (!scripted && direction && (_inputLocks & masks[direction])) return true;
@@ -539,7 +546,7 @@ unsigned StartupScene::exitDirection(int x,int y) const {
   unsigned p=0x3090+i*8,d=_state.byte(p);int l=_state.word(p+4),r=_state.word(p+6);
   if(l>319 || r>319)continue;
   if(d==3 && x>=l && x<=r && y>=190)return d;
-  if(d==1 && x>=l && x<=r && y<=_state.byte(0x339e + x)+8)return d;
+  if(d==1 && x>=l && x<=r && y<=int(_state.byte(0x339e + x))+8)return d;
   if(d==2 || d==4) {
    int t=_state.byte(0x339e + l),b=l==r ? 199 : _state.byte(0x339e + r);
    if(t>b){int swap=t;t=b;b=swap;}
@@ -549,6 +556,7 @@ unsigned StartupScene::exitDirection(int x,int y) const {
  return 0;
 }
 bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted) {
+ if(!scripted)machine.setEventPending(false);
  cancelRoute();
  unsigned exit=!scripted ? exitDirection(x,y) : 0;
  if(exit==3)y=199;
@@ -565,6 +573,21 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
    if((collisionAt(tx,ty,exit,machine)&0xff00)==0x400){x=tx;y=ty;found=true;break;}
   }
   if(!found)exit=0;
+ }
+ // A two-coordinate script destination can also lie beyond an exit (for
+ // example the foyer door). End at its first boundary tile, not deeper in
+ // impassable terrain behind it.
+ if(scripted && x!=a.x && y!=a.y) {
+  for(unsigned d=1;d<=4;++d) {
+   if((d==1 && y>=a.y) || (d==2 && x<=a.x) || (d==3 && y<=a.y) || (d==4 && x>=a.x))continue;
+   if((collisionAt(x,y,d,machine)&0xff00)!=0x400)continue;
+   for(unsigned n=0;n<520;++n) {
+    int nx=x+(d==4 ? 1 : d==2 ? -1 : 0),ny=y+(d==1 ? 1 : d==3 ? -1 : 0);
+    if((collisionAt(nx,ny,d,machine)&0xff00)!=0x400)break;
+    x=nx;y=ny;
+   }
+   break;
+  }
  }
  // Stop a scripted axis destination at the first original exit collision.
  if(scripted && (x==a.x || y==a.y)) {

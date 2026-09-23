@@ -5,7 +5,7 @@
 #include "script.h"
 namespace Sotc {
 enum TaskResult { kReady, kDisabled, kTimerWait, kAnimationWait, kRegionWait,
- kUnknownWait, kUnknownOpcode, kInvalidScript, kInstructionLimit, kUnknownVariable };
+ kUnknownWait, kUnknownOpcode, kInvalidScript, kInstructionLimit, kUnknownVariable, kSoundUnavailable };
 struct ScriptTask {
  Cc4View script;
  uint32_t pc;
@@ -17,7 +17,15 @@ struct ScriptActor {
  int x, y;
  unsigned halfWidth, footHeight, step, steps;
 };
+// A successful request includes ignoring a new effect while one is active,
+// as the original single-channel driver does. 255 stops the channel.
+class ScriptSound {
+public:
+ virtual ~ScriptSound() {}
+ virtual bool effect(unsigned index) = 0;
+};
 class ScriptMachine {
+ ScriptSound *_sound;
  StartState _initial;
  uint8_t _block[65536];
  ScriptTask _tasks[17];
@@ -56,7 +64,7 @@ class ScriptMachine {
   }
  }
 public:
- ScriptMachine() : _count(0), _randomState(1), _randomValue(0), _randomKnown(false), _eventPending(false) {}
+ ScriptMachine() : _sound(nullptr), _count(0), _randomState(1), _randomValue(0), _randomKnown(false), _eventPending(false) {}
  // Explicit diagnostic seed: original startup seed source is not yet bound.
  void seedRandom(uint32_t seed) { _randomState = seed; }
  uint32_t randomState() const { return _randomState; }
@@ -65,6 +73,7 @@ public:
  bool eventPending() const { return _eventPending; }
  ScriptMachine(const ScriptMachine &) = delete;
  ScriptMachine &operator=(const ScriptMachine &) = delete;
+ void setSound(ScriptSound *sound) { _sound = sound; }
  unsigned count() const { return _count; }
  const ScriptTask *task(unsigned i) const { return i < _count ? &_tasks[i] : nullptr; }
  bool setActor(unsigned index, const ScriptActor &actor) {
@@ -151,6 +160,9 @@ public:
      if (op.opcode == 66 && !overlaps(t)) next = op.target;
      else _eventPending = false;
     }
+    break;
+   case 77:
+    if (!_sound || !_sound->effect(op.argument)) return t.result = kSoundUnavailable;
     break;
    case 79:
     // Borland rand at 0x17b5f; range helper 0x7051 does not draw for 0/1.

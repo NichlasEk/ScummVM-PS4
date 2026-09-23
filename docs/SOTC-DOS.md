@@ -522,3 +522,40 @@ PS4 package built successfully and tested in shadPS4: first-pass results
 match the native audit; Cross/N advances to tick 2 with tasks 5/8 executing
 another timer loop. Screenshot `artifacts/sotc/events-step.png`, log
 `artifacts/sotc/events-live.log`. No physical PS4 validation in this step.
+
+
+### Original sound effects through the mixer
+
+Opcode 77 is a sound-effect request, not an animation command. Handler
+0x961d calls 0xd5ad for a sample index or 0xd56b for index 255 (stop).
+0xd5ad checks the single sample channel before loading: an active effect
+ignores another request rather than restarting or queuing it.
+
+`SoundEffects` now loads the caller's `SMP.PAK` on demand, decodes the VOC
+with ScummVM's existing unsigned-PCM decoder and plays it as SFX. Buffers are
+owned by the audio stream, and shutdown stops the channel. ScummVM volume
+and mute settings are synchronized on startup. The original per-effect
+volume opcode 78 and music opcode 99 remain unimplemented; the supplied
+INIT.SAV's effect volume is already at its maximum (127).
+
+A missing/unavailable audio host, missing sample or failed decoder leaves
+opcode 77 at its existing PC with `kSoundUnavailable`. A request succeeds
+only when the host handles it, including the original busy-channel case.
+The VM tests exercise stop/index dispatch, failed requests with PC retained,
+retry and the actual initial task 14 sound request (sample 6).
+
+All 94 supplied SMP.PAK effects pass the header, checksum, block bounds,
+termination and unsigned-PCM format audit:
+
+```sh
+python3 scripts/sotc/audit-sounds.py artifacts/sotc/unpacked/SMP.PAK > artifacts/sotc/sound-audit.json
+```
+
+PS4 build verified in shadPS4: `sample=6 name=C7M.VOC rate=8000 ... active=1`;
+task 14 proceeds to its five-tick timer. The screen shows eight waiting tasks
+and one unsupported command (music 99), including after Cross/N steps to
+tick 2. Evidence: `artifacts/sotc/sound-live.log`, `sound-step.png`,
+`vm-sound-audit.json`, `cc4-sound-audit.json`. This verifies decoding and mixer
+activation, not a listening-quality comparison or physical PS4 test.
+Scene animation is still frozen and scheduler stepping is still diagnostic.
+No original sample bytes are tracked or included in the package.

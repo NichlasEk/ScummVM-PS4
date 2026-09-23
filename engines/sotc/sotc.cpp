@@ -9,6 +9,7 @@
 #include "sotc/script.h"
 #include "sotc/startup.h"
 #include "sotc/scriptmachine.h"
+#include "sotc/sound.h"
 #include "common/file.h"
 #include "common/events.h"
 #include "common/textconsole.h"
@@ -54,6 +55,7 @@ static void inspectRoomScripts(int bank) {
  }
 }
 Common::Error SotcEngine::run() {
+ syncSoundSettings();
  initGraphics(640, 480);
  Common::Array<byte> frame; frame.resize(640 * 480);
  Pak resources; Common::Array<byte> palette, image;
@@ -71,7 +73,8 @@ Common::Error SotcEngine::run() {
  uint32 nextFrame = 0;
  unsigned sequence = 0;
  Common::Array<byte> startupPixels; Common::String startupStatus;
- ScriptMachine startupMachine; unsigned scriptTicks = 0; Common::String scriptStatus;
+ SoundEffects sound(_mixer);
+ ScriptMachine startupMachine; startupMachine.setSound(&sound); unsigned scriptTicks = 0; Common::String scriptStatus;
  bool startupAvailable = loadStartupScene(startupPixels, startupStatus, startupMachine), showStartup = startupAvailable;
  if (startupAvailable) scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
 

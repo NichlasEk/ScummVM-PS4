@@ -17,6 +17,15 @@ with tempfile.TemporaryDirectory(prefix='sotc-vm-') as temp:
     (temp / 'test.cpp').write_text('''
 #include "engines/sotc/scriptmachine.h"
 static Sotc::ScriptMachine vm;
+struct TestSound : Sotc::ScriptSound {
+ unsigned last = 0, calls = 0; bool accept = true;
+ bool effect(unsigned i) override { last = i; ++calls; return accept; }
+} sound;
+extern "C" void soundHost(bool enabled,bool accept) {
+ sound.calls=0; sound.accept=accept; vm.setSound(enabled ? &sound : nullptr);
+}
+extern "C" unsigned soundLast() {return sound.last;}
+extern "C" unsigned soundCalls() {return sound.calls;}
 extern "C" bool load(const uint8_t *s,unsigned n,const uint8_t *b,unsigned m) {
  Sotc::StartState state;
  return state.load(Sotc::Cc4View(s,n)) && vm.load(state,Sotc::Cc4View(b,m));
@@ -133,6 +142,16 @@ extern "C" bool info(unsigned i,unsigned *out) {
         fixture(script)
         assert lib.visit(1) == 7 and info()[0] == 0
 
+    for sample in (0, 6, 255):
+        fixture([77, sample, 2])
+        lib.soundHost(False, False)
+        assert lib.visit(1) == 10 and info()[0] == 0
+        lib.soundHost(True, False)
+        assert lib.visit(1) == 10 and info()[0] == 0 and lib.soundCalls() == 1
+        lib.soundHost(True, True)
+        assert lib.visit(1) == 1 and info()[0] == 2
+        assert lib.soundCalls() == 1 and lib.soundLast() == sample
+    lib.soundHost(False, False)
     save = (args.directory / 'INIT.SAV').read_bytes()
     state = bytes(v ^ ((i + 1) * 5 & 255) for i, v in enumerate(save[64:]))
     bank, room = (struct.unpack_from('<H', state, a - 0x2dee)[0] for a in (0x2df2, 0x2df8))
@@ -144,6 +163,10 @@ extern "C" bool info(unsigned i,unsigned *out) {
     result = [dict(zip(('pc', 'flags', 'timer', 'actor', 'opcode', 'result', 'executed'), info(i)), task=i) for i in range(15)]
     assert result[1]['result'] == 4 and result[1]['pc'] == 14
     assert [(r['task'], r['pc'], r['opcode']) for r in result if r['result'] >= 5] == [(12, 2, 99), (14, 46, 77)]
+    assert result[14]['result'] == 10  # Missing audio host cannot silently skip effects.
     assert sum(2 <= r['result'] <= 4 for r in result) == 7
     assert sum(r['result'] == 1 for r in result) == 6
+    lib.soundHost(True, True)
+    assert lib.visit(14) == 2 and info(14)[0:3] == [2, 2, 5]
+    assert lib.soundLast() == 6 and lib.soundCalls() == 1
     print(json.dumps(result, indent=2))

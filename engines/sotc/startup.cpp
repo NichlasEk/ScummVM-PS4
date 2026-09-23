@@ -2,6 +2,7 @@
 #include "sotc/startup.h"
 #include "sotc/startstate.h"
 #include "sotc/animation.h"
+#include "sotc/draworder.h"
 #include "sotc/sequence.h"
 #include "sotc/poserenderer.h"
 #include "sotc/scriptmachine.h"
@@ -64,6 +65,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  _background = pixels;
  for (unsigned i=0;i<11;++i) {
   unsigned a=0x2e54+i*52;
+  _inDrawList[i]=state.byte(a+50)!=0;
   _slots[i]=state.byte(a+11);
   _clips[i][0]=state.word(a+44); _clips[i][1]=state.byte(a+48);
   _clips[i][2]=state.word(a+46); _clips[i][3]=state.byte(a+49);
@@ -81,16 +83,19 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
  pixels=_background;
  PoseRenderer renderer(pixels);
  unsigned rendered = 0, unsupported = 0, sceneryLayer = 0;
- for (unsigned id=0;id<10;++id) {
-  if (!_visible[id]) continue;
-  bool listed=false;
-  for (unsigned i=0;i<state.byte(0x34de);++i) if (state.byte(0x34e1+i*2)==id) listed=true;
-  if (!listed) { ++unsupported; debug("[sotc-drawlist] active actor %u absent from snapshot ordering",id); }
+ DrawOrder order;
+ // Current room scenery depths come from its restored list. Original 0x7228
+ // seeds those layers; 0x881d inserts eligible actors in ascending actor ID.
+ for (unsigned i=0;i<state.byte(0x34de);++i) {
+  unsigned id=state.byte(0x34e1+i*2);
+  if ((id & 0xf0)==0x10) order.append(state.byte(0x34e0+i*2),id);
  }
+ for (unsigned id=0;id<11;++id)
+  if (_visible[id] && _inDrawList[id]) order.insert(machine.actor(id)->y,id);
  const uint8_t *sceneryLayers; unsigned sceneryCount;
  bool haveSceneryPose = va2Record(scenery.data(), scenery.size(), 0, 0, sceneryLayers, sceneryCount);
- for (unsigned i = 0; i < state.byte(0x34de); ++i) {
-  unsigned id = state.byte(0x34e1 + i * 2);
+ for (unsigned i = 0; i < order.count; ++i) {
+  unsigned id = order.entries[i].id;
   if ((id & 0xf0) == 0x10) {
    // Scene pose 0 is interleaved with actors by the serialized draw list.
    bool ok = false;
@@ -148,7 +153,7 @@ bool StartupScene::reset(unsigned id, ScriptActor &actor) {
  // then installs resource slot 255. The following 91/87 bind and start it.
  unsigned count=va2SequenceLength(_actorData[0].data(),_actorData[0].size(),0);
  actor={0,0,4,2,0,count};
- _animations[id]={0,0,1,255}; _slots[id]=255; _visible[id]=true;
+ _animations[id]={0,0,1,255}; _slots[id]=255; _visible[id]=true; _inDrawList[id]=true;
  _clips[id][0]=_clips[id][1]=0; _clips[id][2]=319; _clips[id][3]=199;
  return true;
 }

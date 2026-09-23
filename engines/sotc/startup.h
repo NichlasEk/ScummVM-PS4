@@ -12,7 +12,7 @@ class StartupScene : public ScriptAnimation {
  Common::Array<byte> _background, _scenery, _actorData[20];
  struct Animation { unsigned sequence, substep, mode, gate; } _animations[11];
  unsigned _slots[11], _clips[11][4], _types[20], _indices[20];
- bool _ready, _visible[11];
+ bool _ready, _visible[11], _inDrawList[11];
 public:
  StartupScene() : _ready(false) {}
  bool load(Common::Array<byte> &pixels, Common::String &status, ScriptMachine &machine);

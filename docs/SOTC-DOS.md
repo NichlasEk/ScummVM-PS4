@@ -699,3 +699,30 @@ Next: reconstruct dynamic actor/scenery ordering from the original draw-list
 builder, then continue toward player movement/input. The preview remains a
 bounded scene diagnostic with provisional pacing, not a playable scene or a
 physical PS4 validation.
+
+### Dynamic actor draw ordering
+
+The preview rebuilds actor ordering every frame. Original helper 0x71b5 inserts
+an unsigned byte Y-depth after existing equal depths; 0x881d visits actors
+0..10 in ID order, requiring both visibility (+26) and draw eligibility (+50).
+The portable bounded helper is `draworder.h`. Actor reset restores eligibility.
+Scenery entries retain their stored order/depths from the current room snapshot:
+they are deliberately NOT globally sorted (INIT contains 199,177,113). This
+preserves the original insertion semantics and foreground-layer traversal.
+Loading another room's scenery depth metadata remains future work.
+
+Validation: 105 edge/random insertion cases match original 16-bit 0x71b5 in
+Unicorn, seeded with those non-monotonic scenery depths. Rebuilt initial order
+exactly matches INIT.SAV. VM and pose audits pass. The actual PS4 package in
+shadPS4 passed both old tick-13/tick-59 stops and reached tick 592 with nine
+waiting tasks and zero stopped tasks; screenshot `artifacts/sotc/draworder-live.png`
+and trace `draworder-live.log` remain local ignored evidence. Window left running.
+
+```sh
+.tools/sotc-audit-env/bin/python scripts/sotc/audit-draworder.py \
+  build/sotc-DOS/disc-files/SHADOW.EXE
+```
+
+Next is player input/movement and the region-triggered script progression.
+Continuous ambient scene animation is working in this bounded preview; this
+still does not establish gameplay, original pacing or physical PS4 behavior.

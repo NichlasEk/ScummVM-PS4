@@ -5,13 +5,17 @@
 #include "common/str.h"
 #include "sotc/scriptmachine.h"
 #include "sotc/route.h"
+#include "sotc/cutscene.h"
 namespace Sotc {
 class ScriptMachine;
 
 class StartupScene : public ScriptAnimation {
  struct ActorMove { bool active=false; int x=0,y=0; } _moves[11];
  bool moveOthers(ScriptMachine &machine);
+ Common::Array<int> _lightningRequests,_lightningLines;
+ Cutscene _cinematic;
  StartState _state;
+ unsigned _zoom=0,_paletteMode=0,_paletteAmount=0;
  unsigned _brightness=255, _fadeTarget=255, _fadeStep=0;
  Common::Array<byte> _background, _scenery, _actorData[20];
  struct Animation { unsigned sequence, substep, mode, gate, base, direction; } _animations[11];
@@ -30,11 +34,24 @@ class StartupScene : public ScriptAnimation {
  bool _ready, _visible[11], _inDrawList[11], _collisionBypass[11];
 public:
  StartupScene() : _walkDirection(1), _walking(false), _ready(false) {}
- bool snapshot(Snapshot &s,bool reloadResources=true);
+ bool snapshot(Snapshot &s,bool reloadResources=true,unsigned version=7);
  bool roomSnapshot(Snapshot &s,ScriptMachine &machine);
  void adopt(const StartupScene &source,ScriptMachine &machine) { *this=source; _machine=&machine; }
  unsigned bank() const { return _state.word(0x2df2); }
  unsigned room() const { return _state.word(0x2df8); }
+ bool cinematic(unsigned resource,unsigned sequence,unsigned backdrop,unsigned repeat,Cc4View cues) override;
+ bool cinematicActive() const override {return _cinematic.active();}
+ void skipCinematic(){_cinematic.skip();}
+ bool lightning(const unsigned *rect) override;
+ void completeTick() override;
+ bool screenZoom(unsigned mode,int x,int y) override;
+ bool palette(unsigned mode,unsigned amount) override;
+ void applyPalette(byte *colors) const;
+ bool textPosition(unsigned actor,unsigned x,unsigned y) override {
+  return actor<11 && _state.setWord(0x2e54+actor*52+30,x) && _state.setWord(0x2e54+actor*52+32,y);
+ }
+ unsigned textX() const {return _state.word(0x2e54+_speaker*52+30);}
+ unsigned textY() const {return _state.word(0x2e54+_speaker*52+32);}
  unsigned brightness() const { return _brightness; }
  bool serviceRoom(ScriptMachine &machine,Common::String &status);
  bool background(unsigned index) override;
@@ -71,6 +88,7 @@ public:
  bool walk(unsigned direction, ScriptMachine &machine, bool scripted=false);
  bool destination(int x,int y,ScriptMachine &machine,bool scripted=false);
  bool move(unsigned actor,unsigned x,unsigned y,bool &pending) override;
+ bool approach(unsigned actor,int x,int y,bool &pending) override;
  bool movementPending(unsigned actor,bool &pending) override;
  bool dialogue(unsigned actor,unsigned text,unsigned sequence,unsigned portrait) override;
  bool dialoguePending(bool &pending) override;

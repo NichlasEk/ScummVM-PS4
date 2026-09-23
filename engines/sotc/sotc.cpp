@@ -157,8 +157,11 @@ Common::Error SotcEngine::run() {
  bool runScene = true, sceneFault = false; unsigned heldDirection=0;
  uint32 nextSceneFrame = _system->getMillis() + 100;
  auto sceneStep = [&]() {
+  if(startupMachine.waitingForInput())return;
   if (!startupScene.fading() && !startupScene.movePlayer(startupMachine)) { runScene=false; sceneFault=true; redraw=true; return; }
   scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
+  if(startupScene.cinematicActive())heldDirection=0;
+  if(startupMachine.menuRequested()){startupMachine.dismissMenuRequest();mainMenu=true;menuSelection=0;_mixer->pauseAll(true);redraw=true;return;}
   if (!startupScene.serviceRoom(startupMachine,scriptStatus)) {
    runScene=false; sceneFault=true; redraw=true; return;
   }
@@ -284,8 +287,10 @@ Common::Error SotcEngine::run() {
   if (redraw) {
    surface.fillRect(Common::Rect(320,240), 0);
    if (!resources.load(palettes[pal], palette) || palette.size() != 768) { surface.free(); return Common::kReadingFailed; }
-   if(showStartup && !mainMenu && !showStory && !showOpening && !showCd)
+   if(showStartup && !mainMenu && !showStory && !showOpening && !showCd) {
+    startupScene.applyPalette(palette.data());
     for(unsigned i=0;i<768;++i) palette[i]=byte(unsigned(palette[i])*startupScene.brightness()/255);
+   }
    _system->getPaletteManager()->setPalette(palette.data(), 0, 256);
    Common::String title = "No 320x200 background";
    if (!backgrounds.empty()) {
@@ -348,13 +353,15 @@ Common::Error SotcEngine::run() {
      font->wordWrapText(shownDialogue,306,dialogueLines);
     }
     unsigned end=MIN<unsigned>(dialoguePage+8,dialogueLines.size());
-    surface.fillRect(Common::Rect(2,2,318,8+(end-dialoguePage)*font->getFontHeight()),0);
+    int textLeft=CLIP<int>(int(startupScene.textX())-153,2,12);
+    int textTop=CLIP<int>(startupScene.textY(),2,MAX<int>(2,194-(end-dialoguePage)*font->getFontHeight()));
+    surface.fillRect(Common::Rect(textLeft,textTop,318,textTop+6+(end-dialoguePage)*font->getFontHeight()),0);
     for (unsigned i=dialoguePage;i<end;++i)
-     font->drawString(&surface,dialogueLines[i],7,5+(i-dialoguePage)*font->getFontHeight(),306,7);
+     font->drawString(&surface,dialogueLines[i],textLeft+5,textTop+3+(i-dialoguePage)*font->getFontHeight(),313-textLeft,7);
    } else { shownDialogue.clear(); dialogueLines.clear(); dialoguePage=0; }
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, showStartup ? (!startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "F8: start scene  L1/R1: figure", 2, 227, 316, 7);
+   font->drawString(&surface, showStartup ? (startupMachine.waitingForInput() ? "Click / Cross: continue" : startupScene.cinematicActive() ? "Cross: skip  Options: menu" : !startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "F8: start scene  L1/R1: figure", 2, 227, 316, 7);
    if (mainMenu) {
     surface.fillRect(Common::Rect(320,240),0);
     if (!menuBackground.empty()) memcpy(surface.getBasePtr(0,0),menuBackground.data(),64000);
@@ -479,9 +486,14 @@ Common::Error SotcEngine::run() {
   }
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
+   if(event.type==Common::EVENT_QUIT){quitGame();continue;}
+   if(!showInventory && !showJournal && event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat && (event.kbd.keycode==Common::KEYCODE_q || event.kbd.keycode==Common::KEYCODE_u)) {
+    if(event.kbd.keycode==Common::KEYCODE_q) quickSave(); else quickLoad();
+    continue;
+   }
    if(event.type==Common::EVENT_MOUSEMOVE) {pointerX=event.mouse.x;pointerY=event.mouse.y;redraw=true;}
    // Normalize controller events before modal menus consume them.
-   if((showInventory || showJournal) && event.type==Common::EVENT_JOYBUTTON_DOWN) {
+   if((showInventory || showJournal || startupScene.cinematicActive() || startupMachine.waitingForInput()) && event.type==Common::EVENT_JOYBUTTON_DOWN) {
     Common::KeyCode key=Common::KEYCODE_INVALID;
     switch(event.joystick.button) {
     case Common::JOYSTICK_BUTTON_A:key=Common::KEYCODE_RETURN;break;
@@ -493,6 +505,16 @@ Common::Error SotcEngine::run() {
     default:break;
     }
     if(key!=Common::KEYCODE_INVALID){event.type=Common::EVENT_KEYDOWN;event.kbd.keycode=key;event.kbdRepeat=false;}
+   }
+   if(showStartup && !mainMenu && startupScene.cinematicActive()) {
+    if(event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE){mainMenu=true;menuSelection=0;_mixer->pauseAll(true);redraw=true;continue;}
+    if(event.type==Common::EVENT_LBUTTONDOWN || (event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat && event.kbd.keycode==Common::KEYCODE_RETURN)){startupScene.skipCinematic();redraw=true;}
+    continue;
+   }
+   if(showStartup && !mainMenu && startupMachine.waitingForInput()) {
+    if(event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN ||
+       (event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat)) {startupMachine.acknowledgeInput();heldDirection=0;redraw=true;}
+    continue;
    }
    if(showInventory) {
     // The PS4 backend maps Cross to a left click. Confirm the highlighted
@@ -545,10 +567,6 @@ Common::Error SotcEngine::run() {
     if(journal.open(startupMachine.journalProgress())) {
      showJournal=true;toolbar.hide();heldDirection=0;if(!startupScene.scriptWalking()){startupScene.cancelRoute();startupScene.walk(0,startupMachine);}_mixer->pauseAll(true);redraw=true;
     }
-    continue;
-   }
-   if(event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat && (event.kbd.keycode==Common::KEYCODE_q || event.kbd.keycode==Common::KEYCODE_u)) {
-    if(event.kbd.keycode==Common::KEYCODE_q) quickSave(); else quickLoad();
     continue;
    }
    if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup || mainMenu) redraw=true;

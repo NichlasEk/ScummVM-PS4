@@ -20,6 +20,14 @@ inline unsigned va2Records(const uint8_t *data, uint32_t size, unsigned section)
  }
  return count;
 }
+// The DOS renderer reads only the low word of a pose offset. Some original
+// sequences use the slot immediately after the directory, whose zero prefix
+// aliases the directory itself and yields an empty pose (zero layer byte).
+inline bool va2EmptyPoseAlias(const uint8_t *data,uint32_t size,unsigned index) {
+ unsigned count=va2Records(data,size,0);if(!count || index!=count)return false;
+ uint32_t base=va2LE32(data),slot=base+index*4;
+ return slot+2<=size && va2LE16(data+slot)==0 && base+2<=size && data[base+1]==0;
+}
 inline bool va2Record(const uint8_t *data, uint32_t size, unsigned section, unsigned index,
                       const uint8_t *&record, unsigned &count) {
  unsigned records = va2Records(data, size, section);
@@ -48,7 +56,7 @@ inline bool va2Step(const uint8_t *data, uint32_t size, unsigned sequence, unsig
  if (!va2Record(data, size, 2, sequence, r, count) || index >= count) return false;
  r += index * 8; step.pose = va2LE16(r); step.control = va2LE16(r + 2);
  step.dx = va2Signed16(r + 4); step.dy = va2Signed16(r + 6);
- return step.pose < va2Records(data, size, 0);
+ return step.pose < va2Records(data, size, 0) || va2EmptyPoseAlias(data,size,step.pose);
 }
 // SHADOW.EXE load-image offsets 0xc11e..0xc141: movement is the inclusive
 // prefix sum, with 16-bit wrapping, not the current step's delta alone.

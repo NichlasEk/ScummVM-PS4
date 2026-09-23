@@ -12,7 +12,7 @@ static unsigned readSlot(Common::SaveFileManager &files,const Common::String &pr
  delete in;
  if(!ok) return 0;
  Snapshot s(data.data(),data.size(),true);
- s.identity(0x43544f53); unsigned version=0; s.value(version,6); s.require(version>=1);
+ s.identity(0x43544f53); unsigned version=0; s.value(version,7); s.require(version>=1);
  unsigned generation=0,hash=0; s.value(generation); s.value(hash);
  return s.ok() && hash==Snapshot::hash(data.data()+16,data.size()-16) ? generation : 0;
 }
@@ -30,7 +30,7 @@ bool writeQuickSave(Common::SaveFileManager &files,const Common::String &prefix,
  if(generation==0xffffffffU) return false;
  ++generation; data.resize(kMaxSave);
  Snapshot s(data.data(),data.size(),false);
- s.identity(0x43544f53); s.identity(6); s.value(generation); unsigned checksum=0; s.value(checksum);
+ s.identity(0x43544f53); s.identity(7); s.value(generation); unsigned checksum=0; s.value(checksum);
  state.sync(s);
  if(!scene.roomSnapshot(s,machine) || !machine.snapshot(s) || !scene.snapshot(s) || !s.ok()) return false;
  data.resize(s.size()); checksum=Snapshot::hash(data.data()+16,data.size()-16);
@@ -52,7 +52,7 @@ bool readQuickSave(Common::SaveFileManager &files,const Common::String &prefix,S
  unsigned version=cc4Word(data.data()+4,4);
  Snapshot s(data.data()+16,data.size()-16,true); SaveState restored; restored.sync(s);
  if((version>=2 && !candidateScene.roomSnapshot(s,candidate)) ||
-    !candidate.snapshot(s,version) || !candidateScene.snapshot(s) || !s.ok() || s.size()!=data.size()-16 ||
+    !candidate.snapshot(s,version) || !candidateScene.snapshot(s,true,version) || !s.ok() || s.size()!=data.size()-16 ||
     !candidateScene.render(candidatePixels,candidateStatus,candidate)) return false;
  machine.adopt(candidate); scene.adopt(candidateScene,machine);
  state=restored; pixels=candidatePixels; status=candidateStatus;

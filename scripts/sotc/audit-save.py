@@ -49,6 +49,8 @@ class SaveFileManager {public:std::map<String,Array<byte>> files;bool fail=false
 #include "sotc/save.h"
 #include <cassert>
 #include <iostream>
+#include <fstream>
+#include <set>
 using namespace Sotc;
 struct Sound:ScriptSound {bool speech(unsigned,unsigned)override{return true;}bool music(unsigned)override{return true;}bool effect(unsigned)override{return true;}} sound;
 static std::vector<byte> state(ScriptMachine &m,StartupScene &scene) {
@@ -71,6 +73,18 @@ int main() {
  ScriptMachine other;StartupScene otherScene;other.setSound(&sound);other.setAnimation(&otherScene);
  assert(readQuickSave(files,"test",other,otherScene,saved,pixels,status));assert(state(other,otherScene)==before);
  for(unsigned i=0;i<3;++i){assert(scene.movePlayer(m)==otherScene.movePlayer(other));assert(scene.advance(m)==otherScene.advance(other));m.tick();other.tick();assert(state(m,scene)==state(other,otherScene));}
+ // Camera, color effects and text anchors survive an exact V7 round trip.
+ assert(scene.screenZoom(2,160,140));assert(scene.palette(2,7));assert(scene.textPosition(0,100,24));
+ before=state(m,scene);assert(writeQuickSave(files,"effects",m,scene,saved));
+ scene.screenZoom(0,0,0);scene.palette(1,0);
+ assert(readQuickSave(files,"effects",m,scene,saved,pixels,status));assert(state(m,scene)==before);
+ assert(scene.screenZoom(0,160,100));assert(scene.palette(3,0));
+ // Lightning consumes the original four random draws per segment, once per tick.
+ m.seedRandom(1234);unsigned seed=1234;for(unsigned i=0;i<40;++i)seed=seed*unsigned(0x015a4e35)+1;
+ unsigned bolt[4]={100,20,210,100};assert(scene.lightning(bolt));scene.completeTick();assert(m.randomState()==seed);
+ assert(scene.render(pixels,status,m));Common::Array<byte> lightningPixels=pixels;
+ before=state(m,scene);assert(writeQuickSave(files,"lightning",m,scene,saved));scene.completeTick();
+ assert(readQuickSave(files,"lightning",m,scene,saved,pixels,status));assert(state(m,scene)==before && pixels==lightningPixels);
  // Portrait dialogue resources and pre-talk animation must survive a round trip.
  scene.cancelRoute();scene.walk(0,m);bool pending=false;scene.dialoguePending(pending);
  if(pending){scene.finishDialogue();scene.dialoguePending(pending);}
@@ -95,22 +109,27 @@ int main() {
  auto &legacy=files.files["legacy.quick0"];legacy.resize(400000);
  Snapshot old(legacy.data(),legacy.size(),false);
  old.identity(0x43544f53);old.identity(1);old.identity(1);old.identity(0);saved.sync(old);
- assert(m.snapshot(old,1));assert(scene.snapshot(old));legacy.resize(old.size());
+ assert(m.snapshot(old,1));assert(scene.snapshot(old,true,1));legacy.resize(old.size());
  unsigned legacyHash=Snapshot::hash(legacy.data()+16,legacy.size()-16);
  for(unsigned i=0;i<4;++i)legacy[12+i]=legacyHash>>(i*8);
  before=state(m,scene);assert(readQuickSave(files,"legacy",m,scene,saved,pixels,status));assert(state(m,scene)==before);
  // Version 2 room saves remain readable after adding choice state in V3.
  auto &v2=files.files["v2.quick0"];v2.resize(400000);Snapshot two(v2.data(),v2.size(),false);
  two.identity(0x43544f53);two.identity(2);two.identity(1);two.identity(0);saved.sync(two);
- assert(scene.roomSnapshot(two,m));assert(m.snapshot(two,2));assert(scene.snapshot(two));v2.resize(two.size());
+ assert(scene.roomSnapshot(two,m));assert(m.snapshot(two,2));assert(scene.snapshot(two,true,2));v2.resize(two.size());
  unsigned v2Hash=Snapshot::hash(v2.data()+16,v2.size()-16);
  for(unsigned i=0;i<4;++i)v2[12+i]=v2Hash>>(i*8);
  assert(readQuickSave(files,"v2",m,scene,saved,pixels,status));assert(state(m,scene)==before);
  auto &v5=files.files["v5.quick0"];v5.resize(400000);Snapshot five(v5.data(),v5.size(),false);
  five.identity(0x43544f53);five.identity(5);five.identity(1);five.identity(0);saved.sync(five);
- assert(scene.roomSnapshot(five,m));assert(m.snapshot(five,5));assert(scene.snapshot(five));v5.resize(five.size());
+ assert(scene.roomSnapshot(five,m));assert(m.snapshot(five,5));assert(scene.snapshot(five,true,5));v5.resize(five.size());
  unsigned v5Hash=Snapshot::hash(v5.data()+16,v5.size()-16);for(unsigned i=0;i<4;++i)v5[12+i]=v5Hash>>(i*8);
  m.setTalkPending(true);assert(readQuickSave(files,"v5",m,scene,saved,pixels,status));assert(!m.talkPending() && state(m,scene)==before);
+ auto &v6=files.files["v6.quick0"];v6.resize(400000);Snapshot six(v6.data(),v6.size(),false);
+ six.identity(0x43544f53);six.identity(6);six.identity(1);six.identity(0);saved.sync(six);
+ assert(scene.roomSnapshot(six,m));assert(m.snapshot(six,6));assert(scene.snapshot(six,true,6));v6.resize(six.size());
+ unsigned v6Hash=Snapshot::hash(v6.data()+16,v6.size()-16);for(unsigned i=0;i<4;++i)v6[12+i]=v6Hash>>(i*8);
+ assert(readQuickSave(files,"v6",m,scene,saved,pixels,status));assert(state(m,scene)==before);
  // Execute the original initial conversation and transition, advancing dialogue
  // as a player would. No task PCs or global story flags are patched.
  assert(scene.load(pixels,status,m));
@@ -320,6 +339,47 @@ int main() {
  std::cout<<"Object facing, pickup and inventory save restore passed\n";
  std::cout<<"Door probe ends in bank "<<scene.bank()<<" room "<<scene.room()<<"\n";
 
+
+ unsigned movies=0,failedMovies=0,movieFrames=0;
+ Common::Array<byte> blank;blank.resize(64000);
+ for(unsigned bank=0;bank<10;++bank){
+  std::ifstream file(Common::String::format("R%02u.CC4",bank).c_str(),std::ios::binary);
+  std::vector<byte> bytes((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
+  Cc4View archive(bytes.data(),bytes.size());
+  for(unsigned room=0;room<cc4Count(archive,4);++room){
+   Cc4View block;assert(cc4Entry(archive,4,room,block));Common::Array<byte> scenery;
+   Cc4View init;assert(cc4Entry(block,2,0,init));unsigned pc=0;
+   while(pc<init.size){ScriptInstruction op;if(decodeScript(init,pc,op)!=kInstruction)break;
+    if(op.opcode==58){Pak backgrounds;assert(backgrounds.open(Common::String::format("D%02u.PAK",bank)));assert(backgrounds.load(op.argument*2+1,scenery));break;}
+    if(op.opcode==2 || op.opcode==3)break;pc=op.next;
+   }
+   for(unsigned task=0;task<cc4Count(block,2);++task){
+    Cc4View script;assert(cc4Entry(block,2,task,script));std::vector<unsigned> work(1,0);std::set<unsigned> seen;
+    while(!work.empty()){
+     pc=work.back();work.pop_back();if(!seen.insert(pc).second)continue;
+     ScriptInstruction op;if(decodeScript(script,pc,op)!=kInstruction)continue;
+     if(op.opcode==30){
+      Cutscene movie;bool ok=movie.start(bank,op.argument,op.variable,op.value,op.comparison,Cc4View(script.data+op.rectangle[1],op.rectangle[0]*3),blank,scenery);
+      unsigned frames=0;
+      while(ok && movie.active() && frames<200000){if(frames==3){
+       std::vector<byte> snapshot(400000);Snapshot w(snapshot.data(),snapshot.size(),false);assert(movie.snapshot(w));
+       Cutscene restored;Snapshot r(snapshot.data(),w.size(),true);assert(restored.snapshot(r));assert(r.size()==w.size());
+       Common::Array<byte> expected,actual;assert(movie.render(expected) && restored.render(actual));assert(expected==actual);movie=restored;
+      }
+      bool drawn=movie.render(pixels);bool advanced=drawn && movie.advance(m);if(!drawn || !advanced)std::cout<<"Movie stage draw="<<drawn<<" advance="<<advanced<<"\n";ok=drawn && advanced;++frames;}
+      ok=ok && !movie.active();
+      if(!ok){++failedMovies;std::cout<<"Movie failure bank="<<bank<<" room="<<room<<" task="<<task<<" pc="<<pc<<" resource="<<op.argument<<" sequence="<<op.variable<<" background="<<op.value<<" frame="<<frames<<"\n";}
+      ++movies;movieFrames+=frames;
+     }
+     if(op.opcode==2)continue;
+     if(op.opcode==53){for(unsigned i=0;i<op.argument;++i)work.push_back(op.choiceTarget[i]);}
+     else {if(op.target>=0)work.push_back(op.target);if(op.opcode!=3)work.push_back(op.next);}
+    }
+   }
+  }
+ }
+ std::cout<<"Original cinematics: "<<movies<<" commands, "<<movieFrames<<" frames, "<<failedMovies<<" failures\n";
+ assert(!failedMovies);
  std::cout<<"Save round trips: route, script waits, RNG, fresh load, dialogue; interrupted/corrupt saves rejected\n";
 }
 ''')

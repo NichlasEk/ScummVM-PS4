@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "sotc/startup.h"
+#include "sotc/screeneffects.h"
 #include "sotc/dialogue.h"
 #include "sotc/startstate.h"
 #include "sotc/animation.h"
@@ -36,7 +37,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  _textFile.clear(); _dialogueText.clear(); _talking=false;
  _portrait=false; _restoreTalk=false; _portraitHold=_portraitSequence=0;
  _speaker=_speechText=_talkSequence=_talkStep=_talkGate=0;
- cancelFade();
+ _lightningRequests.clear();_lightningLines.clear();_cinematic.skip();cancelFade();_zoom=_paletteMode=_paletteAmount=0;
  _ready = false; _machine=&machine; cancelRoute();
  StartState &state = _state;
  if (!readFile("INIT.SAV", save) || !state.load(Cc4View(save.data(), save.size()))) return false;
@@ -246,7 +247,7 @@ bool StartupScene::serviceRoom(ScriptMachine &machine,Common::String &status) {
   status="Room script unavailable"; cancelFade(); return false;
  }
  // Initialize a candidate so a missing background/actor cannot destroy the live room.
- ScriptMachine candidate; candidate.adopt(machine);
+ ScriptMachine candidate; candidate.adopt(machine);candidate.setSound(machine.sound());
  StartupScene next=*this; next._machine=&candidate; candidate.setAnimation(&next);
  if(!candidate.enterRoom(block,room(),_state.word(0x2df2))) { status="Invalid room script"; cancelFade(); return false; }
  next._state.setWord(0x2df6,room()); next._state.setWord(0x2df0,_state.word(0x2df2));
@@ -307,7 +308,7 @@ bool StartupScene::serviceRoom(ScriptMachine &machine,Common::String &status) {
  debug("[sotc-room] entered bank=%u room=%u",_state.word(0x2df2),room());
  return true;
 }
-bool StartupScene::snapshot(Snapshot &s,bool reloadResources) {
+bool StartupScene::snapshot(Snapshot &s,bool reloadResources,unsigned version) {
  s.require(_ready);
  for(unsigned i=0;i<11;++i) {
   s.value(_moves[i].active); s.value(_moves[i].x); s.value(_moves[i].y);
@@ -345,10 +346,55 @@ bool StartupScene::snapshot(Snapshot &s,bool reloadResources) {
    else return false;
   }
  }
+ if(version>=7){s.value(_zoom,3);s.value(_paletteMode,3);s.value(_paletteAmount,255);if(!_cinematic.snapshot(s))return false;
+  for(unsigned kind=0;kind<2;++kind){Common::Array<int> &a=kind ? _lightningLines : _lightningRequests;unsigned n=a.size();s.value(n,kind ? 2000 : 160);s.require(n%(kind ? 5 : 4)==0);if(s.reading())a.resize(n);for(unsigned i=0;s.ok() && i<n;++i){s.value(a[i]);s.require(a[i]>=-2 && a[i]<=513);}}
+ }
+ else if(s.reading()){_zoom=_paletteMode=_paletteAmount=0;_cinematic.skip();_lightningRequests.clear();_lightningLines.clear();}
  return s.ok();
+}
+bool StartupScene::cinematic(unsigned resource,unsigned sequence,unsigned backdrop,unsigned repeat,Cc4View cues) {
+ if(!_ready || !_machine || _cinematic.active())return false;
+ Common::Array<byte> scene;Common::String status;
+ if(backdrop==32000 && !render(scene,status,*_machine))return false;
+ if(!_cinematic.start(bank(),resource,sequence,backdrop,repeat,cues,scene,_scenery))return false;
+ _machine->stopSpeech();return _machine->playEffect(255);
+}
+bool StartupScene::lightning(const unsigned *rect) {
+ if(_lightningRequests.size()>=160)return false;
+ for(unsigned i=0;i<4;++i)_lightningRequests.push_back(rect[i]);return true;
+}
+void StartupScene::completeTick() {
+ if(!_machine || _cinematic.active() || _machine->waitingForInput())return;
+ _lightningLines.clear();
+ for(unsigned i=0;i<_lightningRequests.size();i+=4){
+  int x=_lightningRequests[i],y=_lightningRequests[i+1],lastX=x,lastY=y;
+  for(unsigned step=1;step<=10;++step){
+   _machine->randomRange(10);unsigned color=144+_machine->randomRange(7);
+   int nx=x+(_lightningRequests[i+2]-x)*int(step)/10-2+int(_machine->randomRange(4));
+   int ny=y+(_lightningRequests[i+3]-y)*int(step)/10-2+int(_machine->randomRange(4));
+   _lightningLines.push_back(lastX);_lightningLines.push_back(lastY);_lightningLines.push_back(nx);_lightningLines.push_back(ny);_lightningLines.push_back(color);lastX=nx;lastY=ny;
+  }
+ }
+ _lightningRequests.clear();
+}
+bool StartupScene::screenZoom(unsigned mode,int x,int y) {
+ if(mode>3 || x<-32768 || x>32767 || y<-32768 || y>32767)return false;
+ _zoom=mode;_state.setWord(0x2e1e,unsigned(x)&65535);_state.setWord(0x2e20,unsigned(y)&65535);return true;
+}
+bool StartupScene::palette(unsigned mode,unsigned amount) {
+ if(mode<1 || mode>3 || amount>255)return false;
+ _paletteMode=mode;_paletteAmount=amount;
+ if(mode==1)_state.setByte(0x2e06,amount);else _state.setWord(0x2e2c,amount);
+ return true;
+}
+void StartupScene::applyPalette(byte *colors) const {
+ if(!_paletteMode)return;
+ byte dst[768];paletteEffect(colors,dst,_paletteMode,_paletteAmount);
+ for(unsigned i=0;i<768;++i)colors[i]=dst[i]&252;
 }
 bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, const ScriptMachine &machine) {
  if (!_ready) return false;
+ if(_cinematic.active()){status="Original animation";return _cinematic.render(pixels);}
  const StartState &state=_state;
  const Common::Array<byte> &scenery=_scenery;
  const Common::Array<byte> *actorData=_actorData;
@@ -409,6 +455,13 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
 
   if (ok) ++rendered; else ++unsupported;
  }
+ for(unsigned i=0;i<_lightningLines.size();i+=5){
+  int x=_lightningLines[i],y=_lightningLines[i+1],ex=_lightningLines[i+2],ey=_lightningLines[i+3];
+  if(x>ex){int t=x;x=ex;ex=t;t=y;y=ey;ey=t;}
+  int dx=ex-x,dy=ey>=y ? y-ey : ey-y,sy=y<ey ? 1 : -1,error=dx+dy;
+  for(;;){if(x>=0 && x<320 && y>=0 && y<200)pixels[y*320+x]=_lightningLines[i+4];if(x==ex && y==ey)break;int twice=2*error;if(twice>=dy){error+=dy;++x;}if(twice<=dx){error+=dx;y+=sy;}}
+ }
+ if(!unsupported && _zoom){Common::Array<byte> source=pixels;zoomScreen(source.data(),pixels.data(),_zoom,_state.signedWord(0x2e1e),_state.signedWord(0x2e20));}
  status = Common::String::format("Room %u: %u drawn, %u unsupported", room(), rendered, unsupported);
  return unsupported == 0;
 }
@@ -614,6 +667,12 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
  debug("[sotc-route] target=%d,%d found=%u steps=%u",x,y,unsigned(found),_route.count);
  return found;
 }
+bool StartupScene::approach(unsigned id,int x,int y,bool &pending) {
+ if(!_ready || !_machine || id>=10)return false;
+ const ScriptActor &a=*_machine->actor(id);
+ if(!projectApproach(_state.range(0x339e,320),x,y,a.halfWidth,a.footHeight))return false;
+ return move(id,x,y,pending);
+}
 bool StartupScene::move(unsigned id,unsigned x,unsigned y,bool &pending) {
  if (!_ready || !_machine || id>=10) return false;
  if (id) {
@@ -688,6 +747,7 @@ bool StartupScene::moveOthers(ScriptMachine &machine) {
  return true;
 }
 bool StartupScene::movePlayer(ScriptMachine &machine) {
+ if(_cinematic.active())return true;
  if (!moveOthers(machine)) return false;
  const unsigned masks[5]={0,1,8,2,4};
  if (!_scriptRoute && _walking && (_inputLocks & masks[_walkDirection])) { cancelRoute(); return walk(0,machine); }
@@ -802,6 +862,7 @@ bool StartupScene::holdSequence(unsigned id,unsigned index,unsigned step,ScriptA
  actor.step=step;actor.steps=0;return true;
 }
 unsigned StartupScene::advance(ScriptMachine &machine) {
+ if(_cinematic.active())return _cinematic.advance(machine) ? 0 : 1;
  if (!_ready) return 0;
  unsigned unsupported=0;
  for (unsigned id=0;id<11;++id) {

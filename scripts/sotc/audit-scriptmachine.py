@@ -19,6 +19,7 @@ with tempfile.TemporaryDirectory(prefix='sotc-vm-') as temp:
 static Sotc::ScriptMachine vm;
 struct TestSound : Sotc::ScriptSound {
  unsigned last = 0, calls = 0, kind=0; bool accept = true;
+ bool repeatedEffect(unsigned i,unsigned n) override {kind=100;last=i;calls=n;return accept;}
  bool effect(unsigned i) override { kind=99; last = i; ++calls; return accept; }
  bool music(unsigned i) override { kind=77; last = i; ++calls; return accept; }
 } sound;
@@ -36,6 +37,10 @@ struct TestAnimation : Sotc::ScriptAnimation {
  bool control(unsigned value,bool unlock,Sotc::ScriptActor &) override {if (!accept) return false; lock=unlock ? 0 : value ? lock|(1u<<value) : 15; return true;}
  bool face(unsigned a,unsigned d) override {targetActor=a;targetX=d;return accept;}
  bool holdSequence(unsigned a,unsigned s,unsigned f,Sotc::ScriptActor &actor) override {targetActor=a;targetX=s;targetY=f;actor.step=f;actor.steps=0;return accept;}
+ bool palette(unsigned m,unsigned a) override {targetActor=m;targetX=a;return accept;}
+ bool screenZoom(unsigned m,int x,int y) override {targetActor=m;targetX=x;targetY=y;return accept && m<=3;}
+ bool textPosition(unsigned a,unsigned x,unsigned y) override {targetActor=a;targetX=x;targetY=y;return accept;}
+ bool approach(unsigned a,int x,int y,bool &p) override {return move(a,x,y,p);}
  bool restoreCollision(unsigned) override {return accept;}
  bool drawEnabled(unsigned,unsigned) override {return accept;}
  bool hide(unsigned) override {return accept;}
@@ -76,6 +81,12 @@ extern "C" void talk(bool b){vm.setTalkPending(b);}
 extern "C" bool talkPending(){return vm.talkPending();}
 extern "C" bool pending() {return vm.eventPending();}
 extern "C" unsigned rect(unsigned j) {return vm.task(1)->rectangle[j];}
+extern "C" bool restoreInputWait(){
+ uint8_t data[32768];Sotc::Snapshot w(data,sizeof(data),false);if(!vm.snapshot(w) || !vm.waitingForInput())return false;
+ vm.acknowledgeInput();Sotc::Snapshot r(data,w.size(),true);return vm.snapshot(r) && vm.waitingForInput() && r.size()==w.size();
+}
+extern "C" bool inputWait(){return vm.waitingForInput();}
+extern "C" void acknowledge(){vm.acknowledgeInput();}
 extern "C" void tick() {vm.tick();}
 extern "C" bool actor(unsigned i,int x,int y,unsigned step,unsigned count) {
  Sotc::ScriptActor a={x,y,4,2,step,count}; return vm.setActor(i,a);
@@ -155,6 +166,24 @@ extern "C" bool info(unsigned i,unsigned *out) {
     assert lib.visit(17) == 7
     assert not lib.actor(11, 0, 0, 0, 1)
 
+    # Fresh input is a global modal wait: no second task advances before ack.
+    fixture([27,2,86,21,3,2],extra=[21,4,2]);lib.tick()
+    assert lib.inputWait() and info()[0]==3 and info(2)[3]==0
+    assert lib.restoreInputWait()
+    lib.tick();assert info(2)[3]==0
+    lib.acknowledge();lib.tick();assert info()[3]==3 and info(2)[3]==4
+    fixture([83,21,3,2]);lib.tick();assert info()[0]==1 and info()[3]==0
+    fixture([72,3,0,255,2]);assert lib.visit(1)==1 and info()[0]==4
+    for script,target in [([51,80,120,2,2],[2,160,120]),([70,60,80,2],[0,120,80]),([38,127,2],[1,127,0])]:
+        fixture(script);lib.animationHost(True,True);assert lib.visit(1)==1
+        assert [lib.moveTarget(i) for i in range(2)]==target[:2]
+    fixture([52,1,3,2]);lib.actor(1,160,150,0,1);lib.animationHost(True,True);assert lib.visit(1)==1
+    assert [lib.moveTarget(i) for i in range(3)]==[3,160,150]
+    fixture([21,1,17,246,5,2]);lib.actor(0,160,150,0,1);lib.animationHost(True,True);assert lib.visit(1)==4
+    assert [lib.moveTarget(i) for i in range(3)]==[1,150,155]
+    fixture([100,3,7,2]);lib.soundHost(True,True);assert lib.visit(1)==1 and lib.soundLast()==3 and lib.soundCalls()==7
+    for script in ([51,1,2],[52,11,1,2],[17,1],[100,1],[101],[102]):
+        fixture(script);assert lib.visit(1)==7
     fixture([21,1,48,85,2]);lib.actor(0,102,199,0,1);assert lib.visit(1)==1
     assert lib.actorCoord(1,0)==102 and lib.actorCoord(1,1)==200
     fixture([21,1,45,3,7,2]);lib.animationHost(True,True);assert lib.visit(1)==1

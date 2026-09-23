@@ -24,6 +24,7 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
  switch (out.opcode) {
  case 2: // Disable current task, without advancing original IP (0x9f9f).
   return kInstruction;
+ case 72: // Reset loop counter and relative jump (0xa060).
  case 6: // Counted relative loop, then byte iteration limit.
  case 61:
  case 64: // Pending event, branch when absent (0xa713).
@@ -53,6 +54,15 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   out.value = cc4Word(v.data + p, width); p += width;
   break;
  }
+ case 30:
+  if(v.size-p<6)return kTruncated;
+  out.argument=v.data[p++];out.variable=v.data[p++];out.value=cc4Word(v.data+p,2);p+=2;
+  out.comparison=v.data[p++];out.rectangle[0]=v.data[p++];out.rectangle[1]=p;
+  if(v.size-p<out.rectangle[0]*3)return kTruncated;
+  out.next=p+out.rectangle[0]*3;return kInstruction;
+ case 51:
+  if(v.size-p<3)return kTruncated;
+  out.argument=v.data[p++]*2;out.value=v.data[p++];out.comparison=v.data[p++];out.next=p;return kInstruction;
  case 29: // Restart tasks until the 255 sentinel.
   out.argument=p;
   while(p<v.size && v.data[p]!=255)++p;
@@ -84,6 +94,8 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   out.comparison=v.data[p++];
   out.variable=out.opcode==89 ? v.data[p++] : 256;
   out.next=p; return kInstruction;
+ case 17: case 100:
+ case 52: case 70:
  case 45:
  case 68: // Disable obstacles matching byte X/2 and Y (0xa893).
  case 42: case 43: // Actor X/Y clip interval (0x9ee5/0x9f1f).
@@ -106,6 +118,8 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   if (v.size - p < out.argument * (out.opcode==23 ? 5 : 2)) return kTruncated;
   out.next = p + out.argument * (out.opcode==23 ? 5 : 2);
   return kInstruction;
+ case 83: case 86:
+ case 55:
  case 20: case 35: case 48: case 71: case 85:
  case 34: // Actor collision bypass, no operand (0x9369).
  case 19: // Unlock player controls (0xaac9).
@@ -114,6 +128,7 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   out.next = p; return kInstruction;
  case 14: // Footprint rectangle and false branch (0xa60d).
  case 63:
+ case 67:
  case 81:
  case 66: // Event plus footprint rectangle, then false-branch displacement.
  case 60: // Append obstacle rectangle (0xa82d).
@@ -123,6 +138,7 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   p += 4;
   if (out.opcode == 66 || out.opcode == 63 || out.opcode == 14) break;
   out.next = p; return kInstruction;
+ case 38: case 101: case 102:
  case 8:
  case 1: case 4: case 5: case 9: case 15: case 16: case 18: case 21: case 27: case 28: case 58: case 59:
  case 47: case 98: case 69: case 44: case 93: case 94: case 99: case 77: case 79: case 80: case 87: case 88: case 90: case 91: case 92: case 96:

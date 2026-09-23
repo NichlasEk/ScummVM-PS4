@@ -13,7 +13,7 @@ inline bool va2Pose(const uint8_t *data, uint32_t size, unsigned pose,
                     const uint8_t *&commands, uint32_t &length, unsigned &count) {
  commands = nullptr; length = count = 0;
  unsigned records = va2Records(data, size, 0);
- if (pose >= records) return false;
+ if(pose>=records){if(!va2EmptyPoseAlias(data,size,pose))return false;commands=data+va2LE32(data)+2;return true;}
  uint32_t base = va2LE32(data), start = base + va2LE32(data + base + pose * 4);
  uint32_t end = pose + 1 < records ? base + va2LE32(data + base + (pose + 1) * 4) : va2LE32(data + 4);
  if (pose + 1 < records) { if (end - start < 2) return false; end -= 2; }

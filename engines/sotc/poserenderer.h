@@ -79,10 +79,12 @@ class PoseRenderer {
    const uint8_t *nextXY = nullptr;
    if (next) {
     // Verified equal-topology vector morph. Other merge cases stay unsupported.
-    if ((type != 4 && type != 6) || next[0] != type || next[1] != points) return false;
+    if ((type != 4 && type != 5 && type != 6 && type != 7) || next[0] != type || next[1] != points) return false;
     if (layers - i < (layers * fraction) / 256) ref = va2LE16(next + 2);
     nextXY = next + 4; next += 4 + points * 4;
    }
+   uint8_t morphed[1020];
+   if(nextXY){for(unsigned j=0;j<points*2;++j){int v=interpolate(va2Signed16(xy+j*2),va2Signed16(nextXY+j*2),fraction);morphed[j*2]=v;morphed[j*2+1]=unsigned(v)>>8;}xy=morphed;nextXY=nullptr;}
    if (onlyLayer >= 0 && i != unsigned(onlyLayer)) continue;
    if (!_commands) return false;
    --_commands;
@@ -107,7 +109,7 @@ class PoseRenderer {
     // 0x10fad: set high-byte colour once, plot each independent point.
     for (unsigned j=0;j<points;++j)
      if (!dot(x+(mirrored ? -va2Signed16(xy+j*4) : va2Signed16(xy+j*4)),y+va2Signed16(xy+j*4+2),byte(ref>>8))) return false;
-   } else if (type == 5 && points == 2) {
+   } else if (type == 5 && points >= 2) {
     // 0x10f3e: normalize corners, fill with high byte, optional low-byte outline.
     int x2=x+(mirrored ? -va2Signed16(xy+4) : va2Signed16(xy+4)),y2=y+va2Signed16(xy+6);
     int left=px<x2 ? px : x2,right=px>x2 ? px : x2;
@@ -136,6 +138,13 @@ class PoseRenderer {
  }
 public:
  PoseRenderer(Common::Array<byte> &screen) : _screen(screen) { _pixels.resize(640 * 256); _mask.resize(640 * 256); }
+ bool scaledPose(const Common::Array<byte> &data,unsigned index,int x,int y,unsigned scale) {
+  const uint8_t *record;uint32_t length;unsigned layers;
+  if(!va2Pose(data.data(),data.size(),index,record,length,layers))return false;
+  Common::Array<byte> copy=data;unsigned p=record-data.data();
+  for(unsigned i=0;i<layers;++i){unsigned n=copy[p+1];p+=4;for(unsigned j=0;j<n*2;++j,p+=2){int v=(va2Signed16(copy.data()+p)*int(scale))>>8;copy[p]=v;copy[p+1]=unsigned(v)>>8;}}
+  return pose(copy,index,x,y);
+ }
  bool pose(const Common::Array<byte> &data, unsigned pose, int x, int y, unsigned clipX1 = 0, unsigned clipY1 = 0, unsigned clipX2 = 319, unsigned clipY2 = 199, int onlyLayer = -1, int nextPose = -1, unsigned fraction = 0) {
   if (_screen.size() != 64000) return false;
   _left = clipX1; _top = clipY1; _right = clipX2; _bottom = clipY2;

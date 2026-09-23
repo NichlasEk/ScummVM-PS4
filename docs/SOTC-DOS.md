@@ -1607,3 +1607,66 @@ It encounters unsupported opcodes 17, 30, 38, 51, 52, 55, 67, 70, 72, 100 and
 behind those points. This is a blocker inventory, not full-game execution
 coverage. Remaining work includes inventory choices, palette operations and
 other original UI/scene behavior. No game resource bytes are distributed.
+
+### Remaining reachable DOS opcodes (2026-09-23)
+
+Added 14 more instructions: 17, 30, 38, 51, 52, 55, 67, 70, 72, 83, 86,
+100, 101 and 102. The previous tentative labels for 30/38/51/52 were wrong:
+30 runs a blocking VA2 cinematic, 38 applies immediate palette brightness,
+and 51/52 select camera magnification around a coordinate or actor.
+
+The original routines now drive these implementations:
+
+- 17 projects a signed player-relative destination against the actor footprint
+  and terrain (0xcdcf), then uses the existing scripted movement/wait path.
+- 30 loads the selected Axx animation, its sequence and backdrop, repeats it,
+  and issues frame-specific sample cues. Backdrops are black, a scenery pose,
+  an animation pose, or the captured scene (32000). Gameplay waits while the
+  animation runs. Return/Cross skips it; Options opens the menu. Q/U remain available during
+  playback. Animation substeps use the blocking DOS
+  loop rather than the actor scheduler's additional frame-update test.
+- 38/101/102 implement brightness, red tint and white-flash arithmetic.
+  51/52 reproduce 2x/3x/4x zoom, including the original clamping and borders.
+- 55 requests the full redraw already performed by this renderer. 67 queues
+  the original ten-segment lightning effect, with four RNG draws per segment.
+- 70 stores the actor's text anchor and the dialogue UI uses it within its
+  readable screen bounds. 72 resets the loop counter before a relative jump.
+- 83 opens the engine's main menu; 86 waits for a fresh click/key press without
+  walking or advancing other scripts. 100 uses the existing repeated sample
+  player. Room initialization now retains its sound host, so audio instructions
+  in a new room do not fail solely because initialization uses a candidate VM.
+
+Save format 7 retains modal input/menu state, zoom, palette effects, lightning
+and an active cinematic's frame/substep/loop/cues and captured backdrop.
+Original animation resources are reloaded from the user's files. Versions
+1 through 6 remain readable. No original assets are embedded in source.
+
+Broader testing found and fixed additional graphics cases: scaled vector
+poses; rectangle commands carrying more than two coordinates; interpolation
+of rectangles and points; transparent type-10 runs beyond the declared image
+rectangle; and the empty offset-table alias used by PIL.VA2 pose 23. The latter
+was checked against the original DOS renderer, which returns without drawing.
+
+Validation evidence (ignored local artifacts):
+
+- `remaining-coverage.json`: 1,835 scripts, 41,121 statically reachable decoded
+  instruction positions, **zero unknown opcodes and zero invalid decodes**.
+  This walks both sides of branches, but is not a full gameplay simulation.
+- `remaining-save-final.log`: ASan/UBSan initial journey, shop conversation and
+  return; exact effect/lightning/cinematic save round trips; legacy saves;
+  **74 original cinematic commands, 2,564 rendered frames, zero failures**.
+  Cinematic resource/sequence/backdrop operands come from the original scripts;
+  snapshot-background cases use a blank test screen, not a live playthrough.
+- `remaining-screen.log`: Unicorn comparisons against SHADOW.EXE match 18
+  complete zoom frames, 24 palette transformations and 20 approach projections.
+- `remaining-animation.log`, `remaining-poses.log`, `remaining-vm-final.log`:
+  actor animation regression, pose renderer tests, and VM branch/modal tests.
+- The type-10 GPGONTRA frame matches the original blitter pixel-for-pixel.
+  `remaining-build-final.log` records the PS4 package build.
+
+This covers every opcode reached by the supplied DOS script traversal, not
+all hypothetical opcode numbers or editions. Full-chapter story progression,
+physical PS4 behavior, cinematic timing/audio synchronization, and exact DOS
+text layout still require playtesting. No claim that the complete game has
+been played through. Next useful validation is the continuous story route
+from Cobble's house, retaining saves before each new sequence.

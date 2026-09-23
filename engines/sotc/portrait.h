@@ -34,7 +34,10 @@ inline bool va2Portrait(const uint8_t *data,uint32_t size,unsigned index,
   if (p>=end) return false;
   uint8_t color=data[p++]; unsigned previous=1;
   auto run=[&](unsigned length) {
-   if (row>=h || xs[row]>w || length>w-xs[row]) return false;
+   // Transparent packets may advance beyond the declared image rectangle.
+   // They write no pixels; retain in-range row cursors for later packets.
+   if(flags&2){if(row<h)xs[row]+=length;++row;return true;}
+   if(row>=h || xs[row]>w || length>w-xs[row])return false;
    for (unsigned x=0;x<length;++x) if (!(flags&2)) {
     unsigned at=row*w+xs[row]+x; pixels[at]=color; mask[at]=1;
    }

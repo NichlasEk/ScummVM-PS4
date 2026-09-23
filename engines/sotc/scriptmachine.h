@@ -28,6 +28,7 @@ public:
  virtual bool dialogue(unsigned,unsigned,unsigned,unsigned) { return false; }
  virtual bool dialoguePending(bool &) { return false; }
  virtual bool move(unsigned,unsigned,unsigned,bool &) { return false; }
+ virtual bool approach(unsigned,int,int,bool &) {return false;}
  virtual bool movementPending(unsigned,bool &) { return false; }
  virtual bool face(unsigned,unsigned) { return false; }
  virtual bool control(unsigned, bool, ScriptActor &) { return false; }
@@ -47,6 +48,13 @@ public:
  virtual bool bypass(unsigned) { return false; }
  virtual bool speechBank(unsigned) { return false; }
  virtual bool fade(bool,unsigned) { return false; }
+ virtual bool cinematic(unsigned,unsigned,unsigned,unsigned,Cc4View) {return false;}
+ virtual bool cinematicActive() const {return false;}
+ virtual bool lightning(const unsigned *) {return false;}
+ virtual void completeTick() {}
+ virtual bool screenZoom(unsigned,int,int) {return false;}
+ virtual bool palette(unsigned,unsigned) {return false;}
+ virtual bool textPosition(unsigned,unsigned,unsigned) {return false;}
  virtual bool fading() const { return false; }
 
 };
@@ -57,6 +65,7 @@ public:
  virtual ~ScriptSound() {}
  virtual bool speech(unsigned,unsigned) { return false; }
  virtual void stopSpeech() {}
+ virtual bool repeatedEffect(unsigned,unsigned) {return false;}
  virtual bool effect(unsigned index) = 0;
  virtual bool music(unsigned index) = 0;
 };
@@ -76,7 +85,7 @@ class ScriptMachine {
  uint32_t _randomState;
  unsigned _randomValue;
  bool _randomKnown, _eventPending;
- bool _talkPending=false;
+ bool _talkPending=false,_inputWait=false,_menuRequested=false;
  static int signed16(unsigned v) { v &= 65535; return v < 32768 ? int(v) : int(v) - 65536; }
  bool variable(unsigned id, unsigned &value) const {
   if (id==0) { value=_previousRoom; return true; }
@@ -136,6 +145,11 @@ public:
  }
  uint32_t randomState() const { return _randomState; }
  bool randomValue(unsigned &value) const { value = _randomValue; return _randomKnown; }
+ bool menuRequested() const {return _menuRequested;}
+ void dismissMenuRequest(){_menuRequested=false;}
+ bool playEffect(unsigned id){return _sound && _sound->effect(id);}
+ bool waitingForInput() const {return _inputWait;}
+ void acknowledgeInput(){_inputWait=false;}
  void setTalkPending(bool pending) {_talkPending=pending;}
  bool talkPending() const {return _talkPending;}
  void setEventPending(bool pending) { _eventPending = pending; }
@@ -146,6 +160,7 @@ public:
  const ScriptActor *actor(unsigned index) const { return index < 11 ? &_actors[index] : nullptr; }
  bool speech(unsigned bank,unsigned text) { return _sound && _sound->speech(bank,text); }
  void stopSpeech() { if (_sound) _sound->stopSpeech(); }
+ ScriptSound *sound() const {return _sound;}
  void setSound(ScriptSound *sound) { _sound = sound; }
  unsigned count() const { return _count; }
  const ScriptTask *task(unsigned i) const { return i < _count ? &_tasks[i] : nullptr; }
@@ -156,7 +171,7 @@ public:
  }
  bool load(const StartState &state, Cc4View block) {
   _count = 0; _choiceCount=0; _resourceType=0;
-  _randomState = 1; _randomValue = 0; _randomKnown = false; _eventPending = false; _talkPending=false;
+  _randomState = 1; _randomValue = 0; _randomKnown = false; _eventPending = false; _talkPending=false;_inputWait=false;_menuRequested=false;
   if (!state.valid() || block.size > sizeof(_block) || cc4Count(block, 2) != state.word(0x2e02) || !state.word(0x2e02)) return false;
   for (unsigned i = 0; i < block.size; ++i) _block[i] = block.data[i];
   block.data = _block;
@@ -207,7 +222,7 @@ public:
   for(unsigned i=0;i<count;++i) { Cc4View script; if(!cc4Entry(block,2,i,script) || !script.size) return false; }
   for(unsigned i=0;i<block.size;++i) _block[i]=block.data[i];
   block.data=_block; _count=count; _previousRoom=previousRoom; _previousBank=previousBank; _pendingRoom=255; _pendingBank=255;
-  _eventPending=false; _talkPending=false; _choiceCount=0;
+  _eventPending=false; _talkPending=false;_inputWait=false;_menuRequested=false; _choiceCount=0;
   for(unsigned i=0;i<count;++i) { _tasks[i]=ScriptTask(); cc4Entry(block,2,i,_tasks[i].script); }
   _tasks[0].flags=0; _tasks[0].result=kReady;
   return true;
@@ -220,14 +235,14 @@ public:
   for(unsigned i=0;i<6;++i) {_choiceText[i]=other._choiceText[i];_choiceTarget[i]=other._choiceTarget[i];}
   _resourceType=other._resourceType;
   _previousRoom=other._previousRoom; _previousBank=other._previousBank; _pendingRoom=other._pendingRoom; _pendingBank=other._pendingBank;
-  _randomState=other._randomState; _randomValue=other._randomValue; _randomKnown=other._randomKnown; _eventPending=other._eventPending; _talkPending=other._talkPending;
+  _randomState=other._randomState; _randomValue=other._randomValue; _randomKnown=other._randomKnown; _eventPending=other._eventPending; _talkPending=other._talkPending;_inputWait=other._inputWait;_menuRequested=other._menuRequested;
   for(unsigned i=0;i<256;++i) { _globals[i]=other._globals[i]; _locals[i]=other._locals[i]; }
   for(unsigned i=0;i<sizeof(_block);++i) _block[i]=other._block[i];
   for(unsigned i=0;i<_count;++i) { _tasks[i]=other._tasks[i]; _tasks[i].script.data=_block+(other._tasks[i].script.data-other._block); }
   for(unsigned i=0;i<11;++i) _actors[i]=other._actors[i];
  }
  // Loaded resource identities bind a save to this game's original snapshot/scripts.
- bool snapshot(Snapshot &s,unsigned version=6) {
+ bool snapshot(Snapshot &s,unsigned version=7) {
   s.identity(Snapshot::hash(_initial.range(0x2dee,0xf3e),0xf3e));
   s.identity(_count);
   for(unsigned i=0;i<256;++i) { s.value(_globals[i],65535); s.value(_locals[i],65535); }
@@ -258,11 +273,13 @@ public:
   else if(s.reading()) _pendingBank=255;
   if(version>=5)s.value(_resourceType,1);else if(s.reading())_resourceType=0;
   if(version>=6)s.value(_talkPending);else if(s.reading())_talkPending=false;
+  if(version>=7){s.value(_inputWait);s.value(_menuRequested);}else if(s.reading()){_inputWait=false;_menuRequested=false;}
   return s.ok();
  }
  TaskResult visit(unsigned index, unsigned budget = 128) {
   if (index >= _count) return kInvalidScript;
   ScriptTask &t = _tasks[index];
+  if(_inputWait)return t.result=kRegionWait;
   if (t.flags & 0x20) return t.result = kDisabled;
   if (t.flags & ~0x7fU) return t.result = kUnknownWait;
   if(t.flags&8) {
@@ -319,6 +336,30 @@ public:
     if(!_animation || !_animation->face(t.actor,d))return t.result=kAnimationUnavailable;
     break;
    }
+   case 30:
+    if(!_animation || !_animation->cinematic(op.argument,op.variable,op.value,op.comparison,Cc4View(t.script.data+op.rectangle[1],op.rectangle[0]*3)))return t.result=kAnimationUnavailable;
+    t.pc=next;++t.executed;return t.result=kRegionWait;
+   case 67:
+    if(!_animation || !_animation->lightning(op.rectangle))return t.result=kAnimationUnavailable;
+    break;
+   case 83:_menuRequested=true;t.pc=next;++t.executed;return t.result=kRegionWait;
+   case 86:_inputWait=true;t.pc=next;++t.executed;return t.result=kRegionWait;
+   case 72: t.loop=0;next=op.target;break;
+   case 55: break; // DOS clears the display; this renderer rebuilds the entire frame.
+   case 38: case 101: case 102:
+    if(!_animation || !_animation->palette(op.opcode==38 ? 1 : op.opcode==101 ? 2 : 3,op.argument))return t.result=kAnimationUnavailable;
+    break;
+   case 51: case 52: {
+    if(op.opcode==52 && op.argument>=11)return t.result=kInvalidScript;
+    unsigned mode=op.opcode==51 ? op.comparison : op.value;
+    int x=op.opcode==51 ? int(op.argument) : _actors[op.argument].x;
+    int y=op.opcode==51 ? int(op.value) : _actors[op.argument].y;
+    if(!_animation || !_animation->screenZoom(mode,x,y))return t.result=kAnimationUnavailable;
+    break;
+   }
+   case 70:
+    if(!_animation || !_animation->textPosition(t.actor,op.argument*2,op.value))return t.result=kAnimationUnavailable;
+    break;
    case 3: next = op.target; break;
    case 6:
     t.loop=(t.loop+1)&65535;
@@ -499,6 +540,18 @@ public:
    case 77:
     if (!_sound || !_sound->music(op.argument)) return t.result = kSoundUnavailable;
     break;
+   case 17: {
+    if(t.actor>=11)return t.result=kInvalidScript;
+    bool pending=false;
+    int dx=op.argument<128 ? int(op.argument) : int(op.argument)-256;
+    int dy=op.value<128 ? int(op.value) : int(op.value)-256;
+    if(!_animation || !_animation->approach(t.actor,signed16(_actors[0].x+dx),signed16(_actors[0].y+dy),pending))return t.result=kAnimationUnavailable;
+    if(pending){t.flags|=1;t.pc=next;++t.executed;return t.result=kRegionWait;}
+    break;
+   }
+   case 100:
+    if(!_sound || !_sound->repeatedEffect(op.argument,op.value))return t.result=kSoundUnavailable;
+    break;
    case 99:
     if (!_sound || !_sound->effect(op.argument)) return t.result = kSoundUnavailable;
     break;
@@ -516,13 +569,15 @@ public:
   }
   return t.result = kInstructionLimit;
  }
- void tick() {
-  if (_pendingRoom!=255 || (_animation && _animation->fading())) return;
+ void tick(){tickScripts();if(_animation)_animation->completeTick();}
+private:
+ void tickScripts() {
+  if ((_animation && _animation->cinematicActive()) || _menuRequested || _inputWait || _pendingRoom!=255 || (_animation && _animation->fading())) return;
   if (_count && !(_tasks[0].flags&0x20)) {
    visit(0);
-   if (!(_tasks[0].flags&0x20) || (_animation && _animation->fading())) return;
+   if ((_animation && _animation->cinematicActive()) || _menuRequested || _inputWait || !(_tasks[0].flags&0x20) || (_animation && _animation->fading())) return;
   }
-  for (unsigned i=1;i<_count;++i) { visit(i); if(_pendingRoom!=255) break; }
+  for (unsigned i=1;i<_count;++i) { visit(i); if(_pendingRoom!=255 || _menuRequested || _inputWait || (_animation && _animation->cinematicActive())) break; }
  }
 };
 }

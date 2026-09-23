@@ -34,7 +34,9 @@ struct TestAnimation : Sotc::ScriptAnimation {
  bool movementPending(unsigned actor,bool &pending) override {if (!accept || actor!=targetActor) return false; pending=moving; return true;}
  unsigned lock=0;
  bool control(unsigned value,bool unlock,Sotc::ScriptActor &) override {if (!accept) return false; lock=unlock ? 0 : value ? lock|(1u<<value) : 15; return true;}
- bool face(unsigned,unsigned) override {return accept;}
+ bool face(unsigned a,unsigned d) override {targetActor=a;targetX=d;return accept;}
+ bool holdSequence(unsigned a,unsigned s,unsigned f,Sotc::ScriptActor &actor) override {targetActor=a;targetX=s;targetY=f;actor.step=f;actor.steps=0;return accept;}
+ bool restoreCollision(unsigned) override {return accept;}
  bool drawEnabled(unsigned,unsigned) override {return accept;}
  bool hide(unsigned) override {return accept;}
  bool reset(unsigned,Sotc::ScriptActor &actor) override {if (!accept) return false; actor={0,0,4,2,0,1}; return true;}
@@ -44,6 +46,7 @@ struct TestAnimation : Sotc::ScriptAnimation {
   actor.step=0; actor.steps=2; return true;
  }
 } animation;
+extern "C" int actorCoord(unsigned a,unsigned c){return c ? vm.actor(a)->y : vm.actor(a)->x;}
 extern "C" unsigned moveTarget(unsigned i) {return i==0 ? animation.targetActor : i==1 ? animation.targetX : animation.targetY;}
 extern "C" unsigned choices() {return vm.choiceCount();}
 extern "C" bool choose(unsigned i) {return vm.choose(i);}
@@ -69,6 +72,8 @@ extern "C" void seed(unsigned s) {vm.seedRandom(s);}
 extern "C" unsigned rng() {return vm.randomState();}
 extern "C" unsigned randomValue() {unsigned v; return vm.randomValue(v) ? v : 65536;}
 extern "C" void event(bool p) {vm.setEventPending(p);}
+extern "C" void talk(bool b){vm.setTalkPending(b);}
+extern "C" bool talkPending(){return vm.talkPending();}
 extern "C" bool pending() {return vm.eventPending();}
 extern "C" unsigned rect(unsigned j) {return vm.task(1)->rectangle[j];}
 extern "C" void tick() {vm.tick();}
@@ -145,10 +150,49 @@ extern "C" bool info(unsigned i,unsigned *out) {
     fixture([27, 2, 2], extra=[21, 4, 2])
     lib.tick()
     assert info(0)[6] == 0 and info(2)[3] == 4 and info(2)[5] == 1
-    fixture([2], flags=8)
+    fixture([2], flags=128)
     assert lib.visit(1) == 5 and info()[0] == 0
     assert lib.visit(17) == 7
     assert not lib.actor(11, 0, 0, 0, 1)
+
+    fixture([21,1,48,85,2]);lib.actor(0,102,199,0,1);assert lib.visit(1)==1
+    assert lib.actorCoord(1,0)==102 and lib.actorCoord(1,1)==200
+    fixture([21,1,45,3,7,2]);lib.animationHost(True,True);assert lib.visit(1)==1
+    assert [lib.moveTarget(i) for i in range(3)]==[1,3,7]
+    for data in ([45],[45,1],[63],[62],[97,1,40],[29,1,2]):
+        fixture(data);assert lib.visit(1)==7
+    # Symmetric task rendezvous must wait for the partner, then release both.
+    fixture([27,2,8,2,21,3,2],extra=[9,2,8,1,21,4,2])
+    assert lib.visit(1)==4 and info()[0]==4
+    assert lib.visit(1)==4
+    assert lib.visit(2)==2
+    assert lib.visit(2)==2
+    assert lib.visit(2)==4
+    assert lib.visit(1)==1 and info()[3]==3
+    assert lib.visit(2)==1 and info(2)[3]==4
+    fixture([8,17,2]);assert lib.visit(1)==7
+    fixture([29,2,255,2],extra=[21,4,2]);lib.tick();assert info(2)[3]==4
+    fixture([29,2]);assert lib.visit(1)==7
+    fixture([29,2,99,255,2],extra=[2]);assert lib.visit(1)==7 and info(2)[1]==32
+    fixture([31,234,3,13,255,255,57,234,3,13,15,0,31,33,0,11,234,3,2]);assert lib.visit(1)==1 and lib.randomValue()==15
+    for x,y,d in [(140,105,2),(60,105,4),(110,120,3),(110,80,1),(100,100,1)]:
+        fixture([21,1,20,35,71,81,1,2,3,4,2]);lib.actor(0,x,y,0,1);lib.actor(1,100,100,0,1);lib.animationHost(True,True)
+        assert lib.visit(1)==1 and lib.moveTarget(1)==d
+    for op in (63,66):
+        for pending,x,pc,remains in [(False,110,10,False),(True,200,10,True),(True,106,7,False)]:
+            fixture([op,55,154,63,199,5,0,2,0,0,2],rectangle=(1,2,3,4));lib.actor(0,x,154,0,1)
+            (lib.talk if op==63 else lib.event)(pending)
+            assert lib.visit(1)==1 and info()[0]==pc
+            assert bool((lib.talkPending if op==63 else lib.pending)())==remains
+            if not pending:assert [lib.rect(i) for i in range(4)]==[1,2,3,4]
+    fixture([61,3,0,2,21,4,2]);lib.event(True);assert lib.visit(1)==1 and info()[3]==4 and lib.pending()
+    fixture([61,3,0,2,21,4,2]);lib.talk(True);assert lib.visit(1)==1 and info()[3]==0 and not lib.talkPending()
+    for op in (62,65):
+        for x,pc in [(76,4),(75,7),(124,4),(125,7)]:
+            fixture([op,1,5,0,2,0,0,2]);lib.actor(0,x,100,0,1);lib.actor(1,100,100,0,1)
+            (lib.talk if op==62 else lib.event)(True)
+            assert lib.visit(1)==1 and info()[0]==pc
+    fixture([97,1,40,40,3,0,2,2]);lib.actor(0,100,100,0,1);lib.actor(1,100,100,0,1);assert lib.visit(1)==1 and info()[0]==6
 
     # Menu options carry independent relative destinations; waiting never
     # consumes either reply without an explicit valid selection.

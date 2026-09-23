@@ -378,7 +378,7 @@ Common::Error SotcEngine::run() {
     }
     memcpy(surface.getBasePtr(0,0),barPixels.data(),320*40);
     surface.fillRect(Common::Rect(0,225,320,240),0);
-    font->drawString(&surface,toolbar.hover()==6 ? "Menu / settings" : toolbar.hover()==3 ? "Look around here" : toolbar.hover()==1 ? "Take the object in view" : toolbar.hover()==4 ? "Inventory / notebook" : "This action is not available in the preview yet",0,227,320,7,Graphics::kTextAlignCenter);
+    font->drawString(&surface,toolbar.hover()==6 ? "Menu / settings" : toolbar.hover()==0 ? "Talk to someone nearby" : toolbar.hover()==3 ? "Look around here" : toolbar.hover()==1 ? "Take the object in view" : toolbar.hover()==4 ? "Inventory / notebook" : "This action is not available in the preview yet",0,227,320,7,Graphics::kTextAlignCenter);
    }
    if (showOpening || showStory || showCd) {
     OpeningScene &cinematic=showCd ? cdOpening : animatedOpening;
@@ -703,8 +703,8 @@ Common::Error SotcEngine::run() {
       mainMenu=true; menuSelection=0; _mixer->pauseAll(true);
       debug("[sotc-toolbar] main menu opened");
      }
-     else if(event.type==Common::EVENT_LBUTTONDOWN && x>=135 && x<180) {
-      heldDirection=0;toolbar.hide();if(startupScene.examine())resumeScene();
+     else if(event.type==Common::EVENT_LBUTTONDOWN && (x<45 || (x>=135 && x<180))) {
+      heldDirection=0;toolbar.hide();if(startupScene.examine(x<45))resumeScene();
      }
      else if(event.type==Common::EVENT_LBUTTONDOWN && x>=45 && x<90) {
       Common::String label;

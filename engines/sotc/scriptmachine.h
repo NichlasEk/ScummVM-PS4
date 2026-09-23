@@ -42,6 +42,8 @@ public:
  virtual bool actorLabel(unsigned,unsigned) { return false; }
  virtual bool terrain(Cc4View) { return false; }
  virtual bool exits(Cc4View) { return false; }
+ virtual bool holdSequence(unsigned,unsigned,unsigned,ScriptActor &) {return false;}
+ virtual bool restoreCollision(unsigned) {return false;}
  virtual bool bypass(unsigned) { return false; }
  virtual bool speechBank(unsigned) { return false; }
  virtual bool fade(bool,unsigned) { return false; }
@@ -74,6 +76,7 @@ class ScriptMachine {
  uint32_t _randomState;
  unsigned _randomValue;
  bool _randomKnown, _eventPending;
+ bool _talkPending=false;
  static int signed16(unsigned v) { v &= 65535; return v < 32768 ? int(v) : int(v) - 65536; }
  bool variable(unsigned id, unsigned &value) const {
   if (id==0) { value=_previousRoom; return true; }
@@ -133,6 +136,8 @@ public:
  }
  uint32_t randomState() const { return _randomState; }
  bool randomValue(unsigned &value) const { value = _randomValue; return _randomKnown; }
+ void setTalkPending(bool pending) {_talkPending=pending;}
+ bool talkPending() const {return _talkPending;}
  void setEventPending(bool pending) { _eventPending = pending; }
  bool eventPending() const { return _eventPending; }
  ScriptMachine(const ScriptMachine &) = delete;
@@ -151,7 +156,7 @@ public:
  }
  bool load(const StartState &state, Cc4View block) {
   _count = 0; _choiceCount=0; _resourceType=0;
-  _randomState = 1; _randomValue = 0; _randomKnown = false; _eventPending = false;
+  _randomState = 1; _randomValue = 0; _randomKnown = false; _eventPending = false; _talkPending=false;
   if (!state.valid() || block.size > sizeof(_block) || cc4Count(block, 2) != state.word(0x2e02) || !state.word(0x2e02)) return false;
   for (unsigned i = 0; i < block.size; ++i) _block[i] = block.data[i];
   block.data = _block;
@@ -202,7 +207,7 @@ public:
   for(unsigned i=0;i<count;++i) { Cc4View script; if(!cc4Entry(block,2,i,script) || !script.size) return false; }
   for(unsigned i=0;i<block.size;++i) _block[i]=block.data[i];
   block.data=_block; _count=count; _previousRoom=previousRoom; _previousBank=previousBank; _pendingRoom=255; _pendingBank=255;
-  _eventPending=false; _choiceCount=0;
+  _eventPending=false; _talkPending=false; _choiceCount=0;
   for(unsigned i=0;i<count;++i) { _tasks[i]=ScriptTask(); cc4Entry(block,2,i,_tasks[i].script); }
   _tasks[0].flags=0; _tasks[0].result=kReady;
   return true;
@@ -215,14 +220,14 @@ public:
   for(unsigned i=0;i<6;++i) {_choiceText[i]=other._choiceText[i];_choiceTarget[i]=other._choiceTarget[i];}
   _resourceType=other._resourceType;
   _previousRoom=other._previousRoom; _previousBank=other._previousBank; _pendingRoom=other._pendingRoom; _pendingBank=other._pendingBank;
-  _randomState=other._randomState; _randomValue=other._randomValue; _randomKnown=other._randomKnown; _eventPending=other._eventPending;
+  _randomState=other._randomState; _randomValue=other._randomValue; _randomKnown=other._randomKnown; _eventPending=other._eventPending; _talkPending=other._talkPending;
   for(unsigned i=0;i<256;++i) { _globals[i]=other._globals[i]; _locals[i]=other._locals[i]; }
   for(unsigned i=0;i<sizeof(_block);++i) _block[i]=other._block[i];
   for(unsigned i=0;i<_count;++i) { _tasks[i]=other._tasks[i]; _tasks[i].script.data=_block+(other._tasks[i].script.data-other._block); }
   for(unsigned i=0;i<11;++i) _actors[i]=other._actors[i];
  }
  // Loaded resource identities bind a save to this game's original snapshot/scripts.
- bool snapshot(Snapshot &s,unsigned version=5) {
+ bool snapshot(Snapshot &s,unsigned version=6) {
   s.identity(Snapshot::hash(_initial.range(0x2dee,0xf3e),0xf3e));
   s.identity(_count);
   for(unsigned i=0;i<256;++i) { s.value(_globals[i],65535); s.value(_locals[i],65535); }
@@ -252,13 +257,20 @@ public:
   if(version>=4) { s.value(_pendingBank,255);s.require(_pendingBank<=9 || _pendingBank==255); }
   else if(s.reading()) _pendingBank=255;
   if(version>=5)s.value(_resourceType,1);else if(s.reading())_resourceType=0;
+  if(version>=6)s.value(_talkPending);else if(s.reading())_talkPending=false;
   return s.ok();
  }
  TaskResult visit(unsigned index, unsigned budget = 128) {
   if (index >= _count) return kInvalidScript;
   ScriptTask &t = _tasks[index];
   if (t.flags & 0x20) return t.result = kDisabled;
-  if (t.flags & ~0x77U) return t.result = kUnknownWait;
+  if (t.flags & ~0x7fU) return t.result = kUnknownWait;
+  if(t.flags&8) {
+   if(t.timer>=_count)return t.result=kInvalidScript;
+   ScriptTask &partner=_tasks[t.timer];
+   if(!(partner.flags&8) || partner.timer!=index)return t.result=kRegionWait;
+   partner.flags&=~8U;partner.timer=0;t.flags&=~8U;t.timer=0;
+  }
   if(t.flags&0x10) {
    if(!_choiceCount || _choiceTask!=index) return t.result=kInvalidScript;
    return t.result=kAnimationWait;
@@ -295,17 +307,30 @@ public:
    uint32_t next = op.next;
    switch (op.opcode) {
    case 2: t.flags |= 0x20; ++t.executed; return t.result = kDisabled;
+   case 71: case 81: case 85: break; // Original handlers consume operands only.
+   case 8:
+    if(op.argument>=_count)return t.result=kInvalidScript;
+    t.timer=op.argument;t.flags|=8;t.pc=next;++t.executed;return t.result=kRegionWait;
+   case 20: {
+    if(t.actor>=11)return t.result=kInvalidScript;
+    int dx=signed16(_actors[0].x-_actors[t.actor].x),dy=signed16(_actors[0].y-_actors[t.actor].y);
+    int ax=dx<0 ? -dx : dx,ay=dy<0 ? -dy : dy;
+    unsigned d=ax/2>ay ? (dx>0 ? 2 : 4) : (dy>0 ? 3 : 1);
+    if(!_animation || !_animation->face(t.actor,d))return t.result=kAnimationUnavailable;
+    break;
+   }
    case 3: next = op.target; break;
    case 6:
     t.loop=(t.loop+1)&65535;
     if (t.loop<op.argument) next=op.target; else t.loop=0;
     break;
-   case 31: case 32: case 33: case 56: {
+   case 31: case 32: case 33: case 56: case 57: {
     unsigned value=op.value,current=0;
     if (op.valueIsVariable && !variable(op.value,value)) return t.result=kUnknownVariable;
     if (op.opcode!=31 && !variable(op.variable,current)) return t.result=kUnknownVariable;
     if (op.opcode==32) value=current+value;
     if (op.opcode==33) value=current-value;
+    if (op.opcode==57)value=current&value;
     if (op.opcode==56) value=current|value; // Original 0x92cd: set flag bits without replacing others.
     if (!writeVariable(op.variable,value)) return t.result=kUnknownVariable;
     break;
@@ -317,6 +342,9 @@ public:
     _choiceX=op.variable;_choiceY=op.comparison;_choiceSelection=0;
     for(unsigned j=0;j<_choiceCount;++j) {_choiceText[j]=op.choiceText[j];_choiceTarget[j]=op.choiceTarget[j];}
     t.flags|=0x10;t.pc=next;++t.executed;return t.result=kAnimationWait;
+   case 45:
+    if(t.actor>=11 || !_animation || !_animation->holdSequence(t.actor,op.argument,op.value,_actors[t.actor]))return t.result=kAnimationUnavailable;
+    break;
    case 42: case 43:
     if(!_animation || !_animation->clip(t.actor,op.opcode==42,op.argument,op.value))return t.result=kAnimationUnavailable;
     break;
@@ -396,6 +424,9 @@ public:
     if (op.opcode==18 && op.argument>4) return t.result=kInvalidScript;
     if (!_animation || !_animation->control(op.argument,op.opcode==19,_actors[0])) return t.result=kAnimationUnavailable;
     break;
+   case 48:
+    if(t.actor>=11)return t.result=kInvalidScript;
+    _actors[t.actor].x=_actors[0].x;_actors[t.actor].y=signed16(_actors[0].y+1);break;
    case 7:
     if (t.actor >= 11) return t.result = kInvalidScript;
     _actors[t.actor].x = op.argument; _actors[t.actor].y = op.value;
@@ -415,6 +446,13 @@ public:
    case 21:
     if (op.argument >= 11) return t.result = kInvalidScript;
     t.actor = op.argument; break;
+   case 29:
+    for(unsigned p=op.argument;p+1<op.next;++p)if(t.script.data[p]>=_count)return t.result=kInvalidScript;
+    for(unsigned p=op.argument;p+1<op.next;++p){unsigned id=t.script.data[p];ScriptTask &other=_tasks[id];other.pc=0;other.flags=0;other.timer=0;other.loop=0;other.actor=0;other.result=kReady;if(id==index)next=0;}
+    break;
+   case 35:
+    if(!_animation || !_animation->restoreCollision(t.actor))return t.result=kAnimationUnavailable;
+    break;
    case 27: case 28:
     if (op.argument >= _count) return t.result = kInvalidScript;
     if (op.opcode == 28) _tasks[op.argument].flags |= 0x20;
@@ -428,16 +466,25 @@ public:
     for (unsigned j = 0; j < 4; ++j) t.rectangle[j] = op.rectangle[j];
     if (!overlaps(t)) return t.result = kRegionWait;
     break;
-   case 64: case 66:
-    if (!_eventPending) next = op.target;
-    else {
-     if (op.opcode == 66) {
-      for (unsigned j = 0; j < 4; ++j) t.rectangle[j] = op.rectangle[j];
-     }
-     if (op.opcode == 66 && !overlaps(t)) next = op.target;
-     else _eventPending = false;
+   case 61: case 62: case 63: case 64: case 65: case 66: case 97: {
+    bool talking=op.opcode>=61 && op.opcode<=63;
+    bool &pending=talking ? _talkPending : _eventPending;
+    bool proximity=op.opcode==62 || op.opcode==65 || op.opcode==97;
+    if(proximity && (op.argument>=11 || (op.opcode==97 && t.actor>=11)))return t.result=kInvalidScript;
+    if(op.opcode!=97 && !pending){next=op.target;break;}
+    bool matched=true;
+    if(op.opcode==63 || op.opcode==66) {
+     for(unsigned j=0;j<4;++j)t.rectangle[j]=op.rectangle[j];
+     matched=overlaps(t);
+    } else if(proximity) {
+     const ScriptActor &a=_actors[op.opcode==97 ? t.actor : 0],&b=_actors[op.argument];
+     unsigned w=op.opcode==97 ? op.variable : 40,h=op.opcode==97 ? op.value : 40;
+     matched=signed16(a.x-a.halfWidth)<=signed16(b.x+w/2) && signed16(a.x+a.halfWidth)>=signed16(b.x-w/2) &&
+      signed16(a.y-a.footHeight)<=signed16(b.y+h/2) && a.y>=signed16(b.y-h/2);
     }
+    if(!matched)next=op.target;else if(op.opcode!=97)pending=false;
     break;
+   }
    case 41:
     if (t.actor >= 11) return t.result = kInvalidScript;
     if (t.actor && (!_animation || !_animation->hide(t.actor))) return t.result = kAnimationUnavailable;

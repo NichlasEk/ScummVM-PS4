@@ -67,6 +67,14 @@ extern "C" bool advance(unsigned control,unsigned mode,unsigned gate,unsigned co
         s,t=c.c_uint(step),c.c_uint(7)
         assert not lib.advance(control,mode,255,count,c.byref(s),c.byref(t))
         assert (s.value,t.value)==(step,7)
+    # Opcode 45 holds a selected step with a zero sequence-count field.
+    for step in (0,1,3):
+        raw=bytearray(52)
+        struct.pack_into('<H',raw,6,2);struct.pack_into('<H',raw,14,step);raw[20]=step
+        u.mem_write(actor,bytes(raw));call(0x7afc,[0x2e54,0x17c4])
+        s,t=c.c_uint(step),c.c_uint(0)
+        assert lib.advance(0,2,step,0,c.byref(s),c.byref(t))
+        assert (s.value,t.value)==struct.unpack('<HH',u.mem_read(actor+14,4))
     print('Original render/update pairs matched:',tested)
 
 # Original actor reset (90's non-player helper) and absolute position (7).

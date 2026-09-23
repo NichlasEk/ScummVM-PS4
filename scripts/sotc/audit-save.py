@@ -106,6 +106,11 @@ int main() {
  unsigned v2Hash=Snapshot::hash(v2.data()+16,v2.size()-16);
  for(unsigned i=0;i<4;++i)v2[12+i]=v2Hash>>(i*8);
  assert(readQuickSave(files,"v2",m,scene,saved,pixels,status));assert(state(m,scene)==before);
+ auto &v5=files.files["v5.quick0"];v5.resize(400000);Snapshot five(v5.data(),v5.size(),false);
+ five.identity(0x43544f53);five.identity(5);five.identity(1);five.identity(0);saved.sync(five);
+ assert(scene.roomSnapshot(five,m));assert(m.snapshot(five,5));assert(scene.snapshot(five));v5.resize(five.size());
+ unsigned v5Hash=Snapshot::hash(v5.data()+16,v5.size()-16);for(unsigned i=0;i<4;++i)v5[12+i]=v5Hash>>(i*8);
+ m.setTalkPending(true);assert(readQuickSave(files,"v5",m,scene,saved,pixels,status));assert(!m.talkPending() && state(m,scene)==before);
  // Execute the original initial conversation and transition, advancing dialogue
  // as a player would. No task PCs or global story flags are patched.
  assert(scene.load(pixels,status,m));
@@ -290,6 +295,27 @@ int main() {
  assert(scene.removeObstacle(510,255));assert(state(m,scene)==expected);
  assert(!scene.removeObstacle(21,180));assert(state(m,scene)==expected);
  assert(readQuickSave(files,"room13",m,scene,saved,pixels,status));
+ assert(scene.destination(156,156,m));
+ for(unsigned tick=0;tick<500;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ assert(scene.bank()==1 && scene.room()==3);
+ for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);
+ assert(writeQuickSave(files,"shop",m,scene,saved));
+ assert(scene.destination(170,145,m));
+ for(unsigned tick=0;tick<250;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ assert(scene.examine(true));assert(m.talkPending() && !m.eventPending());
+ before=state(m,scene);assert(writeQuickSave(files,"talk",m,scene,saved));m.setTalkPending(false);
+ assert(readQuickSave(files,"talk",m,scene,saved,pixels,status));assert(state(m,scene)==before && m.talkPending());
+ bool heardShop=false;
+ for(unsigned tick=0;tick<500;++tick){
+  assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}
+  if(!scene.dialogueText().empty()){heardShop=true;std::cout<<"Shop: "<<scene.dialogueText()<<std::endl;scene.finishDialogue();}
+  assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+ }
+ assert(heardShop && !m.talkPending());
+ assert(readQuickSave(files,"shop",m,scene,saved,pixels,status));assert(scene.destination(160,220,m));
+ for(unsigned tick=0;tick<500;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ assert(scene.bank()==0 && scene.room()==13);
+ std::cout<<"Shop entry, original talk and exit passed without stopped scripts\n";
  std::cout<<"Exit probe bank="<<scene.bank()<<" room="<<scene.room()<<" x="<<m.actor(0)->x<<" y="<<m.actor(0)->y<<"\n";
  std::cout<<"Object facing, pickup and inventory save restore passed\n";
  std::cout<<"Door probe ends in bank "<<scene.bank()<<" room "<<scene.room()<<"\n";

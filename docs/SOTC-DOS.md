@@ -1573,3 +1573,37 @@ repeated removal, absent matches, and rejected invalid coordinates.
 The audit also verifies that the actual room 13 obstacle at (146,166) has
 right=left after the original task completes. PS4 package and VM audit pass;
 the updated package is launched in shadPS4. No full-chapter validation claimed.
+
+### Broader opcode coverage and pharmacy exit (2026-09-23)
+
+Implemented 15 additional DOS instructions from SHADOW.EXE: 8, 20, 29, 35,
+45, 48, 57, 61, 62, 63, 65, 71, 81, 85 and 97. These cover paired task
+rendezvous, facing the player, sentinel-terminated task restarts, restoring
+collision, held animation frames, actor placement, bitwise AND, and separate
+talk/look event predicates with rectangle or actor-proximity checks. The three
+consume-only instructions follow the original handlers; unknown opcodes still
+stop explicitly. Original handler references include 0xa64a (63), 0xa4f1
+(proximity), 0xae97 (rendezvous) and 0x948d (held frame).
+
+The first toolbar icon now requests a conversation; the fourth remains Look.
+Pending talk and look requests are independent and cleared by walking. Save
+format 6 preserves pending talk and continues to read formats 1 through 5.
+
+Validation: the real-resource ASan/UBSan save audit enters the pharmacy,
+executes its original conversation and exits back to bank 0/room 13 without
+stopped scripts. It also tests a pending-talk save round trip and a version-5
+snapshot. VM tests cover the new branches, malformed operands, paired waits,
+restart validation and event consumption. Unicorn animation comparison checks
+held frames against the DOS updater. CC4 and PS4 package builds pass.
+Evidence is in ignored artifacts/sotc/batch-{audit,vm,animation,build}.log.
+The updated shadPS4 process was launched, but the desktop was locked, so this
+batch has no additional visual gameplay validation.
+
+Run `python3 scripts/sotc/audit-opcodes.py <SHADOW-directory>` for a static
+branch report. On this local DOS edition it traverses 1,835 scripts and decodes
+38,129 instruction locations, with no malformed reachable instructions.
+It encounters unsupported opcodes 17, 30, 38, 51, 52, 55, 67, 70, 72, 100 and
+101. Each unknown stops that path, so more unsupported instructions may lie
+behind those points. This is a blocker inventory, not full-game execution
+coverage. Remaining work includes inventory choices, palette operations and
+other original UI/scene behavior. No game resource bytes are distributed.

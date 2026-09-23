@@ -133,10 +133,10 @@ bool StartupScene::objectLabel(unsigned slot,Common::String &label) {
     _state.word(p),decoded,sizeof(decoded),size))return false;
  label.clear();for(unsigned i=1;i<size && decoded[i];++i)label+=char(decoded[i]);return true;
 }
-bool StartupScene::examine() {
+bool StartupScene::examine(bool talking) {
  if(!_ready || !_machine || _inputLocks || _scriptRoute || _talking || _machine->choiceCount())return false;
  cancelRoute();if(!walk(0,*_machine))return false;
- _machine->setEventPending(true);
+ _machine->setEventPending(!talking);_machine->setTalkPending(talking);
  return true;
 }
 bool StartupScene::takeObject(Common::String &label) {
@@ -491,7 +491,7 @@ bool StartupScene::control(unsigned value,bool unlock,ScriptActor &actor) {
  return true;
 }
 bool StartupScene::walk(unsigned direction, ScriptMachine &machine,bool scripted) {
- if(direction && !scripted)machine.setEventPending(false);
+ if(direction && !scripted){machine.setEventPending(false);machine.setTalkPending(false);}
  if (!_ready || direction>4) return false;
  const unsigned masks[5]={0,1,8,2,4};
  if (!scripted && direction && (_inputLocks & masks[direction])) return true;
@@ -568,7 +568,7 @@ unsigned StartupScene::exitDirection(int x,int y) const {
  return 0;
 }
 bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted) {
- if(!scripted)machine.setEventPending(false);
+ if(!scripted){machine.setEventPending(false);machine.setTalkPending(false);}
  cancelRoute();
  unsigned exit=!scripted ? exitDirection(x,y) : 0;
  if(exit==3)y=199;
@@ -793,6 +793,13 @@ bool StartupScene::sequence(unsigned id, unsigned sequenceIndex, ScriptActor &ac
  actor.step=0; actor.steps=count;
  debug("[sotc-sequence] actor=%u sequence=%u count=%u",id,sequenceIndex,count);
  return true;
+}
+bool StartupScene::holdSequence(unsigned id,unsigned index,unsigned step,ScriptActor &actor) {
+ if(!_ready || id>=11 || _slots[id]>=20)return false;
+ const Common::Array<byte> &data=_actorData[_slots[id]];SequenceStep frame;
+ if(!va2Step(data.data(),data.size(),index,step,frame))return false;
+ _animations[id].sequence=index;_animations[id].mode=2;_animations[id].gate=step;
+ actor.step=step;actor.steps=0;return true;
 }
 unsigned StartupScene::advance(ScriptMachine &machine) {
  if (!_ready) return 0;

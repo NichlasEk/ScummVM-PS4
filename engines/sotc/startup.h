@@ -40,7 +40,7 @@ public:
  bool background(unsigned index) override;
  int lookedObject(int &x,int &y) const;
  bool takeObject(Common::String &label);
- bool examine();
+ bool examine(bool talking=false);
  bool inventoryLabel(unsigned id,Common::String &label);
  bool objectLabel(unsigned slot,Common::String &label);
  unsigned exitDirection(int x,int y) const;
@@ -58,6 +58,7 @@ public:
  }
  bool terrain(Cc4View data) override;
  bool exits(Cc4View data) override;
+ bool restoreCollision(unsigned actor) override {if(actor>=11)return false;_collisionBypass[actor]=false;return true;}
  bool bypass(unsigned actor) override { if(actor>=11) return false; _collisionBypass[actor]=true; return true; }
  bool speechBank(unsigned bank) override { return _state.setWord(0x2e16,bank); }
  bool fade(bool in,unsigned speed) override { _fadeTarget=in ? 255 : 0; _fadeStep=speed ? speed : 255; return true; }
@@ -90,6 +91,7 @@ public:
  bool reset(unsigned actor, ScriptActor &state) override;
  bool typedResource(unsigned actor,unsigned index,unsigned type) override;
  bool resource(unsigned actor, unsigned index) override;
+ bool holdSequence(unsigned actor,unsigned index,unsigned step,ScriptActor &state) override;
  bool sequence(unsigned actor, unsigned sequence, ScriptActor &state) override;
 };
 Common::String stepStartupScripts(ScriptMachine &machine, unsigned tick);

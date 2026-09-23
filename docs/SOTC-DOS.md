@@ -762,3 +762,36 @@ zero unsupported animation formats. Screenshot/trace are local ignored
 
 Next: opcode 18 and the newly reached scene sequence; separately complete
 collision and original movement transitions before calling this gameplay.
+
+### Footprint collision detection
+
+Manual walking now checks the candidate footprint against the restored terrain
+height profile (DS339e, 320 columns), packed room obstacles (DS3544, count3542),
+and live actor footprints. The portable `collision.h` follows original 0xcf9d,
+0xd116 and 0xd053: unsigned terrain heights, direction-dependent edge checks,
+inclusive rectangle intersection, doubled obstacle X coordinates, disabled
+zero-width obstacles, ascending actor order, self/hidden actors excluded, and
+actor collision-bypass byte +23 == 8 respected. Reset clears that bypass byte.
+Terrain, obstacle and actor hits retain original result codes 100/200, 300|id,
+and 600|id. Out-of-array terrain lookups are rejected defensively.
+
+Collision response for the manual diagnostic stops walking and keeps the last
+valid position. Original exit selection (0xd24a), collision response/slide/detour
+(0xd3c5), destination routing and terrain changes on room transitions remain
+pending. Thus this is a collision-aware walk test, not complete original
+navigation. The scene's existing data is read from the user's INIT.SAV; no
+terrain, obstacle or graphic assets are embedded in the engine.
+
+Validation: 3600 predicate comparisons against the original executable via
+Unicorn pass (terrain, obstacles, actors), including all three terrain results,
+all eight synthetic obstacle results and all eleven actor IDs plus clear.
+The 540 walk arithmetic cases and VM regression audit also pass.
+Actual PS4 package in shadPS4: upward walking rejects (220,117), retaining
+(220,121), with terrain result 100. Rightward walking at Y177 rejects (236,177),
+retaining (234,177), with obstacle result 301. Trace:
+`artifacts/sotc/collision-live.log` (ignored). No physical PS4 test performed.
+
+```sh
+.tools/sotc-audit-env/bin/python scripts/sotc/audit-collision.py \
+  build/sotc-DOS/disc-files/SHADOW.EXE
+```

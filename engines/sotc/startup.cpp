@@ -4,6 +4,7 @@
 #include "sotc/animation.h"
 #include "sotc/draworder.h"
 #include "sotc/walk.h"
+#include "sotc/collision.h"
 #include "sotc/sequence.h"
 #include "sotc/poserenderer.h"
 #include "sotc/scriptmachine.h"
@@ -66,6 +67,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  _background = pixels;
  for (unsigned i=0;i<11;++i) {
   unsigned a=0x2e54+i*52;
+  _collisionBypass[i]=state.byte(a+23)==8;
   _inDrawList[i]=state.byte(a+50)!=0;
   _slots[i]=state.byte(a+11);
   _clips[i][0]=state.word(a+44); _clips[i][1]=state.byte(a+48);
@@ -173,9 +175,28 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
  walkDelta(_walkDirection,speed,_state.signedWord(0x2e24),_state.signedWord(0x2e26),
            _state.word(0x2df8)==_state.word(0x2dfa),dx,dy);
  int x=walkWord(actor.x+dx),y=walkWord(actor.y+dy);
- // Diagnostic screen boundary only. Original terrain/actor collision and
- // destination routing are not implemented; never leave this loaded scene.
- if (x<0 || x>319 || y<0 || y>199) return walk(0,machine);
+ unsigned char terrain[320],obstacles[255*4];
+ for (unsigned i=0;i<320;++i) terrain[i]=_state.byte(0x339e + i);
+ unsigned count=_state.byte(0x3542);
+ if (!_state.range(0x3544,count*4)) return false;
+ for (unsigned i=0;i<count*4;++i) obstacles[i]=_state.byte(0x3544+i);
+ Footprint candidate=footprint(x,y,actor.halfWidth,actor.footHeight);
+ unsigned collision=terrainCollision(terrain,candidate,_walkDirection);
+ if (!collision) collision=obstacleCollision(obstacles,count,candidate);
+ if (!collision) {
+  CollisionActor actors[11];
+  for (unsigned i=0;i<11;++i) {
+   const ScriptActor &a=*machine.actor(i);
+   actors[i]={footprint(a.x,a.y,a.halfWidth,a.footHeight),_visible[i],_collisionBypass[i]};
+  }
+  collision=actorCollision(actors,0,candidate);
+ }
+ // Boundary exits, sliding and automatic detours need the destination system.
+ // For manual walking reject the candidate and retain the last valid position.
+ if (collision || x<0 || x>319 || y<0 || y>199) {
+  debug("[sotc-collision] blocked=%03x candidate=%d,%d retained=%d,%d",collision,x,y,actor.x,actor.y);
+  return walk(0,machine);
+ }
  actor.x=x; actor.y=y; machine.setActor(0,actor);
  debug("[sotc-walk] x=%d y=%d step=%u",x,y,actor.step);
  return true;
@@ -193,7 +214,7 @@ bool StartupScene::reset(unsigned id, ScriptActor &actor) {
  // then installs resource slot 255. The following 91/87 bind and start it.
  unsigned count=va2SequenceLength(_actorData[0].data(),_actorData[0].size(),0);
  actor={0,0,4,2,0,count};
- _animations[id]={0,0,1,255}; _slots[id]=255; _visible[id]=true; _inDrawList[id]=true;
+ _animations[id]={0,0,1,255}; _slots[id]=255; _collisionBypass[id]=false; _visible[id]=true; _inDrawList[id]=true;
  _clips[id][0]=_clips[id][1]=0; _clips[id][2]=319; _clips[id][3]=199;
  return true;
 }

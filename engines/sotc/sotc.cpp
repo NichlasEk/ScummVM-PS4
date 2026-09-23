@@ -172,7 +172,7 @@ Common::Error SotcEngine::run() {
    }
    if (showStartup) {
     memcpy(surface.getBasePtr(0, 0), startupPixels.data(), 64000);
-    title = runScene ? "Walk test - no collisions" : "Scene paused - not gameplay"; actorTitle = scriptStatus;
+    title = runScene ? "Walk test - collision stops" : "Scene paused - not gameplay"; actorTitle = scriptStatus;
    }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
    font->drawString(&surface, title, 2, 201, 316, 7);

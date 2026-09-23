@@ -21,7 +21,12 @@ with tempfile.TemporaryDirectory(prefix='sotc-va2-') as temp:
     temp = Path(temp)
     (temp / 'test.cpp').write_text('''#include "engines/sotc/explode.h"
 #include "engines/sotc/va2.h"
+#include "engines/sotc/sequence.h"
 extern "C" bool unpack(const uint8_t*s,unsigned n,uint8_t*d,unsigned m,unsigned f) {return Sotc::explode(s,n,d,m,f);}
+extern "C" unsigned sequences(const uint8_t*p,unsigned n) {return Sotc::va2Records(p,n,2);}
+extern "C" unsigned steps(const uint8_t*p,unsigned n,unsigned s) {return Sotc::va2SequenceLength(p,n,s);}
+extern "C" int pose(const uint8_t*p,unsigned n,unsigned s,unsigned i) {Sotc::SequenceStep r;return Sotc::va2Step(p,n,s,i,r) ? int(r.pose) : -1;}
+extern "C" int mirror(const uint8_t*p,unsigned n,unsigned pose) {Sotc::PoseLayer r;return Sotc::va2Layer(p,n,pose,0,r) ? int(r.mirror) : -1;}
 extern "C" unsigned count(const uint8_t*p,unsigned n) {return Sotc::va2FrameCount(p,n);}
 extern "C" bool frame(const uint8_t*p,unsigned n,unsigned i,uint8_t*d,uint8_t*m,unsigned cap,unsigned*w,unsigned*h) {return Sotc::va2Frame(p,n,i,d,m,cap,*w,*h);}
 ''')
@@ -67,7 +72,24 @@ extern "C" bool frame(const uint8_t*p,unsigned n,unsigned i,uint8_t*d,uint8_t*m,
                 assert entry['method'] == 0, entry
             count = lib.count(data, len(data))
             supported = sum(bool(decode(data, i)) for i in range(count))
-            results.append(dict(archive=path.name, name=entry['name'], frames=count,
+            sequences = lib.sequences(data, len(data))
+            sequence_steps = 0
+            unsupported_steps = 0
+            for sequence in range(sequences):
+                steps = lib.steps(data, len(data), sequence)
+                for step in range(steps):
+                    unsupported_steps += lib.pose(data, len(data), sequence, step) < 0
+                assert lib.pose(data, len(data), sequence, steps) == -1
+                sequence_steps += steps
+            if path.name == 'A00.PAK' and entry['name'] == 'STUBBS0.VA2':
+                assert sequences == 11
+                assert [lib.pose(data, len(data), 4, i) for i in range(12)] == list(range(4, 16))
+                assert [lib.pose(data, len(data), 5, i) for i in range(12)] == list(range(16, 28))
+                assert lib.mirror(data, len(data), 0) == 0
+                assert lib.mirror(data, len(data), 10) == 1
+                for stop in (0, 15, len(data) // 2, len(data) - 1):
+                    assert lib.pose(data, stop, 4, 0) == -1
+            results.append(dict(sequences=sequences, sequence_steps=sequence_steps, unsupported_steps=unsupported_steps,archive=path.name, name=entry['name'], frames=count,
                                 decoded=supported, unsupported=count-supported,
                                 directory_supported=bool(count)))
 if not results:

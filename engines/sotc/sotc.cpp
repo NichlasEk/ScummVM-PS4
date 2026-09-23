@@ -5,6 +5,7 @@
 #include "graphics/font.h"
 #include "sotc/pak.h"
 #include "sotc/va2.h"
+#include "sotc/sequence.h"
 #include "common/events.h"
 #include "common/textconsole.h"
 #include "graphics/paletteman.h"
@@ -28,6 +29,7 @@ Common::Error SotcEngine::run() {
  actorPixels.resize(640 * 256); actorMask.resize(640 * 256);
  bool showActor = true, loadActor = true; int actor = 0; unsigned actorFrame = 0;
  uint32 nextFrame = 0;
+ unsigned sequence = 0;
 
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
@@ -46,12 +48,22 @@ Common::Error SotcEngine::run() {
   if (loadActor) {
    actorData.clear(); actorFrame = 0;
    if (!actorEntries.empty()) actors.load(actorEntries[actor], actorData);
+   sequence = 0;
+   if (!actorData.empty()) {
+    unsigned sequences = va2Records(actorData.data(), actorData.size(), 2);
+    for (unsigned i = 0; i < sequences; ++i)
+     if (va2SequenceLength(actorData.data(), actorData.size(), i) > 1) { sequence = i; break; }
+   }
+   debug("[sotc-sequence] selected=%u", sequence);
    nextFrame = _system->getMillis() + 150; loadActor = false; redraw = true;
    if (!actorEntries.empty()) debug("[sotc-va2] %s", actors.entries[actorEntries[actor]].name.c_str());
   }
   unsigned actorFrames = actorData.empty() ? 0 : va2FrameCount(actorData.data(), actorData.size());
-  if (showActor && actorFrames && int32(_system->getMillis() - nextFrame) >= 0) {
-   actorFrame = (actorFrame + 1) % actorFrames; nextFrame = _system->getMillis() + 150; redraw = true;
+  unsigned sequences = actorData.empty() ? 0 : va2Records(actorData.data(), actorData.size(), 2);
+  unsigned steps = actorData.empty() ? 0 : va2SequenceLength(actorData.data(), actorData.size(), sequence);
+  unsigned cycle = steps ? steps : actorFrames;
+  if (showActor && cycle && int32(_system->getMillis() - nextFrame) >= 0) {
+   actorFrame = (actorFrame + 1) % cycle; nextFrame = _system->getMillis() + 150; redraw = true;
   }
   if (redraw) {
    surface.fillRect(Common::Rect(320,240), 0);
@@ -65,24 +77,35 @@ Common::Error SotcEngine::run() {
    }
    Common::String actorTitle = "Triangle: show frames";
    if (showActor && !actorEntries.empty()) {
-    unsigned width, height;
-    bool decoded = !actorData.empty() && va2Frame(actorData.data(), actorData.size(), actorFrame,
-      actorPixels.data(), actorMask.data(), actorPixels.size(), width, height);
-    actorTitle = Common::String::format("%s %u/%u %s", actors.entries[actorEntries[actor]].name.c_str(),
-      actorFrames ? actorFrame + 1 : 0, actorFrames, decoded ? "" : "unsupported");
-    if (decoded) {
-     int left = (320 - int(width)) / 2, top = 170 - int(height);
+    bool decoded = true;
+    SequenceStep step;
+    const uint8_t *poseRecord = nullptr; unsigned layers = 1;
+    if (steps) decoded = va2Step(actorData.data(), actorData.size(), sequence, actorFrame, step)
+      && va2Record(actorData.data(), actorData.size(), 0, step.pose, poseRecord, layers);
+    // Validate every layer before drawing, so unsupported poses never appear partial.
+    for (unsigned pass = 0; decoded && pass < 2; ++pass) for (unsigned i = 0; decoded && i < layers; ++i) {
+     PoseLayer layer; layer.frame = actorFrame; layer.mirror = false; layer.x = 0; layer.y = 0;
+     if (steps && !va2Layer(actorData.data(), actorData.size(), step.pose, i, layer)) { decoded = false; break; }
+     unsigned width, height;
+     if (!va2Frame(actorData.data(), actorData.size(), layer.frame, actorPixels.data(), actorMask.data(), actorPixels.size(), width, height)) { decoded = false; break; }
+     if (!pass) continue;
+     // Preview anchor is fixed; bottom-relative placement is inferred from poses.
+     int left = steps ? 160 + layer.x : (320 - int(width)) / 2;
+     int top = 170 + layer.y - int(height);
      for (unsigned y = 0; y < height; ++y) for (unsigned x = 0; x < width; ++x) {
       int dx = left + x, dy = top + y;
-      if (dx >= 0 && dx < 320 && dy >= 0 && dy < 200 && actorMask[y * width + x])
-       *static_cast<byte *>(surface.getBasePtr(dx, dy)) = actorPixels[y * width + x];
+      unsigned sx = layer.mirror ? width - 1 - x : x;
+      if (dx >= 0 && dx < 320 && dy >= 0 && dy < 200 && actorMask[y * width + sx])
+       *static_cast<byte *>(surface.getBasePtr(dx, dy)) = actorPixels[y * width + sx];
      }
     }
+    actorTitle = Common::String::format("%s %s%u %u/%u%s", actors.entries[actorEntries[actor]].name.c_str(),
+      steps ? "S" : "raw", steps ? sequence : 0, cycle ? actorFrame + 1 : 0, cycle, decoded ? "" : " unsupported");
    }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, "L1/R1: figure  Triangle: toggle  []: pal", 2, 227, 316, 7);
+   font->drawString(&surface, "L1/R1: figure  L3/R3: seq  Triangle: on", 2, 227, 316, 7);
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
    if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
@@ -101,6 +124,8 @@ Common::Error SotcEngine::run() {
    case Common::KEYCODE_a: showActor = !showActor; redraw = true; break;
    case Common::KEYCODE_F5: if (!actorEntries.empty()) actor = (actor + actorEntries.size() - 1) % actorEntries.size(); loadActor = true; break;
    case Common::KEYCODE_F7: if (!actorEntries.empty()) actor = (actor + 1) % actorEntries.size(); loadActor = true; break;
+   case Common::KEYCODE_F9: if (sequences) sequence = (sequence + sequences - 1) % sequences; actorFrame = 0; redraw = true; debug("[sotc-sequence] selected=%u", sequence); break;
+   case Common::KEYCODE_F10: if (sequences) sequence = (sequence + 1) % sequences; actorFrame = 0; redraw = true; debug("[sotc-sequence] selected=%u", sequence); break;
    case Common::KEYCODE_ESCAPE: quitGame(); break;
    default: break;
    }

@@ -137,3 +137,38 @@ skips, opaque colour zero, empty frames, truncated input and oversized runs.
 Validation: rebuilt the PS4 package, booted the overlay in shadPS4, confirmed
 figure selection in the log, and received user confirmation of the rendering.
 No original resources are included in the source or package.
+
+## Sequence and pose preview
+
+The viewer now follows section 3 sequence records into section 1 poses, and
+composites supported pose layers instead of cycling through unrelated frames.
+L3/X selects the previous sequence and R3/M the next. A resource's first
+multi-step sequence is selected automatically. Resources with empty sequence
+records retain raw-frame browsing.
+
+Observed sequence records have a big-endian 16-bit entry count followed by
+8-byte steps: little-endian pose reference, a candidate duration field, and two
+signed candidate movement fields. Pose records use an analogous count and
+8-byte layer descriptors. The supported layer mode is 01 01, followed by a
+frame reference (high bit treated as horizontal mirroring) and signed X/Y
+placement. Other layer modes and additional record payloads are rejected as
+unsupported, without partially drawing a pose. Empty poses are valid.
+
+Placement is bottom-relative around a fixed preview anchor, inferred from the
+observed offsets. This still needs original-runtime comparison. The viewer
+**still uses 150 ms per step**: the candidate duration unit, zero-duration
+semantics, movement, script-selected sequences and loop rules are not known
+well enough to execute. Preview sequences loop for inspection only.
+
+The extended `audit-va2.py` checks sequence boundaries, pose references and
+out-of-range steps, plus known Stubbs walking sequences and mirrored poses.
+Across 615 resources it reads 3229 sequence records and 23096 steps. 16 steps
+reference poses outside the available table and remain unsupported; these may
+need special semantics or additional resource context. Frame decoding coverage
+remains 5422/6220. Decoding a sequence record does not imply every pose/frame
+it references is supported.
+
+PS4 validation: rebuilt SCVM00004, booted in shadPS4, captured Stubbs walking
+sequence 5, and verified the R3/M input changes sequence 4 to 5. Screenshot:
+`artifacts/sotc/ps4-sequence.png`; log: `artifacts/sotc/sequence-live.log`.
+The preview is not yet an interactive game or an original-speed animation VM.

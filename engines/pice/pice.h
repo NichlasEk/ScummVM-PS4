@@ -24,6 +24,11 @@ private:
  Common::ScopedPtr<Graphics::Font> _japaneseFont;
  const Graphics::Font &uiFont() const { if(_saturn && _japaneseFont) return *_japaneseFont; return _originalFont; }
  bool loadSaturnResourceNames();
+ bool loadSaturnMenuButton();
+ void drawSaturnMenuButton(Graphics::Surface *screen,const byte *palette);
+ Common::Array<byte> _saturnMenuPixels, _saturnMenuColors;
+ bool saturnMenuVisible() const { return _saturn && _scenePreview && !_gameOver && !_saturnMenuPixels.empty(); }
+ Common::Rect saturnMenuBounds() const { return Common::Rect(552,-36,632,-4); }
  bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) const;
  int chapterRoomBase(int chapter) const;
  int chapterRoomCount(int chapter) const;

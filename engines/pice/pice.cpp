@@ -2024,6 +2024,7 @@ Common::Error PiceEngine::run() {
  _saturn=!Common::File::exists(Common::Path("KSVGA.KRO")) && Common::File::exists(Common::Path("KVGA.KRO"));
  if(_saturn && ConfMan.getBool("pice_saturn_media_preview")) return runSaturnPreview();
  if(!_graphics.open(Common::Path(_saturn ? "KVGA.KRO" : "KSVGA.KRO"))) return Common::Error(Common::kReadingFailed,"Cannot read PICE graphics archive");
+ if(_saturn && !loadSaturnMenuButton()) warning("[pice] Saturn MENU artwork unavailable in OUT.BIN");
  if(_saturn && !loadSaturnResourceNames()) return Common::Error(Common::kReadingFailed,"Cannot read Saturn resource directory");
  _mac=_graphics.isMac();
  _windows=!_mac && Common::File::exists(Common::Path("KSOUNDW.KRO"));
@@ -2209,6 +2210,10 @@ Common::Error PiceEngine::run() {
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
    event.mouse.y-=40;
+   if(saturnMenuVisible() && event.type==Common::EVENT_LBUTTONDOWN && saturnMenuBounds().contains(event.mouse)) {
+    debug("[pice] Saturn MENU button clicked");
+    done=!mainMenu(true); continue;
+   }
    if(event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN || event.type==Common::EVENT_KEYDOWN) _advanceRequested=true;
    int change = 0;
    if(_gameOver) {
@@ -2275,9 +2280,14 @@ Common::Error PiceEngine::run() {
   }
   tickRoom();
 #ifdef PICE_TESTBENCH
-  if(!testPauseDone && ConfMan.getBool("pice_test_pause_menu") && snapshotReady()) {
-   testPauseDone=true; Common::Event pauseEvent; pauseEvent.type=Common::EVENT_KEYDOWN;
-   pauseEvent.kbd.keycode=Common::KEYCODE_ESCAPE; _eventMan->pushEvent(pauseEvent);
+  if(!testPauseDone && snapshotReady() && (ConfMan.getBool("pice_test_pause_menu") ||
+     (saturnMenuVisible() && ConfMan.getBool("pice_test_saturn_menu_button")))) {
+   testPauseDone=true; Common::Event pauseEvent;
+   if(ConfMan.getBool("pice_test_saturn_menu_button") && saturnMenuVisible()) {
+    pauseEvent.type=Common::EVENT_LBUTTONDOWN; Common::Rect box=saturnMenuBounds();
+    pauseEvent.mouse=Common::Point((box.left+box.right)/2,(box.top+box.bottom)/2+40);
+   } else { pauseEvent.type=Common::EVENT_KEYDOWN; pauseEvent.kbd.keycode=Common::KEYCODE_ESCAPE; }
+   _eventMan->pushEvent(pauseEvent);
   }
 #endif
   advanceAnimation();

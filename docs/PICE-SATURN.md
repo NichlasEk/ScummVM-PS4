@@ -203,3 +203,39 @@ Japanese font sourcing, verified platform audio routing including XA,
 comparison of scene composition against original Saturn output, and testing
 later chapters and a complete playthrough. PS1 compatibility cannot be inferred
 from visual similarity; its actual resources still need investigation.
+
+## Saturn MENU shortcut
+
+The runtime now reads OUT.BIN record 62 (40x16, packed 4bpp) and its blue
+palette bank 6, selected against the supplied console screenshot. It displays
+the original bitmap at 2x scale in the upper-right safe margin, clear of the
+inventory. Colors are mapped to the nearest current scene-palette colors;
+this does not overwrite palette entries used by the room. Exact console color
+reproduction remains part of the native menu work.
+
+Left click opens the resumable engine menu before dialogue, inventory or room
+click handling. The button is hidden on the game-over screen and is not drawn
+into CPK movies. Missing/malformed OUT.BIN leaves the existing keyboard menu
+available. The loader checks directory ordering, bounds, palette count and
+texture geometry before decoding. No extracted bitmap or palette is embedded.
+
+Actual eboot verification: `saturn-menu-button-test.log` shows the original
+texture loaded, the real button hit path opening the resumable menu, and return
+to the restored bridge. `saturn-menu-button.png` captures the displayed button.
+The automatic click uses test-only `pice_test_saturn_menu_button=true`; remove
+it for interactive play.
+
+For the local shadPS4 profile, ordinary desktop mouse control needs explicit
+mouse-to-left-stick mapping in `input_config/default.ini` (unified inputs):
+
+```ini
+mouse_to_joystick = left
+mouse_movement_params = 0.15, 1.0, 0.05
+cross = leftbutton
+circle = rightbutton
+```
+
+F8 reloads input configuration; F7 toggles mouse capture/release. WASD and N/B
+remain alternatives. This is emulator input emulation, not direct native mouse
+support on the physical PS4. No automatic test keys are left in the interactive
+Saturn profile.

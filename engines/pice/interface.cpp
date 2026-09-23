@@ -19,6 +19,7 @@ void PiceEngine::presentFrame() {
  for(int y=399;y>=0;--y) memcpy(screen->getBasePtr(0,y+40),screen->getBasePtr(0,y),640);
  screen->fillRect(Common::Rect(0,0,640,40),black);
  screen->fillRect(Common::Rect(0,440,640,480),black);
+ drawSaturnMenuButton(screen,palette);
  _system->unlockScreen(); _system->updateScreen();
 }
 Common::Rect PiceEngine::dialogueMenuBounds() const {

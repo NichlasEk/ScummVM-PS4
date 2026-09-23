@@ -208,8 +208,8 @@ see [PICE-PS1.md](PICE-PS1.md) for its STR movies, saves and test coverage.
 
 The runtime now reads OUT.BIN record 62 (40x16, packed 4bpp) and its blue
 palette bank 6, selected against the supplied console screenshot. It displays
-the original bitmap at 2x scale in the upper-right safe margin, clear of the
-inventory. Colors are mapped to the nearest current scene-palette colors;
+the original bitmap at 2x scale, right-aligned and flush against the game
+background's top edge. Placement follows the centered background height. Colors are mapped to the nearest current scene-palette colors;
 this does not overwrite palette entries used by the room. Exact console color
 reproduction remains part of the native menu work.
 

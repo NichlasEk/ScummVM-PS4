@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "pice/pice.h"
 #include "common/events.h"
+#include "common/endian.h"
 #include "common/system.h"
 #include "graphics/cursorman.h"
 #include "graphics/surface.h"
@@ -8,6 +9,12 @@
 namespace Pice {
 Common::Point PiceEngine::pointerPosition() const {
  Common::Point point=_eventMan->getMousePos(); point.y-=40; return point;
+}
+Common::Rect PiceEngine::consoleMenuBounds() const {
+ // Match renderRoom's centered native background, including 158-line scenes.
+ int height=_scenePixels.size()>=4 ? MIN<int>(160,READ_LE_UINT16(_scenePixels.data()+2)) : 160;
+ int top=200-height;
+ return Common::Rect(560,top-32,640,top);
 }
 void PiceEngine::presentFrame() {
  // Keep the tested 640x400 world coordinates inside a 640x480 safe viewport.

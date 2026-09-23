@@ -122,7 +122,8 @@ button occupies `(120,72)` through `(159,87)`, a 40x16 rectangle. Palette bank
 reference. The decoder reads low nibbles first and validates TIM flags, CLUT
 size, image bounds and exact file length before extracting the rectangle.
 
-The bitmap uses the same upper-right placement, hand hover and click handler
+The bitmap sits flush against the game background's top-right edge (including
+158-line backgrounds), using the same placement, hand hover and click handler
 as the Saturn shortcut. Colors map to the nearest current scene palette without
 recoloring room pixels. Only geometry and decoding logic are in source; no
 bitmap or palette bytes are embedded. Missing/malformed assets retain keyboard

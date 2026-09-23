@@ -13,6 +13,8 @@
 #include "sotc/opening.h"
 #include "sotc/openingscene.h"
 #include "sotc/toolbar.h"
+#include "sotc/save.h"
+#include "common/config-manager.h"
 #include "common/file.h"
 #include "common/events.h"
 #include "common/textconsole.h"
@@ -85,6 +87,9 @@ Common::Error SotcEngine::run() {
  ScriptMachine startupMachine; startupMachine.setSound(&sound); unsigned scriptTicks = 0; Common::String scriptStatus;
  StartupScene startupScene; startupMachine.setAnimation(&startupScene);
  bool startupAvailable = false, showStartup = false;
+ Common::SaveFileManager &savefiles=*_system->getSavefileManager();
+ const Common::String savePrefix=ConfMan.getActiveDomainName()+"-sotc";
+ bool savedGame=hasQuickSave(savefiles,savePrefix);
  bool mainMenu = true; int menuSelection = 1;
  Common::Array<byte> menuBackground;
  Pak intro;
@@ -120,6 +125,7 @@ Common::Error SotcEngine::run() {
    return Common::Error(Common::kReadingFailed,"Cannot initialize CD opening");
   showCd=true; debug("[sotc-cd] starting before R05 logos");
  }
+ if(savedGame) { showCd=false; showOpening=false; sound.stopSpeech(); sound.effect(255); sound.music(255); menuSelection=2; }
  uint32 openingLast=_system->getMillis(); unsigned openingMusicClock=0;
  if (showOpening) debug("[sotc-opening] logos from R05/D05 followed by supported animated prefix");
  else warning("[sotc-opening] Logo prefix unavailable; opening menu directly");
@@ -148,10 +154,38 @@ Common::Error SotcEngine::run() {
  auto resumeScene = [&]() {
   if (!sceneFault) { runScene=true; nextSceneFrame=_system->getMillis()+100; }
  };
+ auto quickSave=[&]() {
+  if(!startupAvailable || showStory || showOpening || showCd) {
+   _system->displayMessageOnOSD(Common::U32String("Saving is available during gameplay")); return;
+  }
+  SaveState state; state.ticks=scriptTicks; state.page=dialoguePage; state.music=sound.musicTrack(); state.running=runScene; state.fault=sceneFault;
+  bool ok=writeQuickSave(savefiles,savePrefix,startupMachine,startupScene,state);
+  if(ok) savedGame=true;
+  debug("[sotc-save] save ok=%u tick=%u actor=%d,%d",unsigned(ok),scriptTicks,startupMachine.actor(0)->x,startupMachine.actor(0)->y);
+  _system->displayMessageOnOSD(Common::U32String(ok ? "Quick save complete (Q / L1)" : "Quick save failed"));
+ };
+ auto quickLoad=[&]() {
+  SaveState state;
+  if(!readQuickSave(savefiles,savePrefix,startupMachine,startupScene,state,startupPixels,startupStatus)) {
+   _system->displayMessageOnOSD(Common::U32String("No compatible quick save could be loaded")); return;
+  }
+  sound.stopSpeech(); sound.effect(255); sound.music(255);
+  sound.music(state.music); startupScene.resumeSpeech();
+  scriptTicks=state.ticks; runScene=state.running; sceneFault=state.fault; heldDirection=0;
+  startupAvailable=showStartup=true; mainMenu=showStory=showOpening=showCd=false; pal=0; toolbar.hide();
+  shownDialogue=startupScene.dialogueText(); dialogueLines.clear();
+  FontMan.getFontByUsage(Graphics::FontManager::kGUIFont)->wordWrapText(shownDialogue,306,dialogueLines);
+  dialoguePage=state.page<dialogueLines.size() ? state.page : 0;
+  scriptStatus=Common::String::format("Restored at script tick %u",scriptTicks);
+  _mixer->pauseAll(false); nextSceneFrame=_system->getMillis()+100; redraw=true;
+  debug("[sotc-save] load ok=1 tick=%u actor=%d,%d",scriptTicks,startupMachine.actor(0)->x,startupMachine.actor(0)->y);
+  _system->displayMessageOnOSD(Common::U32String("Quick save loaded (U / R1)"));
+ };
  auto finishStory=[&]() {
   showStory=false; sound.stopSpeech(); sound.music(255); sound.effect(255);
   scriptStatus=stepStartupScripts(startupMachine,++scriptTicks);
   nextSceneFrame=_system->getMillis()+100; redraw=true;
+  if(!savedGame) quickSave();
   debug("[sotc-story] returning to opening gameplay scene");
  };
  auto finishCd=[&]() {
@@ -288,9 +322,9 @@ Common::Error SotcEngine::run() {
     if (!menuBackground.empty()) memcpy(surface.getBasePtr(0,0),menuBackground.data(),64000);
     surface.fillRect(Common::Rect(32,26,288,58),0);
     font->drawString(&surface,"Shadow of the Comet",32,36,256,7,Graphics::kTextAlignCenter);
-    const char *labels[]={"Continue", "New game", "Settings", "Quit"};
-    for (int i=0;i<4;++i) {
-     const int y=78+i*26;
+    const char *labels[]={"Continue", "New game", "Load quick save", "Settings", "Quit"};
+    for (int i=0;i<5;++i) {
+     const int y=70+i*24;
      surface.fillRect(Common::Rect(64,y,256,y+22),0);
      if (i==menuSelection) surface.frameRect(Common::Rect(64,y,256,y+22),7);
      font->drawString(&surface,labels[i],68,y+6,184,i==0 && !startupAvailable ? 8 : 7,Graphics::kTextAlignCenter);
@@ -336,6 +370,10 @@ Common::Error SotcEngine::run() {
   }
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
+   if(event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat && (event.kbd.keycode==Common::KEYCODE_q || event.kbd.keycode==Common::KEYCODE_u)) {
+    if(event.kbd.keycode==Common::KEYCODE_q) quickSave(); else quickLoad();
+    continue;
+   }
    if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup || mainMenu) redraw=true;
     if (showStartup && !mainMenu && !showStory && startupScene.dialogueText().empty()) toolbar.move(pointerX/2,pointerY/2);
     else toolbar.hide();
@@ -383,13 +421,13 @@ Common::Error SotcEngine::run() {
      confirm=event.joystick.button==Common::JOYSTICK_BUTTON_A;
     }
     if (movement) {
-     do { menuSelection=(menuSelection+movement+4)%4; } while (!startupAvailable && menuSelection==0);
+     do { menuSelection=(menuSelection+movement+5)%5; } while (!startupAvailable && menuSelection==0);
      redraw=true;
     }
     if (event.type==Common::EVENT_MOUSEMOVE || event.type==Common::EVENT_LBUTTONDOWN) {
      int x=event.mouse.x/2,y=event.mouse.y/2;
-     if (x>=64 && x<256 && y>=78 && y<178 && (y-78)%26<22) {
-      int selection=(y-78)/26;
+     if (x>=64 && x<256 && y>=70 && y<188 && (y-70)%24<22) {
+      int selection=(y-70)/24;
       if (selection!=0 || startupAvailable) { menuSelection=selection; redraw=true; confirm=event.type==Common::EVENT_LBUTTONDOWN; }
      }
     }
@@ -423,9 +461,11 @@ Common::Error SotcEngine::run() {
        debug("[sotc-menu] New game: opening scene reset");
       }
      } else if (menuSelection==2) {
+      quickLoad();
+     } else if (menuSelection==3) {
       GUI::ConfigDialog settings; runDialog(settings); syncSoundSettings();
       _mixer->pauseAll(true);
-     } else if (menuSelection==3) quitGame();
+     } else if (menuSelection==4) quitGame();
      redraw=true;
     }
     continue;

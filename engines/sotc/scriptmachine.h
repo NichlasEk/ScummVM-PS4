@@ -3,6 +3,7 @@
 #define SOTC_SCRIPTMACHINE_H
 #include "startstate.h"
 #include "script.h"
+#include "snapshot.h"
 namespace Sotc {
 enum TaskResult { kReady, kDisabled, kTimerWait, kAnimationWait, kRegionWait,
  kUnknownWait, kUnknownOpcode, kInvalidScript, kInstructionLimit, kUnknownVariable, kSoundUnavailable, kAnimationUnavailable };
@@ -148,6 +149,27 @@ public:
    _actors[i] = {state.signedWord(a), state.signedWord(a + 2), state.byte(a + 21), state.byte(a + 22), state.word(a + 14), state.word(a + 18)};
   }
   _count = state.word(0x2e02); return true;
+ }
+ // Loaded resource identities bind a save to this game's original snapshot/scripts.
+ bool snapshot(Snapshot &s) {
+  s.identity(Snapshot::hash(_initial.range(0x2dee,0xf3e),0xf3e));
+  s.identity(_count);
+  for(unsigned i=0;i<256;++i) { s.value(_globals[i],65535); s.value(_locals[i],65535); }
+  s.value(_randomState); s.value(_randomValue); s.value(_randomKnown); s.value(_eventPending);
+  for(unsigned i=0;i<_count;++i) {
+   ScriptTask &t=_tasks[i]; s.identity(Snapshot::hash(t.script.data,t.script.size));
+   s.value(t.pc,t.script.size); s.value(t.actor,10); s.value(t.flags,255);
+   s.value(t.timer,65535); s.value(t.loop,65535);
+   for(unsigned j=0;j<4;++j) s.value(t.rectangle[j],65535);
+   s.value(t.opcode,65535); s.value(t.executed);
+   unsigned result=t.result; s.value(result,kAnimationUnavailable); if(s.reading()) t.result=TaskResult(result);
+  }
+  for(unsigned i=0;i<11;++i) {
+   ScriptActor &a=_actors[i]; s.value(a.x); s.value(a.y);
+   s.require(a.x>=-32768 && a.x<=32767 && a.y>=-32768 && a.y<=32767);
+   s.value(a.halfWidth,255); s.value(a.footHeight,255); s.value(a.step,65535); s.value(a.steps,65535);
+  }
+  return s.ok();
  }
  TaskResult visit(unsigned index, unsigned budget = 128) {
   if (index >= _count) return kInvalidScript;

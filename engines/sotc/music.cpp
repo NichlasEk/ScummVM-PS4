@@ -71,7 +71,7 @@ bool Music::request(unsigned index) {
    if (!_opl->init()) { delete _opl; _opl=nullptr; return false; }
    startStream=true;
   }
-  _pendingStart=true; _playing=true; _ticks=0;
+  _track=index; _pendingStart=true; _playing=true; _ticks=0;
   debug("[sotc-music] track=%u name=%s bytes=%u",index,_archive.entries[index].name.c_str(),_song.size());
  }
  // Never acquire the mixer lock while holding the stream mutex.

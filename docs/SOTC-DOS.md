@@ -1302,3 +1302,35 @@ all seven distinct original highlights and the menu hit region. Live
 shadPS4 displayed the toolbar over the carriage scene and the rightmost icon
 opened the menu. Captured locally in artifacts/sotc/toolbar-live.png; test
 report is toolbar-regression.json. Other verb actions remain unimplemented.
+
+### Gameplay quick saves (2026-09-23)
+
+Q / L1 saves and U / R1 loads in the SOTC preview; the emulator maps its Q/U
+keys to those shoulder buttons. Figure diagnostics remain on F5/F7. The main
+menu also offers **Load quick save**. The first return from the office intro
+creates a gameplay checkpoint if no quick save exists. Later launches with a
+save open the main menu directly, avoiding the CD/logos replay; New game still
+starts the office story. Saving during cinematics is not supported.
+
+The versioned, little-endian snapshot records VM variables, task PCs, waits,
+actors, RNG, routes, animation state, dialogue/page and resource IDs. Resources
+are reloaded from the user's files, not embedded in the save or engine. Original
+snapshot/script hashes reject mismatched data. A candidate scene is decoded,
+resource-loaded and rendered before applying it to the running scene. Music and
+an active spoken line restart from the beginning, rather than restoring mixer
+sample positions. This is the experimental outdoor scene's save format, not DOS
+save interoperability or a promise of compatibility with future engine builds.
+
+SaveFileManager stores two alternating `<target>-sotc.quick0/quick1` generations.
+Length, version and payload checksum are checked; an interrupted write leaves
+the previous valid generation available. Native ScummVM save-slot dialogs are
+not wired yet. A quick save overwrites the previous logical quick-save point.
+
+Validation: `python3 scripts/sotc/audit-save.py build/sotc-DOS/disc-files/SHADOW`
+runs actual StartupScene/ScriptMachine/save code with AddressSanitizer and UBSan.
+It checks moving-route and fresh-session round trips, subsequent deterministic
+execution, active dialogue, partial writes, corruption and transactional failure.
+The PS4 package was rebuilt and exercised in shadPS4: Q saved at tick 454,
+movement changed x=220 to x=247, U restored tick 454/x=220. After relaunch,
+main-menu Load restored that same point. Evidence: `artifacts/sotc/save-live.txt`
+and `save-relaunch.txt`. This is emulator validation, not a physical PS4 test.

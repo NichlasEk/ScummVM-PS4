@@ -17,7 +17,7 @@ public:
   const Common::KeyCode codes[] = {Common::KEYCODE_RIGHT, Common::KEYCODE_LEFT, Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_p, Common::KEYCODE_ESCAPE, Common::KEYCODE_a, Common::KEYCODE_F5, Common::KEYCODE_F7, Common::KEYCODE_F9, Common::KEYCODE_F10};
   for (int i = 0; i < 11; ++i) {
    Common::Action *action = new Common::Action(ids[i], Common::U32String(labels[i]));
-   action->setKeyEvent(Common::KeyState(codes[i])); action->addDefaultInputMapping(keys[i]); action->addDefaultInputMapping(buttons[i]); if (i==5) action->addDefaultInputMapping("JOY_START"); map->addAction(action);
+   action->setKeyEvent(Common::KeyState(codes[i])); action->addDefaultInputMapping(keys[i]); if(i!=7 && i!=8) action->addDefaultInputMapping(buttons[i]); if (i==5) action->addDefaultInputMapping("JOY_START"); map->addAction(action);
   }
   Common::Action *next = new Common::Action("CLICKNEXT", Common::U32String("Next image"));
   Common::Action *startup = new Common::Action("STARTSCENE", Common::U32String("Toggle original start snapshot"));
@@ -27,6 +27,10 @@ public:
   prev->setRightClickEvent(); prev->addDefaultInputMapping("MOUSE_RIGHT"); prev->addDefaultInputMapping("JOY_B"); map->addAction(prev);
   Common::Action *confirm = new Common::Action("CONFIRM", Common::U32String("Confirm / interact"));
   confirm->setKeyEvent(Common::KeyState(Common::KEYCODE_RETURN)); confirm->addDefaultInputMapping("RETURN"); confirm->addDefaultInputMapping("JOY_A"); map->addAction(confirm);
+  Common::Action *save=new Common::Action("QUICKSAVE",Common::U32String("Quick save"));
+  save->setKeyEvent(Common::KeyState(Common::KEYCODE_q)); save->addDefaultInputMapping("q"); save->addDefaultInputMapping("JOY_LEFT_SHOULDER"); map->addAction(save);
+  Common::Action *load=new Common::Action("QUICKLOAD",Common::U32String("Quick load"));
+  load->setKeyEvent(Common::KeyState(Common::KEYCODE_u)); load->addDefaultInputMapping("u"); load->addDefaultInputMapping("JOY_RIGHT_SHOULDER"); map->addAction(load);
   maps.push_back(map); return maps;
  }
  const char *getName() const override { return "sotc"; }

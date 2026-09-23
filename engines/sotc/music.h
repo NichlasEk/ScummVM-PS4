@@ -19,12 +19,14 @@ class Music : private AdlmOutput, public Audio::AudioStream {
  Pak _archive;
  Common::Array<byte> _song, _driver;
  bool _opened, _pendingStart, _pendingStop, _playing;
+ unsigned _track=255;
  unsigned _ticks, _remaining, _clock;
  void reg(unsigned address, unsigned value) override;
  void onTimer();
 public:
  explicit Music(Audio::Mixer *mixer);
  ~Music();
+ unsigned currentTrack() { Common::StackLock lock(_mutex); return _playing ? _track : 255; }
  bool request(unsigned index);
  int readBuffer(int16 *buffer, const int samples) override;
  int getRate() const override { return _mixer->getOutputRate(); }

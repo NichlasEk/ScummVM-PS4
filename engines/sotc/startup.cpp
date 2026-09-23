@@ -34,6 +34,8 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  Common::Array<byte> save, scripts;
  machine.stopSpeech();
  _textFile.clear(); _dialogueText.clear(); _talking=false;
+ _portrait=false; _restoreTalk=false; _portraitHold=_portraitSequence=0;
+ _speaker=_speechText=_talkSequence=_talkStep=_talkGate=0;
  _ready = false; _machine=&machine; cancelRoute();
  StartState &state = _state;
  if (!readFile("INIT.SAV", save) || !state.load(Cc4View(save.data(), save.size()))) return false;
@@ -70,7 +72,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  _background = pixels;
  for (unsigned i=0;i<11;++i) {
   unsigned a=0x2e54+i*52;
-  _moves[i].active=false;
+  _moves[i].active=false; _moves[i].x=_moves[i].y=0;
   _collisionBypass[i]=state.byte(a+23)==8;
   _inDrawList[i]=state.byte(a+50)!=0;
   _slots[i]=state.byte(a+11);
@@ -83,6 +85,46 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  _walkDirection=state.word(0x2e5c); _walking=false;
  _ready=true;
  return render(pixels,status,machine);
+}
+bool StartupScene::snapshot(Snapshot &s,bool reloadResources) {
+ s.require(_ready);
+ for(unsigned i=0;i<11;++i) {
+  s.value(_moves[i].active); s.value(_moves[i].x); s.value(_moves[i].y);
+  Animation &a=_animations[i];
+  s.value(a.sequence,65535); s.value(a.substep,65535); s.value(a.mode,2);
+  s.value(a.gate,255); s.value(a.base,65535); s.value(a.direction,4);
+  s.value(_slots[i],255); s.value(_visible[i]); s.value(_inDrawList[i]); s.value(_collisionBypass[i]);
+  for(unsigned j=0;j<4;++j) s.value(_clips[i][j],65535);
+ }
+ s.value(_talking); s.value(_portrait); s.value(_restoreTalk);
+ s.value(_portraitHold,10); s.value(_portraitSequence,3);
+ s.value(_speaker,9); s.value(_speechText,65535); s.value(_talkSequence,65535); s.value(_talkStep,65535); s.value(_talkGate,255);
+ s.value(_following); s.value(_scriptRoute); s.value(_inputLocks,15);
+ s.value(_walkDirection,4); s.require(_walkDirection!=0); s.value(_walking);
+ s.value(_route.count,64000);
+ for(unsigned i=0;s.ok() && i<_route.count;++i) s.value(_route.points[i],63999);
+ unsigned length=_dialogueText.size(); s.value(length,16384);
+ if(s.reading()) _dialogueText.clear();
+ for(unsigned i=0;s.ok() && i<length;++i) {
+  unsigned c=s.reading() ? 0 : (unsigned char)_dialogueText[i]; s.value(c,255);
+  if(s.reading()) _dialogueText+=char(c);
+ }
+ for(unsigned i=0;i<20;++i) {
+  bool occupied=!_actorData[i].empty(); s.value(occupied); s.value(_types[i],255); s.value(_indices[i],65535);
+  if(!s.ok()) return false;
+  if(s.reading() && reloadResources) {
+   _actorData[i].clear();
+   if(!occupied) continue;
+   Pak pak;
+   if(_types[i]==0) {
+    if(!pak.open(Common::String::format("A%02u.PAK",_state.word(0x2df2))) || !pak.load(_indices[i],_actorData[i])) return false;
+   } else if(_types[i]==1) {
+    if(!pak.open("RES.PAK") || !pak.load(2,_actorData[i])) return false;
+   } else if(_types[i]==2) _actorData[i]=_scenery;
+   else return false;
+  }
+ }
+ return s.ok();
 }
 bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, const ScriptMachine &machine) {
  if (!_ready) return false;
@@ -168,7 +210,7 @@ bool StartupScene::dialogue(unsigned speaker,unsigned text,unsigned seq,unsigned
  }
  _dialogueText.clear();
  for (unsigned i=1;i<size-(decoded[size-1]==0 ? 1 : 0);++i) _dialogueText+=decoded[i] ? char(decoded[i]) : '\n';
- _speaker=speaker; _portrait=portrait!=256; _restoreTalk=seq!=255; _talking=true;
+ _speechText=text; _speaker=speaker; _portrait=portrait!=256; _restoreTalk=seq!=255; _talking=true;
  if (!_machine->speech(_state.word(0x2e16),text)) warning("[sotc-speech] Missing or unsupported recording bank=%u text=%u; retaining subtitles",_state.word(0x2e16),text);
  debug("[sotc-dialogue] actor=%u text=%u seq=%u portrait=%u bytes=%u",speaker,text,seq,portrait,size);
  return true;

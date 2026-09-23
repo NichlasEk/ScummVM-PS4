@@ -18,6 +18,7 @@ class StartupScene : public ScriptAnimation {
  Common::String _dialogueText;
  bool _talking=false, _portrait=false, _restoreTalk=false;
  unsigned _portraitHold=0, _portraitSequence=0;
+ unsigned _speechText=0;
  unsigned _speaker=0, _talkSequence=0, _talkStep=0, _talkGate=0;
  ScriptMachine *_machine=nullptr;
  Route _route; bool _following=false, _scriptRoute=false;
@@ -28,6 +29,12 @@ class StartupScene : public ScriptAnimation {
  bool _ready, _visible[11], _inDrawList[11], _collisionBypass[11];
 public:
  StartupScene() : _walkDirection(1), _walking(false), _ready(false) {}
+ bool snapshot(Snapshot &s,bool reloadResources=true);
+ void adoptResources(StartupScene &source) {
+  _background=source._background; _scenery=source._scenery; _textFile=source._textFile;
+  for(unsigned i=0;i<20;++i) _actorData[i]=source._actorData[i];
+ }
+ void resumeSpeech() { if(_talking && _machine) _machine->speech(_state.word(0x2e16),_speechText); }
  bool load(Common::Array<byte> &pixels, Common::String &status, ScriptMachine &machine);
  bool render(Common::Array<byte> &pixels, Common::String &status, const ScriptMachine &machine);
  unsigned advance(ScriptMachine &machine);

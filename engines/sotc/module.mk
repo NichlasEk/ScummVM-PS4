@@ -1,5 +1,5 @@
 MODULE := engines/sotc
-MODULE_OBJS = sotc.o openingscene.o pak.o metaengine.o startup.o sound.o music.o
+MODULE_OBJS = sotc.o openingscene.o pak.o metaengine.o startup.o save.o sound.o music.o
 ifeq ($(ENABLE_SOTC), DYNAMIC_PLUGIN)
 PLUGIN := 1
 endif

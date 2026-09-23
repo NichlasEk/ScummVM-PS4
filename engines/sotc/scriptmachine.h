@@ -33,6 +33,8 @@ public:
  virtual bool reset(unsigned, ScriptActor &) { return false; }
  virtual bool resource(unsigned, unsigned) { return false; }
  virtual bool background(unsigned) { return false; }
+ virtual bool object(unsigned,unsigned,unsigned) { return false; }
+ virtual bool removeObject(unsigned) { return false; }
  virtual bool obstacle(const unsigned *) { return false; }
  virtual bool actorLabel(unsigned,unsigned) { return false; }
  virtual bool terrain(Cc4View) { return false; }
@@ -62,7 +64,9 @@ class ScriptMachine {
  ScriptTask _tasks[17];
  ScriptActor _actors[11];
  unsigned _count;
- unsigned _previousRoom=0, _previousBank=0, _pendingRoom=255;
+ unsigned _choiceCount=0,_choiceTask=0,_choiceHeader=65535,_choiceX=0,_choiceY=0,_choiceSelection=0;
+ unsigned _choiceText[6]={},_choiceTarget[6]={};
+ unsigned _previousRoom=0, _previousBank=0, _pendingRoom=255, _pendingBank=255;
  uint32_t _randomState;
  unsigned _randomValue;
  bool _randomKnown, _eventPending;
@@ -142,13 +146,13 @@ public:
   _actors[index] = actor; return true;
  }
  bool load(const StartState &state, Cc4View block) {
-  _count = 0;
+  _count = 0; _choiceCount=0;
   _randomState = 1; _randomValue = 0; _randomKnown = false; _eventPending = false;
   if (!state.valid() || block.size > sizeof(_block) || cc4Count(block, 2) != state.word(0x2e02) || !state.word(0x2e02)) return false;
   for (unsigned i = 0; i < block.size; ++i) _block[i] = block.data[i];
   block.data = _block;
   _initial = state;
-  _previousRoom=state.word(0x2df6); _previousBank=state.word(0x2df0); _pendingRoom=255;
+  _previousRoom=state.word(0x2df6); _previousBank=state.word(0x2df0); _pendingRoom=255; _pendingBank=255;
   for (unsigned i=0;i<256;++i) { _globals[i]=state.word(0x3b2a+i*2); _locals[i]=state.word(0x392a+i*2); }
   for (unsigned i = 0; i < state.word(0x2e02); ++i) {
    ScriptTask &t = _tasks[i]; t = ScriptTask();
@@ -164,14 +168,28 @@ public:
   }
   _count = state.word(0x2e02); return true;
  }
+ unsigned choiceCount() const { return _choiceCount; }
+ unsigned choiceHeader() const { return _choiceHeader; }
+ unsigned choiceX() const { return _choiceX; }
+ unsigned choiceY() const { return _choiceY; }
+ unsigned choiceSelection() const { return _choiceSelection; }
+ unsigned choiceText(unsigned i) const { return i<_choiceCount ? _choiceText[i] : 65535; }
+ void highlightChoice(unsigned i) { if(i<_choiceCount) _choiceSelection=i; }
+ bool choose(unsigned i) {
+  if(i>=_choiceCount || _choiceTask>=_count) return false;
+  ScriptTask &t=_tasks[_choiceTask];
+  if(!(t.flags&0x10) || _choiceTarget[i]>=t.script.size) return false;
+  t.pc=_choiceTarget[i];t.flags&=~0x10U;t.result=kReady;_choiceCount=0;return true;
+ }
+ unsigned pendingBank() const { return _pendingBank; }
  unsigned pendingRoom() const { return _pendingRoom; }
  bool enterRoom(Cc4View block,unsigned previousRoom,unsigned previousBank) {
   unsigned count=cc4Count(block,2);
   if (!count || count>17 || block.size>sizeof(_block)) return false;
   for(unsigned i=0;i<count;++i) { Cc4View script; if(!cc4Entry(block,2,i,script) || !script.size) return false; }
   for(unsigned i=0;i<block.size;++i) _block[i]=block.data[i];
-  block.data=_block; _count=count; _previousRoom=previousRoom; _previousBank=previousBank; _pendingRoom=255;
-  _eventPending=false;
+  block.data=_block; _count=count; _previousRoom=previousRoom; _previousBank=previousBank; _pendingRoom=255; _pendingBank=255;
+  _eventPending=false; _choiceCount=0;
   for(unsigned i=0;i<count;++i) { _tasks[i]=ScriptTask(); cc4Entry(block,2,i,_tasks[i].script); }
   _tasks[0].flags=0; _tasks[0].result=kReady;
   return true;
@@ -179,7 +197,10 @@ public:
  // Copy validated state while keeping host audio/animation bindings and rebasing views.
  void adopt(const ScriptMachine &other) {
   _initial=other._initial; _count=other._count;
-  _previousRoom=other._previousRoom; _previousBank=other._previousBank; _pendingRoom=other._pendingRoom;
+  _choiceCount=other._choiceCount;_choiceTask=other._choiceTask;_choiceHeader=other._choiceHeader;
+  _choiceX=other._choiceX;_choiceY=other._choiceY;_choiceSelection=other._choiceSelection;
+  for(unsigned i=0;i<6;++i) {_choiceText[i]=other._choiceText[i];_choiceTarget[i]=other._choiceTarget[i];}
+  _previousRoom=other._previousRoom; _previousBank=other._previousBank; _pendingRoom=other._pendingRoom; _pendingBank=other._pendingBank;
   _randomState=other._randomState; _randomValue=other._randomValue; _randomKnown=other._randomKnown; _eventPending=other._eventPending;
   for(unsigned i=0;i<256;++i) { _globals[i]=other._globals[i]; _locals[i]=other._locals[i]; }
   for(unsigned i=0;i<sizeof(_block);++i) _block[i]=other._block[i];
@@ -187,7 +208,7 @@ public:
   for(unsigned i=0;i<11;++i) _actors[i]=other._actors[i];
  }
  // Loaded resource identities bind a save to this game's original snapshot/scripts.
- bool snapshot(Snapshot &s,unsigned version=2) {
+ bool snapshot(Snapshot &s,unsigned version=4) {
   s.identity(Snapshot::hash(_initial.range(0x2dee,0xf3e),0xf3e));
   s.identity(_count);
   for(unsigned i=0;i<256;++i) { s.value(_globals[i],65535); s.value(_locals[i],65535); }
@@ -206,13 +227,27 @@ public:
    s.value(a.halfWidth,255); s.value(a.footHeight,255); s.value(a.step,65535); s.value(a.steps,65535);
   }
   if(version>=2) { s.value(_previousRoom,65535); s.value(_previousBank,65535); s.value(_pendingRoom,255); }
+  if(version>=3) {
+   s.value(_choiceCount,6);s.value(_choiceTask,16);s.value(_choiceHeader,65535);
+   s.value(_choiceX,510);s.value(_choiceY,255);s.value(_choiceSelection,5);
+   if(_choiceCount) s.require(_choiceTask<_count && (_tasks[_choiceTask].flags&0x10) && _choiceSelection<_choiceCount);
+   for(unsigned i=0;s.ok() && i<_choiceCount;++i) {
+    s.value(_choiceText[i],65535);s.value(_choiceTarget[i],_tasks[_choiceTask].script.size-1);
+   }
+  } else if(s.reading()) _choiceCount=0;
+  if(version>=4) { s.value(_pendingBank,255);s.require(_pendingBank<=9 || _pendingBank==255); }
+  else if(s.reading()) _pendingBank=255;
   return s.ok();
  }
  TaskResult visit(unsigned index, unsigned budget = 128) {
   if (index >= _count) return kInvalidScript;
   ScriptTask &t = _tasks[index];
   if (t.flags & 0x20) return t.result = kDisabled;
-  if (t.flags & ~0x67U) return t.result = kUnknownWait;
+  if (t.flags & ~0x77U) return t.result = kUnknownWait;
+  if(t.flags&0x10) {
+   if(!_choiceCount || _choiceTask!=index) return t.result=kInvalidScript;
+   return t.result=kAnimationWait;
+  }
   if (t.flags & 0x40) {
    bool pending=false;
    if (!_animation || !_animation->dialoguePending(pending)) return t.result=kAnimationUnavailable;
@@ -260,6 +295,23 @@ public:
     if (!writeVariable(op.variable,value)) return t.result=kUnknownVariable;
     break;
    }
+   case 53:
+    if(_choiceCount) return t.result=kInvalidScript;
+    _choiceCount=op.argument;_choiceTask=index;_choiceHeader=op.value;
+    if(_choiceHeader==op.choiceText[0]) _choiceHeader=65535;
+    _choiceX=op.variable;_choiceY=op.comparison;_choiceSelection=0;
+    for(unsigned j=0;j<_choiceCount;++j) {_choiceText[j]=op.choiceText[j];_choiceTarget[j]=op.choiceTarget[j];}
+    t.flags|=0x10;t.pc=next;++t.executed;return t.result=kAnimationWait;
+   case 25:
+    if(!_animation || !_animation->object(op.argument,op.variable,op.value)) return t.result=kAnimationUnavailable;
+    break;
+   case 98:
+    if(!_animation || !_animation->removeObject(op.argument)) return t.result=kAnimationUnavailable;
+    break;
+   case 14:
+    for(unsigned j=0;j<4;++j) t.rectangle[j]=op.rectangle[j];
+    if(!overlaps(t)) next=op.target;
+    break;
    case 60:
     if (!_animation || !_animation->obstacle(op.rectangle)) return t.result=kAnimationUnavailable;
     break;
@@ -267,6 +319,9 @@ public:
     if (!_animation || !_animation->actorLabel(t.actor,op.argument)) return t.result=kAnimationUnavailable;
     break;
    case 44: _pendingRoom=op.argument; break;
+   case 80:
+    if(op.argument>9 && op.argument!=255) return t.result=kInvalidScript;
+    _pendingBank=op.argument;break;
    case 58:
     if (!_animation || !_animation->background(op.argument)) return t.result=kAnimationUnavailable;
     break;

@@ -1400,3 +1400,38 @@ choice menu, after its first spoken line. Do not skip that choice or guess the
 answer. Local pre-transition save backups are in
 artifacts/sotc/pre-room-transition/ (ignored); assets and test saves remain
 outside the engine and Git.
+
+
+### Dialogue choices and the first interior (2026-09-23)
+
+Opcode 53 now presents the original E.CC4 dialogue choices and follows each
+original relative branch (displacement base is the operand address, as in
+0x99e2/0xb0c4). Mouse hover/click and D-pad/confirm work; choosing does not also
+walk or skip the following line. Long menus scroll to the selected answer.
+The panel currently uses the ScummVM GUI font, not the original typography.
+
+Opcode 80 selects the destination resource bank alongside opcode 44's room.
+The room 17 doorway now enters bank 1, room 2. Bank-local Axx caches are
+invalidated while global RES resources remain available. Failed transition
+scripts leave the previous room visible rather than committing partial state.
+Opcode 25 installs the original object hotspots, 98 removes them, and 14
+branches on the player's footprint without introducing a wait. Room changes
+clear the old hotspot table. These handlers follow original routines 0x9e19,
+0x9dcf and 0xa60d; objects are not fabricated engine assets.
+
+Save format 4 preserves pending bank changes and active dialogue choices;
+formats 1, 2 and 3 remain readable. The audit exercises both original answers,
+saving an active selection, the cross-bank transition, the complete house
+arrival, two live hotspots, and restoring removed hotspots. All execute against
+the user's original resources under ASan/UBSan. Footprint branch edges also
+have VM fixtures. The PS4 package was built and the existing format-3 save
+loaded in shadPS4; the house transition and interior dialogue render correctly.
+
+This supersedes the opcode-53 blocker above. The first interior now reaches
+idle without stopped tasks. Picking up/using inventory items and arbitrary
+walking exits are still unfinished, so this is not a complete playable chapter.
+The next implementation target is the original pickup routine 0xcbb4: its
+proximity test uses 0xca0a/0xd1d1, updates local[id] to 1 and deactivates the
+hotspot. Object labels come from E.CC4 bank 1 (loader at 0x1625). Hook actions
+only after verifying their toolbar mapping and preserve the save tests.
+Pre-interior user-save backups: artifacts/sotc/pre-interior-saves/ (ignored).

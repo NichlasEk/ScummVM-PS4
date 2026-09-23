@@ -136,6 +136,7 @@ Common::Error SotcEngine::run() {
 
  Common::Array<Common::String> dialogueLines; Common::String shownDialogue; unsigned dialoguePage=0;
  Common::Array<Common::String> storyLines; Common::String storyText; unsigned storyPage=0;
+ Common::Rect choiceRects[6];
  int pointerX=0,pointerY=0;
  bool runScene = true, sceneFault = false; unsigned heldDirection=0;
  uint32 nextSceneFrame = _system->getMillis() + 100;
@@ -370,6 +371,46 @@ Common::Error SotcEngine::run() {
     } else { storyText.clear(); storyLines.clear(); storyPage=0; }
 
    }
+   if(showStartup && !mainMenu && !showStory && startupMachine.choiceCount()) {
+    toolbar.hide();
+    unsigned count=startupMachine.choiceCount(),selected=startupMachine.choiceSelection();
+    Common::Array<Common::String> lines[6],heading;Common::String text;
+    if(!startupScene.choiceText(startupMachine.choiceHeader(),text)) {
+     surface.free();return Common::Error(Common::kReadingFailed,"Cannot load dialogue choices");
+    }
+    if(!text.empty()) font->wordWrapText(text,288,heading);
+    int lineHeight=font->getFontHeight(),starts[6],heights[6],total=6+heading.size()*lineHeight;
+    for(unsigned i=0;i<count;++i) {
+     if(!startupScene.choiceText(startupMachine.choiceText(i),text)) {
+      surface.free();return Common::Error(Common::kReadingFailed,"Cannot load dialogue choice text");
+     }
+     font->wordWrapText(text,278,lines[i]);starts[i]=total;
+     heights[i]=MAX<int>(1,lines[i].size())*lineHeight+6;total+=heights[i];
+    }
+    int height=MIN<int>(184,total+4),left=CLIP<int>(startupMachine.choiceX(),2,18);
+    int top=CLIP<int>(startupMachine.choiceY(),2,198-height);
+    int scroll=MAX<int>(0,starts[selected]+heights[selected]-(height-4));
+    surface.fillRect(Common::Rect(left,top,left+300,top+height),0);
+    surface.frameRect(Common::Rect(left,top,left+300,top+height),7);
+    for(unsigned j=0;j<heading.size();++j) {
+     int y=top+4+j*lineHeight-scroll;
+     if(y>=top+2 && y+lineHeight<top+height-2) font->drawString(&surface,heading[j],left+6,y,288,7);
+    }
+    for(unsigned i=0;i<6;++i) choiceRects[i]=Common::Rect();
+    for(unsigned i=0;i<count;++i) {
+     int rowTop=top+starts[i]-scroll,rowBottom=rowTop+heights[i];
+     int visibleTop=MAX<int>(top+2,rowTop),visibleBottom=MIN<int>(top+height-2,rowBottom);
+     if(visibleBottom<=visibleTop) continue;
+     choiceRects[i]=Common::Rect(left+3,visibleTop,left+297,visibleBottom);
+     if(i==selected) surface.frameRect(choiceRects[i],7);
+     for(unsigned j=0;j<lines[i].size();++j) {
+      int y=rowTop+3+j*lineHeight;
+      if(y>=top+2 && y+lineHeight<=top+height-2) font->drawString(&surface,lines[i][j],left+12,y,278,7);
+     }
+    }
+    surface.fillRect(Common::Rect(0,225,320,240),0);
+    font->drawString(&surface,"D-pad: choose  Cross / click: confirm",2,227,316,7);
+   }
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
    if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
@@ -381,7 +422,7 @@ Common::Error SotcEngine::run() {
     continue;
    }
    if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup || mainMenu) redraw=true;
-    if (showStartup && !mainMenu && !showStory && startupScene.dialogueText().empty()) toolbar.move(pointerX/2,pointerY/2);
+    if (showStartup && !mainMenu && !showStory && startupScene.dialogueText().empty() && !startupMachine.choiceCount()) toolbar.move(pointerX/2,pointerY/2);
     else toolbar.hide();
    }
    if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) debug("[sotc-input] type=%u key=%u",unsigned(event.type),unsigned(event.kbd.keycode));
@@ -491,6 +532,33 @@ Common::Error SotcEngine::run() {
     mainMenu=true; menuSelection=startupAvailable ? 0 : 1; _mixer->pauseAll(true); redraw=true;
     debug("[sotc-menu] opened; simulation and sound paused");
     continue;
+   }
+   if(showStartup && startupMachine.choiceCount()) {
+    int movement=0;bool confirm=false;
+    if(event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat) {
+     if(event.kbd.keycode==Common::KEYCODE_UP) movement=-1;
+     if(event.kbd.keycode==Common::KEYCODE_DOWN) movement=1;
+     confirm=event.kbd.keycode==Common::KEYCODE_RETURN || event.kbd.keycode==Common::KEYCODE_SPACE;
+    }
+    if(event.type==Common::EVENT_JOYBUTTON_DOWN) {
+     if(event.joystick.button==Common::JOYSTICK_BUTTON_DPAD_UP) movement=-1;
+     if(event.joystick.button==Common::JOYSTICK_BUTTON_DPAD_DOWN) movement=1;
+     confirm=event.joystick.button==Common::JOYSTICK_BUTTON_A;
+    }
+    if(movement) {
+     int selection=int(startupMachine.choiceSelection())+movement+startupMachine.choiceCount();
+     startupMachine.highlightChoice(selection%startupMachine.choiceCount());redraw=true;
+    }
+    if(event.type==Common::EVENT_MOUSEMOVE || event.type==Common::EVENT_LBUTTONDOWN) {
+     for(unsigned i=0;i<startupMachine.choiceCount();++i) if(choiceRects[i].contains(event.mouse.x/2,event.mouse.y/2)) {
+      startupMachine.highlightChoice(i);confirm=event.type==Common::EVENT_LBUTTONDOWN;redraw=true;break;
+     }
+    }
+    if(confirm) {
+     unsigned selected=startupMachine.choiceSelection();
+     if(startupMachine.choose(selected)) { debug("[sotc-choice] selected=%u",selected);heldDirection=0;resumeScene();redraw=true; }
+    }
+    continue; // Choosing a reply must not also move the player or skip dialogue.
    }
    if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN) {
     event.type=Common::EVENT_LBUTTONDOWN; event.mouse.x=pointerX; event.mouse.y=pointerY;

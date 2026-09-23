@@ -45,6 +45,8 @@ struct TestAnimation : Sotc::ScriptAnimation {
  }
 } animation;
 extern "C" unsigned moveTarget(unsigned i) {return i==0 ? animation.targetActor : i==1 ? animation.targetX : animation.targetY;}
+extern "C" unsigned choices() {return vm.choiceCount();}
+extern "C" bool choose(unsigned i) {return vm.choose(i);}
 extern "C" void finishTalk() {animation.talking=false;}
 extern "C" unsigned talkValue(unsigned i) {return i==0 ? animation.speaker : i==1 ? animation.text : animation.portrait;}
 extern "C" void finishMove() { animation.moving=false; }
@@ -111,6 +113,11 @@ extern "C" bool info(unsigned i,unsigned *out) {
     assert lib.visit(1) == 2 and info()[:3] == [2, 2, 2]
     assert lib.visit(1) == 2 and info()[2] == 1
     assert lib.visit(1) == 1 and info()[0] == 4 and info()[3] == 3
+    # Opcode 14 branches immediately on a missed footprint, rather than waiting.
+    for x,pc in ((220,10),(106,7)):
+        fixture([14,55,154,63,199,5,0,2,0,0,2])
+        assert lib.actor(0,x,154,0,1)
+        assert lib.visit(1)==1 and info()[0]==pc
     fixture([40, 55, 154, 63, 199, 2])
     assert lib.actor(0, 220, 151, 0, 1)
     assert lib.visit(1) == 4 and info()[0] == 0
@@ -142,6 +149,22 @@ extern "C" bool info(unsigned i,unsigned *out) {
     assert lib.visit(1) == 5 and info()[0] == 0
     assert lib.visit(17) == 7
     assert not lib.actor(11, 0, 0, 0, 1)
+
+    # Menu options carry independent relative destinations; waiting never
+    # consumes either reply without an explicit valid selection.
+    menu=[53,22,0,5,10,2,22,0,6,0,23,0,8,0,31,33,0,12,1,2,31,33,0,12,2,2]
+    lib.choose.restype=c.c_bool
+    for selected in (0,1):
+        fixture(menu)
+        assert lib.visit(1)==3 and lib.choices()==2 and info()[0]==14
+        for _ in range(3): assert lib.visit(1)==3 and info()[6]==1
+        assert not lib.choose(2) and lib.choices()==2
+        assert lib.choose(selected) and not lib.choices()
+        assert lib.visit(1)==1 and lib.randomValue()==selected+1
+    for length in range(1,14):
+        fixture(menu[:length]);assert lib.visit(1)==7
+    for broken in ([53,22,0,5,10,0], [53,22,0,5,10,7], [53,22,0,5,10,1,22,0,255,127]):
+        fixture(broken);assert lib.visit(1)==7
 
     for opcode in (82,89):
         script=[opcode,1,0x34,0x12,255]+([77] if opcode==89 else [])

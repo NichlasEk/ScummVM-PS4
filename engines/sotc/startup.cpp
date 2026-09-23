@@ -99,6 +99,22 @@ bool StartupScene::background(unsigned index) {
  for(unsigned i=0;i<20;++i) if(_types[i]==2) _actorData[i]=scenery;
  return true;
 }
+bool StartupScene::object(unsigned id,unsigned x,unsigned y) {
+ for(unsigned i=0;i<20;++i) {
+  unsigned a=0x32fe + i*8;
+  if(_state.byte(a+2)) continue;
+  _state.setWord(a,id);_state.setByte(a+2,1);_state.setByte(a+3,0);
+  _state.setWord(a+4,x);_state.setWord(a+6,y);return true;
+ }
+ return false;
+}
+bool StartupScene::removeObject(unsigned id) {
+ for(unsigned i=0;i<20;++i) {
+  unsigned a=0x32fe + i*8;
+  if(_state.word(a)==id) _state.setByte(a+2,0);
+ }
+ return true;
+}
 bool StartupScene::obstacle(const unsigned *rectangle) {
  unsigned count=_state.byte(0x3542),address=0x3544+count*4;
  // The obstacle area ends where serialized local variables begin.
@@ -154,15 +170,19 @@ bool StartupScene::roomSnapshot(Snapshot &s,ScriptMachine &machine) {
  _state=saved; return true;
 }
 bool StartupScene::serviceRoom(ScriptMachine &machine,Common::String &status) {
+ for(unsigned i=0;i<machine.count();++i) if(machine.task(i)->result>=kUnknownWait) {
+  status=Common::String::format("Room %u script %u stopped: opcode %u at %u",room(),i,machine.task(i)->opcode,machine.task(i)->pc);
+  cancelFade();return false;
+ }
  if(fading()) {
   if(_brightness<_fadeTarget) _brightness=(_fadeTarget-_brightness<=_fadeStep) ? _fadeTarget : _brightness+_fadeStep;
   else _brightness=(_brightness-_fadeTarget<=_fadeStep) ? _fadeTarget : _brightness-_fadeStep;
   if(fading()) return true;
  }
  if(machine.pendingRoom()==255) return true;
- unsigned destination=machine.pendingRoom();
+ unsigned destination=machine.pendingRoom(),destinationBank=machine.pendingBank()==255 ? bank() : machine.pendingBank();
  Common::Array<byte> scripts; Cc4View block;
- if(!readFile(Common::String::format("R%02u.CC4",_state.word(0x2df2)).c_str(),scripts) ||
+ if(!readFile(Common::String::format("R%02u.CC4",destinationBank).c_str(),scripts) ||
     !cc4Entry(Cc4View(scripts.data(),scripts.size()),4,destination,block)) {
   status="Room script unavailable"; cancelFade(); return false;
  }
@@ -171,8 +191,23 @@ bool StartupScene::serviceRoom(ScriptMachine &machine,Common::String &status) {
  StartupScene next=*this; next._machine=&candidate; candidate.setAnimation(&next);
  if(!candidate.enterRoom(block,room(),_state.word(0x2df2))) { status="Invalid room script"; cancelFade(); return false; }
  next._state.setWord(0x2df6,room()); next._state.setWord(0x2df0,_state.word(0x2df2));
+ next._state.setWord(0x2df2,destinationBank);
+ if(destinationBank!=bank()) {
+  // Axx indices are local to a bank. Keep only global RES resources; a
+  // cached A00 index must never masquerade as the same index in A01.
+  for(unsigned i=0;i<20;++i) if(next._types[i]==0) next._actorData[i].clear();
+  unsigned playerSlot=next._slots[0];
+  if(playerSlot>=20) {status="Player resource unavailable";cancelFade();return false;}
+  if(next._types[playerSlot]==0) {
+   Pak actors;
+   if(!actors.open(Common::String::format("A%02u.PAK",destinationBank)) || !actors.load(next._indices[playerSlot],next._actorData[playerSlot])) {
+    status="Player bank resource unavailable";cancelFade();return false;
+   }
+  }
+ }
  next._state.setWord(0x2df8,destination); next._state.setWord(0x2e02,candidate.count());
  next._state.setWord(0x3542,0); next._state.setWord(0x2dfc,0);
+ for(unsigned i=0;i<20;++i) next._state.setByte(0x3300+i*8,0);
  next.cancelRoute(); next._walking=false; next._inputLocks=0; next._talking=false; next._portrait=false;
  next._restoreTalk=false; next._dialogueText.clear();
  for(unsigned i=0;i<11;++i) { next._moves[i].active=false; next._collisionBypass[i]=false; if(i) next._visible[i]=false; }
@@ -317,6 +352,15 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
  }
  status = Common::String::format("Room %u: %u drawn, %u unsupported", room(), rendered, unsupported);
  return unsupported == 0;
+}
+bool StartupScene::choiceText(unsigned index,Common::String &text) {
+ text.clear();
+ if(index==65535) return true;
+ if(_textFile.empty() && !readFile("E.CC4",_textFile)) return false;
+ byte decoded[16384];unsigned size=0;
+ if(!dialogueRecord(Cc4View(_textFile.data(),_textFile.size()),_state.word(0x2e16)+3,index,decoded,sizeof(decoded),size)) return false;
+ for(unsigned i=1;i<size-(decoded[size-1]==0 ? 1 : 0);++i) text+=decoded[i] ? char(decoded[i]) : ' ';
+ return true;
 }
 bool StartupScene::dialogue(unsigned speaker,unsigned text,unsigned seq,unsigned portrait) {
  if (!_ready || !_machine || speaker>=10 || _talking) return false;

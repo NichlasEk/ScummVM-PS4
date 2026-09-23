@@ -33,10 +33,17 @@ public:
  bool snapshot(Snapshot &s,bool reloadResources=true);
  bool roomSnapshot(Snapshot &s,ScriptMachine &machine);
  void adopt(const StartupScene &source,ScriptMachine &machine) { *this=source; _machine=&machine; }
+ unsigned bank() const { return _state.word(0x2df2); }
  unsigned room() const { return _state.word(0x2df8); }
  unsigned brightness() const { return _brightness; }
  bool serviceRoom(ScriptMachine &machine,Common::String &status);
  bool background(unsigned index) override;
+ unsigned objectCount() const {
+  unsigned count=0;for(unsigned i=0;i<20;++i) if(_state.byte(0x3300+i*8)) ++count;
+  return count;
+ }
+ bool object(unsigned id,unsigned x,unsigned y) override;
+ bool removeObject(unsigned id) override;
  bool obstacle(const unsigned *rectangle) override;
  bool actorLabel(unsigned actor,unsigned label) override {
   return actor<11 && _state.setByte(0x2e54+actor*52+28,label);
@@ -58,6 +65,7 @@ public:
  bool movementPending(unsigned actor,bool &pending) override;
  bool dialogue(unsigned actor,unsigned text,unsigned sequence,unsigned portrait) override;
  bool dialoguePending(bool &pending) override;
+ bool choiceText(unsigned index,Common::String &text);
  const Common::String &dialogueText() const { return _dialogueText; }
  void finishDialogue() { _talking=false; if (_machine) _machine->stopSpeech(); }
  bool scriptWalking() const { return _scriptRoute; }

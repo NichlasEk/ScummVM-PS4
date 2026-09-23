@@ -67,6 +67,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  _background = pixels;
  for (unsigned i=0;i<11;++i) {
   unsigned a=0x2e54+i*52;
+  _moves[i].active=false;
   _collisionBypass[i]=state.byte(a+23)==8;
   _inDrawList[i]=state.byte(a+50)!=0;
   _slots[i]=state.byte(a+11);
@@ -201,8 +202,8 @@ bool StartupScene::walk(unsigned direction, ScriptMachine &machine,bool scripted
  debug("[sotc-walk] direction=%u moving=%u sequence=%u",facing,unsigned(moving),sequenceIndex);
  return true;
 }
-unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine) const {
- const ScriptActor &actor=*machine.actor(0);
+unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine,unsigned self) const {
+ const ScriptActor &actor=*machine.actor(self);
  unsigned char terrain[320],obstacles[255*4];
  for (unsigned i=0;i<320;++i) terrain[i]=_state.byte(0x339e + i);
  unsigned count=_state.byte(0x3542);
@@ -217,7 +218,7 @@ unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMa
    const ScriptActor &a=*machine.actor(i);
    actors[i]={footprint(a.x,a.y,a.halfWidth,a.footHeight),_visible[i],_collisionBypass[i]};
   }
-  collision=actorCollision(actors,0,candidate);
+  collision=actorCollision(actors,self,candidate);
  }
  return collision;
 }
@@ -232,26 +233,73 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
  return found;
 }
 bool StartupScene::move(unsigned id,unsigned x,unsigned y,bool &pending) {
- if (!_ready || !_machine || id!=0) return false;
- // Only player routes are wired; never silently move an unsupported actor.
+ if (!_ready || !_machine || id>=10) return false;
+ if (id) {
+  ScriptActor a=*_machine->actor(id);
+  if (x>319 || y>199 || (int(x)!=a.x && int(y)!=a.y)) return false;
+  pending=int(x)!=a.x || int(y)!=a.y;
+  if (!pending) { _moves[id].active=false; return true; }
+  unsigned direction=int(x)>a.x ? 2 : int(x)<a.x ? 4 : int(y)>a.y ? 3 : 1;
+  unsigned seq=direction+3,slot=_slots[id];
+  if (slot>=20) return false;
+  const Common::Array<byte> &data=_actorData[slot];
+  unsigned count=va2SequenceLength(data.data(),data.size(),seq); SequenceStep first;
+  if (!count || !va2Step(data.data(),data.size(),seq,0,first)) return false;
+  Animation &animation=_animations[id];
+  animation.sequence=seq; animation.direction=direction; animation.base=4; animation.mode=0; animation.gate=255;
+  a.step=0; a.steps=count; _machine->setActor(id,a);
+  _moves[id].x=x; _moves[id].y=y; _moves[id].active=true;
+  debug("[sotc-actor-move] actor=%u target=%u,%u sequence=%u",id,x,y,seq);
+  return true;
+ }
  unsigned oldMode=_animations[0].mode; _animations[0].mode=0;
  if (!destination(x,y,*_machine,true)) { _animations[0].mode=oldMode; return false; }
  pending=_following; return true;
 }
 bool StartupScene::movementPending(unsigned id,bool &pending) {
- if (!_ready || id!=0) return false;
- pending=_following && _visible[0];
+ if (!_ready || id>=10) return false;
+ pending=(id ? _moves[id].active : _following) && _visible[id];
  if (!pending) {
   // Original 0xaf9b selects sequence zero when movement wait completes.
-  unsigned slot=_slots[0]; if (slot>=20) return false;
+  unsigned slot=_slots[id]; if (slot>=20) return false;
   unsigned count=va2SequenceLength(_actorData[slot].data(),_actorData[slot].size(),0);
   if (!count) return false;
-  ScriptActor actor=*_machine->actor(0); actor.step=0; actor.steps=count;
-  _animations[0].sequence=0; _animations[0].gate=255; _machine->setActor(0,actor);
+  ScriptActor actor=*_machine->actor(id); actor.step=0; actor.steps=count;
+  _animations[id].sequence=0; _animations[id].gate=255; _machine->setActor(id,actor);
+ }
+ return true;
+}
+bool StartupScene::moveOthers(ScriptMachine &machine) {
+ for (unsigned id=1;id<10;++id) {
+  if (!_moves[id].active) continue;
+  if (!_visible[id]) { _moves[id].active=false; continue; }
+  ScriptActor actor=*machine.actor(id); Animation &a=_animations[id];
+  unsigned slot=_slots[id]; if (slot>=20 || a.mode==2) return false;
+  const Common::Array<byte> &data=_actorData[slot]; SequenceStep step;
+  if (!va2Step(data.data(),data.size(),a.sequence,actor.step,step)) return false;
+  int dx=step.dx,dy=step.dy,speed=_state.byte(0x2e2a); if (speed>=128) speed-=256;
+  walkDelta(a.direction,speed,_state.signedWord(0x2e24),_state.signedWord(0x2e26),
+   _state.word(0x2df8)==_state.word(0x2dfa),dx,dy);
+  int delta=(a.direction==2 || a.direction==4) ? dx : dy;
+  unsigned budget=unsigned(delta<0 ? -delta : delta);
+  while (budget-- && _moves[id].active) {
+   int x=actor.x,y=actor.y;
+   if (a.direction==1) --y; if (a.direction==2) ++x;
+   if (a.direction==3) ++y; if (a.direction==4) --x;
+   if (!_collisionBypass[id] && collisionAt(x,y,a.direction,machine,id)) {
+    debug("[sotc-actor-move] blocked actor=%u candidate=%d,%d",id,x,y); return false;
+   }
+   actor.x=x; actor.y=y; machine.setActor(id,actor);
+   if (x==_moves[id].x && y==_moves[id].y) {
+    _moves[id].active=false; a.base=0;
+    debug("[sotc-actor-move] arrived actor=%u position=%d,%d",id,x,y);
+   }
+  }
  }
  return true;
 }
 bool StartupScene::movePlayer(ScriptMachine &machine) {
+ if (!moveOthers(machine)) return false;
  const unsigned masks[5]={0,1,8,2,4};
  if (!_scriptRoute && _walking && (_inputLocks & masks[_walkDirection])) { cancelRoute(); return walk(0,machine); }
  if (_following) {
@@ -303,6 +351,7 @@ bool StartupScene::hide(unsigned id) {
 bool StartupScene::reset(unsigned id, ScriptActor &actor) {
  if (!_ready || id>=11) return false;
  if (!id) return true;
+ _moves[id].active=false;
  // 0x78c8 clears the actor, selects sequence zero using the transient slot 0,
  // then installs resource slot 255. The following 91/87 bind and start it.
  unsigned count=va2SequenceLength(_actorData[0].data(),_actorData[0].size(),0);

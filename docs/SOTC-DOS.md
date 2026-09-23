@@ -877,3 +877,29 @@ passes. Actual PS4 build in shadPS4 reaches (104,171), executes actor 0 directio
 4, binds actor 1, then stops at opcode 5, task 1 PC 38. Zero unsupported
 animation formats. Evidence: `artifacts/sotc/facing-live.log` (local ignored).
 Next is opcode 5's one-coordinate actor destination command (0xa184).
+
+### Axis-specific destinations and non-player movement
+
+Opcodes 4/5 use the original shared handler 0xa0d7 (wrappers 0xa17a/0xa184):
+4 sets doubled byte X and preserves Y; 5 sets byte Y and preserves X. Both
+start movement for the bound actor and use task wait bit 1, as opcode 36 does.
+Actors 1..9 now have independent pending destinations. Straight axis-aligned
+moves select direction-specific original walking sequences, consume adjusted
+frame deltas, check each intermediate footprint against terrain/objects/other
+actors, clamp to the destination, and resume their waiting script on arrival.
+Collision checks now accept the moving actor ID instead of always excluding
+player 0. Invisible actors stop moving; reset clears pending actor movement.
+
+This is bounded diagnostic movement: non-player diagonal/detour requests and
+actor 10 remain unavailable; a newly blocked non-player move pauses explicitly.
+Exact original transition timing, axis-constraint flags and collision recovery
+are not reproduced. The player still uses the earlier diagnostic route planner.
+
+VM tests verify both operand formats preserve the other coordinate, dispatch
+the selected actor, yield/wait/resume, and reject truncation. Route regression,
+3600 collision oracle cases and 540 movement arithmetic oracle cases pass.
+Actual PS4 package under shadPS4: after actor 0 arrives at (104,171), West
+(actor 1) walks (62,171)->(62,164) with sequence 4, then ->(98,164) with sequence
+5. Both waits complete. Task 1 reaches opcode 82 at PC 48, with zero unsupported
+animation formats. Local ignored trace: `artifacts/sotc/actor-axis-live.log`.
+Next: opcode 82 and subsequent scene dialogue/event commands.

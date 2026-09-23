@@ -162,10 +162,13 @@ public:
     if (t.actor>=11 || op.argument>4) return t.result=kInvalidScript;
     if (!_animation || !_animation->face(t.actor,op.argument)) return t.result=kAnimationUnavailable;
     break;
-   case 36: {
+   case 4: case 5: case 36: {
     if (t.actor>=11) return t.result=kInvalidScript;
     bool pending=false;
-    if (!_animation || !_animation->move(t.actor,op.argument,op.value,pending)) return t.result=kAnimationUnavailable;
+    unsigned x=op.argument,y=op.value;
+    if (op.opcode==4) { x=op.argument*2; y=unsigned(_actors[t.actor].y)&65535; }
+    if (op.opcode==5) { x=unsigned(_actors[t.actor].x)&65535; y=op.argument; }
+    if (!_animation || !_animation->move(t.actor,x,y,pending)) return t.result=kAnimationUnavailable;
     if (pending) { t.flags|=1; t.pc=next; ++t.executed; return t.result=kRegionWait; }
     break;
    }

@@ -9,12 +9,14 @@ namespace Sotc {
 class ScriptMachine;
 
 class StartupScene : public ScriptAnimation {
+ struct ActorMove { bool active=false; int x=0,y=0; } _moves[11];
+ bool moveOthers(ScriptMachine &machine);
  StartState _state;
  Common::Array<byte> _background, _scenery, _actorData[20];
  struct Animation { unsigned sequence, substep, mode, gate, base, direction; } _animations[11];
  ScriptMachine *_machine=nullptr;
  Route _route; bool _following=false, _scriptRoute=false;
- unsigned collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine) const;
+ unsigned collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine,unsigned self=0) const;
  unsigned _inputLocks=0;
  unsigned _walkDirection; bool _walking;
  unsigned _slots[11], _clips[11][4], _types[20], _indices[20];

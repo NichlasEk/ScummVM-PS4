@@ -11,7 +11,9 @@ class OpeningScene {
  struct Actor {
   Common::Array<byte> data;
   int x=0,y=0;
-  unsigned sequence=0,step=0,count=0,substep=0,gate=255;
+  unsigned sequence=0,step=0,count=0,substep=0,gate=255,mode=2;
+  int clipLeft=0,clipRight=319;
+  bool moving=false; int targetX=0,targetY=0;
   bool visible=false;
  } _actors[11];
  Pak _resources, _rooms;
@@ -28,6 +30,8 @@ class OpeningScene {
  unsigned _speechBank=0,_textX=0,_textY=0,_textColor=7;
  Common::Array<byte> _textFile;
  Common::String _dialogue;
+ bool _portrait=false,_speakerVisible=false; unsigned _speaker=0;
+ bool selectSequence(unsigned id,unsigned sequence,unsigned mode=2);
  bool commands(unsigned id);
  bool render();
  bool advanceActors();
@@ -40,7 +44,7 @@ public:
  unsigned textX() const { return _textX; }
  unsigned textY() const { return _textY; }
  unsigned textColor() const { return _textColor; }
- void finishDialogue() { _talking=false; _dialogue.clear(); _sound.stopSpeech(); }
+ void finishDialogue();
  void advance(unsigned elapsed);
  bool done() const { return _done; }
  bool failed() const { return _failed; }

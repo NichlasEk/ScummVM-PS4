@@ -1177,3 +1177,46 @@ and returned to the outdoor scene with zero stopped scripts at tick 26.
 Evidence: local story-office.png, story-after-dialogue.png,
 story-regression.txt and story-live.log under artifacts/sotc. No physical
 PS4 validation or full story-block completion is claimed.
+
+## Office story block: conversation and scripted walking
+
+R05 block 1 now continues beyond the London credit through all ten spoken
+records (D04.NAR 0..9), Carter/Griffith portraits, chair animations,
+intermediate credits and Parker's scripted walks. The former PC 61 cutoff
+is removed. The block's final `44 0; 80 0; 2` is recognized as the handoff
+to the existing new-game outdoor preview; other transitions still fail.
+
+Actor zero loads external RES.PAK resource 2, initially at (160,190), as
+original startup 0x773c..0x776a specifies. Axis destinations use doubled-byte
+X / byte Y, walking sequences 4..7 and signed frame deltas, clamped at each
+destination. Standing/walking render at absolute position; scripted mode 2
+retains inclusive accumulated VA2 offsets. These cutscene walks do not
+implement general collision/pathfinding. Draw-list enable and horizontal
+actor clipping support the scripted hide/show transitions. Portraits use
+actor 10 at (0,199), hide the speaking room actor and restore it after the
+line. They loop the requested sequence; randomized mouth-expression changes
+and exact DOS timing/text layout remain unimplemented here.
+
+Validation: audit-opening-animation.py executes the actual C++ player with
+original external files. It verifies all ten speech IDs in order, holds each
+line for 16 simulated seconds until confirmation, and completes the office
+block in 76,208 ms excluding holds. A repeated run matches; missing player
+or portrait resources fail explicitly. The animated logo/credit regression
+still completes twice with its previous timing/frame-change count. PS4
+build/package succeeds. Live shadPS4 displays the office, logs arrival at
+(162,190) and (162,160), and reaches subsequent dialogue/portrait records.
+User input controls this live run; full office completion is proven by the
+host runner, not claimed as a complete visual/physical-PS4 validation.
+Local evidence: office-regression.txt, office-live.png and office-live.log.
+
+## Additional CD opening located (not wired yet)
+
+The user's lighthouse reference matches D09.PAK/COTE3.RAW. A09.PAK includes
+CHUT, PLAGE, BOLESKIN and MERINTRO animation resources. R09.CC4 contains ten
+blocks for this separate CD sequence, and RES.PAK contains CDINTRO.PAL.
+The current boot starts at R05, so it omits this earlier sequence. Next:
+trace its startup/palette setup and block transitions, implement the R09
+commands including its counters and multi-task scenes, then chain into R05.
+A raw COTE3 preview with CDINTRO.PAL identifies the image but contains wrong
+colors in places; palette setup still needs investigation. Do not claim the
+CD opening works yet. All these resources remain external and ignored.

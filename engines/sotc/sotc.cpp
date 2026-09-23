@@ -322,11 +322,11 @@ Common::Error SotcEngine::run() {
     if (!menuBackground.empty()) memcpy(surface.getBasePtr(0,0),menuBackground.data(),64000);
     surface.fillRect(Common::Rect(32,26,288,58),0);
     font->drawString(&surface,"Shadow of the Comet",32,36,256,7,Graphics::kTextAlignCenter);
-    const char *labels[]={"Continue", "New game", "Load quick save", "Settings", "Quit"};
-    for (int i=0;i<5;++i) {
-     const int y=70+i*24;
-     surface.fillRect(Common::Rect(64,y,256,y+22),0);
-     if (i==menuSelection) surface.frameRect(Common::Rect(64,y,256,y+22),7);
+    const char *labels[]={"Continue", "New game", "Load quick save", "Replay opening", "Settings", "Quit"};
+    for (int i=0;i<6;++i) {
+     const int y=66+i*22;
+     surface.fillRect(Common::Rect(64,y,256,y+20),0);
+     if (i==menuSelection) surface.frameRect(Common::Rect(64,y,256,y+20),7);
      font->drawString(&surface,labels[i],68,y+6,184,i==0 && !startupAvailable ? 8 : 7,Graphics::kTextAlignCenter);
     }
     font->drawString(&surface,"Experimental engine - opening scene",0,207,320,7,Graphics::kTextAlignCenter);
@@ -381,9 +381,9 @@ Common::Error SotcEngine::run() {
    if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) debug("[sotc-input] type=%u key=%u",unsigned(event.type),unsigned(event.kbd.keycode));
    if (showCd) {
     if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) finishCd();
-    else if (event.type==Common::EVENT_LBUTTONDOWN || (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN)) {
-     if (cdOpening.dialogueText().empty()) finishCd();
-     else if (storyPage+8<storyLines.size()) storyPage+=8;
+    else if (!cdOpening.dialogueText().empty() && (event.type==Common::EVENT_LBUTTONDOWN ||
+      (event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat && event.kbd.keycode==Common::KEYCODE_RETURN))) {
+     if (storyPage+8<storyLines.size()) storyPage+=8;
      else cdOpening.finishDialogue();
      redraw=true;
     }
@@ -421,13 +421,13 @@ Common::Error SotcEngine::run() {
      confirm=event.joystick.button==Common::JOYSTICK_BUTTON_A;
     }
     if (movement) {
-     do { menuSelection=(menuSelection+movement+5)%5; } while (!startupAvailable && menuSelection==0);
+     do { menuSelection=(menuSelection+movement+6)%6; } while (!startupAvailable && menuSelection==0);
      redraw=true;
     }
     if (event.type==Common::EVENT_MOUSEMOVE || event.type==Common::EVENT_LBUTTONDOWN) {
      int x=event.mouse.x/2,y=event.mouse.y/2;
-     if (x>=64 && x<256 && y>=70 && y<188 && (y-70)%24<22) {
-      int selection=(y-70)/24;
+     if (x>=64 && x<256 && y>=66 && y<198 && (y-66)%22<20) {
+      int selection=(y-66)/22;
       if (selection!=0 || startupAvailable) { menuSelection=selection; redraw=true; confirm=event.type==Common::EVENT_LBUTTONDOWN; }
      }
     }
@@ -463,9 +463,18 @@ Common::Error SotcEngine::run() {
      } else if (menuSelection==2) {
       quickLoad();
      } else if (menuSelection==3) {
+      sound.stopSpeech(); sound.music(255); sound.effect(255);
+      openingClock=OpeningClock(openingPlan); openingAnimated=false; openingMusicClock=0;
+      showOpening=openingImages[0].size()==64000 && openingImages[1].size()==64000;
+      showCd=!cdScript.empty() && cdOpening.startCd(Cc4View(cdScript.data(),cdScript.size()),Cc4View(cdText.data(),cdText.size()));
+      openingLast=_system->getMillis(); storyText.clear(); storyLines.clear(); storyPage=0;
+      _mixer->pauseAll(false);
+      if(!showOpening && !showCd) _system->displayMessageOnOSD(Common::U32String("Opening resources are unavailable"));
+      debug("[sotc-menu] replay opening cd=%u",unsigned(showCd));
+     } else if (menuSelection==4) {
       GUI::ConfigDialog settings; runDialog(settings); syncSoundSettings();
       _mixer->pauseAll(true);
-     } else if (menuSelection==4) quitGame();
+     } else if (menuSelection==5) quitGame();
      redraw=true;
     }
     continue;

@@ -1334,3 +1334,21 @@ The PS4 package was rebuilt and exercised in shadPS4: Q saved at tick 454,
 movement changed x=220 to x=247, U restored tick 454/x=220. After relaunch,
 main-menu Load restored that same point. Evidence: `artifacts/sotc/save-live.txt`
 and `save-relaunch.txt`. This is emulator validation, not a physical PS4 test.
+
+### CD opening input and replay (2026-09-23)
+
+The reported cell-door image is R09 scene 6 / A09 resource 5, already visited
+both before and after scene 7. A rendered frame from the actual cinematic player
+matches the reference (`artifacts/sotc/cd-frames/080000-6.png`). The supplied
+script transitions from scene 8 to R05; no additional scene was invented.
+
+An input hazard could make the sequence appear truncated: Cross/click advanced
+a spoken line, but the very same action skipped the *entire* CD opening whenever
+no subtitle was currently active. Cross/click now only advances active dialogue
+and ignores gaps; Options/Escape explicitly skips the CD opening. Keyboard
+repeat cannot repeatedly advance dialogue. **Replay opening** in the main menu
+allows replay even when an existing save bypasses cinematics on launch.
+
+The PS4 package was rebuilt. In shadPS4, main-menu Replay starts R09 and Cross
+during the non-dialogue opening no longer jumps to R05. The external-asset
+cinematic regression still reaches all nine scene visits and seven recordings.

@@ -1058,3 +1058,44 @@ action bar that appears when the pointer reaches the top edge. Use the
 existing pointer (including the analog stick); no extra controller shortcut
 is needed. Show original resource art and bind real actions, not decorative
 buttons without behavior.
+
+### Animated opening: credits, comet and lighthouse prefix
+
+The logo prefix now hands off at task 2 PC 14 into an animated opening player,
+reading R05.CC4 and A05/D05.PAK. Supported instructions are actor reset/select,
+resource binding, position, sequence with/without wait, hide, background pair,
+timer, palette fade and sample playback. Animation waits use the original
+last-step condition. Visible actors render in depth order with inclusive
+sequence motion; poses and advancement use the existing shared VA2 code.
+Music task 3's periodic request keeps the original track playing when idle.
+Skipping any opening part stops both the music and sampled effects.
+
+Two missing shared pose commands were identified in the DOS executable:
+
+- Type 5, handler 0x10f3e: normalize two corners, fill a rectangle using the
+  high colour byte, then outline in the low colour byte unless it is 255.
+  CREDITS.VA2 uses this to clear the entire screen behind the title artwork.
+- Type 7, handler 0x10fad: set the high-byte colour and plot independent
+  points via 0x150ab. COMET1.VA2 uses these for luminous points in its tail.
+
+The player deliberately ends this supported prefix at the first opcode 27
+(parallel task activation), returning to the menu. It does not ignore the
+missing task and claim to run the full intro. Next: integrate task 1's
+conditional randomized eye/star animation while task 2 continues, then
+cover the later special commands and scene transition. The story sequence
+in R05 block 1 remains separate. Pacing is still the documented approximate
+10 Hz scene clock / 16 ms fade steps.
+
+Validation: `audit-opening-animation.py DATA` executes the actual C++ player
+with original assets, stubbed resource transport and audio output. It reaches
+the supported boundary after 61,408 ms with 174 changed frames; removing
+the credits resource correctly fails. `audit-poses.py` passes prior cases
+and new reversed/clipped rectangle and unconnected-point fixtures.
+`audit-opening.py` still passes the logo parser and fade-clock checks.
+
+The PS4 package also passes the live shadPS4 run: original Call of Cthulhu
+title art, director/production credits, comet and lighthouse frames were
+captured and visually inspected. Task 2 stops at the intentional supported
+boundary PC 187, opcode 27, then returns to the menu and accepts New game.
+Evidence: `artifacts/sotc/animated-opening-live.log`,
+`animated-opening-contact.png` and `opening-animation-00.png` through `15.png`.

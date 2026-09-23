@@ -11,6 +11,7 @@
 #include "sotc/scriptmachine.h"
 #include "sotc/sound.h"
 #include "sotc/opening.h"
+#include "sotc/openingscene.h"
 #include "common/file.h"
 #include "common/events.h"
 #include "common/textconsole.h"
@@ -101,11 +102,12 @@ Common::Error SotcEngine::run() {
   }
  }
  OpeningClock openingClock(openingPlan);
- uint32 openingLast=_system->getMillis(); bool openingMusic=false;
- if (showOpening) debug("[sotc-opening] logos from R05/D05; animated continuation not yet implemented");
+ OpeningScene animatedOpening(sound); bool openingAnimated=false;
+ uint32 openingLast=_system->getMillis(); unsigned openingMusicClock=0;
+ if (showOpening) debug("[sotc-opening] logos from R05/D05 followed by supported animated prefix");
  else warning("[sotc-opening] Logo prefix unavailable; opening menu directly");
  auto finishOpening=[&]() {
-  showOpening=false; sound.music(255); redraw=true;
+  showOpening=false; sound.music(255); sound.effect(255); redraw=true;
   debug("[sotc-menu] opening finished or skipped; waiting for New game");
  };
 
@@ -131,10 +133,18 @@ Common::Error SotcEngine::run() {
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
   if (showOpening) {
-   uint32 now=_system->getMillis(); openingClock.advance(now-openingLast); openingLast=now;
-   if (openingClock.musicDue() && !openingMusic) { sound.music(openingPlan.music); openingMusic=true; }
+   uint32 now=_system->getMillis(); unsigned elapsed=now-openingLast; openingLast=now;
+   if (openingAnimated) animatedOpening.advance(elapsed); else openingClock.advance(elapsed);
+   openingMusicClock+=elapsed;
+   if (openingMusicClock>=MAX(1U,openingPlan.musicDelay)*100) {
+    sound.music(openingPlan.music); openingMusicClock=0; // Original task 3 retries while music is idle.
+   }
    redraw=true;
-   if (openingClock.done()) finishOpening();
+   if (openingAnimated) { if (animatedOpening.done()) finishOpening(); }
+   else if (openingClock.done()) {
+    openingAnimated=animatedOpening.start(Cc4View(openingScript.data(),openingScript.size()),openingPlan.continuation,openingImages[1]);
+    if (!openingAnimated) finishOpening();
+   }
   }
   // Diagnostic 10 Hz preview cadence; original scene pacing is not yet bound.
   if (!mainMenu && showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
@@ -254,8 +264,8 @@ Common::Error SotcEngine::run() {
    }
    if (showOpening) {
     surface.fillRect(Common::Rect(320,240),0);
-    memcpy(surface.getBasePtr(0,20),openingImages[openingClock.logo()].data(),64000);
-    byte faded[768]; unsigned brightness=openingClock.brightness();
+    memcpy(surface.getBasePtr(0,20),openingAnimated ? animatedOpening.pixels().data() : openingImages[openingClock.logo()].data(),64000);
+    byte faded[768]; unsigned brightness=openingAnimated ? animatedOpening.brightness() : openingClock.brightness();
     for (unsigned i=0;i<768;++i) faded[i]=palette[i]*brightness/255;
     _system->getPaletteManager()->setPalette(faded,0,256);
    }

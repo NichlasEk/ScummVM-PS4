@@ -97,6 +97,21 @@ class PoseRenderer {
      unsigned source = row * width + ((ref & 0x8000) ? width - 1 - col : col);
      if (_mask[source] && !dot(px + int(col), py - int(height) + 1 + int(row), _pixels[source])) return false;
     }
+   } else if (type == 7) {
+    // 0x10fad: set high-byte colour once, plot each independent point.
+    for (unsigned j=0;j<points;++j)
+     if (!dot(x+va2Signed16(xy+j*4),y+va2Signed16(xy+j*4+2),byte(ref>>8))) return false;
+   } else if (type == 5 && points == 2) {
+    // 0x10f3e: normalize corners, fill with high byte, optional low-byte outline.
+    int x2=x+va2Signed16(xy+4),y2=y+va2Signed16(xy+6);
+    int left=px<x2 ? px : x2,right=px>x2 ? px : x2;
+    int top=py<y2 ? py : y2,bottom=py>y2 ? py : y2;
+    int firstX=left<0 ? 0 : left,lastX=right>319 ? 319 : right;
+    int firstY=top<0 ? 0 : top,lastY=bottom>199 ? 199 : bottom;
+    for (int row=firstY;row<=lastY;++row) for (int col=firstX;col<=lastX;++col)
+     if (!dot(col,row,byte(ref>>8))) return false;
+    if ((ref&255)!=255 && (!line(left,top,right,top,byte(ref)) || !line(right,top,right,bottom,byte(ref)) ||
+        !line(right,bottom,left,bottom,byte(ref)) || !line(left,bottom,left,top,byte(ref)))) return false;
    } else if ((type == 6 && points >= 2) || (type == 4 && points >= 3)) {
     int xs[255], ys[255];
     for (unsigned j = 0; j < points; ++j) {

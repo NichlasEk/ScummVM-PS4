@@ -71,6 +71,17 @@ extern "C" bool render(const uint8_t *p,unsigned n,unsigned pose,int x,int y,uns
     square = b'\0\1' + command(4, 0x2110, [(2, 2), (6, 2), (6, 6), (2, 6)])
     assert render(fixture([square]))
     assert out.raw[4 * 320 + 4] == 33 and out.raw[2 * 320 + 4] == 16
+    dots = b'\0\1' + command(7, 0x3400, [(2, 2), (6, 6), (-1, 0)])
+    assert render(fixture([dots]))
+    assert sum(v == 52 for v in out.raw) == 2
+    assert out.raw[3 * 320 + 3] == 119  # Independent points, no connecting line.
+    rectangle = b'\0\1' + command(5, 0x2110, [(6, 6), (2, 2)])
+    assert render(fixture([rectangle]))
+    assert out.raw[4 * 320 + 4] == 33 and out.raw[2 * 320 + 4] == 16
+    assert sum(v != 119 for v in out.raw) == 25
+    no_outline = b'\0\1' + command(5, 0x21ff, [(-2, -2), (2, 2)])
+    assert render(fixture([no_outline]))
+    assert sum(v == 33 for v in out.raw) == 9
     first = b'\0\1' + command(6, 0x2000, [(4, 4), (6, 4)])
     second = b'\0\1' + command(6, 0x2000, [(1, 4), (3, 4)])
     assert render(fixture([first, second]), next_pose=1, fraction=64)

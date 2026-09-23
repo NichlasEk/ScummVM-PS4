@@ -7,7 +7,7 @@ namespace Sotc {
 // deliberately not an interpreter that silently discards unknown commands.
 struct OpeningLogo { unsigned background, fadeIn, hold, fadeOut, black; };
 struct OpeningPlan {
- OpeningLogo logos[2]; unsigned music, musicDelay;
+ OpeningLogo logos[2]; unsigned music, musicDelay, continuation;
  bool load(Cc4View archive) {
   Cc4View room, init, main, audio;
   if (!cc4Entry(archive,4,0,room) || !cc4Entry(room,2,0,init) ||
@@ -40,6 +40,7 @@ struct OpeningPlan {
   if (pc>=main.size || main.data[pc]!=90 || !candidate.logos[0].fadeOut ||
       !candidate.logos[1].fadeIn || !candidate.logos[1].fadeOut) return false;
   if (audio.size<4 || audio.data[0]!=9 || audio.data[2]!=77) return false;
+  candidate.continuation=pc;
   candidate.musicDelay=audio.data[1]; candidate.music=audio.data[3];
   if (candidate.music==255) return false;
   *this=candidate; return true;

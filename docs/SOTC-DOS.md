@@ -1484,3 +1484,23 @@ selected original OBJECTS.VA2 pose (Notebook initially) in its fifth slot.
 Validated with the actual PS4 build in shadPS4: open the fifth icon, confirm
 Notebook with Cross while the pointer remains above the list, then browse
 left/right. The notebook is left open at pages 3/4 for user testing.
+
+### Bedroom doorway to hall (2026-09-23)
+
+Fixed room 2/task 6 opcode 4 at PC 33: its destination X=0 previously asked the
+route planner to walk through impassable terrain. The original 0xd32f tests
+exit records after a terrain collision; 0xd24a matches direction and the
+terrain-derived exit interval, and 0xd3c5 requests the corresponding bank/room.
+The engine now reproduces that dispatch. Scripted axis routes end at the first
+matching exit, and actual movement requests a transactional room change.
+Obstacle collisions still block movement and exits do not trigger during route
+search. Manual walking can also activate the exit records.
+
+Hall initialization additionally requires actor clipping instructions 42/43,
+implemented from 0x9ee5/0x9f1f using the existing saved actor clip bounds.
+The audit now takes and reads both the diary and telegram, checks notebook
+progress 2, walks through the bedroom doorway into bank 1/room 1, runs its
+scripts without stops, and verifies exact hall save/load restoration.
+ASan/UBSan, VM audit and the PS4 package build pass. Broader exterior navigation
+has not yet been playtested; this milestone establishes the bedroom-to-hall
+transition rather than a full chapter claim.

@@ -508,6 +508,19 @@ unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMa
  // checks, but do not turn the viewport edge into a wall on that departure.
  if(self && _moves[self].active && _moves[self].x>=320 && direction==2 && collision==0x100 &&
     candidate.right>=319 && candidate.top>terrain[319]) collision=0;
+ if(!self && collision) {
+  // Original 0xd32f consults exits only after a terrain/boundary collision.
+  for(unsigned i=0;i<_state.word(0x2dfc);++i) {
+   unsigned p=0x3090+i*8;if(_state.byte(p)!=direction)continue;
+   int l=_state.word(p+4),r=_state.word(p+6);if(l>319 || r>319)continue;
+   int t=_state.byte(0x339e + l),b=l==r ? 199 : direction==3 ? 199 : _state.byte(0x339e + r);
+   if(direction==3 && l!=r)t=199;
+   if(t>b){int swap=t;t=b;b=swap;}
+   bool hit=(direction==1 || direction==3) ? candidate.left>=l && candidate.right<=r :
+    candidate.top>=t && candidate.top<=b && (direction==2 ? candidate.right>=l : candidate.left<=r);
+   if(hit)return 0x400|i;
+  }
+ }
  if (!collision) collision=obstacleCollision(obstacles,count,candidate);
  if (!collision) {
   CollisionActor actors[11];
@@ -524,7 +537,15 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
  if (!_ready || (!scripted && _inputLocks) || _animations[0].mode==2) return false;
  walk(0,machine);
  const ScriptActor &a=*machine.actor(0);
- bool found=_route.find(a.x,a.y,x,y,[&](int nx,int ny,unsigned d) { return collisionAt(nx,ny,d,machine)==0; });
+ // Stop a scripted axis destination at the first original exit collision.
+ if(scripted && (x==a.x || y==a.y)) {
+  int tx=a.x,ty=a.y;unsigned d=x>a.x ? 2 : x<a.x ? 4 : y>a.y ? 3 : 1;
+  for(unsigned step=0;step<520 && (tx!=x || ty!=y);++step) {
+   tx+=d==2 ? 1 : d==4 ? -1 : 0;ty+=d==3 ? 1 : d==1 ? -1 : 0;
+   if((collisionAt(tx,ty,d,machine)&0xff00)==0x400){x=tx;y=ty;break;}
+  }
+ }
+ bool found=_route.find(a.x,a.y,x,y,[&](int nx,int ny,unsigned d) { unsigned hit=collisionAt(nx,ny,d,machine);return hit==0 || ((hit&0xff00)==0x400 && nx==x && ny==y); });
  _following=found && _route.count; _scriptRoute=scripted && _following;
  debug("[sotc-route] target=%d,%d found=%u steps=%u",x,y,unsigned(found),_route.count);
  return found;
@@ -628,7 +649,11 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
    unsigned p=_route.points[_route.count-1]; int x=p%320,y=p/320;
    unsigned d=x>actor.x ? 2 : x<actor.x ? 4 : y>actor.y ? 3 : 1;
    if (d!=_walkDirection) break;
-   if (collisionAt(x,y,d,machine)) { cancelRoute(); return walk(0,machine); }
+   unsigned hit=collisionAt(x,y,d,machine);
+   if((hit&0xff00)==0x400) {
+    unsigned p=0x3090+(hit&255)*8;machine.requestRoom(_state.byte(p+1),_state.byte(p+2));cancelRoute();_walking=false;return true;
+   }
+   if (hit) { cancelRoute(); return walk(0,machine); }
    actor.x=x; actor.y=y; machine.setActor(0,actor); --_route.count;
   }
   if (!_route.count) { debug("[sotc-route] arrived=%d,%d",actor.x,actor.y); cancelRoute(); return walk(0,machine); }
@@ -636,7 +661,10 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
  }
  int x=walkWord(actor.x+dx),y=walkWord(actor.y+dy);
  unsigned collision=collisionAt(x,y,_walkDirection,machine);
- // Boundary exits, sliding and automatic detours need the destination system.
+ if((collision&0xff00)==0x400) {
+  unsigned p=0x3090+(collision&255)*8;machine.requestRoom(_state.byte(p+1),_state.byte(p+2));cancelRoute();_walking=false;return true;
+ }
+ // Remaining collisions block manual walking; click routes plan detours.
  // For manual walking reject the candidate and retain the last valid position.
  if (collision || x<0 || x>319 || y<0 || y>199) {
   debug("[sotc-collision] blocked=%03x candidate=%d,%d retained=%d,%d",collision,x,y,actor.x,actor.y);

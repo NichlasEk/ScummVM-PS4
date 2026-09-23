@@ -72,6 +72,10 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   out.comparison=v.data[p++];
   out.variable=out.opcode==89 ? v.data[p++] : 256;
   out.next=p; return kInstruction;
+ case 42: case 43: // Actor X/Y clip interval (0x9ee5/0x9f1f).
+  if(v.size-p<2)return kTruncated;
+  out.argument=v.data[p++]*(out.opcode==42 ? 2 : 1);out.value=v.data[p++]*(out.opcode==42 ? 2 : 1);
+  out.next=p;return kInstruction;
  case 25: // Inventory hotspot: byte ID, X/2, Y (0x9e19).
   if(v.size-p<3) return kTruncated;
   out.argument=v.data[p++];out.variable=v.data[p++]*2;out.value=v.data[p++];

@@ -79,6 +79,10 @@ public:
  bool face(unsigned actor,unsigned direction) override;
  bool control(unsigned value,bool unlock,ScriptActor &actor) override;
  bool hide(unsigned actor) override;
+ bool clip(unsigned actor,bool horizontal,unsigned begin,unsigned end) override {
+  if(actor>=11 || begin>end)return false;
+  _clips[actor][horizontal ? 0 : 1]=begin;_clips[actor][horizontal ? 2 : 3]=end;return true;
+ }
  bool drawEnabled(unsigned actor,unsigned enabled) override;
  bool reset(unsigned actor, ScriptActor &state) override;
  bool typedResource(unsigned actor,unsigned index,unsigned type) override;

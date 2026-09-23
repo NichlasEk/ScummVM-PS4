@@ -23,6 +23,7 @@ public:
  virtual ~ScriptAnimation() {}
  virtual bool sequence(unsigned actor, unsigned sequence, ScriptActor &state) = 0;
  virtual bool hide(unsigned actor) = 0;
+ virtual bool clip(unsigned,bool,unsigned,unsigned) {return false;}
  virtual bool drawEnabled(unsigned,unsigned) { return false; }
  virtual bool dialogue(unsigned,unsigned,unsigned,unsigned) { return false; }
  virtual bool dialoguePending(bool &) { return false; }
@@ -191,6 +192,7 @@ public:
   if(!(t.flags&0x10) || _choiceTarget[i]>=t.script.size) return false;
   t.pc=_choiceTarget[i];t.flags&=~0x10U;t.result=kReady;_choiceCount=0;return true;
  }
+ void requestRoom(unsigned bank,unsigned room) {_pendingBank=bank;_pendingRoom=room;}
  unsigned pendingBank() const { return _pendingBank; }
  unsigned pendingRoom() const { return _pendingRoom; }
  bool enterRoom(Cc4View block,unsigned previousRoom,unsigned previousBank) {
@@ -314,6 +316,9 @@ public:
     _choiceX=op.variable;_choiceY=op.comparison;_choiceSelection=0;
     for(unsigned j=0;j<_choiceCount;++j) {_choiceText[j]=op.choiceText[j];_choiceTarget[j]=op.choiceTarget[j];}
     t.flags|=0x10;t.pc=next;++t.executed;return t.result=kAnimationWait;
+   case 42: case 43:
+    if(!_animation || !_animation->clip(t.actor,op.opcode==42,op.argument,op.value))return t.result=kAnimationUnavailable;
+    break;
    case 25:
     if(!_animation || !_animation->object(op.argument,op.variable,op.value)) return t.result=kAnimationUnavailable;
     break;

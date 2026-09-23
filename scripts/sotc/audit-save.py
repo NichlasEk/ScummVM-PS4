@@ -202,6 +202,26 @@ int main() {
   assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
  }
  assert(m.inventoryState(1)==65535);
+ player=*m.actor(0);player.x=40;player.y=160;assert(m.setActor(0,player));assert(scene.face(0,4));
+ assert(scene.takeObject(item));assert(m.inventoryState(2)==1);
+ for(unsigned phase=0;phase<2;++phase) {
+  if(phase)assert(m.useObject(2));
+  for(unsigned tick=0;tick<300;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ }
+ assert(m.inventoryState(2)==65535);assert(m.journalProgress()==2);
+ assert(scene.destination(44,130,m));
+ for(unsigned tick=0;tick<500;++tick) {
+  scene.finishDialogue();assert(scene.movePlayer(m));m.tick();
+  assert(scene.serviceRoom(m,status));
+  assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+ }
+ assert(scene.bank()==1 && scene.room()==1);
+ for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);
+ before=state(m,scene);assert(writeQuickSave(files,"hall",m,scene,saved));
+ assert(readQuickSave(files,"objects",m,scene,saved,pixels,status));assert(scene.room()==2);
+ assert(readQuickSave(files,"hall",m,scene,saved,pixels,status));assert(state(m,scene)==before);
+ std::cout<<"Bedroom exit enters the hall and restores its save exactly\n";
+ std::cout<<"Exit probe bank="<<scene.bank()<<" room="<<scene.room()<<" x="<<m.actor(0)->x<<" y="<<m.actor(0)->y<<"\n";
  std::cout<<"Object facing, pickup and inventory save restore passed\n";
  std::cout<<"Door probe ends in bank "<<scene.bank()<<" room "<<scene.room()<<"\n";
 

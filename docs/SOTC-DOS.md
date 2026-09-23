@@ -620,3 +620,54 @@ waveform comparison against original hardware is claimed.
 
 Next: advance actors and bind input, then run the scheduler continuously with
 original scene timing. Later script commands may still expose additional stops.
+
+### Scene animation and script completion waits
+
+The startup scene now retains its background, resources and per-actor animation
+state. Each diagnostic frame follows the original order at 0x8d07..0x8d1c:
+script pass, scene render, then actor frame advancement. Rendering starts from
+the clean background and preserves the saved foreground/actor ordering.
+The frame/subframe transition arithmetic (0xc1c9 plus 0x7afc) is in
+`animation.h`. Normal frame parameters are not mistaken for delays; mode-1
+interpolation substeps follow the original reset/advance thresholds. Modes
+outside the proven subset cause an explicit pause. The special actor-10 idle
+controller is not yet implemented; the initial saved actor-10 state is static.
+
+Script opcodes 87/88 now start the bound actor's sequence through a scene host;
+87 yields until that actor reaches its final frame. Sequence selection follows
+0x7857: reset frame/count/advance gate, preserve the existing interpolation
+substep. Bad sequences or missing scene bindings retain the script PC.
+Opcode 41 hides non-player actors (0x9e9e); hidden actors stop rendering and
+advancing. Their original resource bytes remain cached rather than freeing
+shared allocations. The player exception is preserved.
+
+The preview now runs at an explicitly provisional **10 diagnostic frames per
+second**, not a claim of original game pacing. Triangle (C in shadPS4) toggles
+run/pause, Cross (N) pauses and steps one frame, Options changes views as before.
+An unsupported script command or animation/render failure pauses automatically;
+no unknown command is skipped. Music continues on its independent audio clock.
+
+Validation:
+
+- 384 render/update arithmetic cases match the original EXE executed in Unicorn,
+  including frame wrap, gates and interpolation substeps. Graphics calls and
+  sequence lookup are stubbed in that focused test, not the arithmetic itself.
+- The shared VM tests cover missing/failing animation hosts, 87's yield and
+  completion, 88's continuation, and 41's player exception/hide dispatch.
+- Pose rendering and CC4 decoder regression audits pass.
+- PS4 package tested in shadPS4: West switches from sequence 8 to sequence 1;
+  both small bird actors finish and are hidden; the seagull moves into view.
+  Automatic preview pauses at tick 13, task 10 PC 13/opcode 90, with zero
+  unsupported animation formats. `animation-final.png` records that scene;
+  `animation-final-live.log` records the script and sequence transitions.
+
+```sh
+.tools/sotc-audit-env/bin/python scripts/sotc/audit-animation.py \
+  build/sotc-DOS/disc-files/SHADOW.EXE
+python3 scripts/sotc/audit-scriptmachine.py build/sotc-DOS/disc-files/SHADOW
+```
+
+Next is actor initialization/binding (90), resource replacement (91), and the
+following script commands. Movement, player input, dynamic draw-list updates,
+and original scene pacing are still required for a playable scene. No physical
+PS4 test was performed for this milestone.

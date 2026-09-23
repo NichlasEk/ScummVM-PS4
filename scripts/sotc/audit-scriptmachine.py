@@ -22,6 +22,17 @@ struct TestSound : Sotc::ScriptSound {
  bool effect(unsigned i) override { last = i; ++calls; return accept; }
  bool music(unsigned i) override { last = i; ++calls; return accept; }
 } sound;
+struct TestAnimation : Sotc::ScriptAnimation {
+ bool accept=false; unsigned calls=0;
+ bool hide(unsigned) override {return accept;}
+ bool sequence(unsigned,unsigned seq,Sotc::ScriptActor &actor) override {
+  ++calls; if (!accept || seq!=3) return false;
+  actor.step=0; actor.steps=2; return true;
+ }
+} animation;
+extern "C" void animationHost(bool enabled,bool accept) {
+ animation.calls=0; animation.accept=accept; vm.setAnimation(enabled ? &animation : nullptr);
+}
 extern "C" void soundHost(bool enabled,bool accept) {
  sound.calls=0; sound.accept=accept; vm.setSound(enabled ? &sound : nullptr);
 }
@@ -154,6 +165,28 @@ extern "C" bool info(unsigned i,unsigned *out) {
             assert lib.visit(1) == 1 and info()[0] == 2
             assert lib.soundCalls() == 1 and lib.soundLast() == sample
     lib.soundHost(False, False)
+    for opcode in (87,88):
+        fixture([opcode,3,2])
+        lib.animationHost(False,False)
+        assert lib.visit(1)==11 and info()[0]==0
+        lib.animationHost(True,False)
+        assert lib.visit(1)==11 and info()[0]==0
+        lib.animationHost(True,True)
+        if opcode==87:
+            assert lib.visit(1)==3 and info()[0:2]==[2,4]
+            assert lib.visit(1)==3
+            lib.actor(0,0,0,1,2)
+            assert lib.visit(1)==1
+        else:
+            assert lib.visit(1)==1 and info()[0]==2
+    lib.animationHost(False,False)
+    fixture([41,2])
+    assert lib.visit(1)==1  # Original hide ignores the player, even without a scene host.
+    fixture([21,1,41,2])
+    assert lib.visit(1)==11 and info()[0]==2
+    lib.animationHost(True,True)
+    assert lib.visit(1)==1 and info()[0]==3
+    lib.animationHost(False,False)
     save = (args.directory / 'INIT.SAV').read_bytes()
     state = bytes(v ^ ((i + 1) * 5 & 255) for i, v in enumerate(save[64:]))
     bank, room = (struct.unpack_from('<H', state, a - 0x2dee)[0] for a in (0x2df2, 0x2df8))

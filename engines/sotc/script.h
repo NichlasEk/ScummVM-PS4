@@ -46,6 +46,7 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   if (v.size - p < out.argument * 2) return kTruncated;
   out.next = p + out.argument * 2;
   return kInstruction;
+ case 41: // Hide the current non-player actor (0x9e9e).
  case 39:
   out.next = p; return kInstruction;
  case 66: // Event plus footprint rectangle, then false-branch displacement.

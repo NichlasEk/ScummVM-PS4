@@ -5,7 +5,7 @@
 #include "script.h"
 namespace Sotc {
 enum TaskResult { kReady, kDisabled, kTimerWait, kAnimationWait, kRegionWait,
- kUnknownWait, kUnknownOpcode, kInvalidScript, kInstructionLimit, kUnknownVariable, kSoundUnavailable };
+ kUnknownWait, kUnknownOpcode, kInvalidScript, kInstructionLimit, kUnknownVariable, kSoundUnavailable, kAnimationUnavailable };
 struct ScriptTask {
  Cc4View script;
  uint32_t pc;
@@ -17,6 +17,12 @@ struct ScriptActor {
  int x, y;
  unsigned halfWidth, footHeight, step, steps;
 };
+class ScriptAnimation {
+public:
+ virtual ~ScriptAnimation() {}
+ virtual bool sequence(unsigned actor, unsigned sequence, ScriptActor &state) = 0;
+ virtual bool hide(unsigned actor) = 0;
+};
 // A successful request includes ignoring a new effect while one is active,
 // as the original single-channel driver does. 255 stops the channel.
 class ScriptSound {
@@ -27,6 +33,7 @@ public:
 };
 class ScriptMachine {
  ScriptSound *_sound;
+ ScriptAnimation *_animation;
  StartState _initial;
  uint8_t _block[65536];
  ScriptTask _tasks[17];
@@ -65,7 +72,7 @@ class ScriptMachine {
   }
  }
 public:
- ScriptMachine() : _sound(nullptr), _count(0), _randomState(1), _randomValue(0), _randomKnown(false), _eventPending(false) {}
+ ScriptMachine() : _sound(nullptr), _animation(nullptr), _count(0), _randomState(1), _randomValue(0), _randomKnown(false), _eventPending(false) {}
  // Explicit diagnostic seed: original startup seed source is not yet bound.
  void seedRandom(uint32_t seed) { _randomState = seed; }
  uint32_t randomState() const { return _randomState; }
@@ -74,6 +81,8 @@ public:
  bool eventPending() const { return _eventPending; }
  ScriptMachine(const ScriptMachine &) = delete;
  ScriptMachine &operator=(const ScriptMachine &) = delete;
+ void setAnimation(ScriptAnimation *animation) { _animation = animation; }
+ const ScriptActor *actor(unsigned index) const { return index < 11 ? &_actors[index] : nullptr; }
  void setSound(ScriptSound *sound) { _sound = sound; }
  unsigned count() const { return _count; }
  const ScriptTask *task(unsigned i) const { return i < _count ? &_tasks[i] : nullptr; }
@@ -160,6 +169,17 @@ public:
      }
      if (op.opcode == 66 && !overlaps(t)) next = op.target;
      else _eventPending = false;
+    }
+    break;
+   case 41:
+    if (t.actor >= 11) return t.result = kInvalidScript;
+    if (t.actor && (!_animation || !_animation->hide(t.actor))) return t.result = kAnimationUnavailable;
+    break;
+   case 87: case 88:
+    if (t.actor >= 11) return t.result = kInvalidScript;
+    if (!_animation || !_animation->sequence(t.actor, op.argument, _actors[t.actor])) return t.result = kAnimationUnavailable;
+    if (op.opcode == 87) {
+     t.flags |= 4; t.pc = next; ++t.executed; return t.result = kAnimationWait;
     }
     break;
    case 99:

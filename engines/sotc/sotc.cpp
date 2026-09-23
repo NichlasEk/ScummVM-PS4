@@ -75,11 +75,28 @@ Common::Error SotcEngine::run() {
  Common::Array<byte> startupPixels; Common::String startupStatus;
  SoundEffects sound(_mixer);
  ScriptMachine startupMachine; startupMachine.setSound(&sound); unsigned scriptTicks = 0; Common::String scriptStatus;
- bool startupAvailable = loadStartupScene(startupPixels, startupStatus, startupMachine), showStartup = startupAvailable;
+ StartupScene startupScene; startupMachine.setAnimation(&startupScene);
+ bool startupAvailable = startupScene.load(startupPixels, startupStatus, startupMachine), showStartup = startupAvailable;
  if (startupAvailable) scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
 
+ bool runScene = true;
+ uint32 nextSceneFrame = _system->getMillis() + 100;
+ auto sceneStep = [&]() {
+  scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
+  bool rendered = startupScene.render(startupPixels,startupStatus,startupMachine);
+  unsigned blockedAnimations = rendered ? startupScene.advance(startupMachine) : 1;
+  if (!rendered || blockedAnimations) runScene = false;
+  for (unsigned i=0;i<startupMachine.count();++i)
+   if (startupMachine.task(i)->result >= kUnknownWait) runScene = false;
+  if (!runScene) debug("[sotc-animation] paused tick=%u unsupported=%u",scriptTicks,blockedAnimations);
+  redraw = true;
+ };
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
+  // Diagnostic 10 Hz preview cadence; original scene pacing is not yet bound.
+  if (showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
+   sceneStep(); nextSceneFrame=_system->getMillis()+100;
+  }
   if (reload) {
    inspectRoomScripts(bank);
    backgrounds.clear();
@@ -154,12 +171,12 @@ Common::Error SotcEngine::run() {
    }
    if (showStartup) {
     memcpy(surface.getBasePtr(0, 0), startupPixels.data(), 64000);
-    title = "Start snapshot - not gameplay"; actorTitle = scriptStatus;
+    title = runScene ? "Scene preview - not gameplay" : "Scene paused - not gameplay"; actorTitle = scriptStatus;
    }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, showStartup ? "Cross/click: script step  Options: view" : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
+   font->drawString(&surface, showStartup ? "Triangle: run/pause  Cross: step" : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
    if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
@@ -170,8 +187,11 @@ Common::Error SotcEngine::run() {
     if (startupAvailable) { showStartup = !showStartup; pal = 0; redraw = true; }
     continue;
    }
+   if (showStartup && event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_a) {
+    runScene = !runScene; nextSceneFrame=_system->getMillis()+100; redraw=true; continue;
+   }
    if (showStartup && event.type == Common::EVENT_LBUTTONDOWN) {
-    scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks); redraw = true; continue;
+    runScene=false; sceneStep(); continue;
    }
    if (showStartup && !(event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)) continue;
 

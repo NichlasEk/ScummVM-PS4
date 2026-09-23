@@ -163,7 +163,43 @@ bool StartupScene::walk(unsigned direction, ScriptMachine &machine) {
  debug("[sotc-walk] direction=%u moving=%u sequence=%u",facing,unsigned(moving),sequenceIndex);
  return true;
 }
+unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine) const {
+ const ScriptActor &actor=*machine.actor(0);
+ unsigned char terrain[320],obstacles[255*4];
+ for (unsigned i=0;i<320;++i) terrain[i]=_state.byte(0x339e + i);
+ unsigned count=_state.byte(0x3542);
+ if (!_state.range(0x3544,count*4)) return 0xffff;
+ for (unsigned i=0;i<count*4;++i) obstacles[i]=_state.byte(0x3544+i);
+ Footprint candidate=footprint(x,y,actor.halfWidth,actor.footHeight);
+ unsigned collision=terrainCollision(terrain,candidate,direction);
+ if (!collision) collision=obstacleCollision(obstacles,count,candidate);
+ if (!collision) {
+  CollisionActor actors[11];
+  for (unsigned i=0;i<11;++i) {
+   const ScriptActor &a=*machine.actor(i);
+   actors[i]={footprint(a.x,a.y,a.halfWidth,a.footHeight),_visible[i],_collisionBypass[i]};
+  }
+  collision=actorCollision(actors,0,candidate);
+ }
+ return collision;
+}
+bool StartupScene::destination(int x,int y,ScriptMachine &machine) {
+ cancelRoute();
+ if (!_ready || _animations[0].mode==2) return false;
+ walk(0,machine);
+ const ScriptActor &a=*machine.actor(0);
+ bool found=_route.find(a.x,a.y,x,y,[&](int nx,int ny,unsigned d) { return collisionAt(nx,ny,d,machine)==0; });
+ _following=found && _route.count;
+ debug("[sotc-route] target=%d,%d found=%u steps=%u",x,y,unsigned(found),_route.count);
+ return found;
+}
 bool StartupScene::movePlayer(ScriptMachine &machine) {
+ if (_following) {
+  if (!_route.count || _animations[0].mode==2) { cancelRoute(); return walk(0,machine); }
+  const ScriptActor &a=*machine.actor(0); unsigned p=_route.points[_route.count-1];
+  unsigned d=int(p%320)>a.x ? 2 : int(p%320)<a.x ? 4 : int(p/320)>a.y ? 3 : 1;
+  if (!walk(d,machine)) { cancelRoute(); return false; }
+ }
  if (!_walking) return true;
  if (_animations[0].mode==2) { _walking=false; return true; }
  unsigned slot=_slots[0]; if (slot>=20) return false;
@@ -174,23 +210,20 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
  int speed=_state.byte(0x2e2a); if (speed>=128) speed-=256;
  walkDelta(_walkDirection,speed,_state.signedWord(0x2e24),_state.signedWord(0x2e26),
            _state.word(0x2df8)==_state.word(0x2dfa),dx,dy);
- int x=walkWord(actor.x+dx),y=walkWord(actor.y+dy);
- unsigned char terrain[320],obstacles[255*4];
- for (unsigned i=0;i<320;++i) terrain[i]=_state.byte(0x339e + i);
- unsigned count=_state.byte(0x3542);
- if (!_state.range(0x3544,count*4)) return false;
- for (unsigned i=0;i<count*4;++i) obstacles[i]=_state.byte(0x3544+i);
- Footprint candidate=footprint(x,y,actor.halfWidth,actor.footHeight);
- unsigned collision=terrainCollision(terrain,candidate,_walkDirection);
- if (!collision) collision=obstacleCollision(obstacles,count,candidate);
- if (!collision) {
-  CollisionActor actors[11];
-  for (unsigned i=0;i<11;++i) {
-   const ScriptActor &a=*machine.actor(i);
-   actors[i]={footprint(a.x,a.y,a.halfWidth,a.footHeight),_visible[i],_collisionBypass[i]};
+ if (_following) {
+  unsigned budget=unsigned(dx<0 ? -dx : dx)+unsigned(dy<0 ? -dy : dy);
+  while (budget-- && _route.count) {
+   unsigned p=_route.points[_route.count-1]; int x=p%320,y=p/320;
+   unsigned d=x>actor.x ? 2 : x<actor.x ? 4 : y>actor.y ? 3 : 1;
+   if (d!=_walkDirection) break;
+   if (collisionAt(x,y,d,machine)) { cancelRoute(); return walk(0,machine); }
+   actor.x=x; actor.y=y; machine.setActor(0,actor); --_route.count;
   }
-  collision=actorCollision(actors,0,candidate);
+  if (!_route.count) { debug("[sotc-route] arrived=%d,%d",actor.x,actor.y); cancelRoute(); return walk(0,machine); }
+  return true;
  }
+ int x=walkWord(actor.x+dx),y=walkWord(actor.y+dy);
+ unsigned collision=collisionAt(x,y,_walkDirection,machine);
  // Boundary exits, sliding and automatic detours need the destination system.
  // For manual walking reject the candidate and retain the last valid position.
  if (collision || x<0 || x>319 || y<0 || y>199) {

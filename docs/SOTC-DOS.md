@@ -795,3 +795,36 @@ retaining (234,177), with obstacle result 301. Trace:
 .tools/sotc-audit-env/bin/python scripts/sotc/audit-collision.py \
   build/sotc-DOS/disc-files/SHADOW.EXE
 ```
+
+### Destination walking with collision-aware detours
+
+Circle/right-click now chooses a destination under the virtual pointer. The
+left stick moves a software crosshair; no desktop F7 capture is required for
+controller destination selection. D-pad input cancels the route and retains
+manual walking. Switching resource views also cancels it.
+
+`route.h` provides a bounded four-neighbour breadth-first search over the
+320x200 scene. This is our diagnostic planner, **not a reconstruction of DOS
+routing**. Every candidate uses the verified terrain/obstacle/actor predicates.
+The actor follows cardinal segments with the original animation delta budget,
+checks every one-pixel intermediate position, stops exactly at the target,
+and cancels safely if a live actor blocks its next step. There is no automatic
+replanning around moving actors yet. Unreachable/out-of-screen goals clear the
+route without moving the player; room exits remain unavailable.
+
+Validation: synthetic wall/detour, unreachable, invalid and same-position tests
+pass. An INIT.SAV fixture routes (220,177) to (310,150) with 117 clear steps;
+each step is adjacent and collision checked. The 3600 original collision oracle
+cases still pass. Actual PS4 build in shadPS4: target (197,171) takes 43 steps
+and arrives; next target (304,161) takes 117 steps, changes direction four times
+(up/right/up/right) around the room obstacles, and arrives exactly. Failed
+(0,0)/(83,16) targets returned without hanging. Local ignored evidence:
+`artifacts/sotc/route-live.log`.
+
+```sh
+python3 scripts/sotc/audit-route.py build/sotc-DOS/disc-files/SHADOW/INIT.SAV
+```
+
+Remaining fidelity work includes original destination flags, mode-1 transition
+delay, collision response/detour choices, moving-actor replanning and room exits.
+This route implementation deliberately makes no claim of original path choice.

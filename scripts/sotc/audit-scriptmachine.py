@@ -20,6 +20,7 @@ static Sotc::ScriptMachine vm;
 struct TestSound : Sotc::ScriptSound {
  unsigned last = 0, calls = 0; bool accept = true;
  bool effect(unsigned i) override { last = i; ++calls; return accept; }
+ bool music(unsigned i) override { last = i; ++calls; return accept; }
 } sound;
 extern "C" void soundHost(bool enabled,bool accept) {
  sound.calls=0; sound.accept=accept; vm.setSound(enabled ? &sound : nullptr);
@@ -142,15 +143,16 @@ extern "C" bool info(unsigned i,unsigned *out) {
         fixture(script)
         assert lib.visit(1) == 7 and info()[0] == 0
 
-    for sample in (0, 6, 255):
-        fixture([77, sample, 2])
-        lib.soundHost(False, False)
-        assert lib.visit(1) == 10 and info()[0] == 0
-        lib.soundHost(True, False)
-        assert lib.visit(1) == 10 and info()[0] == 0 and lib.soundCalls() == 1
-        lib.soundHost(True, True)
-        assert lib.visit(1) == 1 and info()[0] == 2
-        assert lib.soundCalls() == 1 and lib.soundLast() == sample
+    for opcode in (77, 99):
+        for sample in (0, 6, 255):
+            fixture([opcode, sample, 2])
+            lib.soundHost(False, False)
+            assert lib.visit(1) == 10 and info()[0] == 0
+            lib.soundHost(True, False)
+            assert lib.visit(1) == 10 and info()[0] == 0 and lib.soundCalls() == 1
+            lib.soundHost(True, True)
+            assert lib.visit(1) == 1 and info()[0] == 2
+            assert lib.soundCalls() == 1 and lib.soundLast() == sample
     lib.soundHost(False, False)
     save = (args.directory / 'INIT.SAV').read_bytes()
     state = bytes(v ^ ((i + 1) * 5 & 255) for i, v in enumerate(save[64:]))
@@ -169,4 +171,6 @@ extern "C" bool info(unsigned i,unsigned *out) {
     lib.soundHost(True, True)
     assert lib.visit(14) == 2 and info(14)[0:3] == [2, 2, 5]
     assert lib.soundLast() == 6 and lib.soundCalls() == 1
+    assert lib.visit(12) == 2 and info(12)[:3] == [2, 2, 1]
+    assert lib.soundLast() == 0
     print(json.dumps(result, indent=2))

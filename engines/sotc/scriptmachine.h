@@ -23,6 +23,7 @@ class ScriptSound {
 public:
  virtual ~ScriptSound() {}
  virtual bool effect(unsigned index) = 0;
+ virtual bool music(unsigned index) = 0;
 };
 class ScriptMachine {
  ScriptSound *_sound;
@@ -160,6 +161,9 @@ public:
      if (op.opcode == 66 && !overlaps(t)) next = op.target;
      else _eventPending = false;
     }
+    break;
+   case 99:
+    if (!_sound || !_sound->music(op.argument)) return t.result = kSoundUnavailable;
     break;
    case 77:
     if (!_sound || !_sound->effect(op.argument)) return t.result = kSoundUnavailable;

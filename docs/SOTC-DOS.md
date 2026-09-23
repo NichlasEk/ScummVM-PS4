@@ -559,3 +559,64 @@ tick 2. Evidence: `artifacts/sotc/sound-live.log`, `sound-step.png`,
 activation, not a listening-quality comparison or physical PS4 test.
 Scene animation is still frozen and scheduler stepping is still diagnostic.
 No original sample bytes are tracked or included in the package.
+
+
+### ADLM music playback
+
+Opcode 99 now requests music from the user's `MUS.PAK`; 255 stops it, and
+requests while music is active are ignored, matching the handler at 0x9506.
+Missing/invalid files retain the script PC with `kSoundUnavailable`.
+Music advances in real time while the scene scheduler remains manually stepped.
+Initial task 12 plays entry 0 (`SHADOW1.ADD`) and returns to its one-tick timer.
+The first pass now has nine waiting tasks and zero unsupported stops. This
+is still a frozen scene, not a claim that the game is playable.
+
+ADD files use the `ADLM` format. The header holds eleven stream offsets at
++8, an instrument-table offset at +52, and OPL rhythm/melodic parameters at
++60/+61. Instruments are 13 bytes. Commands 0..5 respectively end, set delay,
+set note, select instrument, set attenuation and set pitch bend; bit 7 yields
+until the next timing interval. The terminal 0x80 may be the very last byte.
+All supplied songs use this subset. Streams, instruments, pitch lookup bounds
+and non-yielding runs are validated before playback.
+
+`adlm.h` ports the event/render behavior read from the supplied ADLIBM.COM
+(offsets here include the COM load address 0x100): interpreter 0x979..0xa4d,
+render/cache 0xaad..0xbbd, instrument registers 0x8b4, level 0x774, note and
+rhythm handling 0x7b4/0x843, song setup 0xd9d. Pitch and operator tables are
+read from the user's **ADLIBM.COM**, alongside the PAK files. This file is
+required for this music implementation; none of its tables or executable
+bytes are embedded in the engine. Only the known IFGM ADLIB layout is supported.
+
+`Music` supplies its own mono PCM stream around ScummVM's DOSBox OPL2
+emulator (MAME fallback when DOSBox OPL is disabled). Timing is 60 Hz using
+sample counts with a fractional remainder; the original executable sets 60
+at startup (0xb7b). Output uses `kMusicSoundType`, so ScummVM music volume and
+mute scale final PCM separately from sound effects. All synthesis and register
+writes occur in the audio callback, with a mutex protecting song replacement;
+the mixer is never called while that mutex is held. Natural endings preserve
+release tails. Stop requests cancel pending starts and key off the chip.
+
+Validation uses the *actual original driver* as an oracle, executing its
+routines in test-only Unicorn and comparing every OPL register write against
+the C++ player, tick by tick. All 15 songs reach their end with identical
+register traces, including the two rhythm-mode songs. Truncated data, missing
+terminators, bad offsets and invalid driver tables are also rejected.
+
+```sh
+# Test-only dependency, installed in an ignored virtualenv; not in the package.
+.tools/sotc-audit-env/bin/python scripts/sotc/audit-music.py \
+  artifacts/sotc/unpacked/MUS.PAK \
+  build/sotc-DOS/disc-files/SHADOW/ADLIBM.COM > artifacts/sotc/music-audit.json
+```
+
+PS4 package built and run in shadPS4. Final evidence: `music-final-live.log`
+shows track 0 and the first audio tick; `music-step.png` shows tick 2 with
+nine waiting/zero stopped. A capture of only shadPS4's PulseAudio stream
+confirms nonzero music PCM (peak 8565, RMS about 1682); `music-output-audit.json`
+records the measurement. The first PipeWire node capture was inconclusive;
+the successful check used `parec --monitor-stream` for the emulator specifically.
+User also confirmed hearing music. No physical PS4 test or bit-exact rendered
+waveform comparison against original hardware is claimed.
+
+Next: advance actors and bind input, then run the scheduler continuously with
+original scene timing. Later script commands may still expose additional stops.

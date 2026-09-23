@@ -982,3 +982,18 @@ blocked. Dialogue clicks still advance pages. The footer describes the new
 binding. PS4 build passed; the shadPS4 trace shows single-click routes reaching
 (217,164), (200,170), (197,170), and (141,171) automatically. Walking into the
 opening conversation region still starts its scripted approach and dialogue.
+
+### Original dialogue speech
+
+Dialogue now reads D00-D07.NAR using the current speech-bank variable and
+subtitle index. Sparse offset tables and concatenated VOC segments are
+validated before unsigned mono PCM is sent to ScummVM's speech mixer channel.
+Advancing past a dialogue stops its voice; missing recordings retain subtitles.
+Original data remains external. Music continues independently.
+
+Validation: `audit-speech.py` checked 1,698 recordings, 1,764 VOC segments and
+414 empty indices across the seven supplied banks, plus malformed inputs.
+The script-machine audit and PS4 build passed. shadPS4 logged active speech
+playback for all six opening dialogue lines; the user confirmed audible speech.
+Dialogue advancement remains manual, and the subsequent opcode-94 room
+transition remains pending. Local trace: `artifacts/sotc/speech-live.log`.

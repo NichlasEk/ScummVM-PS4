@@ -32,6 +32,7 @@ Common::String stepStartupScripts(ScriptMachine &machine, unsigned tick) {
 bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, ScriptMachine &machine) {
  pixels.clear(); status = "INIT.SAV unavailable";
  Common::Array<byte> save, scripts;
+ machine.stopSpeech();
  _textFile.clear(); _dialogueText.clear(); _talking=false;
  _ready = false; _machine=&machine; cancelRoute();
  StartState &state = _state;
@@ -168,6 +169,7 @@ bool StartupScene::dialogue(unsigned speaker,unsigned text,unsigned seq,unsigned
  _dialogueText.clear();
  for (unsigned i=1;i<size-(decoded[size-1]==0 ? 1 : 0);++i) _dialogueText+=decoded[i] ? char(decoded[i]) : '\n';
  _speaker=speaker; _portrait=portrait!=256; _restoreTalk=seq!=255; _talking=true;
+ if (!_machine->speech(_state.word(0x2e16),text)) warning("[sotc-speech] Missing or unsupported recording bank=%u text=%u; retaining subtitles",_state.word(0x2e16),text);
  debug("[sotc-dialogue] actor=%u text=%u seq=%u portrait=%u bytes=%u",speaker,text,seq,portrait,size);
  return true;
 }

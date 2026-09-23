@@ -8,13 +8,15 @@
 namespace Sotc {
 class SoundEffects : public ScriptSound {
  Audio::Mixer *_mixer;
- Audio::SoundHandle _handle;
+ Audio::SoundHandle _handle, _speechHandle;
  Pak _samples;
  Music _music;
  bool _opened;
 public:
  explicit SoundEffects(Audio::Mixer *mixer) : _mixer(mixer), _music(mixer), _opened(false) {}
- ~SoundEffects() override { _mixer->stopHandle(_handle); }
+ ~SoundEffects() override { _mixer->stopHandle(_handle); stopSpeech(); }
+ bool speech(unsigned bank,unsigned index) override;
+ void stopSpeech() override { _mixer->stopHandle(_speechHandle); }
  bool effect(unsigned index) override;
  bool music(unsigned index) override { return _music.request(index); }
 };

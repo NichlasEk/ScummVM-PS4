@@ -38,7 +38,7 @@ public:
  bool dialogue(unsigned actor,unsigned text,unsigned sequence,unsigned portrait) override;
  bool dialoguePending(bool &pending) override;
  const Common::String &dialogueText() const { return _dialogueText; }
- void finishDialogue() { _talking=false; }
+ void finishDialogue() { _talking=false; if (_machine) _machine->stopSpeech(); }
  bool scriptWalking() const { return _scriptRoute; }
  void cancelRoute() { _following=false; _scriptRoute=false; _route.count=0; }
  bool movePlayer(ScriptMachine &machine);

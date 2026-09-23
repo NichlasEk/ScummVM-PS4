@@ -37,6 +37,8 @@ public:
 class ScriptSound {
 public:
  virtual ~ScriptSound() {}
+ virtual bool speech(unsigned,unsigned) { return false; }
+ virtual void stopSpeech() {}
  virtual bool effect(unsigned index) = 0;
  virtual bool music(unsigned index) = 0;
 };
@@ -115,6 +117,8 @@ public:
  ScriptMachine &operator=(const ScriptMachine &) = delete;
  void setAnimation(ScriptAnimation *animation) { _animation = animation; }
  const ScriptActor *actor(unsigned index) const { return index < 11 ? &_actors[index] : nullptr; }
+ bool speech(unsigned bank,unsigned text) { return _sound && _sound->speech(bank,text); }
+ void stopSpeech() { if (_sound) _sound->stopSpeech(); }
  void setSound(ScriptSound *sound) { _sound = sound; }
  unsigned count() const { return _count; }
  const ScriptTask *task(unsigned i) const { return i < _count ? &_tasks[i] : nullptr; }

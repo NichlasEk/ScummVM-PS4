@@ -29,10 +29,11 @@ private:
  const Graphics::Font &uiFont() const { if(_console && _japaneseFont) return *_japaneseFont; return _originalFont; }
  bool loadConsoleResourceNames();
  bool loadSaturnMenuButton();
- void drawSaturnMenuButton(Graphics::Surface *screen,const byte *palette);
- Common::Array<byte> _saturnMenuPixels, _saturnMenuColors;
- bool saturnMenuVisible() const { return _console && _scenePreview && !_gameOver && !_saturnMenuPixels.empty(); }
- Common::Rect saturnMenuBounds() const { return Common::Rect(552,-36,632,-4); }
+ bool loadPS1MenuButton();
+ void drawConsoleMenuButton(Graphics::Surface *screen,const byte *palette);
+ Common::Array<byte> _consoleMenuPixels, _consoleMenuColors;
+ bool consoleMenuVisible() const { return _console && _scenePreview && !_gameOver && !_consoleMenuPixels.empty(); }
+ Common::Rect consoleMenuBounds() const { return Common::Rect(552,-36,632,-4); }
  bool resolveChapterGraphics(const Common::String &name,int local,uint32 &resource) const;
  int chapterRoomBase(int chapter) const;
  int chapterRoomCount(int chapter) const;

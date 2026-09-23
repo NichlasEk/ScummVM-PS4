@@ -19,7 +19,7 @@
 #include "audio/audiostream.h"
 namespace Pice {
 bool PiceEngine::loadSaturnMenuButton() {
- _saturnMenuPixels.clear(); _saturnMenuColors.clear();
+ _consoleMenuPixels.clear(); _consoleMenuColors.clear();
  Common::File file;
  if(!file.open(Common::Path("OUT.BIN")) || file.size()<264 || file.size()>4*1024*1024) return false;
  Common::Array<byte> data; data.resize(file.size());
@@ -32,33 +32,33 @@ bool PiceEngine::loadSaturnMenuButton() {
     offsets[63]-offsets[62]!=324) return false;
  const byte *texture=data.data()+offsets[62];
  if(READ_BE_UINT16(texture)!=40 || READ_BE_UINT16(texture+2)!=16) return false;
- _saturnMenuPixels.resize(640);
- for(uint i=0;i<640;++i) _saturnMenuPixels[i]=(texture[4+i/2]>>(i%2 ? 0 : 4))&15;
+ _consoleMenuPixels.resize(640);
+ for(uint i=0;i<640;++i) _consoleMenuPixels[i]=(texture[4+i/2]>>(i%2 ? 0 : 4))&15;
  // Blue console palette bank, selected to match the supplied Saturn reference.
  // The textures and all color values remain in the user's OUT.BIN.
- _saturnMenuColors.resize(48);
+ _consoleMenuColors.resize(48);
  for(uint i=0;i<16;++i) {
   uint color=READ_BE_UINT16(data.data()+offsets[0]+4+(6*16+i)*2);
-  for(uint channel=0;channel<3;++channel) _saturnMenuColors[i*3+channel]=((color>>(channel*5))&31)*255/31;
+  for(uint channel=0;channel<3;++channel) _consoleMenuColors[i*3+channel]=((color>>(channel*5))&31)*255/31;
  }
  debug("[pice] Saturn MENU texture loaded from OUT.BIN record=62 size=40x16");
  return true;
 }
-void PiceEngine::drawSaturnMenuButton(Graphics::Surface *screen,const byte *palette) {
- if(!saturnMenuVisible()) return;
+void PiceEngine::drawConsoleMenuButton(Graphics::Surface *screen,const byte *palette) {
+ if(!consoleMenuVisible()) return;
  // Quantize against the current room palette without recoloring scene pixels.
  byte mapped[16];
  for(uint i=0;i<16;++i) {
   int best=3*255*255+1; mapped[i]=0;
   for(uint j=0;j<256;++j) {
    int distance=0;
-   for(uint c=0;c<3;++c) { int d=int(_saturnMenuColors[i*3+c])-palette[j*3+c]; distance+=d*d; }
+   for(uint c=0;c<3;++c) { int d=int(_consoleMenuColors[i*3+c])-palette[j*3+c]; distance+=d*d; }
    if(distance<best) { best=distance; mapped[i]=j; }
   }
  }
- Common::Rect box=saturnMenuBounds(); box.translate(0,40);
+ Common::Rect box=consoleMenuBounds(); box.translate(0,40);
  for(int y=0;y<box.height();++y) for(int x=0;x<box.width();++x) {
-  byte pixel=_saturnMenuPixels[(y/2)*40+x/2];
+  byte pixel=_consoleMenuPixels[(y/2)*40+x/2];
   if(pixel) *static_cast<byte *>(screen->getBasePtr(box.left+x,box.top+y))=mapped[pixel];
  }
 }

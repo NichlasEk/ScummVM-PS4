@@ -2026,7 +2026,8 @@ Common::Error PiceEngine::run() {
  _console=!Common::File::exists(Common::Path("KSVGA.KRO")) && Common::File::exists(Common::Path("KVGA.KRO"));
  if(_console && !_ps1 && ConfMan.getBool("pice_saturn_media_preview")) return runSaturnPreview();
  if(!_graphics.open(Common::Path(_console ? "KVGA.KRO" : "KSVGA.KRO"))) return Common::Error(Common::kReadingFailed,"Cannot read PICE graphics archive");
- if(_console && !_ps1 && !loadSaturnMenuButton()) warning("[pice] Saturn MENU artwork unavailable in OUT.BIN");
+ if(_console && !(_ps1 ? loadPS1MenuButton() : loadSaturnMenuButton()))
+  warning("[pice] Console MENU artwork unavailable in %s",_ps1 ? "DATA/FONTS.TIM" : "OUT.BIN");
  if(_console && !loadConsoleResourceNames()) return Common::Error(Common::kReadingFailed,"Cannot read console resource directory");
  _mac=_graphics.isMac();
  _windows=!_mac && Common::File::exists(Common::Path("KSOUNDW.KRO"));
@@ -2223,8 +2224,8 @@ Common::Error PiceEngine::run() {
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
    event.mouse.y-=40;
-   if(saturnMenuVisible() && event.type==Common::EVENT_LBUTTONDOWN && saturnMenuBounds().contains(event.mouse)) {
-    debug("[pice] Saturn MENU button clicked");
+   if(consoleMenuVisible() && event.type==Common::EVENT_LBUTTONDOWN && consoleMenuBounds().contains(event.mouse)) {
+    debug("[pice] Console MENU button clicked");
     done=!mainMenu(true); continue;
    }
    if(event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN || event.type==Common::EVENT_KEYDOWN) _advanceRequested=true;
@@ -2294,10 +2295,10 @@ Common::Error PiceEngine::run() {
   tickRoom();
 #ifdef PICE_TESTBENCH
   if(!testPauseDone && snapshotReady() && (ConfMan.getBool("pice_test_pause_menu") ||
-     (saturnMenuVisible() && ConfMan.getBool("pice_test_saturn_menu_button")))) {
+     (consoleMenuVisible() && ConfMan.getBool("pice_test_saturn_menu_button")))) {
    testPauseDone=true; Common::Event pauseEvent;
-   if(ConfMan.getBool("pice_test_saturn_menu_button") && saturnMenuVisible()) {
-    pauseEvent.type=Common::EVENT_LBUTTONDOWN; Common::Rect box=saturnMenuBounds();
+   if(ConfMan.getBool("pice_test_saturn_menu_button") && consoleMenuVisible()) {
+    pauseEvent.type=Common::EVENT_LBUTTONDOWN; Common::Rect box=consoleMenuBounds();
     pauseEvent.mouse=Common::Point((box.left+box.right)/2,(box.top+box.bottom)/2+40);
    } else { pauseEvent.type=Common::EVENT_KEYDOWN; pauseEvent.kbd.keycode=Common::KEYCODE_ESCAPE; }
    _eventMan->pushEvent(pauseEvent);

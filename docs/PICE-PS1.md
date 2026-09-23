@@ -25,13 +25,13 @@ caption decoding. The former Saturn-only geometry flag is now `_console`, with
 
 Room audio currently comes from the shared KSOUND.KRO path. Matching that to
 the original PS1 runtime's MUS, SND and VOICE/XA routing is unfinished. The main
-menu uses the shared PANEL resource and engine controls. PS1's TIM resources
-and original console menu layout have not been implemented. Saturn's OUT.BIN
-MENU shortcut is deliberately not borrowed or fabricated for PS1.
+menu uses the shared PANEL resource and engine controls. The MENU shortcut now reads its original bitmap and palette from PS1's
+DATA/FONTS.TIM. The full original console menu layout is still unfinished;
+no Saturn OUT.BIN artwork is borrowed.
 
 Japanese captions currently need the external PICE-JA.FNT described in
 [PICE-SATURN.md](PICE-SATURN.md). The locally generated replacement font is
-separate from the engine/package; the PS1 TIM font resources remain unexamined.
+separate from the engine/package; the Japanese glyph atlases J1.TIM through J4.TIM remain unimplemented.
 
 ## Disc extraction
 
@@ -94,7 +94,7 @@ Local evidence: `artifacts/pice/ps1-first-boot.log` and
 `ps1-audit-restore.log`. The test-only `pice_test_ps1_assets=true` enables the
 full movie decode audit. Disable test keys for interactive play.
 
-Remaining work includes the native PS1 menu/TIM interface, original Japanese
+Remaining work includes the rest of the native PS1 menu/TIM interface, original Japanese
 font sourcing, sound-bank/XA routing comparison, later chapter transitions,
 scene composition comparison and a complete gameplay run.
 
@@ -113,3 +113,22 @@ Newly created per-game emulator bindings include WASD movement, N/B clicks,
 and mouse-to-left-stick input (F7 captures/releases, left/right mouse buttons
 click). Existing bindings are preserved. No automatic gameplay tests remain
 in the prepared profile.
+
+## Original MENU bitmap
+
+DATA/FONTS.TIM is a 256x256 4bpp atlas with a 256-entry RGB555 CLUT. The MENU
+button occupies `(120,72)` through `(159,87)`, a 40x16 rectangle. Palette bank
+6 supplies the blue frame, background and lettering matching the supplied PS1
+reference. The decoder reads low nibbles first and validates TIM flags, CLUT
+size, image bounds and exact file length before extracting the rectangle.
+
+The bitmap uses the same upper-right placement, hand hover and click handler
+as the Saturn shortcut. Colors map to the nearest current scene palette without
+recoloring room pixels. Only geometry and decoding logic are in source; no
+bitmap or palette bytes are embedded. Missing/malformed assets retain keyboard
+access to the menu.
+
+Local inspection: `artifacts/pice/ps1-fonts-atlas.png` and
+`ps1-menu-original.png`. Actual eboot button and return-to-game verification:
+`ps1-menu-test.log`. The existing test-only `pice_test_saturn_menu_button` key
+also exercises this shared console-button path on PS1.

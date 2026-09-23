@@ -8,6 +8,34 @@
 #include "common/textconsole.h"
 #include "graphics/surface.h"
 namespace Pice {
+bool PiceEngine::loadPS1MenuButton() {
+ _consoleMenuPixels.clear(); _consoleMenuColors.clear();
+ Common::File file;
+ if(!file.open(Common::Path("FONTS.TIM")) || file.size()<20 || file.size()>1024*1024) return false;
+ Common::Array<byte> data; data.resize(file.size());
+ if(file.read(data.data(),data.size())!=data.size() || READ_LE_UINT32(data.data())!=0x10 ||
+    READ_LE_UINT32(data.data()+4)!=8) return false; // Indexed 4bpp TIM with CLUT.
+ uint clutBytes=READ_LE_UINT32(data.data()+8);
+ if(clutBytes!=524 || data.size()<8+clutBytes+12 || READ_LE_UINT16(data.data()+16)!=256 ||
+    READ_LE_UINT16(data.data()+18)!=1) return false;
+ const byte *image=data.data()+8+clutBytes;
+ uint imageBytes=READ_LE_UINT32(image),wordWidth=READ_LE_UINT16(image+8),height=READ_LE_UINT16(image+10);
+ if(wordWidth!=64 || height!=256 || imageBytes!=12+wordWidth*2*height ||
+    8+clutBytes+imageBytes!=data.size()) return false;
+ // Original menu atlas: MENU occupies x=120..159, y=72..87.
+ // Only rectangle metadata lives here; pixels and RGB555 colors stay on disc.
+ _consoleMenuPixels.resize(40*16); _consoleMenuColors.resize(16*3);
+ for(uint y=0;y<16;++y) for(uint x=0;x<40;++x) {
+  uint sx=120+x; byte packed=image[12+(72+y)*wordWidth*2+sx/2];
+  _consoleMenuPixels[y*40+x]=(packed>>((sx%2)*4))&15;
+ }
+ for(uint i=0;i<16;++i) {
+  uint color=READ_LE_UINT16(data.data()+20+(6*16+i)*2);
+  for(uint c=0;c<3;++c) _consoleMenuColors[i*3+c]=((color>>(c*5))&31)*255/31;
+ }
+ debug("[pice] PS1 MENU texture loaded from DATA/FONTS.TIM rect=120,72,40,16 palette=6");
+ return true;
+}
 // STR files retain their 2352-byte Mode 2 sectors, including XA subheaders.
 // Validate the supported stream layout before entering the shared MDEC decoder.
 static bool inspectPS1Movie(Common::SeekableReadStream &file,uint &frames) {

@@ -192,7 +192,7 @@ void PiceEngine::updateHover() {
  }
  bool reset=_cursorItem!=-1; _cursorItem=-1;
  bool hot=spot>=0 || _hoverItem>=0 || _activeMenu>=0 ||
-  (saturnMenuVisible() && saturnMenuBounds().contains(pointerPosition()));
+  (consoleMenuVisible() && consoleMenuBounds().contains(pointerPosition()));
  if(!reset && !_cursorNeedsRefresh && hot==_hotCursor) return;
  _hotCursor=hot; _cursorNeedsRefresh=false;
  // Saturn CURSOR adds seven frames before the normal arrow and pointing hand.

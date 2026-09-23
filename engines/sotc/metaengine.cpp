@@ -10,12 +10,12 @@ public:
  Common::KeymapArray initKeymaps(const char *) const override {
   Common::KeymapArray maps;
   Common::Keymap *map = new Common::Keymap(Common::Keymap::kKeymapTypeGame, "sotc", "Resource viewer");
-  const char *ids[] = {"NEXT", "PREV", "BANKUP", "BANKDOWN", "PALETTE", "EXIT"};
-  const char *labels[] = {"Next image", "Previous image", "Next bank", "Previous bank", "Next palette", "Exit viewer"};
-  const char *keys[] = {"RIGHT", "LEFT", "UP", "DOWN", "p", "ESCAPE"};
-  const char *buttons[] = {"JOY_RIGHT", "JOY_LEFT", "JOY_UP", "JOY_DOWN", "JOY_X", "JOY_BACK"};
-  const Common::KeyCode codes[] = {Common::KEYCODE_RIGHT, Common::KEYCODE_LEFT, Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_p, Common::KEYCODE_ESCAPE};
-  for (int i = 0; i < 6; ++i) {
+  const char *ids[] = {"NEXT", "PREV", "BANKUP", "BANKDOWN", "PALETTE", "EXIT", "ACTOR", "PREVACTOR", "NEXTACTOR"};
+  const char *labels[] = {"Next image", "Previous image", "Next bank", "Previous bank", "Next palette", "Exit viewer", "Toggle frame preview", "Previous figure", "Next figure"};
+  const char *keys[] = {"RIGHT", "LEFT", "UP", "DOWN", "p", "ESCAPE", "a", "F5", "F7"};
+  const char *buttons[] = {"JOY_RIGHT", "JOY_LEFT", "JOY_UP", "JOY_DOWN", "JOY_X", "JOY_BACK", "JOY_Y", "JOY_LEFT_SHOULDER", "JOY_RIGHT_SHOULDER"};
+  const Common::KeyCode codes[] = {Common::KEYCODE_RIGHT, Common::KEYCODE_LEFT, Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_p, Common::KEYCODE_ESCAPE, Common::KEYCODE_a, Common::KEYCODE_F5, Common::KEYCODE_F7};
+  for (int i = 0; i < 9; ++i) {
    Common::Action *action = new Common::Action(ids[i], Common::U32String(labels[i]));
    action->setKeyEvent(Common::KeyState(codes[i])); action->addDefaultInputMapping(keys[i]); action->addDefaultInputMapping(buttons[i]); map->addAction(action);
   }

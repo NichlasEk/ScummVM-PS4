@@ -70,7 +70,8 @@ ZIP-implode decoder and background viewer. The decoder handles both observed
 flag variants (0 and 6); invalid flags and truncated streams are rejected.
 The preview loads original resources at runtime, including the four palettes
 from RES.PAK. Palette selection is manual: CC4-driven palette changes are not
-implemented. No character animation, scripts, audio playback or saves yet.
+implemented. Frame previews are supported; game-driven animation sequences, scripts, audio
+playback and saves are not yet implemented.
 
 ```sh
 scripts/sotc/build.sh
@@ -101,3 +102,38 @@ F00.RAW was captured on screen; click-forward/back and palette switching were
 exercised, and the user confirmed graphics work. Right click initially mapped
 to Exit; it now maps to previous image. The viewer contains 155 full-size RAW
 backgrounds across D00–D09. Physical PS4 hardware has not been tested yet.
+
+## VA2 frame preview
+
+The viewer now overlays figures from A00–A09 on the selected background.
+Original indexed pixels and an explicit transparency mask preserve opaque
+palette index zero. Placement is a fixed preview position, not scene-derived.
+Triangle (C in the emulator) toggles the overlay; R1/U selects the next figure
+and L1/Q selects the previous one. Background and palette controls are unchanged.
+
+Frames advance in resource order every 150 ms for inspection. This is **not**
+the original animation-sequence interpreter: sequence selection, timing,
+placement and actor state still require reverse engineering.
+
+The VA2 header has four little-endian section offsets. The second section has
+32-bit relative frame offsets and a two-byte sentinel. Supported frame records
+start with width in 16-pixel units and byte height. Each scanline holds a run
+count followed by transparent skips and literal runs (four-byte groups plus
+0–3 remaining pixels), then a final skip to the padded width. Observed optional
+trailers are 0000 and 0080; their semantics remain unknown. Exact 0000 frames
+are empty frames used by hidden/dummy objects.
+
+```sh
+python3 scripts/sotc/audit-va2.py build/sotc-DOS/disc-files/SHADOW > artifacts/sotc/va2-audit.json
+```
+
+The audit uses the engine's actual C++ decoder directly from original archives.
+All 615 VA2 resource directories parse, containing 6220 frame records. 5422
+records decode, including explicit empty frames; 798 remain unsupported, with
+many larger images apparently using another compression layer. These are shown
+as unsupported rather than displaying partial output. Tests cover transparent
+skips, opaque colour zero, empty frames, truncated input and oversized runs.
+
+Validation: rebuilt the PS4 package, booted the overlay in shadPS4, confirmed
+figure selection in the log, and received user confirmation of the rendering.
+No original resources are included in the source or package.

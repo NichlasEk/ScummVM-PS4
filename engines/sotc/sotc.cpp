@@ -4,6 +4,7 @@
 #include "common/system.h"
 #include "graphics/font.h"
 #include "sotc/pak.h"
+#include "sotc/va2.h"
 #include "common/events.h"
 #include "common/textconsole.h"
 #include "graphics/paletteman.h"
@@ -22,6 +23,12 @@ Common::Error SotcEngine::run() {
  if (palettes.empty()) return Common::Error(Common::kReadingFailed, "No palettes in RES.PAK");
  Pak rooms; int bank = 0, scene = 0; bool reload = true, redraw = true;
  Common::Array<uint> backgrounds;
+ Pak actors; Common::Array<byte> actorData, actorPixels, actorMask;
+ Common::Array<uint> actorEntries;
+ actorPixels.resize(640 * 256); actorMask.resize(640 * 256);
+ bool showActor = true, loadActor = true; int actor = 0; unsigned actorFrame = 0;
+ uint32 nextFrame = 0;
+
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
   if (reload) {
@@ -29,7 +36,22 @@ Common::Error SotcEngine::run() {
    if (!rooms.open(Common::String::format("D%02d.PAK", bank))) { surface.free(); return Common::Error(Common::kReadingFailed, "Cannot read scenery archive"); }
    for (uint i = 0; i < rooms.entries.size(); ++i)
     if (rooms.entries[i].name.hasSuffix(".RAW") && rooms.entries[i].size == 64000) backgrounds.push_back(i);
+   actorEntries.clear();
+   if (actors.open(Common::String::format("A%02d.PAK", bank)))
+    for (uint i = 0; i < actors.entries.size(); ++i)
+     if (actors.entries[i].name.hasSuffix(".VA2")) actorEntries.push_back(i);
+   actor = 0; loadActor = true;
    scene = 0; reload = false; redraw = true;
+  }
+  if (loadActor) {
+   actorData.clear(); actorFrame = 0;
+   if (!actorEntries.empty()) actors.load(actorEntries[actor], actorData);
+   nextFrame = _system->getMillis() + 150; loadActor = false; redraw = true;
+   if (!actorEntries.empty()) debug("[sotc-va2] %s", actors.entries[actorEntries[actor]].name.c_str());
+  }
+  unsigned actorFrames = actorData.empty() ? 0 : va2FrameCount(actorData.data(), actorData.size());
+  if (showActor && actorFrames && int32(_system->getMillis() - nextFrame) >= 0) {
+   actorFrame = (actorFrame + 1) % actorFrames; nextFrame = _system->getMillis() + 150; redraw = true;
   }
   if (redraw) {
    surface.fillRect(Common::Rect(320,240), 0);
@@ -41,13 +63,29 @@ Common::Error SotcEngine::run() {
     memcpy(surface.getBasePtr(0,0), image.data(), 64000);
     title = Common::String::format("D%02d: %s  %d/%u", bank, rooms.entries[backgrounds[scene]].name.c_str(), scene + 1, backgrounds.size());
    }
+   Common::String actorTitle = "Triangle: show frames";
+   if (showActor && !actorEntries.empty()) {
+    unsigned width, height;
+    bool decoded = !actorData.empty() && va2Frame(actorData.data(), actorData.size(), actorFrame,
+      actorPixels.data(), actorMask.data(), actorPixels.size(), width, height);
+    actorTitle = Common::String::format("%s %u/%u %s", actors.entries[actorEntries[actor]].name.c_str(),
+      actorFrames ? actorFrame + 1 : 0, actorFrames, decoded ? "" : "unsupported");
+    if (decoded) {
+     int left = (320 - int(width)) / 2, top = 170 - int(height);
+     for (unsigned y = 0; y < height; ++y) for (unsigned x = 0; x < width; ++x) {
+      int dx = left + x, dy = top + y;
+      if (dx >= 0 && dx < 320 && dy >= 0 && dy < 200 && actorMask[y * width + x])
+       *static_cast<byte *>(surface.getBasePtr(dx, dy)) = actorPixels[y * width + x];
+     }
+    }
+   }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
    font->drawString(&surface, title, 2, 201, 316, 7);
-   font->drawString(&surface, "Preview: Left/Right image, Up/Down bank", 2, 214, 316, 7);
-   font->drawString(&surface, "Square: palette / clicks: next/prev", 2, 227, 316, 7);
+   font->drawString(&surface, actorTitle, 2, 214, 316, 7);
+   font->drawString(&surface, "L1/R1: figure  Triangle: toggle  []: pal", 2, 227, 316, 7);
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
-   debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
+   if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
   }
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
@@ -60,6 +98,9 @@ Common::Error SotcEngine::run() {
    case Common::KEYCODE_UP: bank = (bank + 1) % 10; reload = true; break;
    case Common::KEYCODE_DOWN: bank = (bank + 9) % 10; reload = true; break;
    case Common::KEYCODE_p: pal = (pal + 1) % palettes.size(); redraw = true; break;
+   case Common::KEYCODE_a: showActor = !showActor; redraw = true; break;
+   case Common::KEYCODE_F5: if (!actorEntries.empty()) actor = (actor + actorEntries.size() - 1) % actorEntries.size(); loadActor = true; break;
+   case Common::KEYCODE_F7: if (!actorEntries.empty()) actor = (actor + 1) % actorEntries.size(); loadActor = true; break;
    case Common::KEYCODE_ESCAPE: quitGame(); break;
    default: break;
    }

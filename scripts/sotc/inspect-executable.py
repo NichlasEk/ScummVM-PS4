@@ -26,6 +26,13 @@ print('SHA256:', hashlib.sha256(data).hexdigest(), flush=True)
 print('Load image starts at file offset:', hex(header), flush=True)
 # Anchors discovered by tracing callers of the VA2 section/record accessor.
 routines = [('Sequence preview and inclusive movement', 0x1641, 0x1715),
+            ('Room script table and initialization', 0x8e8d, 0x8fc4),
+            ('Script operands and expression readers', 0x8ff9, 0x9216),
+            ('Conditional branch', 0x93ad, 0x93f8),
+            ('Background pair selection', 0x9b79, 0x9b90),
+            ('Byte coordinate list', 0x9c62, 0x9cc0),
+            ('Task control and relative jump', 0x9f9f, 0xa060),
+            ('Opcode dispatch', 0xb2ec, 0xb314),
             ('VA2 section/record lookup', 0x6e4c, 0x6ec3),
             ('Sequence renderer and control-word dispatch', 0xc0b4, 0xc25d),
             ('Frame orientation XOR and bottom anchor', 0x149e6, 0x14a44),

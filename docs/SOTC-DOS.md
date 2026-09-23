@@ -238,3 +238,64 @@ now conservatively rejected. The earlier 5422 figure describes pre-validation
 coverage. Rebuilt and captured corrected sequence 5 at steps 4 and 8 in
 `artifacts/sotc/ps4-orientation-0.png` and `ps4-orientation-1.png`; the user
 confirmed the corrected walking direction looks better.
+
+
+## CC4 room scripts: bounded reader and instruction inspection
+
+The engine now reads R00–R09.CC4 when selecting a resource bank. These have
+LE32 outer offset tables and LE16 room-local script offset tables; the first
+offset is also the table length. All ten supplied banks validate: **324 blocks,
+1835 scripts**. A block is not necessarily a distinct playable room.
+
+`cc4.h` provides non-owning, bounds-checked views; `script.h` decodes a small
+verified opcode subset without executing it. The PS4 log includes `[sotc-cc4]`
+counts and the first block's initial instruction prefix. Inspection stops at
+control flow, task stop, unsupported instructions or bad/truncated input. It
+never fills unknown opcodes with no-ops or guesses game-variable values.
+
+Evidence from the same SHA256-checked DOS executable (load-image addresses):
+
+- 0x8e8d: task initialization reads room-local LE16 script offsets.
+- 0x8f7b: first offset / 2 is the script count; initializes tasks and runs task 0.
+- 0xb2ec: byte opcode dispatch, 0..103, via a table of far pointers.
+- 0x93ad: opcode 10 compares a LE16 variable reference with an expression;
+  the false branch uses a signed relative word. 0x9057 bases that displacement
+  at the operand itself. Expression token 11 references a variable, 12 carries
+  a byte literal, 13 carries a word literal. Variable storage is not wired yet.
+- 0x9f9f: opcode 2 sets the task-disabled flag without advancing its IP.
+- 0xa057: opcode 3 is an unconditional relative jump.
+- 0x9b79 / 0xc886 / 0xc8a3: opcode 58 selects a paired scenery resource,
+  storing byte argument * 2; the following entry is the scenery animation.
+- 0x9c62: opcode 22 reads a **byte** count and byte coordinate pairs, doubling
+  X. Its gameplay meaning is not yet established; it is not labelled a
+  walk polygon in the decoder.
+
+The decoder currently supports instruction formats for opcodes
+1, 2, 3, 4, 5, 10, 22, 27, 28, 58, 59, 80, 87, 88 and 96. Recognition of an
+instruction format does not mean its game behavior has been implemented.
+Branches outside an individual script view are conservatively rejected; this
+is a current limitation, not proof that the original data would be invalid.
+
+Run the shared C++ reader/decoder tests and resource audit:
+
+```sh
+python3 scripts/sotc/audit-cc4.py build/sotc-DOS/disc-files/SHADOW > artifacts/sotc/cc4-audit.json
+```
+
+The audit covers malformed directories, out-of-range entries, byte/word
+operands, truncated commands, backward jumps and the correct displacement
+base. It decodes **701 prefix instructions**, stopping at 345 control-flow/task
+boundaries and 1490 unsupported instructions across the 1835 scripts. There
+are no malformed/truncated stops in these prefixes. This is deliberately not
+reported as gameplay coverage.
+
+Next: recover the initial variable state and actual startup block, then actor
+binding, scheduler/wait behavior and text commands. R00 block 0 starts by
+comparing variable 34 against 5; it must not be assumed to be the new-game
+entry point. The existing visual resource preview remains the current UI;
+this milestone does not yet provide an interactive scripted scene.
+
+PS4 package rebuilt successfully. Live shadPS4 verification in
+`artifacts/sotc/cc4-live.log` reports R00: 84 blocks / 617 scripts, and decodes
+block 0 / script 0 at PC 0 as opcode 10, next PC 9, false target 16. The
+resource preview then draws F00.RAW with CTU.PAL as before.

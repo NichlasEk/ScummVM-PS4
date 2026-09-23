@@ -6,6 +6,8 @@
 #include "sotc/pak.h"
 #include "sotc/va2.h"
 #include "sotc/sequence.h"
+#include "sotc/script.h"
+#include "common/file.h"
 #include "common/events.h"
 #include "common/textconsole.h"
 #include "graphics/paletteman.h"
@@ -13,6 +15,42 @@
 #include "graphics/surface.h"
 #include "engines/util.h"
 namespace Sotc {
+static void inspectRoomScripts(int bank) {
+ Common::File file;
+ if (!file.open(Common::Path(Common::String::format("R%02d.CC4", bank)))) {
+  warning("[sotc-cc4] Cannot open room scripts for bank %d", bank); return;
+ }
+ if (file.size() < 4 || file.size() > 4 * 1024 * 1024) {
+  warning("[sotc-cc4] Invalid bank size"); return;
+ }
+ Common::Array<byte> bytes; bytes.resize(file.size());
+ if (file.read(bytes.data(), bytes.size()) != bytes.size()) {
+  warning("[sotc-cc4] Short read"); return;
+ }
+ Cc4View archive(bytes.data(), bytes.size());
+ unsigned blocks = cc4Count(archive, 4), scripts = 0;
+ for (unsigned i = 0; i < blocks; ++i) {
+  Cc4View block;
+  if (!cc4Entry(archive, 4, i, block) || !cc4Count(block, 2)) {
+   warning("[sotc-cc4] Invalid block %u", i); return;
+  }
+  scripts += cc4Count(block, 2);
+ }
+ debug("[sotc-cc4] R%02d blocks=%u scripts=%u (inspection only)", bank, blocks, scripts);
+ if (!blocks) { warning("[sotc-cc4] Invalid directory"); return; }
+ Cc4View block, script;
+ if (!cc4Entry(archive, 4, 0, block) || !cc4Entry(block, 2, 0, script)) return;
+ uint32 pc = 0;
+ for (unsigned limit = 0; limit < 128; ++limit) {
+  ScriptInstruction op;
+  ScriptDecode status = decodeScript(script, pc, op);
+  debug("[sotc-script] block=0 script=0 pc=%u opcode=%u status=%d next=%u target=%d",
+        pc, op.opcode, int(status), op.next, int(op.target));
+  // Do not invent initial variables, follow branches or run game effects.
+  if (status != kInstruction || op.opcode == 2 || op.opcode == 3 || op.opcode == 10 || op.opcode == 80) break;
+  pc = op.next;
+ }
+}
 Common::Error SotcEngine::run() {
  initGraphics(640, 480);
  Common::Array<byte> frame; frame.resize(640 * 480);
@@ -34,6 +72,7 @@ Common::Error SotcEngine::run() {
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
   if (reload) {
+   inspectRoomScripts(bank);
    backgrounds.clear();
    if (!rooms.open(Common::String::format("D%02d.PAK", bank))) { surface.free(); return Common::Error(Common::kReadingFailed, "Cannot read scenery archive"); }
    for (uint i = 0; i < rooms.entries.size(); ++i)

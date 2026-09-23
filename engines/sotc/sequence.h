@@ -67,7 +67,7 @@ inline bool va2Layer(const uint8_t *data, uint32_t size, unsigned pose, unsigned
  const uint8_t *r; unsigned count;
  if (!va2Record(data, size, 0, pose, r, count) || index >= count) return false;
  r += index * 8;
- // Only the observed reference-to-frame mode, with unit scale, is supported.
+ // Only frame references with one coordinate pair are supported.
  if (r[0] != 1 || r[1] != 1) return false;
  unsigned ref = va2LE16(r + 2); layer.frame = ref & 0x7fff; layer.mirror = (ref & 0x8000) != 0;
  layer.x = va2Signed16(r + 4); layer.y = va2Signed16(r + 6);

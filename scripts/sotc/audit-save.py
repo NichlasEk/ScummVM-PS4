@@ -221,6 +221,21 @@ int main() {
  assert(readQuickSave(files,"objects",m,scene,saved,pixels,status));assert(scene.room()==2);
  assert(readQuickSave(files,"hall",m,scene,saved,pixels,status));assert(state(m,scene)==before);
  std::cout<<"Bedroom exit enters the hall and restores its save exactly\n";
+ // Click the visible left door above the terrain: approach must trigger its original speech.
+ assert(scene.destination(72,110,m));bool heardLocked=false;
+ for(unsigned tick=0;tick<250;++tick){
+  assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));
+  if(!scene.dialogueText().empty()){std::cout<<"Hall door says: "<<scene.dialogueText()<<"\n";heardLocked=true;scene.finishDialogue();}
+  assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+ }
+ assert(heardLocked);assert(scene.room()==1);
+ assert(scene.exitDirection(160,198)==3);assert(scene.exitDirection(160,220)==3);
+ assert(scene.exitDirection(20,198)==0);assert(scene.exitDirection(160,160)==0);
+ assert(scene.destination(160,220,m));
+ for(unsigned tick=0;tick<400;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ assert(scene.bank()==1 && scene.room()==0);
+ for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);
+ std::cout<<"Hall door interaction and bottom-edge click enter room 0 without stops\n";
  std::cout<<"Exit probe bank="<<scene.bank()<<" room="<<scene.room()<<" x="<<m.actor(0)->x<<" y="<<m.actor(0)->y<<"\n";
  std::cout<<"Object facing, pickup and inventory save restore passed\n";
  std::cout<<"Door probe ends in bank "<<scene.bank()<<" room "<<scene.room()<<"\n";

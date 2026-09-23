@@ -42,6 +42,7 @@ public:
  bool takeObject(Common::String &label);
  bool inventoryLabel(unsigned id,Common::String &label);
  bool objectLabel(unsigned slot,Common::String &label);
+ unsigned exitDirection(int x,int y) const;
  unsigned facing() const {return _animations[0].direction;}
  unsigned objectCount() const {
   unsigned count=0;for(unsigned i=0;i<20;++i) if(_state.byte(0x3300+i*8)) ++count;

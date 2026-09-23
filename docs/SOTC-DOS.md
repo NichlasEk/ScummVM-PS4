@@ -1504,3 +1504,28 @@ scripts without stops, and verifies exact hall save/load restoration.
 ASan/UBSan, VM audit and the PS4 package build pass. Broader exterior navigation
 has not yet been playtested; this milestone establishes the bedroom-to-hall
 transition rather than a full chapter claim.
+
+### Hall interaction and original exit cursors (2026-09-23)
+
+Mouse destinations blocked by scenery now approach the nearest reachable point
+instead of discarding the click; scripted destinations still require an exact
+route. This lets the hall's original task 1 detect the player's footprint at
+the left door and play text 13, "Locked.", without hardcoded dialogue or flags.
+The bottom exit is recognized on row 199, so the bounded route planner can
+activate it without needing an offscreen waypoint. Clicking the bottom margin
+also targets this exit when the original exit interval covers that X position.
+
+Directional cursor frames come from external RES.PAK entry 9, CURSOR.VA2:
+frame 1 up, 4 right, 0 down, 3 left. Transparency is decoded with the existing
+VA2 mask reader. Exit hover areas use the current room's exit records and
+terrain; small hover margins and nearest-point click routing are usability
+adaptations, not a claim of exact DOS mouse hit-testing. Modal screens retain
+the existing neutral cursor. No original resource bytes are included in source.
+
+The ASan/UBSan save audit now clicks the left hall door above the walking area,
+observes its dialogue, then clicks below the bottom edge and reaches bank 1,
+room 0 without stopped tasks. The PS4 package builds successfully.
+Live shadPS4 verification: original yellow down-arrow visible at the hall exit;
+Cross/click follows it into bank 1/room 0 with 0 stopped scripts. Screenshot:
+`artifacts/sotc/hall-original-arrow.png` (ignored local artifact). The running
+hall checkpoint is retained for user testing, replacing the paused fault state.

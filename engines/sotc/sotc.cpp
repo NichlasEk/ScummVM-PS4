@@ -148,6 +148,11 @@ Common::Error SotcEngine::run() {
  Common::Array<Common::String> dialogueLines; Common::String shownDialogue; unsigned dialoguePage=0;
  Common::Array<Common::String> storyLines; Common::String storyText; unsigned storyPage=0;
  Common::Rect choiceRects[6];
+ Common::Array<byte> cursorData;
+ resources.load(9,cursorData); // Original CURSOR.VA2, never bundled with the engine.
+ byte cursorPixels[4][256]={},cursorMasks[4][256]={};bool cursorReady[4]={};
+ const unsigned cursorFrames[4]={1,4,0,3}; // up, right, down, left
+ for(unsigned i=0;i<4;++i){unsigned w=0,h=0;cursorReady[i]=va2Frame(cursorData.data(),cursorData.size(),cursorFrames[i],cursorPixels[i],cursorMasks[i],256,w,h) && w==16 && h==16;}
  int pointerX=0,pointerY=0;
  bool runScene = true, sceneFault = false; unsigned heldDirection=0;
  uint32 nextSceneFrame = _system->getMillis() + 100;
@@ -455,7 +460,15 @@ Common::Error SotcEngine::run() {
    }
    if ((mainMenu || showStartup) && pointerY<480 && pointerX<640 && pointerX>=0 && pointerY>=0) {
     int px=pointerX/2,py=pointerY/2;
-    for (int d=-3;d<=3;++d) {
+    unsigned direction=showStartup && !mainMenu && !showInventory && !showJournal && !showStory && !showCd &&
+     !toolbar.visible() && startupScene.dialogueText().empty() && !startupMachine.choiceCount() ? startupScene.exitDirection(px,py) : 0;
+    if(direction && cursorReady[direction-1]) {
+     for(int y=0;y<16;++y)for(int x=0;x<16;++x) {
+      int dx=px+x-7,dy=py+y-7;
+      if(dx>=0 && dx<320 && dy>=0 && dy<240 && cursorMasks[direction-1][y*16+x])
+       *static_cast<byte *>(surface.getBasePtr(dx,dy))=cursorPixels[direction-1][y*16+x];
+     }
+    } else for (int d=-3;d<=3;++d) {
      if (px+d>=0 && px+d<320) *static_cast<byte *>(surface.getBasePtr(px+d,py))=7;
      if (py+d>=0 && py+d<240) *static_cast<byte *>(surface.getBasePtr(px,py+d))=7;
     }
@@ -759,7 +772,7 @@ Common::Error SotcEngine::run() {
      continue;
     }
     if (startupScene.scriptWalking()) continue;
-    if (event.mouse.y>=0 && event.mouse.y<400 && event.mouse.x>=0 && event.mouse.x<640) {
+    if (event.mouse.y>=0 && (event.mouse.y<400 || startupScene.exitDirection(event.mouse.x/2,event.mouse.y/2)) && event.mouse.x>=0 && event.mouse.x<640) {
      if (startupScene.destination(event.mouse.x/2,event.mouse.y/2,startupMachine)) resumeScene();
      heldDirection=0; redraw=true;
     }

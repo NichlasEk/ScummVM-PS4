@@ -1264,3 +1264,19 @@ credit sequence. Captures show Boleskin, the hospital and the R05 handoff.
 Evidence remains local: cd-regression.txt, cd-live.log, cd-live-01.png,
 cd-live-02.png and cd-live-handoff.png under artifacts/sotc. This is emulator
 validation, not a physical-PS4 run.
+
+## PS4 pointer controls in the in-game settings
+
+The shared PS4 patch now adds a Control tab to ConfigDialog, used by SOTC's
+Settings entry and ScummVM's in-game options in other engines. It reuses
+ScummVM's pointer-speed and joystick-deadzone controls, config persistence
+and live VirtualMouse speed calculation. Speed labels run from 3 to 20;
+10 is the normal setting (stored kbdmouse_speed index 3). This controls the
+stick-driven mouse pointer, not physical USB mouse DPI.
+
+The classic/common high- and low-resolution layouts and embedded default
+theme import the existing control layout under GlobalConfig. PS4 SOTC
+build/package passed and the green/black dialog was opened in shadPS4;
+Audio, Control and Keymaps tabs and working sliders are visible. Local
+capture: artifacts/sotc/controls-menu.png. Saving uses existing OptionsDialog
+apply/flushToDisk; no separate SOTC sensitivity setting is introduced.

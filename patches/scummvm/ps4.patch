@@ -781,7 +781,7 @@
  	// Keyboard and joystick mouse speed
  	if (g_system->hasFeature(OSystem::kFeatureKbdMouseSpeed)) {
 +#ifdef __PS4__
-+		const char *stickHelp = "Analog stick pointer speed: 0 slowest, 3 normal, 7 fastest";
++		const char *stickHelp = "Analog stick pointer speed: 3 slowest, 10 normal, 20 fastest";
 +		_kbdMouseSpeedDesc = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedDesc",
 +			g_gui.useLowResGUI() ? _("Stick speed:") : _("Stick sensitivity:"), _(stickHelp));
 +		_kbdMouseSpeedSlider = new SliderWidget(boss, prefix + "grKbdMouseSpeedSlider", _(stickHelp), kKbdMouseSpeedChanged);
@@ -795,3 +795,107 @@
  		_kbdMouseSpeedLabel = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedLabel", Common::U32String("  "), Common::U32String(), ThemeEngine::kFontStyleBold, Common::UNK_LANG, false);
  		_kbdMouseSpeedSlider->setMinValue(0);
  		_kbdMouseSpeedSlider->setMaxValue(7);
+--- a/engines/dialogs.cpp
++++ b/engines/dialogs.cpp
+@@ -337,6 +337,15 @@
+ 		setSubtitleSettingsState(true); // could disable controls by GUI options
+ 	}
+ 
++#ifdef __PS4__
++	// Expose pointer controls in the in-game options, not only the launcher.
++	if (g_system->hasFeature(OSystem::kFeatureKbdMouseSpeed) ||
++		g_system->hasFeature(OSystem::kFeatureJoystickDeadzone)) {
++		tab->addTab(_("Control"), "GlobalConfig_Control");
++		addControlControls(tab, "GlobalConfig_Control.");
++	}
++#endif
++
+ 	//
+ 	// The Keymap tab
+ 	//
+--- a/gui/themes/scummclassic/classic_layout.stx
++++ b/gui/themes/scummclassic/classic_layout.stx
+@@ -1576,6 +1576,12 @@
+ 		</layout>
+ 	</dialog>
+ 
++	<dialog name = 'GlobalConfig_Control' overlays = 'Dialog.GlobalConfig.TabWidget'>
++		<layout type = 'vertical' padding = '0, 0, 0, 0'>
++			<import layout = 'Dialog.GlobalOptions_Control' />
++		</layout>
++	</dialog>
++
+ 	<dialog name = 'GlobalConfig_Audio' overlays = 'Dialog.GlobalConfig.TabWidget'>
+ 		<layout type = 'vertical' padding = '8, 8, 8, 8' spacing = '8'>
+ 			<layout type = 'horizontal' padding = '0, 0, 0, 0'>
+--- a/gui/themes/scummclassic/classic_layout_lowres.stx
++++ b/gui/themes/scummclassic/classic_layout_lowres.stx
+@@ -1598,6 +1598,12 @@
+ 		</layout>
+ 	</dialog>
+ 
++	<dialog name = 'GlobalConfig_Control' overlays = 'Dialog.GlobalConfig.TabWidget'>
++		<layout type = 'vertical' padding = '0, 0, 0, 0'>
++			<import layout = 'Dialog.GlobalOptions_Control' />
++		</layout>
++	</dialog>
++
+ 	<dialog name = 'GlobalConfig_Audio' overlays = 'Dialog.GlobalConfig.TabWidget'>
+ 		<layout type = 'vertical' padding = '8, 8, 8, 8'>
+ 			<layout type = 'horizontal' padding = '0, 0, 0, 0' spacing = '6' align = 'center'>
+--- a/gui/themes/common/highres_layout.stx
++++ b/gui/themes/common/highres_layout.stx
+@@ -1930,6 +1930,12 @@
+ 		</layout>
+ 	</dialog>
+ 
++	<dialog name = 'GlobalConfig_Control' overlays = 'Dialog.GlobalConfig.TabWidget'>
++		<layout type = 'vertical' padding = '0, 0, 0, 0'>
++			<import layout = 'Dialog.GlobalOptions_Control' />
++		</layout>
++	</dialog>
++
+ 	<dialog name = 'GlobalConfig_Audio' overlays = 'Dialog.GlobalConfig.TabWidget'>
+ 		<layout type = 'vertical' padding = '8, 8, 8, 8' spacing = '8'>
+ 			<layout type = 'horizontal' padding = '0, 0, 0, 0'>
+--- a/gui/themes/common/lowres_layout.stx
++++ b/gui/themes/common/lowres_layout.stx
+@@ -1768,6 +1768,12 @@
+ 		</layout>
+ 	</dialog>
+ 
++	<dialog name = 'GlobalConfig_Control' overlays = 'Dialog.GlobalConfig.TabWidget'>
++		<layout type = 'vertical' padding = '0, 0, 0, 0'>
++			<import layout = 'Dialog.GlobalOptions_Control' />
++		</layout>
++	</dialog>
++
+ 	<dialog name = 'GlobalConfig_Audio' overlays = 'Dialog.GlobalConfig.TabWidget'>
+ 		<layout type = 'vertical' padding = '8, 8, 8, 8'>
+ 			<layout type = 'horizontal' padding = '0, 0, 0, 0' spacing = '6' align = 'center'>
+--- a/gui/themes/default.inc
++++ b/gui/themes/default.inc
+@@ -2904,6 +2904,11 @@
+ "<widget name='Container'/>"
+ "</layout>"
+ "</dialog>"
++"<dialog name='GlobalConfig_Control' overlays='Dialog.GlobalConfig.TabWidget'>"
++"<layout type='vertical' padding='0,0,0,0'>"
++"<import layout='Dialog.GlobalOptions_Control'/>"
++"</layout>"
++"</dialog>"
+ "<dialog name='GlobalConfig_Audio' overlays='Dialog.GlobalConfig.TabWidget'>"
+ "<layout type='vertical' padding='8,8,8,8' spacing='8'>"
+ "<layout type='horizontal' padding='0,0,0,0'>"
+@@ -5315,6 +5320,11 @@
+ "<widget name='Container'/>"
+ "</layout>"
+ "</dialog>"
++"<dialog name='GlobalConfig_Control' overlays='Dialog.GlobalConfig.TabWidget'>"
++"<layout type='vertical' padding='0,0,0,0'>"
++"<import layout='Dialog.GlobalOptions_Control'/>"
++"</layout>"
++"</dialog>"
+ "<dialog name='GlobalConfig_Audio' overlays='Dialog.GlobalConfig.TabWidget'>"
+ "<layout type='vertical' padding='8,8,8,8'>"
+ "<layout type='horizontal' padding='0,0,0,0' spacing='6' align='center'>"

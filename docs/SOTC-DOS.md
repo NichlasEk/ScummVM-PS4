@@ -726,3 +726,39 @@ and trace `draworder-live.log` remain local ignored evidence. Window left runnin
 Next is player input/movement and the region-triggered script progression.
 Continuous ambient scene animation is working in this bounded preview; this
 still does not establish gameplay, original pacing or physical PS4 behavior.
+
+### Directional walking diagnostic
+
+D-pad (arrow keys in shadPS4) now controls actor 0 in the start scene. Held
+input selects original walking sequences 4..7; release selects standing 0..3.
+Movement consumes the current sequence frame's DX/DY, using the original
+0x8242 signed speed/drift adjustments and 16-bit arithmetic (`walk.h`). The
+original 0x82c4 supplies this movement model. Rendering stays in actor mode 0,
+so walking deltas are not added again as cumulative scripted-animation offsets.
+Queued raw SDL hat events are handled alongside keymapped arrow events: SDL's
+hat handler pushes those directly, which bypassed the keyboard-only route.
+Releasing an older direction does not cancel a newer held direction.
+
+This is explicitly **Walk test - no collisions**. It uses screen bounds only;
+terrain/actor collision, destination routing, original mode-1 transition delay,
+input restrictions and original pacing are still pending. Directional input
+is a diagnostic adapter, not a claim of original keyboard/gameplay equivalence.
+Script-owned mode-2 animations reject manual walking. Options stops walking
+before switching resource views. Triangle pauses/runs; Cross still steps.
+
+Validation: 540 speed/drift/wrap cases match original 0x8242 executed in Unicorn;
+VM regression audit passes. PS4 package tested in shadPS4: left moves from
+(220,151) to (183,151), release chooses standing sequence 3; down moves to
+(183,157), release chooses sequence 2. Further left movement reaches (130,157),
+whose footprint enters task 1's rectangle. Task 1 advances from PC 14 to PC 27,
+then pauses on unsupported opcode 18 (tick 497 in this interactive run), with
+zero unsupported animation formats. Screenshot/trace are local ignored
+`artifacts/sotc/walk-trigger.png` and `walk-trigger.log`.
+
+```sh
+.tools/sotc-audit-env/bin/python scripts/sotc/audit-walk.py \
+  build/sotc-DOS/disc-files/SHADOW.EXE
+```
+
+Next: opcode 18 and the newly reached scene sequence; separately complete
+collision and original movement transitions before calling this gameplay.

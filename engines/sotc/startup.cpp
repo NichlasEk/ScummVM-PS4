@@ -3,6 +3,7 @@
 #include "sotc/startstate.h"
 #include "sotc/animation.h"
 #include "sotc/draworder.h"
+#include "sotc/walk.h"
 #include "sotc/sequence.h"
 #include "sotc/poserenderer.h"
 #include "sotc/scriptmachine.h"
@@ -72,6 +73,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
   _visible[i] = state.word(a+26)!=0;
   _animations[i] = {state.word(a+12), state.word(a+16), state.word(a+6), state.byte(a+20)};
  }
+ _walkDirection=state.word(0x2e5c); _walking=false;
  _ready=true;
  return render(pixels,status,machine);
 }
@@ -139,6 +141,44 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
  }
  status = Common::String::format("INIT scene: %u drawn, %u unsupported", rendered, unsupported);
  return unsupported == 0;
+}
+bool StartupScene::walk(unsigned direction, ScriptMachine &machine) {
+ if (!_ready || direction>4 || _animations[0].mode==2) return false;
+ bool moving=direction!=0;
+ if (moving==_walking && (!moving || direction==_walkDirection)) return true;
+ unsigned facing=moving ? direction : _walkDirection;
+ unsigned sequenceIndex=(moving ? 4 : 0)+facing-1;
+ unsigned slot=_slots[0];
+ if (slot>=20) return false;
+ const Common::Array<byte> &data=_actorData[slot];
+ unsigned count=va2SequenceLength(data.data(),data.size(),sequenceIndex);
+ SequenceStep step;
+ if (!count || !va2Step(data.data(),data.size(),sequenceIndex,0,step)) return false;
+ ScriptActor actor=*machine.actor(0); actor.step=0; actor.steps=count;
+ _animations[0].sequence=sequenceIndex; _animations[0].mode=0; _animations[0].gate=255;
+ _walkDirection=facing; _walking=moving;
+ machine.setActor(0,actor);
+ debug("[sotc-walk] direction=%u moving=%u sequence=%u",facing,unsigned(moving),sequenceIndex);
+ return true;
+}
+bool StartupScene::movePlayer(ScriptMachine &machine) {
+ if (!_walking) return true;
+ if (_animations[0].mode==2) { _walking=false; return true; }
+ unsigned slot=_slots[0]; if (slot>=20) return false;
+ const Common::Array<byte> &data=_actorData[slot];
+ ScriptActor actor=*machine.actor(0); SequenceStep step;
+ if (!va2Step(data.data(),data.size(),_animations[0].sequence,actor.step,step)) return false;
+ int dx=step.dx,dy=step.dy;
+ int speed=_state.byte(0x2e2a); if (speed>=128) speed-=256;
+ walkDelta(_walkDirection,speed,_state.signedWord(0x2e24),_state.signedWord(0x2e26),
+           _state.word(0x2df8)==_state.word(0x2dfa),dx,dy);
+ int x=walkWord(actor.x+dx),y=walkWord(actor.y+dy);
+ // Diagnostic screen boundary only. Original terrain/actor collision and
+ // destination routing are not implemented; never leave this loaded scene.
+ if (x<0 || x>319 || y<0 || y>199) return walk(0,machine);
+ actor.x=x; actor.y=y; machine.setActor(0,actor);
+ debug("[sotc-walk] x=%d y=%d step=%u",x,y,actor.step);
+ return true;
 }
 bool StartupScene::hide(unsigned id) {
  if (!_ready || id>=11) return false;

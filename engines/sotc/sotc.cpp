@@ -79,9 +79,10 @@ Common::Error SotcEngine::run() {
  bool startupAvailable = startupScene.load(startupPixels, startupStatus, startupMachine), showStartup = startupAvailable;
  if (startupAvailable) scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
 
- bool runScene = true;
+ bool runScene = true; unsigned heldDirection=0;
  uint32 nextSceneFrame = _system->getMillis() + 100;
  auto sceneStep = [&]() {
+  if (!startupScene.movePlayer(startupMachine)) { runScene=false; return; }
   scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
   bool rendered = startupScene.render(startupPixels,startupStatus,startupMachine);
   unsigned blockedAnimations = rendered ? startupScene.advance(startupMachine) : 1;
@@ -171,24 +172,54 @@ Common::Error SotcEngine::run() {
    }
    if (showStartup) {
     memcpy(surface.getBasePtr(0, 0), startupPixels.data(), 64000);
-    title = runScene ? "Scene preview - not gameplay" : "Scene paused - not gameplay"; actorTitle = scriptStatus;
+    title = runScene ? "Walk test - no collisions" : "Scene paused - not gameplay"; actorTitle = scriptStatus;
    }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, showStartup ? "Triangle: run/pause  Cross: step" : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
+   font->drawString(&surface, showStartup ? "D-pad: walk  Triangle: pause" : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
    if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
   }
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
+   if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) debug("[sotc-input] type=%u key=%u",unsigned(event.type),unsigned(event.kbd.keycode));
    if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_F8) {
-    if (startupAvailable) { showStartup = !showStartup; pal = 0; redraw = true; }
+    if (startupAvailable) { startupScene.walk(0,startupMachine); heldDirection=0; showStartup = !showStartup; pal = 0; redraw = true; }
     continue;
    }
    if (showStartup && event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_a) {
     runScene = !runScene; nextSceneFrame=_system->getMillis()+100; redraw=true; continue;
+   }
+   if (showStartup) {
+    unsigned direction=0; bool pressed=false, released=false;
+    if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) {
+     pressed=event.type==Common::EVENT_KEYDOWN; released=!pressed;
+     switch (event.kbd.keycode) {
+     case Common::KEYCODE_UP: direction=1; break;
+     case Common::KEYCODE_RIGHT: direction=2; break;
+     case Common::KEYCODE_DOWN: direction=3; break;
+     case Common::KEYCODE_LEFT: direction=4; break;
+     default: break;
+     }
+    } else if (event.type==Common::EVENT_JOYBUTTON_DOWN || event.type==Common::EVENT_JOYBUTTON_UP) {
+     // SDL hat events are queued directly and can reach us without keymapping.
+     pressed=event.type==Common::EVENT_JOYBUTTON_DOWN; released=!pressed;
+     switch (event.joystick.button) {
+     case Common::JOYSTICK_BUTTON_DPAD_UP: direction=1; break;
+     case Common::JOYSTICK_BUTTON_DPAD_RIGHT: direction=2; break;
+     case Common::JOYSTICK_BUTTON_DPAD_DOWN: direction=3; break;
+     case Common::JOYSTICK_BUTTON_DPAD_LEFT: direction=4; break;
+     default: break;
+     }
+    }
+    if (direction && (pressed || released)) {
+     if (released && heldDirection!=direction) continue;
+     heldDirection=pressed ? direction : 0;
+     if (!startupScene.walk(pressed ? direction : 0,startupMachine)) runScene=false;
+     redraw=true; continue;
+    }
    }
    if (showStartup && event.type == Common::EVENT_LBUTTONDOWN) {
     runScene=false; sceneStep(); continue;

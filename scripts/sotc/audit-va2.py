@@ -53,6 +53,11 @@ extern "C" bool frame(const uint8_t*p,unsigned n,unsigned i,uint8_t*d,uint8_t*m,
     assert pixels.raw[2:6] == bytes([0, 1, 2, 3])
     blank = struct.pack('<4I', 16, 22, 30, 30) + struct.pack('<IH', 6, 0) * 2 + b'\0\0'
     assert decode(blank, 0) and width.value == height.value == 0
+    mirrored = bytearray(fixture)
+    mirrored[27] = 0x80  # Word immediately before the frame dimensions.
+    assert decode(bytes(mirrored), 0)
+    assert mask.raw[:16] == bytes([0] * 10 + [1] * 4 + [0] * 2)
+    assert pixels.raw[10:14] == bytes([3, 2, 1, 0])
     assert not decode(fixture, 1)
     for stop in range(len(fixture)):
         assert not decode(fixture[:stop], 0)

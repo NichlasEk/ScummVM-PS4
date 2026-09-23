@@ -112,16 +112,17 @@ now applied relative to that anchor (see executable findings below).
 Triangle (C in the emulator) toggles the overlay; R1/U selects the next figure
 and L1/Q selects the previous one. Background and palette controls are unchanged.
 
-Frames advance in resource order every 150 ms for inspection. This is **not**
-the original animation-sequence interpreter: sequence selection, timing,
-placement and actor state still require reverse engineering.
+The initial raw-frame mode advanced in resource order every 150 ms. Sequence
+mode, pose placement and movement have since been added as described below;
+original timing and actor state still require further work.
 
 The VA2 header has four little-endian section offsets. The second section has
-32-bit relative frame offsets and a two-byte sentinel. Supported frame records
+32-bit relative frame offsets; each frame has a two-byte orientation prefix
+immediately before the indexed dimensions. Supported frame records
 start with width in 16-pixel units and byte height. Each scanline holds a run
 count followed by transparent skips and literal runs (four-byte groups plus
-0–3 remaining pixels), then a final skip to the padded width. Observed optional
-trailers are 0000 and 0080; their semantics remain unknown. Exact 0000 frames
+0–3 remaining pixels), then a final skip to the padded width. What initially looked like optional 0000/0080 trailers is the **following
+frame's orientation prefix**, confirmed in the original blitter. Exact 0000 frames
 are empty frames used by hidden/dummy objects.
 
 ```sh
@@ -160,7 +161,8 @@ observed offsets. This still needs original-runtime comparison. The viewer
 **still uses 150 ms per step**: original cadence, special render modes,
 script-selected sequences and loop rules are not yet implemented. Movement
 is now verified against the executable and applied. Preview sequences loop
-for inspection only, resetting their displacement each cycle.
+for inspection only. Playback now stops at the last step to avoid snapping
+back to the anchor; toggle the figure off/on to replay.
 
 The extended `audit-va2.py` checks sequence boundaries, pose references and
 out-of-range steps, plus known Stubbs walking sequences and mirrored poses.
@@ -215,3 +217,24 @@ special render modes across the current resources; they remain unsupported.
 Rebuilt the PS4 package and verified sequence 5 visually in shadPS4 at steps
 3 and 8: `artifacts/sotc/ps4-motion-0.png` and `ps4-motion-1.png`. This is still
 sequence inspection, not navigation, collision detection or gameplay.
+
+### Frame orientation correction after user testing
+
+The user observed backwards walking. SHADOW.EXE load-image 0x14a31 XORs the
+pose-reference flag with a word located **two bytes before the frame header**,
+then tests bit 0x8000. Stubbs frames 9–20 have that bit set even when their pose
+references are unmirrored. The frame decoder now normalizes this stored
+orientation before pose mirroring, including the transparency mask. This fixes
+the direction without special-casing any character or sequence.
+
+At 0x149ff–0x14a06 the bottom anchor is converted with `y - height + 1`;
+the preview now includes that final pixel. Tests verify mirrored opaque-zero
+pixels and the mask. Sequence playback stops at its final step instead of
+jumping back to its starting point. C/Triangle off and on replays it.
+
+After validating prefix flags, coverage is 5420 supported / 800 unsupported
+frames: two previously rendered records have additional prefix bits that are
+now conservatively rejected. The earlier 5422 figure describes pre-validation
+coverage. Rebuilt and captured corrected sequence 5 at steps 4 and 8 in
+`artifacts/sotc/ps4-orientation-0.png` and `ps4-orientation-1.png`; the user
+confirmed the corrected walking direction looks better.

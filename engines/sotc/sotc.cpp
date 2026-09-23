@@ -62,7 +62,7 @@ Common::Error SotcEngine::run() {
   unsigned sequences = actorData.empty() ? 0 : va2Records(actorData.data(), actorData.size(), 2);
   unsigned steps = actorData.empty() ? 0 : va2SequenceLength(actorData.data(), actorData.size(), sequence);
   unsigned cycle = steps ? steps : actorFrames;
-  if (showActor && cycle && int32(_system->getMillis() - nextFrame) >= 0) {
+  if (showActor && cycle && actorFrame + 1 < cycle && int32(_system->getMillis() - nextFrame) >= 0) {
    actorFrame = (actorFrame + 1) % cycle; nextFrame = _system->getMillis() + 150; redraw = true;
   }
   if (redraw) {
@@ -93,7 +93,7 @@ Common::Error SotcEngine::run() {
      if (!pass) continue;
      // Preview anchor is fixed; bottom-relative placement is inferred from poses.
      int left = steps ? 160 + motionX + layer.x : (320 - int(width)) / 2;
-     int top = 170 + motionY + layer.y - int(height);
+     int top = 170 + motionY + layer.y - int(height) + 1;
      for (unsigned y = 0; y < height; ++y) for (unsigned x = 0; x < width; ++x) {
       int dx = left + x, dy = top + y;
       unsigned sx = layer.mirror ? width - 1 - x : x;
@@ -123,7 +123,7 @@ Common::Error SotcEngine::run() {
    case Common::KEYCODE_UP: bank = (bank + 1) % 10; reload = true; break;
    case Common::KEYCODE_DOWN: bank = (bank + 9) % 10; reload = true; break;
    case Common::KEYCODE_p: pal = (pal + 1) % palettes.size(); redraw = true; break;
-   case Common::KEYCODE_a: showActor = !showActor; redraw = true; break;
+   case Common::KEYCODE_a: showActor = !showActor; if (showActor) { actorFrame = 0; nextFrame = _system->getMillis() + 150; } redraw = true; break;
    case Common::KEYCODE_F5: if (!actorEntries.empty()) actor = (actor + actorEntries.size() - 1) % actorEntries.size(); loadActor = true; break;
    case Common::KEYCODE_F7: if (!actorEntries.empty()) actor = (actor + 1) % actorEntries.size(); loadActor = true; break;
    case Common::KEYCODE_F9: if (sequences) sequence = (sequence + sequences - 1) % sequences; actorFrame = 0; redraw = true; debug("[sotc-sequence] selected=%u", sequence); break;

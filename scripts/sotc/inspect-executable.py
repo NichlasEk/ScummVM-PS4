@@ -28,6 +28,7 @@ print('Load image starts at file offset:', hex(header), flush=True)
 routines = [('Sequence preview and inclusive movement', 0x1641, 0x1715),
             ('VA2 section/record lookup', 0x6e4c, 0x6ec3),
             ('Sequence renderer and control-word dispatch', 0xc0b4, 0xc25d),
+            ('Frame orientation XOR and bottom anchor', 0x149e6, 0x14a44),
             ('PIT divisor setup (not yet linked to animation cadence)', 0x136cf, 0x136e9)]
 with tempfile.TemporaryDirectory(prefix='sotc-exe-') as temp:
     code = Path(temp) / 'load-image.bin'

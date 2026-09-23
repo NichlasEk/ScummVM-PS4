@@ -5,7 +5,8 @@
 namespace Sotc {
 inline uint32_t va2LE32(const uint8_t *p) { return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24); }
 // Section 1 contains frame offsets relative to its start, followed by a
-// two-byte sentinel. Other sections contain sequences/placement, not decoded yet.
+// per-frame orientation prefix. Each offset points past that prefix to the
+// dimensions. Other sections contain sequence/pose records.
 inline unsigned va2FrameCount(const uint8_t *data, uint32_t size) {
  if (size < 20 || va2LE32(data) != 16) return 0;
  uint32_t start = va2LE32(data + 4), end = va2LE32(data + 8);
@@ -34,6 +35,8 @@ inline bool va2Frame(const uint8_t *data, uint32_t size, unsigned index,
  uint32_t start = base + va2LE32(data + base + index * 4);
  uint32_t end = index + 1 < count ? base + va2LE32(data + base + (index + 1) * 4) : va2LE32(data + 8);
  if (end - start < 2) return false;
+ unsigned orientation = unsigned(data[start - 2]) | (unsigned(data[start - 1]) << 8);
+ if (orientation & ~0x8000U) return false;
  unsigned w = data[start] * 16, h = data[start + 1];
  // Explicit empty frames are used by dummy/hidden objects.
  if (!w && !h && end - start == 2) return true;
@@ -53,6 +56,13 @@ inline bool va2Frame(const uint8_t *data, uint32_t size, unsigned index,
   if (pos >= end || x + data[pos++] != w) return false;
  }
  if (pos != end && !(end - pos == 2 && data[pos] == 0 && (data[pos + 1] == 0 || data[pos + 1] == 128))) return false;
+ // Original blitter XORs the pose flag with this per-frame prefix word
+ // (load-image 0x14a31). Return canonical orientation; pose mirroring follows.
+ if (orientation & 0x8000) for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w / 2; ++x) {
+  unsigned a = y * w + x, b = y * w + w - 1 - x;
+  uint8_t tmp = pixels[a]; pixels[a] = pixels[b]; pixels[b] = tmp;
+  tmp = mask[a]; mask[a] = mask[b]; mask[b] = tmp;
+ }
  width = w; height = h; return true;
 }
 }

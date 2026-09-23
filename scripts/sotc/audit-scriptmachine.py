@@ -175,6 +175,11 @@ extern "C" bool info(unsigned i,unsigned *out) {
     for variable in (1000,1010,1255,2000,2255):
         fixture([31,variable&255,variable>>8,12,42,31,33,0,11,variable&255,variable>>8,2])
         assert lib.visit(1)==1 and lib.randomValue()==42
+    # Opcode 56 ORs story flags; setting one bit must retain earlier flags.
+    fixture([31,234,3,13,1,2,56,234,3,13,16,0,31,33,0,11,234,3,2])
+    assert lib.visit(1)==1 and lib.randomValue()==0x211
+    fixture([56,234,3,13,16])
+    assert lib.visit(1)==7 and info()[0]==0
     fixture([31,31,0,12,1,2])
     assert lib.visit(1)==9 and info()[0]==0
     for opcode in (15,16):

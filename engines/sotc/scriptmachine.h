@@ -32,6 +32,16 @@ public:
  virtual bool control(unsigned, bool, ScriptActor &) { return false; }
  virtual bool reset(unsigned, ScriptActor &) { return false; }
  virtual bool resource(unsigned, unsigned) { return false; }
+ virtual bool background(unsigned) { return false; }
+ virtual bool obstacle(const unsigned *) { return false; }
+ virtual bool actorLabel(unsigned,unsigned) { return false; }
+ virtual bool terrain(Cc4View) { return false; }
+ virtual bool exits(Cc4View) { return false; }
+ virtual bool bypass(unsigned) { return false; }
+ virtual bool speechBank(unsigned) { return false; }
+ virtual bool fade(bool,unsigned) { return false; }
+ virtual bool fading() const { return false; }
+
 };
 // A successful request includes ignoring a new effect while one is active,
 // as the original single-channel driver does. 255 stops the channel.
@@ -48,15 +58,18 @@ class ScriptMachine {
  ScriptAnimation *_animation;
  StartState _initial;
  unsigned _globals[256], _locals[256];
- uint8_t _block[65536];
+ uint8_t _block[65536]={};
  ScriptTask _tasks[17];
  ScriptActor _actors[11];
  unsigned _count;
+ unsigned _previousRoom=0, _previousBank=0, _pendingRoom=255;
  uint32_t _randomState;
  unsigned _randomValue;
  bool _randomKnown, _eventPending;
  static int signed16(unsigned v) { v &= 65535; return v < 32768 ? int(v) : int(v) - 65536; }
  bool variable(unsigned id, unsigned &value) const {
+  if (id==0) { value=_previousRoom; return true; }
+  if (id==34) { value=_previousBank; return true; }
   if (id == 33) { value = _randomValue; return _randomKnown; }
   if (id>=1000 && id<1256) { value=_globals[id-1000]; return true; }
   if (id>=2000 && id<2256) { value=_locals[id-2000]; return true; }
@@ -135,6 +148,7 @@ public:
   for (unsigned i = 0; i < block.size; ++i) _block[i] = block.data[i];
   block.data = _block;
   _initial = state;
+  _previousRoom=state.word(0x2df6); _previousBank=state.word(0x2df0); _pendingRoom=255;
   for (unsigned i=0;i<256;++i) { _globals[i]=state.word(0x3b2a+i*2); _locals[i]=state.word(0x392a+i*2); }
   for (unsigned i = 0; i < state.word(0x2e02); ++i) {
    ScriptTask &t = _tasks[i]; t = ScriptTask();
@@ -150,8 +164,30 @@ public:
   }
   _count = state.word(0x2e02); return true;
  }
+ unsigned pendingRoom() const { return _pendingRoom; }
+ bool enterRoom(Cc4View block,unsigned previousRoom,unsigned previousBank) {
+  unsigned count=cc4Count(block,2);
+  if (!count || count>17 || block.size>sizeof(_block)) return false;
+  for(unsigned i=0;i<count;++i) { Cc4View script; if(!cc4Entry(block,2,i,script) || !script.size) return false; }
+  for(unsigned i=0;i<block.size;++i) _block[i]=block.data[i];
+  block.data=_block; _count=count; _previousRoom=previousRoom; _previousBank=previousBank; _pendingRoom=255;
+  _eventPending=false;
+  for(unsigned i=0;i<count;++i) { _tasks[i]=ScriptTask(); cc4Entry(block,2,i,_tasks[i].script); }
+  _tasks[0].flags=0; _tasks[0].result=kReady;
+  return true;
+ }
+ // Copy validated state while keeping host audio/animation bindings and rebasing views.
+ void adopt(const ScriptMachine &other) {
+  _initial=other._initial; _count=other._count;
+  _previousRoom=other._previousRoom; _previousBank=other._previousBank; _pendingRoom=other._pendingRoom;
+  _randomState=other._randomState; _randomValue=other._randomValue; _randomKnown=other._randomKnown; _eventPending=other._eventPending;
+  for(unsigned i=0;i<256;++i) { _globals[i]=other._globals[i]; _locals[i]=other._locals[i]; }
+  for(unsigned i=0;i<sizeof(_block);++i) _block[i]=other._block[i];
+  for(unsigned i=0;i<_count;++i) { _tasks[i]=other._tasks[i]; _tasks[i].script.data=_block+(other._tasks[i].script.data-other._block); }
+  for(unsigned i=0;i<11;++i) _actors[i]=other._actors[i];
+ }
  // Loaded resource identities bind a save to this game's original snapshot/scripts.
- bool snapshot(Snapshot &s) {
+ bool snapshot(Snapshot &s,unsigned version=2) {
   s.identity(Snapshot::hash(_initial.range(0x2dee,0xf3e),0xf3e));
   s.identity(_count);
   for(unsigned i=0;i<256;++i) { s.value(_globals[i],65535); s.value(_locals[i],65535); }
@@ -169,6 +205,7 @@ public:
    s.require(a.x>=-32768 && a.x<=32767 && a.y>=-32768 && a.y<=32767);
    s.value(a.halfWidth,255); s.value(a.footHeight,255); s.value(a.step,65535); s.value(a.steps,65535);
   }
+  if(version>=2) { s.value(_previousRoom,65535); s.value(_previousBank,65535); s.value(_pendingRoom,255); }
   return s.ok();
  }
  TaskResult visit(unsigned index, unsigned budget = 128) {
@@ -213,15 +250,40 @@ public:
     t.loop=(t.loop+1)&65535;
     if (t.loop<op.argument) next=op.target; else t.loop=0;
     break;
-   case 31: case 32: case 33: {
+   case 31: case 32: case 33: case 56: {
     unsigned value=op.value,current=0;
     if (op.valueIsVariable && !variable(op.value,value)) return t.result=kUnknownVariable;
     if (op.opcode!=31 && !variable(op.variable,current)) return t.result=kUnknownVariable;
     if (op.opcode==32) value=current+value;
     if (op.opcode==33) value=current-value;
+    if (op.opcode==56) value=current|value; // Original 0x92cd: set flag bits without replacing others.
     if (!writeVariable(op.variable,value)) return t.result=kUnknownVariable;
     break;
    }
+   case 60:
+    if (!_animation || !_animation->obstacle(op.rectangle)) return t.result=kAnimationUnavailable;
+    break;
+   case 69:
+    if (!_animation || !_animation->actorLabel(t.actor,op.argument)) return t.result=kAnimationUnavailable;
+    break;
+   case 44: _pendingRoom=op.argument; break;
+   case 58:
+    if (!_animation || !_animation->background(op.argument)) return t.result=kAnimationUnavailable;
+    break;
+   case 22: case 23: {
+    Cc4View data(t.script.data+t.pc+2,op.next-t.pc-2);
+    if (!_animation || !(op.opcode==22 ? _animation->terrain(data) : _animation->exits(data))) return t.result=kAnimationUnavailable;
+    break;
+   }
+   case 34:
+    if (!_animation || !_animation->bypass(t.actor)) return t.result=kAnimationUnavailable;
+    break;
+   case 96:
+    if (!_animation || !_animation->speechBank(op.argument)) return t.result=kAnimationUnavailable;
+    break;
+   case 93: case 94:
+    if (!_animation || !_animation->fade(op.opcode==93,op.argument)) return t.result=kAnimationUnavailable;
+    break;
    case 92:
     if (t.actor>=11) return t.result=kInvalidScript;
     if (!_animation || !_animation->drawEnabled(t.actor,op.argument)) return t.result=kAnimationUnavailable;
@@ -327,7 +389,14 @@ public:
   }
   return t.result = kInstructionLimit;
  }
- void tick() { for (unsigned i = 1; i < _count; ++i) visit(i); } // Original 0xb31c skips task 0.
+ void tick() {
+  if (_pendingRoom!=255 || (_animation && _animation->fading())) return;
+  if (_count && !(_tasks[0].flags&0x20)) {
+   visit(0);
+   if (!(_tasks[0].flags&0x20) || (_animation && _animation->fading())) return;
+  }
+  for (unsigned i=1;i<_count;++i) { visit(i); if(_pendingRoom!=255) break; }
+ }
 };
 }
 #endif

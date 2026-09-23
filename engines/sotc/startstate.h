@@ -2,6 +2,7 @@
 #ifndef SOTC_STARTSTATE_H
 #define SOTC_STARTSTATE_H
 #include "cc4.h"
+#include "snapshot.h"
 namespace Sotc {
 // DOS save layout verified against SHADOW.EXE 0x2508..0x25ee and 0xe4b5.
 // Only the serialized state is retained; DOS far pointers are never followed.
@@ -29,6 +30,22 @@ public:
  unsigned byte(unsigned address) const { const uint8_t *p = range(address, 1); return p ? p[0] : 0; }
  unsigned word(unsigned address) const { const uint8_t *p = range(address, 2); return p ? cc4Word(p, 2) : 0; }
  int signedWord(unsigned address) const { unsigned v = word(address); return v < 32768 ? int(v) : int(v) - 65536; }
+ bool setByte(unsigned address,unsigned value) {
+  if (!range(address,1) || value>255) return false;
+  _bytes[address-0x2dee]=uint8_t(value); return true;
+ }
+ bool setWord(unsigned address,unsigned value) {
+  if (!range(address,2) || value>65535) return false;
+  setByte(address,value&255); setByte(address+1,value>>8); return true;
+ }
+ bool snapshot(Snapshot &s) {
+  s.require(_valid);
+  for(unsigned i=0;i<sizeof(_bytes);++i) {
+   unsigned v=_bytes[i]; s.value(v,255); if(s.reading()) _bytes[i]=uint8_t(v);
+  }
+  s.require(word(0x2df2)<=9 && word(0x2df8)<=255 && word(0x2e02)<=17 && byte(0x34de)<=20);
+  return s.ok();
+ }
  // Saved IP - saved base, rebased onto the corresponding current CC4 script.
  // Matches original 0xe12c. Segment values are intentionally ignored.
  bool taskPC(Cc4View block, unsigned task, uint32_t &pc) const {

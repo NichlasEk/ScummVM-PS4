@@ -36,6 +36,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  _textFile.clear(); _dialogueText.clear(); _talking=false;
  _portrait=false; _restoreTalk=false; _portraitHold=_portraitSequence=0;
  _speaker=_speechText=_talkSequence=_talkStep=_talkGate=0;
+ cancelFade();
  _ready = false; _machine=&machine; cancelRoute();
  StartState &state = _state;
  if (!readFile("INIT.SAV", save) || !state.load(Cc4View(save.data(), save.size()))) return false;
@@ -85,6 +86,132 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  _walkDirection=state.word(0x2e5c); _walking=false;
  _ready=true;
  return render(pixels,status,machine);
+}
+bool StartupScene::background(unsigned index) {
+ Pak rooms; Common::Array<byte> pixels,scenery;
+ if(!rooms.open(Common::String::format("D%02u.PAK",_state.word(0x2df2))) ||
+    !rooms.load(index*2,pixels) || pixels.size()!=64000 || !rooms.load(index*2+1,scenery)) return false;
+ const uint8_t *layers; unsigned count;
+ if(!va2Record(scenery.data(),scenery.size(),0,0,layers,count) || count>20) return false;
+ _state.setWord(0x2e14,index*2); _state.setByte(0x34de,count);
+ for(unsigned i=0;i<count;++i) { _state.setByte(0x34e0+i*2,layers[i*8+6]); _state.setByte(0x34e1+i*2,0x10); }
+ _background=pixels; _scenery=scenery;
+ for(unsigned i=0;i<20;++i) if(_types[i]==2) _actorData[i]=scenery;
+ return true;
+}
+bool StartupScene::obstacle(const unsigned *rectangle) {
+ unsigned count=_state.byte(0x3542),address=0x3544+count*4;
+ // The obstacle area ends where serialized local variables begin.
+ if(count>=249 || address+4>0x392a) return false;
+ for(unsigned i=0;i<4;++i) _state.setByte(address+i,rectangle[i]/(i%2 ? 1 : 2));
+ return _state.setByte(0x3542,count+1);
+}
+bool StartupScene::terrain(Cc4View data) {
+ // Original 0x104bc: integer line rasterization, including vertical segments.
+ if(data.size<4 || data.size%2 || data.size>128 || data.data[0]!=0) return false;
+ unsigned output=0;
+ for(unsigned p=0;p+3<data.size;p+=2) {
+  int dx=int(data.data[p+2])*2-int(data.data[p])*2;
+  int y=data.data[p+1], dy=int(data.data[p+3])-y, sign=dy<0 ? -1 : 1;
+  if(dx<0) return false;
+  if(!dx) continue;
+  if(dy<0) dy=-dy;
+  int error=(dx>dy ? dx : dy)/2;
+  if(dx>dy) for(int i=0;i<dx;++i) {
+   if(output>=320) return false;
+   _state.setByte(0x339e + output++,y); error+=dy;
+   if(error>=dx) { error-=dx; y+=sign; }
+  } else for(int i=0;i<dy;++i) {
+   y+=sign; error+=dx;
+   if(error>=dy) { error-=dy; if(output>=320) return false; _state.setByte(0x339e + output++,y); }
+  }
+ }
+ while(output<320) _state.setByte(0x339e + output++,data.data[data.size-1]);
+ return true;
+}
+bool StartupScene::exits(Cc4View data) {
+ if(data.size%5 || data.size/5>16) return false;
+ _state.setWord(0x2dfc,data.size/5);
+ for(unsigned i=0;i<data.size/5;++i) {
+  const uint8_t *p=data.data+i*5; unsigned a=0x3090+i*8;
+  _state.setByte(a,p[0]); _state.setByte(a+1,p[1]); _state.setByte(a+2,p[2]); _state.setByte(a+3,0);
+  _state.setWord(a+4,p[3]*2); _state.setWord(a+6,p[4]*2);
+ }
+ return true;
+}
+bool StartupScene::roomSnapshot(Snapshot &s,ScriptMachine &machine) {
+ if(!_state.snapshot(s)) return false;
+ s.value(_brightness,255); s.value(_fadeTarget,255); s.value(_fadeStep,255);
+ s.require(_brightness==_fadeTarget || _fadeStep!=0);
+ if(!s.ok() || !s.reading()) return s.ok();
+ Common::Array<byte> scripts; Cc4View block;
+ if(!readFile(Common::String::format("R%02u.CC4",_state.word(0x2df2)).c_str(),scripts) ||
+    !cc4Entry(Cc4View(scripts.data(),scripts.size()),4,room(),block) ||
+    !machine.enterRoom(block,_state.word(0x2df6),_state.word(0x2df0))) return false;
+ // Restore the exact draw list after loading its external background resource.
+ StartState saved=_state;
+ if(!background(_state.word(0x2e14)/2)) return false;
+ _state=saved; return true;
+}
+bool StartupScene::serviceRoom(ScriptMachine &machine,Common::String &status) {
+ if(fading()) {
+  if(_brightness<_fadeTarget) _brightness=(_fadeTarget-_brightness<=_fadeStep) ? _fadeTarget : _brightness+_fadeStep;
+  else _brightness=(_brightness-_fadeTarget<=_fadeStep) ? _fadeTarget : _brightness-_fadeStep;
+  if(fading()) return true;
+ }
+ if(machine.pendingRoom()==255) return true;
+ unsigned destination=machine.pendingRoom();
+ Common::Array<byte> scripts; Cc4View block;
+ if(!readFile(Common::String::format("R%02u.CC4",_state.word(0x2df2)).c_str(),scripts) ||
+    !cc4Entry(Cc4View(scripts.data(),scripts.size()),4,destination,block)) {
+  status="Room script unavailable"; cancelFade(); return false;
+ }
+ // Initialize a candidate so a missing background/actor cannot destroy the live room.
+ ScriptMachine candidate; candidate.adopt(machine);
+ StartupScene next=*this; next._machine=&candidate; candidate.setAnimation(&next);
+ if(!candidate.enterRoom(block,room(),_state.word(0x2df2))) { status="Invalid room script"; cancelFade(); return false; }
+ next._state.setWord(0x2df6,room()); next._state.setWord(0x2df0,_state.word(0x2df2));
+ next._state.setWord(0x2df8,destination); next._state.setWord(0x2e02,candidate.count());
+ next._state.setWord(0x3542,0); next._state.setWord(0x2dfc,0);
+ next.cancelRoute(); next._walking=false; next._inputLocks=0; next._talking=false; next._portrait=false;
+ next._restoreTalk=false; next._dialogueText.clear();
+ for(unsigned i=0;i<11;++i) { next._moves[i].active=false; next._collisionBypass[i]=false; if(i) next._visible[i]=false; }
+ next._inDrawList[0]=true;
+ TaskResult result=candidate.visit(0);
+ if(result>=kUnknownWait) {
+  status=Common::String::format("Room %u init stopped: opcode %u at %u",destination,candidate.task(0)->opcode,candidate.task(0)->pc);
+  debug("[sotc-room] %s",status.c_str()); cancelFade(); return false;
+ }
+ // Original 0x7e48 positions the player AFTER room initialization, even
+ // when the cart sequence hides him. Keeping the previous coordinates can
+ // spuriously trigger a door region in the new room.
+ unsigned direction=1; int left=160,right=160,top=190,bottom=190;
+ const unsigned entranceDirection[5]={0,3,4,1,2};
+ for(unsigned i=0;i<next._state.word(0x2dfc);++i) {
+  unsigned a=0x3090+i*8,type=next._state.byte(a);
+  if(next._state.byte(a+2)!=room() || next._state.byte(a+1)!=_state.word(0x2df2)) continue;
+  if(type<1 || type>4) { status="Invalid room entrance"; cancelFade(); return false; }
+  direction=entranceDirection[type];
+  if(direction!=next._animations[0].direction) continue;
+  left=next._state.word(a+4);right=next._state.word(a+6);
+  if(left>319 || right>319) { status="Invalid room entrance bounds"; cancelFade(); return false; }
+  top=next._state.byte(0x339e + left);
+  bottom=left==right ? 199 : int(next._state.byte(0x339e + right));
+  if(left!=right && type==3) top=bottom=199;
+  if(top>bottom) { int temp=top;top=bottom;bottom=temp; }
+  break;
+ }
+ ScriptActor player=*candidate.actor(0);player.x=(left+right)/2;player.y=(top+bottom)/2;
+ if(!next.sequence(0,direction-1,player)) { status="Player entrance sequence unavailable"; cancelFade(); return false; }
+ next._animations[0].mode=0;next._animations[0].base=0;next._animations[0].direction=direction;
+ next._walkDirection=direction;candidate.setActor(0,player);
+ Common::Array<byte> preview; Common::String detail;
+ if(!next.render(preview,detail,candidate)) {
+  status=Common::String::format("Room %u cannot render: %s",destination,detail.c_str()); cancelFade(); return false;
+ }
+ machine.stopSpeech(); machine.adopt(candidate); adopt(next,machine);
+ debug("[sotc-room] entered bank=%u room=%u",_state.word(0x2df2),room());
+ return true;
 }
 bool StartupScene::snapshot(Snapshot &s,bool reloadResources) {
  s.require(_ready);
@@ -188,7 +315,7 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
 
   if (ok) ++rendered; else ++unsupported;
  }
- status = Common::String::format("INIT scene: %u drawn, %u unsupported", rendered, unsupported);
+ status = Common::String::format("Room %u: %u drawn, %u unsupported", room(), rendered, unsupported);
  return unsupported == 0;
 }
 bool StartupScene::dialogue(unsigned speaker,unsigned text,unsigned seq,unsigned portrait) {
@@ -292,6 +419,10 @@ unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMa
  for (unsigned i=0;i<count*4;++i) obstacles[i]=_state.byte(0x3544+i);
  Footprint candidate=footprint(x,y,actor.halfWidth,actor.footHeight);
  unsigned collision=terrainCollision(terrain,candidate,direction);
+ // Scripted NPC departures may target X=320/324. Retain terrain height
+ // checks, but do not turn the viewport edge into a wall on that departure.
+ if(self && _moves[self].active && _moves[self].x>=320 && direction==2 && collision==0x100 &&
+    candidate.right>=319 && candidate.top>terrain[319]) collision=0;
  if (!collision) collision=obstacleCollision(obstacles,count,candidate);
  if (!collision) {
   CollisionActor actors[11];
@@ -317,7 +448,7 @@ bool StartupScene::move(unsigned id,unsigned x,unsigned y,bool &pending) {
  if (!_ready || !_machine || id>=10) return false;
  if (id) {
   ScriptActor a=*_machine->actor(id);
-  if (x>319 || y>199 || (int(x)!=a.x && int(y)!=a.y)) return false;
+  if (x>510 || y>255) return false;
   pending=int(x)!=a.x || int(y)!=a.y;
   if (!pending) { _moves[id].active=false; return true; }
   unsigned direction=int(x)>a.x ? 2 : int(x)<a.x ? 4 : int(y)>a.y ? 3 : 1;
@@ -371,6 +502,13 @@ bool StartupScene::moveOthers(ScriptMachine &machine) {
     debug("[sotc-actor-move] blocked actor=%u candidate=%d,%d",id,x,y); return false;
    }
    actor.x=x; actor.y=y; machine.setActor(id,actor);
+   if ((a.direction==2 || a.direction==4) && x==_moves[id].x && y!=_moves[id].y) {
+    // Continue a two-axis scripted destination with its remaining vertical leg.
+    // Walking still uses the resource's deltas and collision predicates.
+    bool pending=false;
+    if(!move(id,_moves[id].x,_moves[id].y,pending)) return false;
+    break;
+   }
    if (x==_moves[id].x && y==_moves[id].y) {
     _moves[id].active=false; a.base=0;
     debug("[sotc-actor-move] arrived actor=%u position=%d,%d",id,x,y);

@@ -12,6 +12,7 @@ class StartupScene : public ScriptAnimation {
  struct ActorMove { bool active=false; int x=0,y=0; } _moves[11];
  bool moveOthers(ScriptMachine &machine);
  StartState _state;
+ unsigned _brightness=255, _fadeTarget=255, _fadeStep=0;
  Common::Array<byte> _background, _scenery, _actorData[20];
  struct Animation { unsigned sequence, substep, mode, gate, base, direction; } _animations[11];
  Common::Array<byte> _textFile;
@@ -30,10 +31,23 @@ class StartupScene : public ScriptAnimation {
 public:
  StartupScene() : _walkDirection(1), _walking(false), _ready(false) {}
  bool snapshot(Snapshot &s,bool reloadResources=true);
- void adoptResources(StartupScene &source) {
-  _background=source._background; _scenery=source._scenery; _textFile=source._textFile;
-  for(unsigned i=0;i<20;++i) _actorData[i]=source._actorData[i];
+ bool roomSnapshot(Snapshot &s,ScriptMachine &machine);
+ void adopt(const StartupScene &source,ScriptMachine &machine) { *this=source; _machine=&machine; }
+ unsigned room() const { return _state.word(0x2df8); }
+ unsigned brightness() const { return _brightness; }
+ bool serviceRoom(ScriptMachine &machine,Common::String &status);
+ bool background(unsigned index) override;
+ bool obstacle(const unsigned *rectangle) override;
+ bool actorLabel(unsigned actor,unsigned label) override {
+  return actor<11 && _state.setByte(0x2e54+actor*52+28,label);
  }
+ bool terrain(Cc4View data) override;
+ bool exits(Cc4View data) override;
+ bool bypass(unsigned actor) override { if(actor>=11) return false; _collisionBypass[actor]=true; return true; }
+ bool speechBank(unsigned bank) override { return _state.setWord(0x2e16,bank); }
+ bool fade(bool in,unsigned speed) override { _fadeTarget=in ? 255 : 0; _fadeStep=speed ? speed : 255; return true; }
+ bool fading() const override { return _brightness!=_fadeTarget; }
+ void cancelFade() { _brightness=_fadeTarget=255; _fadeStep=0; }
  void resumeSpeech() { if(_talking && _machine) _machine->speech(_state.word(0x2e16),_speechText); }
  bool load(Common::Array<byte> &pixels, Common::String &status, ScriptMachine &machine);
  bool render(Common::Array<byte> &pixels, Common::String &status, const ScriptMachine &machine);

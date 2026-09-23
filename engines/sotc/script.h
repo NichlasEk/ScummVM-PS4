@@ -27,7 +27,7 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
  case 64: // Pending event, branch when absent (0xa713).
  case 3: // Relative jump; displacement base is the operand, not its end.
   break;
- case 31: case 32: case 33: {
+ case 31: case 32: case 33: case 56: {
   if (v.size-p<3) return kTruncated;
   out.variable=cc4Word(v.data+p,2); p+=2;
   unsigned tag=v.data[p++];
@@ -62,17 +62,20 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   if (v.size - p < 2) return kTruncated;
   out.argument = v.data[p++] * 2; out.value = v.data[p++];
   out.next = p; return kInstruction;
+ case 23: // Exit records: type, bank, room, left X, right X.
  case 22: // Byte count followed by byte pairs; original doubles X.
   if (p >= v.size) return kTruncated;
   out.argument = v.data[p++];
-  if (v.size - p < out.argument * 2) return kTruncated;
-  out.next = p + out.argument * 2;
+  if (v.size - p < out.argument * (out.opcode==23 ? 5 : 2)) return kTruncated;
+  out.next = p + out.argument * (out.opcode==23 ? 5 : 2);
   return kInstruction;
+ case 34: // Actor collision bypass, no operand (0x9369).
  case 19: // Unlock player controls (0xaac9).
  case 41: // Hide the current non-player actor (0x9e9e).
  case 39:
   out.next = p; return kInstruction;
  case 66: // Event plus footprint rectangle, then false-branch displacement.
+ case 60: // Append obstacle rectangle (0xa82d).
  case 40:
   if (v.size - p < 4) return kTruncated;
   for (unsigned i = 0; i < 4; ++i) out.rectangle[i] = v.data[p + i] * ((i & 1) ? 1 : 2);
@@ -80,7 +83,7 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   if (out.opcode == 66) break;
   out.next = p; return kInstruction;
  case 1: case 4: case 5: case 9: case 15: case 16: case 18: case 21: case 27: case 28: case 58: case 59:
- case 99: case 77: case 79: case 80: case 87: case 88: case 90: case 91: case 92: case 96:
+ case 69: case 44: case 93: case 94: case 99: case 77: case 79: case 80: case 87: case 88: case 90: case 91: case 92: case 96:
   if (p >= v.size) return kTruncated;
   out.argument = v.data[p++]; out.next = p;
   return kInstruction;

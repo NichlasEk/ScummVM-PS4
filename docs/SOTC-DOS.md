@@ -969,7 +969,7 @@ sets DS:6096 to its speed and DS:6084 to transition mode 2. Opcode 44
 (0x9f59) sets pending destination DS:2dfa (255 maps to -1). Implement room
 loading together with these deferred transitions; do not merely suppress 94
 or fade to a permanently black screen. Room 21 script 0 begins with opcode
-58/21, conditional palette selection (96), terrain setup (22), obstacle setup
+58/21, conditional speech-bank selection (96), terrain setup (22), exit-table setup
 (23), actor setup and task activation. Its initialization must execute before
 normal room tasks; reusing INIT.SAV for every room would corrupt progress.
 
@@ -1352,3 +1352,51 @@ allows replay even when an existing save bypasses cinematics on launch.
 The PS4 package was rebuilt. In shadPS4, main-menu Replay starts R09 and Cross
 during the non-dialogue opening no longer jumps to R05. The external-asset
 cinematic regression still reaches all nine scene visits and seven recordings.
+
+
+### First gameplay room transitions (room 0 -> room 21 -> room 11 -> room 17)
+
+The original departure now fades out, loads room 21's scripts, runs its
+initialization task, and plays the cart crossing. Globals, locals and RNG
+survive the transition. The room initializes its own D00 background/scenery,
+terrain, exit table, speech bank and actors; it does not reload INIT.SAV.
+Implemented commands: 22, 23, 34, 44, 56, 58, 60, 69, 93, 94 and 96.
+Opcode 56 ORs the requested bits into a story variable (original 0x92cd),
+allowing room 11 initialization and its following cart sequence. Original handlers
+were checked at 0x9369 (collision bypass), 0x9cc0 (exit records),
+0x104bc (terrain rasterization), and 0x98cb/0x990a (fade requests).
+Room 17 adds obstacle rectangles (60, original 0xa82d) and actor text IDs
+(69, original 0xabc0). Player entrance positioning follows 0x7e48 after init,
+including the default (160,190); retaining the previous coordinates incorrectly
+triggered the doorway before the player left the cart.
+Scripted NPCs can walk to the original right-edge destinations X=320/324.
+Two-axis NPC destinations currently use a horizontal leg followed by a vertical
+leg, with resource animation deltas and collision checks; exact original path
+selection remains unverified.
+
+Room initialization uses a candidate VM/scene; an unsupported init instruction
+or missing resource leaves the previous room intact and restores visibility.
+Normal tasks start after initialization and fade-in. Fade timing remains an
+approximation at the existing 10 Hz scene cadence. Exit metadata is loaded;
+walking through arbitrary exits and switching resource banks are not yet wired.
+
+Quick saves now write format 2 with room state, fade progress and pending
+transition. Format 1 still loads from its original INIT-based resource state.
+Restoration validates and renders a candidate before replacing live state.
+The two alternating generations and checksum behavior are retained.
+
+Validation: audit-save.py executes the original first conversation and cart
+scripts, saves during room 21's fade-in, restores a legacy room-0 save, then
+restores room 21 exactly. Room 11 and room 17 initialization and cross-room
+save restores also pass, followed by the room 17 arrival and both NPC scripted
+destinations. Existing route, dialogue, RNG, corrupt-save and interrupted-write
+cases pass under ASan/UBSan. The script machine audit includes opcode 56
+preserving earlier flag bits. PS4 package builds pass. Live verification uses
+the actual package in shadPS4 with the existing format-1 and new format-2 saves.
+This is emulator validation, not a physical-PS4/full-playthrough claim.
+
+Next real blocker: room 17 task 5 reaches opcode 53 at PC 10, the first dialogue
+choice menu, after its first spoken line. Do not skip that choice or guess the
+answer. Local pre-transition save backups are in
+artifacts/sotc/pre-room-transition/ (ignored); assets and test saves remain
+outside the engine and Git.

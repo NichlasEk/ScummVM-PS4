@@ -12,7 +12,7 @@ static unsigned readSlot(Common::SaveFileManager &files,const Common::String &pr
  delete in;
  if(!ok) return 0;
  Snapshot s(data.data(),data.size(),true);
- s.identity(0x43544f53); s.identity(1);
+ s.identity(0x43544f53); unsigned version=0; s.value(version,2); s.require(version>=1);
  unsigned generation=0,hash=0; s.value(generation); s.value(hash);
  return s.ok() && hash==Snapshot::hash(data.data()+16,data.size()-16) ? generation : 0;
 }
@@ -30,9 +30,9 @@ bool writeQuickSave(Common::SaveFileManager &files,const Common::String &prefix,
  if(generation==0xffffffffU) return false;
  ++generation; data.resize(kMaxSave);
  Snapshot s(data.data(),data.size(),false);
- s.identity(0x43544f53); s.identity(1); s.value(generation); unsigned checksum=0; s.value(checksum);
+ s.identity(0x43544f53); s.identity(2); s.value(generation); unsigned checksum=0; s.value(checksum);
  state.sync(s);
- if(!machine.snapshot(s) || !scene.snapshot(s) || !s.ok()) return false;
+ if(!scene.roomSnapshot(s,machine) || !machine.snapshot(s) || !scene.snapshot(s) || !s.ok()) return false;
  data.resize(s.size()); checksum=Snapshot::hash(data.data()+16,data.size()-16);
  for(unsigned i=0;i<4;++i) data[12+i]=byte(checksum>>(i*8));
  // Alternate generations: interrupted writes never overwrite the latest valid save.
@@ -49,13 +49,13 @@ bool readQuickSave(Common::SaveFileManager &files,const Common::String &prefix,S
  ScriptMachine candidate; StartupScene candidateScene;
  Common::Array<byte> candidatePixels; Common::String candidateStatus;
  if(!candidateScene.load(candidatePixels,candidateStatus,candidate)) return false;
+ unsigned version=cc4Word(data.data()+4,4);
  Snapshot s(data.data()+16,data.size()-16,true); SaveState restored; restored.sync(s);
- if(!candidate.snapshot(s) || !candidateScene.snapshot(s) || !s.ok() || s.size()!=data.size()-16 ||
+ if((version>=2 && !candidateScene.roomSnapshot(s,candidate)) ||
+    !candidate.snapshot(s,version) || !candidateScene.snapshot(s) || !s.ok() || s.size()!=data.size()-16 ||
     !candidateScene.render(candidatePixels,candidateStatus,candidate)) return false;
- if(!machine.count() && !scene.load(pixels,status,machine)) return false;
- Snapshot commit(data.data()+16,data.size()-16,true); restored.sync(commit);
- if(!machine.snapshot(commit) || !scene.snapshot(commit,false)) return false;
- scene.adoptResources(candidateScene); state=restored; pixels=candidatePixels; status=candidateStatus;
+ machine.adopt(candidate); scene.adopt(candidateScene,machine);
+ state=restored; pixels=candidatePixels; status=candidateStatus;
  return true;
 }
 }

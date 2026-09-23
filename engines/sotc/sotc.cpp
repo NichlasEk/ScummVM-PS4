@@ -140,14 +140,18 @@ Common::Error SotcEngine::run() {
  bool runScene = true, sceneFault = false; unsigned heldDirection=0;
  uint32 nextSceneFrame = _system->getMillis() + 100;
  auto sceneStep = [&]() {
-  if (!startupScene.movePlayer(startupMachine)) { runScene=false; sceneFault=true; redraw=true; return; }
+  if (!startupScene.fading() && !startupScene.movePlayer(startupMachine)) { runScene=false; sceneFault=true; redraw=true; return; }
   scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
+  if (!startupScene.serviceRoom(startupMachine,scriptStatus)) {
+   runScene=false; sceneFault=true; redraw=true; return;
+  }
   bool rendered = startupScene.render(startupPixels,startupStatus,startupMachine);
   unsigned blockedAnimations = rendered ? startupScene.advance(startupMachine) : 1;
   if (!rendered || blockedAnimations) runScene = false;
   for (unsigned i=0;i<startupMachine.count();++i)
    if (startupMachine.task(i)->result >= kUnknownWait) runScene = false;
   sceneFault=!runScene;
+  if(sceneFault) startupScene.cancelFade();
   if (!runScene) debug("[sotc-animation] paused tick=%u unsupported=%u",scriptTicks,blockedAnimations);
   redraw = true;
  };
@@ -263,6 +267,8 @@ Common::Error SotcEngine::run() {
   if (redraw) {
    surface.fillRect(Common::Rect(320,240), 0);
    if (!resources.load(palettes[pal], palette) || palette.size() != 768) { surface.free(); return Common::kReadingFailed; }
+   if(showStartup && !mainMenu && !showStory && !showOpening && !showCd)
+    for(unsigned i=0;i<768;++i) palette[i]=byte(unsigned(palette[i])*startupScene.brightness()/255);
    _system->getPaletteManager()->setPalette(palette.data(), 0, 256);
    Common::String title = "No 320x200 background";
    if (!backgrounds.empty()) {

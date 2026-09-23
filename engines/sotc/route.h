@@ -11,8 +11,11 @@ public:
  unsigned *points, count;
  Route() : _parent(new unsigned char[64000]), _queue(new unsigned[64000]), points(new unsigned[64000]), count(0) {}
  ~Route() { delete[] _parent; delete[] _queue; delete[] points; }
- Route(const Route &)=delete;
- Route &operator=(const Route &)=delete;
+ // Only the chosen route persists; search scratch buffers are rebuilt by find().
+ Route(const Route &other) : Route() { *this=other; }
+ Route &operator=(const Route &other) {
+  count=other.count; for(unsigned i=0;i<count;++i) points[i]=other.points[i]; return *this;
+ }
  template<class Passable> bool find(int sx,int sy,int gx,int gy,Passable passable) {
   count=0;
   if (sx<0 || sx>=320 || sy<0 || sy>=200 || gx<0 || gx>=320 || gy<0 || gy>=200) return false;

@@ -68,3 +68,23 @@ extern "C" bool advance(unsigned control,unsigned mode,unsigned gate,unsigned co
         assert not lib.advance(control,mode,255,count,c.byref(s),c.byref(t))
         assert (s.value,t.value)==(step,7)
     print('Original render/update pairs matched:',tested)
+
+# Original actor reset (90's non-player helper) and absolute position (7).
+# Sequence lookup is stubbed above; its count lives one byte before the record.
+u.mem_write(0x500ff,b'\x07')
+for index in (1,5,10):
+    address=actor+index*52
+    u.mem_write(address,b'\xcc'*52)
+    call(0x78c8,[index,65535])
+    raw=bytes(u.mem_read(address,52))
+    assert struct.unpack_from('<HH',raw,0)==(0,0)
+    assert struct.unpack_from('<HHH',raw,4)==(0,1,1)
+    assert raw[11]==255 and struct.unpack_from('<HHHH',raw,12)==(0,0,0,7)
+    assert raw[20:23]==bytes([255,4,2])
+    assert struct.unpack_from('<H',raw,26)[0]==10
+    assert struct.unpack_from('<HH',raw,44)==(0,319) and raw[48:51]==bytes([0,199,1])
+    call(0x87e3,[index,510,199])
+    moved=bytes(u.mem_read(address,52))
+    assert struct.unpack_from('<HH',moved,0)==(510,199)
+    assert moved[4:]==raw[4:]
+print('Original reset defaults and absolute actor positions matched: 3 actors')

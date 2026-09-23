@@ -22,6 +22,8 @@ public:
  virtual ~ScriptAnimation() {}
  virtual bool sequence(unsigned actor, unsigned sequence, ScriptActor &state) = 0;
  virtual bool hide(unsigned actor) = 0;
+ virtual bool reset(unsigned, ScriptActor &) { return false; }
+ virtual bool resource(unsigned, unsigned) { return false; }
 };
 // A successful request includes ignoring a new effect while one is active,
 // as the original single-channel driver does. 255 stops the channel.
@@ -145,6 +147,18 @@ public:
     if (!compare(a, b, op.comparison)) next = op.target;
     break;
    }
+   case 7:
+    if (t.actor >= 11) return t.result = kInvalidScript;
+    _actors[t.actor].x = op.argument; _actors[t.actor].y = op.value;
+    break;
+   case 90:
+    if (op.argument >= 11) return t.result = kInvalidScript;
+    if (op.argument && (!_animation || !_animation->reset(op.argument, _actors[op.argument]))) return t.result = kAnimationUnavailable;
+    t.actor = op.argument; break;
+   case 91:
+    if (t.actor >= 11) return t.result = kInvalidScript;
+    if (!_animation || !_animation->resource(t.actor, op.argument)) return t.result = kAnimationUnavailable;
+    break;
    case 21:
     if (op.argument >= 11) return t.result = kInvalidScript;
     t.actor = op.argument; break;

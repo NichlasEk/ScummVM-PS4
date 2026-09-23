@@ -671,3 +671,31 @@ Next is actor initialization/binding (90), resource replacement (91), and the
 following script commands. Movement, player input, dynamic draw-list updates,
 and original scene pacing are still required for a playable scene. No physical
 PS4 test was performed for this milestone.
+
+### Actor restart and resource binding
+
+Opcodes 90 (reset/bind actor), 91 (bind A-bank resource) and 7 (absolute byte
+coordinates, X doubled) now execute. The verified original handlers are
+0xaf28/0x78c8, 0x968b/0x6d73 and 0xa3ab/0x87e3. Reset preserves the player-zero
+exception and initializes the non-player position, footprint, visibility,
+sequence state and full-scene clipping. Resource slots and clipping are now
+mutable scene state. Resources are loaded from the user's current A-bank;
+shared bytes remain cached, with eviction restricted to slots without visible
+users. Original allocator addresses/refcounts are not reproduced.
+
+Missing hosts/files and invalid actor indices retain the failing PC. Tests
+cover these failures, successful dispatch, player reset and truncated operands.
+The original reset/position routines were also executed for three actor IDs in
+Unicorn to check defaults, alongside the existing 384 animation comparisons.
+
+The PS4 build in shadPS4 now passes tick 13, restarts small birds and advances
+both West and Derleth's animation sequences. At tick 59 all nine active scripts
+are waiting normally, with no stopped script. Rendering deliberately pauses:
+actor 4 has become visible but is absent from INIT.SAV's fixed draw list. This
+is now reported instead of silently omitting it. Evidence:
+`artifacts/sotc/actor-restart-live.log` and `actor-restart.png` (local/ignored).
+
+Next: reconstruct dynamic actor/scenery ordering from the original draw-list
+builder, then continue toward player movement/input. The preview remains a
+bounded scene diagnostic with provisional pacing, not a playable scene or a
+physical PS4 validation.

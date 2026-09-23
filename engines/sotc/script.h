@@ -40,6 +40,10 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   out.value = cc4Word(v.data + p, width); p += width;
   break;
  }
+ case 7: // Absolute actor position: byte X doubled, byte Y (0xa3ab).
+  if (v.size - p < 2) return kTruncated;
+  out.argument = v.data[p++] * 2; out.value = v.data[p++];
+  out.next = p; return kInstruction;
  case 22: // Byte count followed by byte pairs; original doubles X.
   if (p >= v.size) return kTruncated;
   out.argument = v.data[p++];
@@ -57,7 +61,7 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   if (out.opcode == 66) break;
   out.next = p; return kInstruction;
  case 1: case 4: case 5: case 9: case 21: case 27: case 28: case 58: case 59:
- case 99: case 77: case 79: case 80: case 87: case 88: case 96:
+ case 99: case 77: case 79: case 80: case 87: case 88: case 90: case 91: case 96:
   if (p >= v.size) return kTruncated;
   out.argument = v.data[p++]; out.next = p;
   return kInstruction;

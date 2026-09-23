@@ -53,6 +53,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  }
  for (unsigned i = 0; i < 20; ++i) {
   unsigned slot = 0x3286 + i * 6, type = state.byte(slot);
+  _types[i]=type; _indices[i]=state.byte(slot+1);
   // Resource ID/type metadata is portable; the serialized far pointer is not.
   bool occupied = state.word(slot + 2) || state.word(slot + 4);
   if (!occupied) continue;
@@ -63,6 +64,9 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  _background = pixels;
  for (unsigned i=0;i<11;++i) {
   unsigned a=0x2e54+i*52;
+  _slots[i]=state.byte(a+11);
+  _clips[i][0]=state.word(a+44); _clips[i][1]=state.byte(a+48);
+  _clips[i][2]=state.word(a+46); _clips[i][3]=state.byte(a+49);
   _visible[i] = state.word(a+26)!=0;
   _animations[i] = {state.word(a+12), state.word(a+16), state.word(a+6), state.byte(a+20)};
  }
@@ -77,6 +81,12 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
  pixels=_background;
  PoseRenderer renderer(pixels);
  unsigned rendered = 0, unsupported = 0, sceneryLayer = 0;
+ for (unsigned id=0;id<10;++id) {
+  if (!_visible[id]) continue;
+  bool listed=false;
+  for (unsigned i=0;i<state.byte(0x34de);++i) if (state.byte(0x34e1+i*2)==id) listed=true;
+  if (!listed) { ++unsupported; debug("[sotc-drawlist] active actor %u absent from snapshot ordering",id); }
+ }
  const uint8_t *sceneryLayers; unsigned sceneryCount;
  bool haveSceneryPose = va2Record(scenery.data(), scenery.size(), 0, 0, sceneryLayers, sceneryCount);
  for (unsigned i = 0; i < state.byte(0x34de); ++i) {
@@ -97,7 +107,7 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
   }
   if (id >= 11) { ++unsupported; continue; }
   if (!_visible[id]) continue;
-  unsigned a = 0x2e54 + id * 52, slot = state.byte(a + 11);
+  unsigned slot = _slots[id];
   if (slot >= 20 || actorData[slot].empty()) { ++unsupported; continue; }
   const Common::Array<byte> &data = actorData[slot];
   const ScriptActor &actor = *machine.actor(id);
@@ -118,7 +128,7 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
    }
    x += mx; y += my;
   }
-  ok = ok && renderer.pose(data, step.pose, x, y, state.word(a + 44), state.byte(a + 48), state.word(a + 46), state.byte(a + 49), -1, nextPose, fraction);
+  ok = ok && renderer.pose(data, step.pose, x, y, _clips[id][0], _clips[id][1], _clips[id][2], _clips[id][3], -1, nextPose, fraction);
 
   if (ok) ++rendered; else ++unsupported;
  }
@@ -131,9 +141,39 @@ bool StartupScene::hide(unsigned id) {
  // Resource bytes may remain cached, but hidden actors neither draw nor advance.
  return true;
 }
+bool StartupScene::reset(unsigned id, ScriptActor &actor) {
+ if (!_ready || id>=11) return false;
+ if (!id) return true;
+ // 0x78c8 clears the actor, selects sequence zero using the transient slot 0,
+ // then installs resource slot 255. The following 91/87 bind and start it.
+ unsigned count=va2SequenceLength(_actorData[0].data(),_actorData[0].size(),0);
+ actor={0,0,4,2,0,count};
+ _animations[id]={0,0,1,255}; _slots[id]=255; _visible[id]=true;
+ _clips[id][0]=_clips[id][1]=0; _clips[id][2]=319; _clips[id][3]=199;
+ return true;
+}
+bool StartupScene::resource(unsigned id, unsigned index) {
+ if (!_ready || id>=11) return false;
+ for (unsigned slot=0;slot<20;++slot) {
+  if (!_actorData[slot].empty() && _types[slot]==0 && _indices[slot]==index) {
+   _slots[id]=slot; return true;
+  }
+ }
+ // Keep immutable resource bytes cached; evict only slots without live users.
+ for (unsigned slot=0;slot<20;++slot) {
+  bool used=false;
+  for (unsigned a=0;a<11;++a) if (_visible[a] && _slots[a]==slot) used=true;
+  if (used || _types[slot]!=0) continue;
+  Pak actors; Common::Array<byte> data;
+  if (!actors.open(Common::String::format("A%02u.PAK",_state.word(0x2df2))) || !actors.load(index,data)) return false;
+  _actorData[slot]=data; _types[slot]=0; _indices[slot]=index; _slots[id]=slot;
+  return true;
+ }
+ return false;
+}
 bool StartupScene::sequence(unsigned id, unsigned sequenceIndex, ScriptActor &actor) {
  if (!_ready || id>=11) return false;
- unsigned slot=_state.byte(0x2e54+id*52+11);
+ unsigned slot=_slots[id];
  if (slot>=20) return false;
  const Common::Array<byte> &data=_actorData[slot];
  unsigned count=va2SequenceLength(data.data(),data.size(),sequenceIndex);
@@ -149,9 +189,8 @@ unsigned StartupScene::advance(ScriptMachine &machine) {
  if (!_ready) return 0;
  unsigned unsupported=0;
  for (unsigned id=0;id<10;++id) {
-  unsigned a=0x2e54+id*52;
   if (!_visible[id]) continue; // Original 0x7d3f update eligibility.
-  unsigned slot=_state.byte(a+11);
+  unsigned slot=_slots[id];
   if (slot>=20) { ++unsupported; continue; }
   const Common::Array<byte> &data=_actorData[slot];
   Animation &animation=_animations[id];

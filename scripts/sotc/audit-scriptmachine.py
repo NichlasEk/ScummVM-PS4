@@ -25,6 +25,8 @@ struct TestSound : Sotc::ScriptSound {
 struct TestAnimation : Sotc::ScriptAnimation {
  bool accept=false; unsigned calls=0;
  bool hide(unsigned) override {return accept;}
+ bool reset(unsigned,Sotc::ScriptActor &actor) override {if (!accept) return false; actor={0,0,4,2,0,1}; return true;}
+ bool resource(unsigned,unsigned index) override {return accept && index==13;}
  bool sequence(unsigned,unsigned seq,Sotc::ScriptActor &actor) override {
   ++calls; if (!accept || seq!=3) return false;
   actor.step=0; actor.steps=2; return true;
@@ -165,6 +167,20 @@ extern "C" bool info(unsigned i,unsigned *out) {
             assert lib.visit(1) == 1 and info()[0] == 2
             assert lib.soundCalls() == 1 and lib.soundLast() == sample
     lib.soundHost(False, False)
+    for opcode, argument in ((90,5),(91,13)):
+        fixture([opcode,argument,2])
+        lib.animationHost(False,False)
+        assert lib.visit(1)==11 and info()[0]==0
+        lib.animationHost(True,False)
+        assert lib.visit(1)==11 and info()[0]==0
+        lib.animationHost(True,True)
+        assert lib.visit(1)==1 and info()[0]==2
+    fixture([90,0,7,255,199,2])
+    lib.animationHost(False,False)
+    assert lib.visit(1)==1 and info()[0]==5 and info()[3]==0
+    for script in ([90,11,2],[90],[91],[7,1]):
+        fixture(script)
+        assert lib.visit(1)==7 and info()[0]==0
     for opcode in (87,88):
         fixture([opcode,3,2])
         lib.animationHost(False,False)

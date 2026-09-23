@@ -2,7 +2,7 @@
 #include "sotc/startup.h"
 #include "sotc/startstate.h"
 #include "sotc/sequence.h"
-#include "sotc/script.h"
+#include "sotc/poserenderer.h"
 #include "sotc/pak.h"
 #include "common/file.h"
 #include "common/debug.h"
@@ -13,33 +13,6 @@ static bool readFile(const char *name, Common::Array<byte> &data) {
  if (!file.open(Common::Path(name)) || file.size() < 1 || file.size() > 4 * 1024 * 1024) return false;
  data.resize(file.size()); return file.read(data.data(), data.size()) == data.size();
 }
-class SnapshotRenderer {
- Common::Array<byte> _pixels, _mask;
- Common::Array<byte> &_screen;
-public:
- SnapshotRenderer(Common::Array<byte> &screen) : _screen(screen) { _pixels.resize(640 * 256); _mask.resize(640 * 256); }
- bool pose(const Common::Array<byte> &data, unsigned pose, int x, int y, unsigned clipX1 = 0, unsigned clipY1 = 0, unsigned clipX2 = 319, unsigned clipY2 = 199, int onlyLayer = -1) {
-  if (data.empty()) return false;
-  const uint8_t *record; unsigned layers;
-  if (!va2Record(data.data(), data.size(), 0, pose, record, layers)) return false;
-  if (onlyLayer >= 0 && unsigned(onlyLayer) >= layers) return false;
-  unsigned begin = onlyLayer < 0 ? 0 : unsigned(onlyLayer), end = onlyLayer < 0 ? layers : begin + 1;
-  // Two passes prevent partial drawing when a later layer is unsupported.
-  for (unsigned pass = 0; pass < 2; ++pass) for (unsigned i = begin; i < end; ++i) {
-   PoseLayer layer; unsigned width, height;
-   if (!va2Layer(data.data(), data.size(), pose, i, layer) ||
-       !va2Frame(data.data(), data.size(), layer.frame, _pixels.data(), _mask.data(), _pixels.size(), width, height)) return false;
-   if (!pass) continue;
-   for (unsigned py = 0; py < height; ++py) for (unsigned px = 0; px < width; ++px) {
-    int dx = x + layer.x + int(px), dy = y + layer.y - int(height) + 1 + int(py);
-    unsigned source = py * width + (layer.mirror ? width - 1 - px : px);
-    if (dx >= 0 && dx < 320 && dy >= 0 && dy < 200 && unsigned(dx) >= clipX1 && unsigned(dx) <= clipX2 &&
-        unsigned(dy) >= clipY1 && unsigned(dy) <= clipY2 && _mask[source]) _screen[dy * 320 + dx] = _pixels[source];
-   }
-  }
-  return true;
- }
-};
 bool loadStartupScene(Common::Array<byte> &pixels, Common::String &status) {
  pixels.clear(); status = "INIT.SAV unavailable";
  Common::Array<byte> save, scripts;
@@ -71,7 +44,7 @@ bool loadStartupScene(Common::Array<byte> &pixels, Common::String &status) {
   else if (type == 1) resources.load(2, actorData[i]); // 0x6cb5 -> 0x609e, initialized at 0xc96.
   else if (type == 2) actorData[i] = scenery;
  }
- SnapshotRenderer renderer(pixels);
+ PoseRenderer renderer(pixels);
  unsigned rendered = 0, unsupported = 0, sceneryLayer = 0;
  const uint8_t *sceneryLayers; unsigned sceneryCount;
  bool haveSceneryPose = va2Record(scenery.data(), scenery.size(), 0, 0, sceneryLayers, sceneryCount);
@@ -98,12 +71,21 @@ bool loadStartupScene(Common::Array<byte> &pixels, Common::String &status) {
   unsigned sequence = state.word(a + 12), stepIndex = state.word(a + 14);
   SequenceStep step;
   int x = state.signedWord(a), y = state.signedWord(a + 2), mx = 0, my = 0;
+  int nextPose = -1; unsigned fraction = 0;
   bool ok = va2Step(data.data(), data.size(), sequence, stepIndex, step);
   if (ok && state.word(a + 6) == 2) {
-   ok = (step.control >> 14) == 0 && va2Position(data.data(), data.size(), sequence, stepIndex, mx, my);
+   unsigned mode = step.control >> 14;
+   ok = mode <= 1 && va2Position(data.data(), data.size(), sequence, stepIndex, mx, my);
+   if (ok && mode == 1) {
+    SequenceStep next = step;
+    if (stepIndex + 1 < state.word(a + 18)) ok = va2Step(data.data(), data.size(), sequence, stepIndex + 1, next);
+    unsigned divisor = step.control & 0x3fff;
+    fraction = ((state.word(a + 16) << 8) & 65535) / (divisor ? divisor : 1);
+    nextPose = next.pose;
+   }
    x += mx; y += my;
   }
-  ok = ok && renderer.pose(data, step.pose, x, y, state.word(a + 44), state.byte(a + 48), state.word(a + 46), state.byte(a + 49));
+  ok = ok && renderer.pose(data, step.pose, x, y, state.word(a + 44), state.byte(a + 48), state.word(a + 46), state.byte(a + 49), -1, nextPose, fraction);
   debug("[sotc-init-actor] id=%u slot=%u seq=%u step=%u x=%d y=%d rendered=%d", id, slot, sequence, stepIndex, x, y, ok);
   if (ok) ++rendered; else ++unsupported;
  }

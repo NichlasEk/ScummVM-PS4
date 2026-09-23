@@ -363,3 +363,62 @@ Continue with variable-sized pose layers (0x10c41: four-byte layer header,
 then coordinate-count * 4 bytes; type 0 nested pose, type 1 frame, type 6
 polyline via 0x10f82/0x14d58). Then implement scheduler wait bits and resume the
 saved task PCs. Do not silently clear their waits or reset the scripts.
+
+
+## Variable-length poses and vector drawing
+
+The startup renderer now supports all **10/10 draw-list entries** in the
+supplied INIT.SAV. The resource called VOITURE is visibly a horse-drawn
+carriage, not a motor car. Two small birds use polylines; the seagull uses
+filled, optionally outlined polygons and a morph between matching poses.
+The seagull is above the screen in this saved snapshot; the host audit also
+renders it at a visible diagnostic anchor without changing the game state.
+
+`pose.h` validates variable-length commands: four header bytes followed by
+coordinate-count * four bytes. `poserenderer.h` implements nested poses
+(type 0), frame references (1), polygons (4) and polylines (6). Unsupported
+commands fail transactionally: the caller's image is only replaced after the
+complete pose succeeds. Recursion depth, command and raster-work budgets
+prevent cycles or pathological input from hanging the renderer.
+
+Executable evidence:
+
+- 0x10c41 consumes the variable-size command stream and adds the anchor.
+- 0x10f82 draws consecutive coordinate pairs using the header's high byte
+  as the line color.
+- 0x10efe fills polygons with the high byte, then draws a closed outline
+  with the low byte unless it is 0xff.
+- 0xc143 prepares a current/next pose transition; the factor is the saved
+  substep * 256 divided by the low 14-bit parameter (zero coerced to one).
+- 0x10eb9 interpolates signed coordinates with an eight-bit fractional part.
+  Negative products round down, not toward zero. The renderer supports the
+  verified equal-topology vector case; arbitrary pose merging and modes 2/3
+  remain unsupported.
+
+Line/polygon rasterization currently uses integer Bresenham/even-odd filling.
+Colors, command structure and interpolation come from the original code, but
+pixel-exact edge rounding against DOS output has **not** been established.
+10/10 describes this snapshot's command support, not whole-game coverage.
+
+```sh
+python3 scripts/sotc/audit-poses.py build/sotc-DOS/disc-files/SHADOW > artifacts/sotc/poses-audit.json
+```
+
+The audit compiles the actual renderer with a host Array-container shim. It
+checks line endpoints and clipping, nested translations, recursion cycles,
+transactional failure after a valid layer, truncation, polygon fill/outline,
+negative fractional interpolation and mismatched morph topology. Supplied
+VOITURE, BIRDS poses 0/4 and SEAGULLS pose 0→1 all render successfully.
+The PS4 build runs in shadPS4 with `10 drawn, 0 unsupported`; evidence:
+`artifacts/sotc/vector-live.log` and `vector-scene.png`. Existing resource
+preview remains accessible with Options/Return. Still a static snapshot,
+not a running game or a physical PS4 validation.
+
+Scheduler continuation evidence (not implemented yet): 0xb008 decrements the
+saved timer at task +0x0a on a scheduler visit and clears flag 0x02 at zero.
+0xaf5a clears flag 0x04 when actor step (+0x0e) equals step-count (+0x12)-1.
+Do not substitute wall-clock milliseconds or clear these flags at load.
+Original task 1 resumes on opcode 40 at script-local PC 14: 0xa9fc reads four
+byte coordinates (doubling X), stores the rectangle at task +0x0e..+0x14,
+and rewinds five bytes/yields when predicate 0xa904 is false. Trace that
+predicate next before implementing its behavior.

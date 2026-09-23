@@ -10,6 +10,7 @@
 #include "sotc/startup.h"
 #include "sotc/scriptmachine.h"
 #include "sotc/sound.h"
+#include "sotc/opening.h"
 #include "common/file.h"
 #include "common/events.h"
 #include "common/textconsole.h"
@@ -87,7 +88,26 @@ Common::Error SotcEngine::run() {
    if (intro.entries[i].name == "INTRO1.RAW") intro.load(i,menuBackground);
  }
  if (menuBackground.size()!=64000) menuBackground.clear();
- debug("[sotc-menu] boot: waiting for New game");
+ OpeningPlan openingPlan = {};
+ Common::Array<byte> openingImages[2], openingScript;
+ Common::File openingFile;
+ bool showOpening=false;
+ if (openingFile.open(Common::Path("R05.CC4")) && openingFile.size()>0 && openingFile.size()<4*1024*1024) {
+  openingScript.resize(openingFile.size());
+  if (openingFile.read(openingScript.data(),openingScript.size())==openingScript.size() &&
+      openingPlan.load(Cc4View(openingScript.data(),openingScript.size()))) {
+   showOpening=intro.load(openingPlan.logos[0].background,openingImages[0]) && openingImages[0].size()==64000 &&
+               intro.load(openingPlan.logos[1].background,openingImages[1]) && openingImages[1].size()==64000;
+  }
+ }
+ OpeningClock openingClock(openingPlan);
+ uint32 openingLast=_system->getMillis(); bool openingMusic=false;
+ if (showOpening) debug("[sotc-opening] logos from R05/D05; animated continuation not yet implemented");
+ else warning("[sotc-opening] Logo prefix unavailable; opening menu directly");
+ auto finishOpening=[&]() {
+  showOpening=false; sound.music(255); redraw=true;
+  debug("[sotc-menu] opening finished or skipped; waiting for New game");
+ };
 
  Common::Array<Common::String> dialogueLines; Common::String shownDialogue; unsigned dialoguePage=0;
  int pointerX=0,pointerY=0;
@@ -110,6 +130,12 @@ Common::Error SotcEngine::run() {
  };
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
+  if (showOpening) {
+   uint32 now=_system->getMillis(); openingClock.advance(now-openingLast); openingLast=now;
+   if (openingClock.musicDue() && !openingMusic) { sound.music(openingPlan.music); openingMusic=true; }
+   redraw=true;
+   if (openingClock.done()) finishOpening();
+  }
   // Diagnostic 10 Hz preview cadence; original scene pacing is not yet bound.
   if (!mainMenu && showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
    sceneStep(); nextSceneFrame=_system->getMillis()+100;
@@ -226,6 +252,13 @@ Common::Error SotcEngine::run() {
      if (py+d>=0 && py+d<240) *static_cast<byte *>(surface.getBasePtr(px,py+d))=7;
     }
    }
+   if (showOpening) {
+    surface.fillRect(Common::Rect(320,240),0);
+    memcpy(surface.getBasePtr(0,20),openingImages[openingClock.logo()].data(),64000);
+    byte faded[768]; unsigned brightness=openingClock.brightness();
+    for (unsigned i=0;i<768;++i) faded[i]=palette[i]*brightness/255;
+    _system->getPaletteManager()->setPalette(faded,0,256);
+   }
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
    if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
@@ -234,6 +267,12 @@ Common::Error SotcEngine::run() {
   while (_eventMan->pollEvent(event)) {
    if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup || mainMenu) redraw=true; }
    if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) debug("[sotc-input] type=%u key=%u",unsigned(event.type),unsigned(event.kbd.keycode));
+   if (showOpening) {
+    if (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN ||
+        (event.type==Common::EVENT_KEYDOWN && (event.kbd.keycode==Common::KEYCODE_RETURN || event.kbd.keycode==Common::KEYCODE_ESCAPE)) ||
+        (event.type==Common::EVENT_JOYBUTTON_DOWN && event.joystick.button==Common::JOYSTICK_BUTTON_A)) finishOpening();
+    continue;
+   }
    // Menu owns input and freezes simulation; no scene is loaded until New game.
    if (mainMenu) {
     int movement=0; bool confirm=false;

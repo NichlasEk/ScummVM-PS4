@@ -1020,3 +1020,41 @@ Validation: PS4 build/package passed. shadPS4 trace shows boot waiting, New game
 menu entry and a confirmed second reset; the menu and Settings dialog were
 visually inspected. Local evidence: menu-first-live.log, menu-live.log,
 main-menu.png and menu-settings.png under artifacts/sotc/.
+
+### Opening logos from the original script
+
+Boot plays the first two logos from R05.CC4 block 0 before the functional
+menu. A bounded prefix reader derives paired scenery IDs, fade increments,
+hold/black intervals and the music cue from tasks 0, 2 and 3. It validates
+the supported structure before loading any images. Unknown/truncated data
+falls back to the menu; it is not treated as successfully executed script.
+Original resources stay external in D05.PAK and MUS.PAK. Click/Cross or
+Options/ESC skips the sequence and stops its music without also selecting
+a menu entry. No game VM ticks run during the opening or the initial menu.
+
+Supplied data selects D05 entries 0 (TATOU.RAW) and 10 (LOGOCHAO.RAW),
+fade increment 8, holds of 50 ticks, a 5-tick black interval, and music
+8 (SHAD9B.ADD) after 5 ticks. DOS handlers 0x98cb/0x990a set fade modes
+and increments, with brightness loops at 0x973e/0x9844. This UI player uses
+10 Hz waits and 16 ms fade steps; exact original timer/retrace pacing remains
+unverified. It ends at the first animated credit-actor command, not at the
+end of the original intro. The full animation/story sequence remains pending.
+
+Correction to the earlier continuation note: opcode 96 at 0xac77 selects
+the speech bank at DS:2e16 and calls 0xf118. It is not palette selection.
+The animated intro uses A05.PAK including CREDITS, COMET, lighthouse, owl
+and character resources. Keep its task ordering/animation waits intact when
+implementing the next slice; do not replace it with a guessed slideshow.
+
+Validation: `audit-opening.py DATA` checks the supplied prefix, malformed
+directories, truncations, both fade endpoints, black interval, music timing
+and small/large clock steps. PS4 build passed. Both original logos were
+visually inspected under shadPS4; the log confirms SHAD9B playback followed
+by the menu and New game. Ignored evidence: opening-live.log and
+logo-infogrames.png / logo-chaosium.png.
+
+Follow-up requested by the user: after the intro, implement the original
+action bar that appears when the pointer reaches the top edge. Use the
+existing pointer (including the analog stick); no extra controller shortcut
+is needed. Show original resource art and bind real actions, not decorative
+buttons without behavior.

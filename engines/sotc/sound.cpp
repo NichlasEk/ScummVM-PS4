@@ -47,7 +47,9 @@ bool SoundEffects::speech(unsigned bank,unsigned index) {
  debug("[sotc-speech] bank=%u text=%u parts=%u samples=%u rate=%u active=%u",bank,index,parts,samples,rate,unsigned(_mixer->isSoundHandleActive(_speechHandle)));
  return true;
 }
-bool SoundEffects::effect(unsigned index) {
+bool SoundEffects::effect(unsigned index) { return repeatedEffect(index,1); }
+bool SoundEffects::repeatedEffect(unsigned index,unsigned count) {
+ if (count>255) return false;
  if (index == 255) {
   _mixer->stopHandle(_handle);
   debug("[sotc-sfx] stop"); return true;
@@ -70,7 +72,11 @@ bool SoundEffects::effect(unsigned index) {
   Audio::FLAG_UNSIGNED, DisposeAfterUse::YES);
  if (!stream) return false;
  const int rate = stream->getRate();
- _mixer->playStream(Audio::Mixer::kSFXSoundType, &_handle, stream);
+ // Driver AH=6 stores CL, decrements a 16-bit counter after each playback.
+ // Zero wraps to 65535 on the first completion; it is not infinite playback.
+ _mixer->playStream(Audio::Mixer::kSFXSoundType, &_handle,
+  Audio::makeLoopingAudioStream(stream,count ? count : 65536));
+ debug("[sotc-sfx] iterations=%u",count ? count : 65536);
  debug("[sotc-sfx] sample=%u name=%s rate=%d bytes=%u active=%d", index,
   _samples.entries[index].name.c_str(), rate, data.size(), _mixer->isSoundHandleActive(_handle));
  return true;

@@ -18,6 +18,7 @@ public:
  bool speech(unsigned bank,unsigned index) override;
  void stopSpeech() override { _mixer->stopHandle(_speechHandle); }
  bool effect(unsigned index) override;
+ bool repeatedEffect(unsigned index,unsigned count);
  bool music(unsigned index) override { return _music.request(index); }
 };
 }

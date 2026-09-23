@@ -5,21 +5,27 @@
 #include "sotc/cc4.h"
 #include "sotc/sound.h"
 namespace Sotc {
-// Linear animated opening task. Parallel tasks/scene changes remain explicit
+// Animated opening tasks. Unsupported commands/scene changes remain explicit
 // boundaries, not no-ops. Uses the same VA2 renderer/advancer as gameplay.
 class OpeningScene {
  struct Actor {
   Common::Array<byte> data;
   int x=0,y=0;
-  unsigned sequence=0,step=0,count=0,substep=0;
+  unsigned sequence=0,step=0,count=0,substep=0,gate=255;
   bool visible=false;
  } _actors[11];
  Pak _resources, _rooms;
- Common::Array<byte> _script,_background,_pixels;
+ struct Task {
+  Common::Array<byte> script;
+  unsigned pc=0,actor=0,wait=0,waitingActor=11;
+  bool enabled=false;
+ } _tasks[3];
+ Common::Array<byte> _background,_pixels;
  SoundEffects &_sound;
- unsigned _pc=0,_actor=0,_wait=0,_waitingActor=11,_brightness=0,_fade=0,_fadeStep=0,_fadeClock=0,_clock=0;
+ unsigned _activeTask=2,_randomValue=0; uint32 _randomState=1;
+ unsigned _brightness=0,_fade=0,_fadeStep=0,_fadeClock=0,_clock=0;
  bool _done=false,_failed=false;
- bool commands();
+ bool commands(unsigned id);
  bool render();
  bool advanceActors();
  bool fail(const char *reason);

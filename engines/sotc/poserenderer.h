@@ -66,7 +66,7 @@ class PoseRenderer {
   int scaled = product >= 0 ? product / 256 : -((-product + 255) / 256);
   int result = (a + scaled) & 65535; return result < 32768 ? result : result - 65536;
  }
- bool render(const Common::Array<byte> &data, unsigned pose, int x, int y, int onlyLayer, unsigned depth, int nextPose = -1, unsigned fraction = 0) {
+ bool render(const Common::Array<byte> &data, unsigned pose, int x, int y, int onlyLayer, unsigned depth, int nextPose = -1, unsigned fraction = 0, bool mirrored = false) {
   if (depth >= 16 || data.empty()) return false;
   const uint8_t *record; uint32_t length; unsigned layers;
   if (!va2Pose(data.data(), data.size(), pose, record, length, layers)) return false;
@@ -86,24 +86,30 @@ class PoseRenderer {
    if (onlyLayer >= 0 && i != unsigned(onlyLayer)) continue;
    if (!_commands) return false;
    --_commands;
-   int px = x + va2Signed16(xy), py = y + va2Signed16(xy + 2);
+   int px = x + (mirrored ? -va2Signed16(xy) : va2Signed16(xy)), py = y + va2Signed16(xy + 2);
    if (type == 0 && points == 1) {
-    if (!render(data, ref, px, py, -1, depth + 1)) return false;
+    if (ref & 0x7000) return false;
+    // 0x10fd7 combines nested pose flags with OR, not XOR.
+    if (!render(data, ref & 0xfff, px, py, -1, depth + 1, -1, 0, mirrored || (ref & 0x8000))) return false;
    } else if ((type == 1 || type == 10) && points == 1) {
     if (ref & (type==10 ? 0xf000 : 0x7000)) return false;
     unsigned width, height;
     if (!(type==10 ? va2Portrait(data.data(),data.size(),ref,_pixels.data(),_mask.data(),_pixels.size(),width,height) : va2Frame(data.data(), data.size(), ref & 0xfff, _pixels.data(), _mask.data(), _pixels.size(), width, height))) return false;
+    if (mirrored) {
+     if (type==10) return false; // Vertical-run mirrored anchor still unverified.
+     px-=int(width); // 0x1103b obtains the full frame width via 0x1516c.
+    }
     for (unsigned row = 0; row < height; ++row) for (unsigned col = 0; col < width; ++col) {
-     unsigned source = row * width + ((ref & 0x8000) ? width - 1 - col : col);
+     unsigned source = row * width + (((ref & 0x8000)!=0)^mirrored ? width - 1 - col : col);
      if (_mask[source] && !dot(px + int(col), py - int(height) + 1 + int(row), _pixels[source])) return false;
     }
    } else if (type == 7) {
     // 0x10fad: set high-byte colour once, plot each independent point.
     for (unsigned j=0;j<points;++j)
-     if (!dot(x+va2Signed16(xy+j*4),y+va2Signed16(xy+j*4+2),byte(ref>>8))) return false;
+     if (!dot(x+(mirrored ? -va2Signed16(xy+j*4) : va2Signed16(xy+j*4)),y+va2Signed16(xy+j*4+2),byte(ref>>8))) return false;
    } else if (type == 5 && points == 2) {
     // 0x10f3e: normalize corners, fill with high byte, optional low-byte outline.
-    int x2=x+va2Signed16(xy+4),y2=y+va2Signed16(xy+6);
+    int x2=x+(mirrored ? -va2Signed16(xy+4) : va2Signed16(xy+4)),y2=y+va2Signed16(xy+6);
     int left=px<x2 ? px : x2,right=px>x2 ? px : x2;
     int top=py<y2 ? py : y2,bottom=py>y2 ? py : y2;
     int firstX=left<0 ? 0 : left,lastX=right>319 ? 319 : right;
@@ -117,7 +123,7 @@ class PoseRenderer {
     for (unsigned j = 0; j < points; ++j) {
      int vx = va2Signed16(xy + j * 4), vy = va2Signed16(xy + j * 4 + 2);
      if (nextXY) { vx = interpolate(vx, va2Signed16(nextXY + j * 4), fraction); vy = interpolate(vy, va2Signed16(nextXY + j * 4 + 2), fraction); }
-     xs[j] = x + vx; ys[j] = y + vy;
+     xs[j] = x + (mirrored ? -vx : vx); ys[j] = y + vy;
     }
     if (type == 4) { if (!polygon(xs, ys, points, ref)) return false; continue; }
     // 0x10f82 passes the header's high byte as the polyline colour.

@@ -2,23 +2,31 @@
 #include "sotc/openingscene.h"
 #include "sotc/poserenderer.h"
 #include "sotc/animation.h"
+#include "sotc/script.h"
 #include "common/textconsole.h"
 #include "common/debug.h"
 namespace Sotc {
 bool OpeningScene::fail(const char *reason) {
- warning("[sotc-opening] animated task stopped pc=%u: %s",_pc,reason);
+ warning("[sotc-opening] animated task stopped pc=%u: %s",_tasks[_activeTask].pc,reason);
  _done=_failed=true; return false;
 }
 bool OpeningScene::start(Cc4View archive,unsigned pc,const Common::Array<byte> &background) {
  Cc4View room,script;
  if (!cc4Entry(archive,4,0,room) || !cc4Entry(room,2,2,script) || pc>=script.size ||
      background.size()!=64000 || !_resources.open("A05.PAK") || !_rooms.open("D05.PAK")) return fail("cannot load task/resources");
- _script.resize(script.size); memcpy(_script.data(),script.data,script.size);
- _pc=pc; _background=background; _pixels=background;
- debug("[sotc-opening] animated task starts pc=%u",_pc);
+ for (unsigned i=1;i<3;++i) {
+  if (!cc4Entry(room,2,i,script)) return fail("missing task");
+  _tasks[i].script.resize(script.size); memcpy(_tasks[i].script.data(),script.data,script.size);
+ }
+ _tasks[2].pc=pc; _tasks[2].enabled=true; _background=background; _pixels=background;
+ debug("[sotc-opening] animated task starts pc=%u",pc);
  return true;
 }
-bool OpeningScene::commands() {
+bool OpeningScene::commands(unsigned id) {
+ _activeTask=id; Task &task=_tasks[id];
+ if (!task.enabled) return true;
+ Common::Array<byte> &_script=task.script;
+ unsigned &_pc=task.pc,&_actor=task.actor,&_wait=task.wait,&_waitingActor=task.waitingActor;
  if (_waitingActor<11) {
   const Actor &a=_actors[_waitingActor];
   if (!a.count) return fail("empty animation wait");
@@ -29,16 +37,42 @@ bool OpeningScene::commands() {
  for (unsigned budget=0;budget<128;++budget) {
   if (_pc>=_script.size()) return fail("truncated instruction");
   unsigned op=_script[_pc];
-  // The first not-yet-supported parallel task begins the star/eye scene.
-  if (op==27) {
-   debug("[sotc-opening] supported animation prefix ends pc=%u before parallel task",_pc);
-   _done=true; return true;
+  if (op==3 || op==10) {
+   ScriptInstruction instruction;
+   if (decodeScript(Cc4View(_script.data(),_script.size()),_pc,instruction)!=kInstruction) return fail("invalid branch");
+   if (op==10 && (instruction.variable!=33 || instruction.valueIsVariable || instruction.comparison!=0)) return fail("unsupported comparison");
+   _pc=(op==3 || _randomValue!=instruction.value) ? instruction.target : instruction.next;
+   continue;
   }
-  unsigned width=op==41 ? 1 : op==7 ? 3 : 2;
+  unsigned width=op==41 || op==2 ? 1 : op==7 || op==45 || op==100 ? 3 : 2;
   if (_script.size()-_pc<width) return fail("truncated operand");
   unsigned value=width>1 ? _script[_pc+1] : 0;
   Actor &a=_actors[_actor];
   switch (op) {
+  case 44:
+   if (id!=2 || value!=1) return fail("unsupported room transition");
+   debug("[sotc-opening] opening block complete; next story block=%u",value);
+   _done=true; return true;
+  case 100:
+   if (!_sound.repeatedEffect(value,_script[_pc+2])) return fail("repeated sample unavailable");
+   break;
+  case 2: task.enabled=false; return true;
+  case 27:
+   if (value!=1) return fail("unsupported task activation");
+   _tasks[value].pc=0; _tasks[value].wait=0; _tasks[value].waitingActor=11; _tasks[value].enabled=true;
+   debug("[sotc-opening] task=%u activated",value); break;
+  case 28:
+   if (value!=1) return fail("unsupported task deactivation");
+   _tasks[value].enabled=false; debug("[sotc-opening] task=%u disabled",value); break;
+  case 79:
+   _randomValue=0;
+   if (value>1) { _randomState=_randomState*uint32(0x015a4e35)+1; _randomValue=((_randomState>>16)&0x7fff)%value; }
+   break;
+  case 45: {
+   unsigned count=va2SequenceLength(a.data.data(),a.data.size(),value),step=_script[_pc+2];
+   if (!count || step>=count) return fail("invalid held animation");
+   a.sequence=value; a.count=count; a.step=step; a.gate=step; break;
+  }
   case 90:
    if (!value || value>=11) return fail("invalid reset actor");
    _actors[value]=Actor(); _actors[value].visible=true; _actor=value; break;
@@ -57,7 +91,7 @@ bool OpeningScene::commands() {
    unsigned count=va2SequenceLength(a.data.data(),a.data.size(),value);
    SequenceStep first;
    if (!count || !va2Step(a.data.data(),a.data.size(),value,0,first)) return fail("invalid sequence");
-   a.sequence=value; a.step=0; a.count=count;
+   a.sequence=value; a.step=0; a.count=count; a.gate=255;
    debug("[sotc-opening] actor=%u sequence=%u frames=%u",_actor,value,count);
    if (op==87) _waitingActor=_actor;
    break;
@@ -94,7 +128,9 @@ bool OpeningScene::render() {
    unsigned divisor=step.control&0x3fff;
    fraction=((a.substep<<8)&65535)/(divisor ? divisor : 1); nextPose=next.pose;
   }
-  if (!renderer.pose(a.data,step.pose,a.x+mx,a.y+my,0,0,319,199,-1,nextPose,fraction)) return fail("unsupported pose");
+  if (!renderer.pose(a.data,step.pose,a.x+mx,a.y+my,0,0,319,199,-1,nextPose,fraction)) {
+   warning("[sotc-opening] actor=%u: %s",order[i],"pose failed"); return fail("unsupported pose");
+  }
  }
  return true;
 }
@@ -103,7 +139,7 @@ bool OpeningScene::advanceActors() {
   Actor &a=_actors[id]; if (!a.visible) continue;
   SequenceStep step;
   if (!va2Step(a.data.data(),a.data.size(),a.sequence,a.step,step) ||
-      !advanceAnimation(step.control,2,255,a.count,a.step,a.substep)) return fail("cannot advance animation");
+      !advanceAnimation(step.control,2,a.gate,a.count,a.step,a.substep)) return fail("cannot advance animation");
  }
  return true;
 }
@@ -123,7 +159,8 @@ void OpeningScene::advance(unsigned elapsed) {
  if (_clock>1000) _clock=1000;
  while (_clock>=100 && !_done && !_fade) {
   _clock-=100;
-  if (!commands() || _done || !render() || !advanceActors()) return;
+  for (unsigned i=1;i<3;++i) if (!commands(i) || _done) return;
+  if (!render() || !advanceActors()) return;
  }
 }
 }

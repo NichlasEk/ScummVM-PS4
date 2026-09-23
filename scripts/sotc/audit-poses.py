@@ -63,6 +63,9 @@ extern "C" bool render(const uint8_t *p,unsigned n,unsigned pose,int x,int y,uns
     assert {(i % 320, i // 320) for i, v in enumerate(out.raw) if v == 32} == {(4, 3), (4, 4)}
     nested = b'\0\1' + command(0, 1, [(10, 10)])
     assert render(fixture([nested, line])) and out.raw[12 * 320 + 12] == 32
+    mirrored = b'\0\1' + command(0, 0x8001, [(10, 10)])
+    assert render(fixture([mirrored, line]))
+    assert {(i % 320, i // 320) for i, v in enumerate(out.raw) if v == 32} == {(8, 12), (7, 12), (6, 12), (6, 13), (6, 14)}
     cyclic = b'\0\1' + command(0, 0, [(0, 0)])
     assert not render(fixture([cyclic])) and set(out.raw) == {119}
     partial = b'\0\2' + line[2:] + command(254, 0, [(0, 0)])

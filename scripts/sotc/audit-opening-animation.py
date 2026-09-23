@@ -39,7 +39,7 @@ public:
  bool open(const Common::String &name) {rooms=name=="D05.PAK"; for(auto &r:resources[rooms])entries.push_back(r.entry);return true;}
  bool load(unsigned i,std::vector<byte> &out) const {if(i>=resources[rooms].size())return false;out=resources[rooms][i].data;return !out.empty();}
 };
-class SoundEffects {public: bool effect(unsigned) {return true;}};
+class SoundEffects {public: bool effect(unsigned) {return true;} bool repeatedEffect(unsigned i,unsigned n) {return i==34 && n==3;}};
 }
 ''')
  (t/'test.cpp').write_text(r'''
@@ -81,7 +81,10 @@ extern "C" int run(const uint8_t*p,unsigned n,unsigned *changes) {
  script=(a.directory/'R05.CC4').read_bytes();changes=c.c_uint()
  elapsed=lib.run(script,len(script),c.byref(changes))
  assert elapsed>=0,(elapsed,changes.value)
- assert changes.value>20,changes.value
+ assert elapsed>100000 and changes.value>350,(elapsed,changes.value)
+ first=(elapsed,changes.value)
+ assert lib.run(script,len(script),c.byref(changes))==first[0]
+ assert changes.value==first[1]  # Deterministic scheduler and seeded random task.
  print(f'Animated opening reached supported boundary in {elapsed} ms, {changes.value} changed frames')
  # Missing actor data must stop visibly; it must not silently continue the script.
  lib.resource(0,17,b'',0,b'missing credits')

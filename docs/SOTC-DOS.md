@@ -1099,3 +1099,48 @@ captured and visually inspected. Task 2 stops at the intentional supported
 boundary PC 187, opcode 27, then returns to the menu and accepts New game.
 Evidence: `artifacts/sotc/animated-opening-live.log`,
 `animated-opening-contact.png` and `opening-animation-00.png` through `15.png`.
+
+### Complete R05 block 0: parallel tasks and final animation
+
+The opening player now visits tasks 1 and 2 in original ascending order,
+with independent PCs, actor bindings, timers, animation waits and enabled
+states. Opcodes 27/28 restart/disable the auxiliary task; 79 uses the same
+Borland LCG as the gameplay VM, and 3/10 use the shared bounded branch decoder.
+Only the demonstrated random-variable-33 equality form is accepted here.
+The preview seed is still fixed at 1 rather than reproducing DOS startup time.
+
+Opcode 45 at 0x948d selects a sequence and held frame/advance gate. This
+allows the staged tentacle/comet layers to remain still until opcode 87
+starts them. The renderer also handles nested horizontally mirrored poses:
+0x10fd7 combines parent and child flags with OR, while 0x11014 XORs the
+sprite mirror flag and subtracts the full frame width for the mirrored
+anchor (0x1516c). HIBOU2's flying owl uses this nesting. Other unverified
+pose flags, including mirrored vertical-run frames, remain explicit errors.
+
+Opcode 100 at 0x9598 passes sample ID and iteration count to driver AH=6.
+In the supplied DRV_SB.COM (COM addresses), 0x16b clears CH, 0x16d stores
+CX at 0x10f, and the completion handler at 0x2db decrements it and restarts
+the sample until zero. SoundEffects now wraps the VOC stream with ScummVM's
+looping stream; ordinary opcode 99 retains one iteration. A zero count
+wraps the driver's 16-bit counter and means 65,536 iterations, not infinity.
+The intro requests sample 34 three times. Stop/skip disposes of the loop.
+
+The player reaches opcode 44/1 at the end of block 0 and returns to the
+functional menu. This completes the animated credit sequence, not the
+separate story/conversation in R05 block 1. That block needs dialogue,
+clipping, actor movement and initialization support before New game can
+follow the entire original opening path. The top-edge action bar requested
+by the user remains after the intro work.
+
+Validation: the actual C++ player, supplied assets and stubbed audio/I/O
+finish block 0 in 165,280 ms with 546 changed frames. Two fresh runs match,
+covering deterministic parallel scheduling and random branches. Missing
+credits data still fails. Pose regressions pass, including nested horizontal
+reflection; the PS4 build/package succeeds. Timing remains approximate.
+
+Live validation: the rebuilt PS4 eboot completed R05 block 0 under shadPS4,
+logged `iterations=3` and `opening block complete; next story block=1`, and
+returned to the menu. Captured owl, tentacle, eye/fire and credit scenes;
+local evidence is `artifacts/sotc/full-opening-live.log` and
+`full-opening-00.png` through `full-opening-18.png`. No physical-PS4 run is
+claimed for this slice.

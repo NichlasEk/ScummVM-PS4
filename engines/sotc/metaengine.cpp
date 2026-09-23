@@ -20,6 +20,8 @@ public:
    action->setKeyEvent(Common::KeyState(codes[i])); action->addDefaultInputMapping(keys[i]); action->addDefaultInputMapping(buttons[i]); map->addAction(action);
   }
   Common::Action *next = new Common::Action("CLICKNEXT", Common::U32String("Next image"));
+  Common::Action *startup = new Common::Action("STARTSCENE", Common::U32String("Toggle original start snapshot"));
+  startup->setKeyEvent(Common::KeyState(Common::KEYCODE_F8)); startup->addDefaultInputMapping("F8"); startup->addDefaultInputMapping("JOY_START"); map->addAction(startup);
   next->setLeftClickEvent(); next->addDefaultInputMapping("MOUSE_LEFT"); next->addDefaultInputMapping("JOY_A"); map->addAction(next);
   Common::Action *prev = new Common::Action("CLICKPREV", Common::U32String("Previous image"));
   prev->setRightClickEvent(); prev->addDefaultInputMapping("MOUSE_RIGHT"); prev->addDefaultInputMapping("JOY_B"); map->addAction(prev);

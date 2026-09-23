@@ -7,6 +7,7 @@
 #include "sotc/va2.h"
 #include "sotc/sequence.h"
 #include "sotc/script.h"
+#include "sotc/startup.h"
 #include "common/file.h"
 #include "common/events.h"
 #include "common/textconsole.h"
@@ -68,6 +69,8 @@ Common::Error SotcEngine::run() {
  bool showActor = true, loadActor = true; int actor = 0; unsigned actorFrame = 0;
  uint32 nextFrame = 0;
  unsigned sequence = 0;
+ Common::Array<byte> startupPixels; Common::String startupStatus;
+ bool startupAvailable = loadStartupScene(startupPixels, startupStatus), showStartup = startupAvailable;
 
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
@@ -101,7 +104,7 @@ Common::Error SotcEngine::run() {
   unsigned sequences = actorData.empty() ? 0 : va2Records(actorData.data(), actorData.size(), 2);
   unsigned steps = actorData.empty() ? 0 : va2SequenceLength(actorData.data(), actorData.size(), sequence);
   unsigned cycle = steps ? steps : actorFrames;
-  if (showActor && cycle && actorFrame + 1 < cycle && int32(_system->getMillis() - nextFrame) >= 0) {
+  if (!showStartup && showActor && cycle && actorFrame + 1 < cycle && int32(_system->getMillis() - nextFrame) >= 0) {
    actorFrame = (actorFrame + 1) % cycle; nextFrame = _system->getMillis() + 150; redraw = true;
   }
   if (redraw) {
@@ -115,7 +118,7 @@ Common::Error SotcEngine::run() {
     title = Common::String::format("D%02d: %s  %d/%u", bank, rooms.entries[backgrounds[scene]].name.c_str(), scene + 1, backgrounds.size());
    }
    Common::String actorTitle = "Triangle: show frames";
-   if (showActor && !actorEntries.empty()) {
+   if (!showStartup && showActor && !actorEntries.empty()) {
     bool decoded = true;
     SequenceStep step; int motionX = 0, motionY = 0;
     const uint8_t *poseRecord = nullptr; unsigned layers = 1;
@@ -143,16 +146,25 @@ Common::Error SotcEngine::run() {
     actorTitle = Common::String::format("%s %s%u %u/%u%s", actors.entries[actorEntries[actor]].name.c_str(),
       steps ? "S" : "raw", steps ? sequence : 0, cycle ? actorFrame + 1 : 0, cycle, decoded ? "" : " unsupported");
    }
+   if (showStartup) {
+    memcpy(surface.getBasePtr(0, 0), startupPixels.data(), 64000);
+    title = startupStatus; actorTitle = "Original start snapshot - not gameplay";
+   }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, "L1/R1: figure  L3/R3: seq  Triangle: on", 2, 227, 316, 7);
+   font->drawString(&surface, showStartup ? "Options/F8: resources  Touchpad: exit" : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
    if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
   }
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
+   if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_F8) {
+    if (startupAvailable) { showStartup = !showStartup; pal = 0; redraw = true; }
+    continue;
+   }
+   if (showStartup && !(event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)) continue;
 
    if (event.type == Common::EVENT_LBUTTONDOWN || (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_RIGHT)) { if (!backgrounds.empty()) scene = (scene + 1) % backgrounds.size(); redraw = true; }
    if (event.type == Common::EVENT_RBUTTONDOWN) { if (!backgrounds.empty()) scene = (scene + backgrounds.size() - 1) % backgrounds.size(); redraw = true; }

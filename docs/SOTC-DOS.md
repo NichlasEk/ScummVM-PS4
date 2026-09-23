@@ -299,3 +299,67 @@ PS4 package rebuilt successfully. Live shadPS4 verification in
 `artifacts/sotc/cc4-live.log` reports R00: 84 blocks / 617 scripts, and decodes
 block 0 / script 0 at PC 0 as opcode 10, next PC 9, false target 16. The
 resource preview then draws F00.RAW with CTU.PAL as before.
+
+
+## Original new-game snapshot (INIT.SAV)
+
+New-game code at 0x238e selects `INIT.SAV`, then 0x2508 reads its header and
+0x25ee calls the state loader. It does **not** initialize every script at PC 0.
+The supplied save is 3966 bytes: `NED\0`, a 30-byte description, 30 bytes of
+options, then 3902 bytes corresponding to DOS DS:0x2dee..0x3d2b. The payload
+is XORed bytewise with `(index + 1) * 5` modulo 256 (0xe26a). No resource data,
+DOS pointers, or proprietary executable bytes are embedded in the engine.
+
+`startstate.h` decodes the supplied file with size/signature/bounds checks.
+The startup snapshot points at bank 0, room block 0, background entry 0,
+15 tasks and 10 draw-list entries. Original save-load 0xe12c rebases each task
+using saved IP minus saved script base; the reader reproduces that difference
+and validates it against the current script. It never dereferences saved DOS
+segment values. Task 0 is already disabled; task 1 resumes at script-local
+PC 14; other active tasks have animation/timer wait flags. Restarting task 0
+would overwrite this intentionally prepared state.
+
+`startup.cpp` now displays this **static snapshot**, with the original actor
+resource slots, sequence steps, coordinates, clipping rectangles and saved
+interleaving with foreground scenery. Slot type 0 loads Axx resources; type 1
+uses RES entry 2 (the protagonist resource, established by 0xc96/0x6cb5).
+The protagonist anchor is (220,151). Scene pose 0 contains nested pose
+references: these are drawn in the saved order, not as frame indices.
+
+The real scene exposed another VA2 boundary issue: a non-final record's extent
+includes the following record's two-byte prefix. It is now excluded before
+validating payload length; a nonzero following prefix must not invalidate the
+previous pose. WEST0 pose 52 exercises this, and a synthetic regression test
+covers it. Frame audit remains 5420 supported / 800 unsupported.
+
+Current snapshot renders 6 of 10 draw-list entries: three people and three
+foreground layers. Four are explicitly unsupported: the seagull animation's
+special render mode, two bird poses with vector primitives, and the car's
+mixed nested/frame/vector pose. These must be implemented before claiming a
+complete original start scene. The snapshot does not run scripts, dialogue,
+movement, timing, interaction or save/load gameplay yet.
+
+Options on the controller (Return in shadPS4, F8 for native keyboard input)
+toggles snapshot/resource viewer. Existing resource controls remain available
+in that viewer. Touchpad exits. Missing or unsupported INIT.SAV falls back to
+the resource viewer. The scene uses the existing CTU palette for this release.
+
+Validation:
+
+```sh
+python3 scripts/sotc/audit-startstate.py build/sotc-DOS/disc-files/SHADOW > artifacts/sotc/startstate-audit.json
+python3 scripts/sotc/audit-va2.py build/sotc-DOS/disc-files/SHADOW > artifacts/sotc/startup-va2-audit.json
+bash scripts/sotc/build.sh
+```
+
+The start-state tests cover short/oversized/wrong-signature files, out-of-range
+reads, invalid task indices, truncated script tables and saved IP underflow,
+plus all 15 actual rebased task PCs. Built and launched SCVM00004 in shadPS4;
+`artifacts/sotc/startup-live.log` records every task/actor and the 6/4 rendering
+result. Screenshots `startup-scene.png` and `startup-toggle.png` verify the
+snapshot and working return to resource preview. No physical PS4 test yet.
+
+Continue with variable-sized pose layers (0x10c41: four-byte layer header,
+then coordinate-count * 4 bytes; type 0 nested pose, type 1 frame, type 6
+polyline via 0x10f82/0x14d58). Then implement scheduler wait bits and resume the
+saved task PCs. Do not silently clear their waits or reset the scripts.

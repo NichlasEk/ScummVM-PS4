@@ -27,13 +27,15 @@ inline bool va2Record(const uint8_t *data, uint32_t size, unsigned section, unsi
  uint32_t base = va2LE32(data + section * 4);
  uint32_t start = base + va2LE32(data + base + index * 4);
  uint32_t end = index + 1 < records ? base + va2LE32(data + base + (index + 1) * 4) : va2LE32(data + section * 4 + 4);
+ // The next record's two-byte prefix belongs to that record, not this one.
+ if (index + 1 < records) { if (end - start < 2) return false; end -= 2; }
  if (end - start < 2) return false;
  // Original executable reads the count byte at +1, not a BE word.
  if (data[start] != 0) return false; // Header flag semantics not yet known.
  count = data[start + 1];
  uint32_t length = 2 + count * 8;
  // Additional payloads in composite records need another interpreter.
- if (end - start != length && !(end - start == length + 2 && data[end - 2] == 0 && data[end - 1] == 0)) return false;
+ if (end - start != length) return false;
  record = data + start + 2; return true;
 }
 struct SequenceStep { unsigned pose, control; int dx, dy; };

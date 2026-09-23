@@ -26,6 +26,13 @@ print('SHA256:', hashlib.sha256(data).hexdigest(), flush=True)
 print('Load image starts at file offset:', hex(header), flush=True)
 # Anchors discovered by tracing callers of the VA2 section/record accessor.
 routines = [('Sequence preview and inclusive movement', 0x1641, 0x1715),
+            ('New game chooses INIT.SAV', 0x238e, 0x23a3),
+            ('Save header and state load', 0x2508, 0x25f3),
+            ('Saved task IP rebasing', 0xe12c, 0xe1a7),
+            ('Save XOR transform', 0xe26a, 0xe29f),
+            ('State payload restore', 0xe4b5, 0xe598),
+            ('Saved actor rendering', 0xc2db, 0xc3f8),
+            ('Interleaved actors and scenery', 0xc724, 0xc843),
             ('Room script table and initialization', 0x8e8d, 0x8fc4),
             ('Script operands and expression readers', 0x8ff9, 0x9216),
             ('Conditional branch', 0x93ad, 0x93f8),

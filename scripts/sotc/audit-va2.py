@@ -58,6 +58,16 @@ extern "C" bool frame(const uint8_t*p,unsigned n,unsigned i,uint8_t*d,uint8_t*m,
     assert decode(bytes(mirrored), 0)
     assert mask.raw[:16] == bytes([0] * 10 + [1] * 4 + [0] * 2)
     assert pixels.raw[10:14] == bytes([3, 2, 1, 0])
+    # A following record's prefix may be nonzero; it is not trailing payload.
+    # Two one-layer poses; the second prefix is 0x0008 (as in WEST0 pose 52).
+    poses = struct.pack('<IIH', 10, 22, 0)
+    poses += b'\0\1\1\1\0\0\0\0\0\0' + b'\x08\0'
+    poses += b'\0\1\1\1\0\0\0\0\0\0'
+    pose_end = 16 + len(poses)
+    with_poses = struct.pack('<4I', 16, pose_end, pose_end + 6 + len(frame), pose_end + 6 + len(frame))
+    with_poses += poses + struct.pack('<IH', 6, 0) + frame
+    assert lib.mirror(with_poses, len(with_poses), 0) == 0
+    assert lib.mirror(with_poses, len(with_poses), 1) == 0
     assert not decode(fixture, 1)
     for stop in range(len(fixture)):
         assert not decode(fixture[:stop], 0)

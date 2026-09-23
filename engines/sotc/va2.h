@@ -34,6 +34,7 @@ inline bool va2Frame(const uint8_t *data, uint32_t size, unsigned index,
  uint32_t base = va2LE32(data + 4);
  uint32_t start = base + va2LE32(data + base + index * 4);
  uint32_t end = index + 1 < count ? base + va2LE32(data + base + (index + 1) * 4) : va2LE32(data + 8);
+ if (index + 1 < count) { if (end - start < 2) return false; end -= 2; }
  if (end - start < 2) return false;
  unsigned orientation = unsigned(data[start - 2]) | (unsigned(data[start - 1]) << 8);
  if (orientation & ~0x8000U) return false;
@@ -55,7 +56,7 @@ inline bool va2Frame(const uint8_t *data, uint32_t size, unsigned index,
   }
   if (pos >= end || x + data[pos++] != w) return false;
  }
- if (pos != end && !(end - pos == 2 && data[pos] == 0 && (data[pos + 1] == 0 || data[pos + 1] == 128))) return false;
+ if (pos != end) return false;
  // Original blitter XORs the pose flag with this per-frame prefix word
  // (load-image 0x14a31). Return canonical orientation; pose mirroring follows.
  if (orientation & 0x8000) for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w / 2; ++x) {

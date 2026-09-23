@@ -31,6 +31,7 @@ public:
  virtual bool face(unsigned,unsigned) { return false; }
  virtual bool control(unsigned, bool, ScriptActor &) { return false; }
  virtual bool reset(unsigned, ScriptActor &) { return false; }
+ virtual bool typedResource(unsigned actor,unsigned index,unsigned type) {return type==0 && resource(actor,index);}
  virtual bool resource(unsigned, unsigned) { return false; }
  virtual bool background(unsigned) { return false; }
  virtual bool object(unsigned,unsigned,unsigned) { return false; }
@@ -66,6 +67,7 @@ class ScriptMachine {
  unsigned _count;
  unsigned _choiceCount=0,_choiceTask=0,_choiceHeader=65535,_choiceX=0,_choiceY=0,_choiceSelection=0;
  unsigned _choiceText[6]={},_choiceTarget[6]={};
+ unsigned _resourceType=0;
  unsigned _previousRoom=0, _previousBank=0, _pendingRoom=255, _pendingBank=255;
  uint32_t _randomState;
  unsigned _randomValue;
@@ -146,7 +148,7 @@ public:
   _actors[index] = actor; return true;
  }
  bool load(const StartState &state, Cc4View block) {
-  _count = 0; _choiceCount=0;
+  _count = 0; _choiceCount=0; _resourceType=0;
   _randomState = 1; _randomValue = 0; _randomKnown = false; _eventPending = false;
   if (!state.valid() || block.size > sizeof(_block) || cc4Count(block, 2) != state.word(0x2e02) || !state.word(0x2e02)) return false;
   for (unsigned i = 0; i < block.size; ++i) _block[i] = block.data[i];
@@ -168,6 +170,14 @@ public:
   }
   _count = state.word(0x2e02); return true;
  }
+ bool useObject(unsigned id) {
+  if(id>=256 || (_locals[id]!=1 && _locals[id]!=2))return false;
+  for(unsigned i=0;i<256;++i)if(_locals[i]==2)_locals[i]=1;
+  _locals[id]=2;return true;
+ }
+ bool collectObject(unsigned id) {if(id>=256)return false;_locals[id]=1;return true;}
+ unsigned inventoryState(unsigned id) const {return id<256 ? _locals[id] : 0;}
+ unsigned journalProgress() const { return _globals[1]; }
  unsigned choiceCount() const { return _choiceCount; }
  unsigned choiceHeader() const { return _choiceHeader; }
  unsigned choiceX() const { return _choiceX; }
@@ -200,6 +210,7 @@ public:
   _choiceCount=other._choiceCount;_choiceTask=other._choiceTask;_choiceHeader=other._choiceHeader;
   _choiceX=other._choiceX;_choiceY=other._choiceY;_choiceSelection=other._choiceSelection;
   for(unsigned i=0;i<6;++i) {_choiceText[i]=other._choiceText[i];_choiceTarget[i]=other._choiceTarget[i];}
+  _resourceType=other._resourceType;
   _previousRoom=other._previousRoom; _previousBank=other._previousBank; _pendingRoom=other._pendingRoom; _pendingBank=other._pendingBank;
   _randomState=other._randomState; _randomValue=other._randomValue; _randomKnown=other._randomKnown; _eventPending=other._eventPending;
   for(unsigned i=0;i<256;++i) { _globals[i]=other._globals[i]; _locals[i]=other._locals[i]; }
@@ -208,7 +219,7 @@ public:
   for(unsigned i=0;i<11;++i) _actors[i]=other._actors[i];
  }
  // Loaded resource identities bind a save to this game's original snapshot/scripts.
- bool snapshot(Snapshot &s,unsigned version=4) {
+ bool snapshot(Snapshot &s,unsigned version=5) {
   s.identity(Snapshot::hash(_initial.range(0x2dee,0xf3e),0xf3e));
   s.identity(_count);
   for(unsigned i=0;i<256;++i) { s.value(_globals[i],65535); s.value(_locals[i],65535); }
@@ -237,6 +248,7 @@ public:
   } else if(s.reading()) _choiceCount=0;
   if(version>=4) { s.value(_pendingBank,255);s.require(_pendingBank<=9 || _pendingBank==255); }
   else if(s.reading()) _pendingBank=255;
+  if(version>=5)s.value(_resourceType,1);else if(s.reading())_resourceType=0;
   return s.ok();
  }
  TaskResult visit(unsigned index, unsigned budget = 128) {
@@ -383,10 +395,14 @@ public:
     if (op.argument >= 11) return t.result = kInvalidScript;
     if (op.argument && (!_animation || !_animation->reset(op.argument, _actors[op.argument]))) return t.result = kAnimationUnavailable;
     t.actor = op.argument; break;
+   case 47:
+    if(op.argument>1)return t.result=kInvalidScript;
+    _resourceType=op.argument;
+    break;
    case 91:
     if (t.actor >= 11) return t.result = kInvalidScript;
-    if (!_animation || !_animation->resource(t.actor, op.argument)) return t.result = kAnimationUnavailable;
-    break;
+    if (!_animation || !_animation->typedResource(t.actor, op.argument,_resourceType)) return t.result = kAnimationUnavailable;
+    _resourceType=0;break;
    case 21:
     if (op.argument >= 11) return t.result = kInvalidScript;
     t.actor = op.argument; break;

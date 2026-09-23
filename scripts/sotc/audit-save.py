@@ -181,6 +181,28 @@ int main() {
   assert(scene.serviceRoom(m,status));
   assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
  }
+ assert(readQuickSave(files,"objects",m,scene,saved,pixels,status));
+ ScriptActor player=*m.actor(0);player.x=68;player.y=135;assert(m.setActor(0,player));assert(scene.face(0,1));
+ int lookX=0,lookY=0;assert(scene.lookedObject(lookX,lookY)>=0);assert(lookX==68 && lookY==94);
+ assert(scene.face(0,3));assert(scene.lookedObject(lookX,lookY)<0);assert(scene.face(0,1));
+ Common::String item;assert(scene.takeObject(item));assert(item=="Boleskine's diary");assert(m.inventoryState(1)==1);assert(scene.objectCount()==1);
+ assert(!scene.takeObject(item));
+ before=state(m,scene);assert(writeQuickSave(files,"pickup",m,scene,saved));
+ assert(readQuickSave(files,"objects",m,scene,saved,pixels,status));assert(m.inventoryState(1)==0);
+ assert(readQuickSave(files,"pickup",m,scene,saved,pixels,status));assert(state(m,scene)==before);
+ for(unsigned tick=0;tick<300;++tick) {
+  scene.finishDialogue();assert(scene.movePlayer(m));m.tick();
+  assert(scene.serviceRoom(m,status));
+  assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+ }
+ assert(m.useObject(1));
+ for(unsigned tick=0;tick<250;++tick) {
+  scene.finishDialogue();assert(scene.movePlayer(m));m.tick();
+  assert(scene.serviceRoom(m,status));
+  assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+ }
+ assert(m.inventoryState(1)==65535);
+ std::cout<<"Object facing, pickup and inventory save restore passed\n";
  std::cout<<"Door probe ends in bank "<<scene.bank()<<" room "<<scene.room()<<"\n";
 
  std::cout<<"Save round trips: route, script waits, RNG, fresh load, dialogue; interrupted/corrupt saves rejected\n";

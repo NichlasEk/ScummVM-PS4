@@ -99,6 +99,47 @@ bool StartupScene::background(unsigned index) {
  for(unsigned i=0;i<20;++i) if(_types[i]==2) _actorData[i]=scenery;
  return true;
 }
+int StartupScene::lookedObject(int &x,int &y) const {
+ if(!_ready || !_machine || _inputLocks==15 || _talking) return -1;
+ const ScriptActor &a=*_machine->actor(0);
+ // Original 0xca0a with (0,50), followed by the 16x16 hotspot test 0xd1d1.
+ int l=a.x-a.halfWidth-8,r=a.x+a.halfWidth+8,t=a.y-a.footHeight-8,b=a.y+8;
+ switch(_animations[0].direction) {
+ case 1:t-=50;b-=20;break;
+ case 2:r+=50;l+=25;t-=32;break;
+ case 3:b+=50;t+=20;break;
+ case 4:l-=50;r-=25;t-=32;break;
+ }
+ if(l<0)l=0;if(r>319)r=319;if(t<0)t=0;if(b>199)b=199;
+ for(unsigned i=0;i<20;++i) {
+  unsigned p=0x32fe + i*8;
+  if(!_state.byte(p+2))continue;
+  int ox=_state.word(p+4),oy=_state.word(p+6);
+  if(l<=ox+8 && r>=ox-8 && t<=oy+8 && b>=oy-8) {x=ox;y=oy-6;return i;}
+ }
+ return -1;
+}
+bool StartupScene::inventoryLabel(unsigned id,Common::String &label) {
+ if(_textFile.empty() && !readFile("E.CC4",_textFile))return false;
+ byte decoded[2048];unsigned size=0;
+ if(!dialogueRecord(Cc4View(_textFile.data(),_textFile.size()),1,id,decoded,sizeof(decoded),size))return false;
+ label.clear();for(unsigned i=1;i<size && decoded[i];++i)label+=char(decoded[i]);return !label.empty();
+}
+bool StartupScene::objectLabel(unsigned slot,Common::String &label) {
+ if(slot>=20)return false;
+ if(_textFile.empty() && !readFile("E.CC4",_textFile))return false;
+ byte decoded[2048];unsigned size=0,p=0x32fe + slot*8;
+ if(!dialogueRecord(Cc4View(_textFile.data(),_textFile.size()),_state.byte(p+3) ? _state.word(0x2e16)+3 : 1,
+    _state.word(p),decoded,sizeof(decoded),size))return false;
+ label.clear();for(unsigned i=1;i<size && decoded[i];++i)label+=char(decoded[i]);return true;
+}
+bool StartupScene::takeObject(Common::String &label) {
+ int x,y,slot=lookedObject(x,y);if(slot<0 || _inputLocks || _scriptRoute)return false;
+ unsigned p=0x32fe + unsigned(slot)*8;
+ if(_state.byte(p+3) || !objectLabel(slot,label) || !_machine->collectObject(_state.word(p)))return false;
+ _state.setByte(p+2,0);_state.setWord(0x2dfe,_state.word(0x2dfe)+1);
+ cancelRoute();_walking=false;return true;
+}
 bool StartupScene::object(unsigned id,unsigned x,unsigned y) {
  for(unsigned i=0;i<20;++i) {
   unsigned a=0x32fe + i*8;
@@ -627,10 +668,11 @@ bool StartupScene::reset(unsigned id, ScriptActor &actor) {
  _clips[id][0]=_clips[id][1]=0; _clips[id][2]=319; _clips[id][3]=199;
  return true;
 }
-bool StartupScene::resource(unsigned id, unsigned index) {
+bool StartupScene::resource(unsigned id,unsigned index) {return typedResource(id,index,0);}
+bool StartupScene::typedResource(unsigned id,unsigned index,unsigned type) {
  if (!_ready || id>=11) return false;
  for (unsigned slot=0;slot<20;++slot) {
-  if (!_actorData[slot].empty() && _types[slot]==0 && _indices[slot]==index) {
+  if (!_actorData[slot].empty() && _types[slot]==type && _indices[slot]==index) {
    _slots[id]=slot; return true;
   }
  }
@@ -638,10 +680,10 @@ bool StartupScene::resource(unsigned id, unsigned index) {
  for (unsigned slot=0;slot<20;++slot) {
   bool used=false;
   for (unsigned a=0;a<11;++a) if (_visible[a] && _slots[a]==slot) used=true;
-  if (used || _types[slot]!=0) continue;
+  if (used) continue;
   Pak actors; Common::Array<byte> data;
-  if (!actors.open(Common::String::format("A%02u.PAK",_state.word(0x2df2))) || !actors.load(index,data)) return false;
-  _actorData[slot]=data; _types[slot]=0; _indices[slot]=index; _slots[id]=slot;
+  if (!actors.open(type==1 ? Common::String("RES.PAK") : Common::String::format("A%02u.PAK",_state.word(0x2df2))) || !actors.load(type==1 ? 2 : index,data)) return false;
+  _actorData[slot]=data; _types[slot]=type; _indices[slot]=index; _slots[id]=slot;
   return true;
  }
  return false;

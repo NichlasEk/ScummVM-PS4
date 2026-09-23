@@ -13,6 +13,7 @@
 #include "sotc/opening.h"
 #include "sotc/openingscene.h"
 #include "sotc/toolbar.h"
+#include "sotc/journal.h"
 #include "sotc/save.h"
 #include "common/config-manager.h"
 #include "common/file.h"
@@ -83,6 +84,15 @@ Common::Error SotcEngine::run() {
  Toolbar toolbar; Common::Array<byte> toolbarData;
  if (!resources.load(3,toolbarData) || !toolbar.load(toolbarData))
   return Common::Error(Common::kReadingFailed,"Cannot load original toolbar");
+ Journal journal; bool showJournal=false,showInventory=false;
+ Common::Array<unsigned> inventoryIds;Common::Array<Common::String> inventoryNames;unsigned inventorySelection=0;
+ Common::Array<byte> journalFont,journalText;
+ Common::File journalFile;
+ if(!resources.load(0,journalFont) || !journalFile.open(Common::Path("E.CC4")) || journalFile.size()>4*1024*1024)
+  return Common::Error(Common::kReadingFailed,"Cannot load diary resources");
+ journalText.resize(journalFile.size());
+ if(journalFile.read(journalText.data(),journalText.size())!=journalText.size() || !journal.load(toolbarData,journalFont,journalText))
+  return Common::Error(Common::kReadingFailed,"Invalid diary resources");
  SoundEffects sound(_mixer);
  ScriptMachine startupMachine; startupMachine.setSound(&sound); unsigned scriptTicks = 0; Common::String scriptStatus;
  StartupScene startupScene; startupMachine.setAnimation(&startupScene);
@@ -229,7 +239,7 @@ Common::Error SotcEngine::run() {
    }
   }
   // Diagnostic 10 Hz preview cadence; original scene pacing is not yet bound.
-  if (!showStory && !mainMenu && showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
+  if (!showInventory && !showJournal && !showStory && !mainMenu && showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
    sceneStep(); nextSceneFrame=_system->getMillis()+100;
   }
   if (reload) {
@@ -308,6 +318,21 @@ Common::Error SotcEngine::run() {
    }
    if (showStartup) {
     memcpy(surface.getBasePtr(0, 0), startupPixels.data(), 64000);
+    int objectX=0,objectY=0;
+    int object=startupScene.lookedObject(objectX,objectY);
+    if(object>=0 && !showJournal && !startupMachine.choiceCount()) {
+     const ScriptActor &a=*startupMachine.actor(0);unsigned direction=startupScene.facing();
+     int eyeX=a.x+(direction==2 ? 4 : direction==4 ? -5 : 0);
+     int eyeY=a.y-35+(direction==1 ? -1 : direction==3 ? 1 : 0);
+     // Original 0xc25d uses color 7 and a one-pixel random endpoint jitter.
+     int x=CLIP(eyeX,0,319),y=CLIP(eyeY,0,199),endX=CLIP(objectX,0,319),endY=CLIP(objectY,0,199);
+     int dx=ABS(endX-x),dy=-ABS(endY-y),sx=x<endX ? 1 : -1,sy=y<endY ? 1 : -1,error=dx+dy;
+     for(unsigned pixel=0;;++pixel) {
+      if(pixel%6<3)*static_cast<byte *>(surface.getBasePtr(x,y))=7;
+      if(x==endX && y==endY)break;
+      int twice=error*2;if(twice>=dy){error+=dy;x+=sx;}if(twice<=dx){error+=dx;y+=sy;}
+     }
+    }
     title = runScene ? "Walk test - collision stops" : "Scene paused - not gameplay"; actorTitle = scriptStatus;
    }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
@@ -343,7 +368,7 @@ Common::Error SotcEngine::run() {
     if (!toolbar.render()) { surface.free(); return Common::Error(Common::kUnknownError,"Cannot draw toolbar"); }
     memcpy(surface.getBasePtr(0,0),toolbar.pixels().data(),320*40);
     surface.fillRect(Common::Rect(0,225,320,240),0);
-    font->drawString(&surface,toolbar.hover()==6 ? "Menu / settings" : "This action is not available in the preview yet",0,227,320,7,Graphics::kTextAlignCenter);
+    font->drawString(&surface,toolbar.hover()==6 ? "Menu / settings" : toolbar.hover()==1 ? "Take the object in view" : toolbar.hover()==4 ? "Inventory / notebook" : "This action is not available in the preview yet",0,227,320,7,Graphics::kTextAlignCenter);
    }
    if ((mainMenu || showStartup) && pointerY<480 && pointerX<640 && pointerX>=0 && pointerY>=0) {
     int px=pointerX/2,py=pointerY/2;
@@ -411,12 +436,80 @@ Common::Error SotcEngine::run() {
     surface.fillRect(Common::Rect(0,225,320,240),0);
     font->drawString(&surface,"D-pad: choose  Cross / click: confirm",2,227,316,7);
    }
+   if(showInventory) {
+    surface.fillRect(Common::Rect(20,35,300,195),0);surface.frameRect(Common::Rect(20,35,300,195),7);
+    font->drawString(&surface,"Select an item to read / use",25,40,270,7,Graphics::kTextAlignCenter);
+    unsigned first=inventorySelection/8*8;
+    for(unsigned i=first;i<inventoryIds.size() && i<first+8;++i) {
+     int y=58+(i-first)*16;
+     if(i==inventorySelection)surface.frameRect(Common::Rect(24,y,296,y+15),7);
+     font->drawString(&surface,inventoryNames[i],29,y+3,262,7);
+    }
+   }
+   if(showJournal) {
+    Common::Array<byte> book=startupPixels;
+    if(!journal.render(book)) {surface.free();return Common::Error(Common::kReadingFailed,"Cannot render diary");}
+    memcpy(surface.getBasePtr(0,0),book.data(),64000);
+    surface.fillRect(Common::Rect(0,200,320,240),0);
+    font->drawString(&surface,"Left / Right: pages   Circle / Esc: close",0,217,320,7,Graphics::kTextAlignCenter);
+   }
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
     frame[y * 640 + x] = *static_cast<const byte *>(surface.getBasePtr(x / 2, y / 2));
    if (!showActor || actorFrame == 0) debug("[sotc] %s palette=%s", title.c_str(), resources.entries[palettes[pal]].name.c_str()); redraw = false;
   }
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
+   if(showInventory) {
+    bool close=event.type==Common::EVENT_RBUTTONDOWN,confirm=false;int delta=0;
+    if(event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat) {
+     close=event.kbd.keycode==Common::KEYCODE_ESCAPE;
+     if(event.kbd.keycode==Common::KEYCODE_UP)delta=-1;
+     if(event.kbd.keycode==Common::KEYCODE_DOWN)delta=1;
+     confirm=event.kbd.keycode==Common::KEYCODE_RETURN;
+    }
+    if(event.type==Common::EVENT_MOUSEMOVE || event.type==Common::EVENT_LBUTTONDOWN) {
+     int x=event.mouse.x/2,y=event.mouse.y/2;
+     if(x>=24 && x<296 && y>=58 && y<186) {
+      unsigned i=inventorySelection/8*8+(y-58)/16;
+      if(i<inventoryIds.size()){inventorySelection=i;redraw=true;confirm=event.type==Common::EVENT_LBUTTONDOWN;}
+     }
+    }
+    if(delta && !inventoryIds.empty()){inventorySelection=(inventorySelection+inventoryIds.size()+delta)%inventoryIds.size();redraw=true;}
+    if(confirm && inventorySelection<inventoryIds.size()) {
+     unsigned id=inventoryIds[inventorySelection];
+     if(id==0) {showJournal=journal.open(startupMachine.journalProgress());close=true;}
+     else if(startupMachine.useObject(id)){close=true;resumeScene();}
+    }
+    if(close){showInventory=false;if(!showJournal)_mixer->pauseAll(false);nextSceneFrame=_system->getMillis()+100;redraw=true;}
+    if(event.type==Common::EVENT_QUIT)quitGame();
+    continue;
+   }
+   if(showJournal) {
+    bool close=event.type==Common::EVENT_RBUTTONDOWN;
+    int turn=0;
+    if(event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat) {
+     close=event.kbd.keycode==Common::KEYCODE_ESCAPE || event.kbd.keycode==Common::KEYCODE_j;
+     if(event.kbd.keycode==Common::KEYCODE_LEFT)turn=-1;
+     if(event.kbd.keycode==Common::KEYCODE_RIGHT)turn=1;
+    }
+    if(event.type==Common::EVENT_MOUSEMOVE) {pointerX=event.mouse.x;pointerY=event.mouse.y;}
+    if(event.type==Common::EVENT_LBUTTONDOWN || (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN)) {
+     int x=event.type==Common::EVENT_LBUTTONDOWN ? event.mouse.x/2 : pointerX/2;
+     int y=event.type==Common::EVENT_LBUTTONDOWN ? event.mouse.y/2 : pointerY/2;
+     if(x<50 || x>=284 || y<42 || y>=193)close=true;else turn=x<167 ? -1 : 1;
+    }
+    if(event.type==Common::EVENT_QUIT)quitGame();
+    if(close) {showJournal=false;_mixer->pauseAll(false);nextSceneFrame=_system->getMillis()+100;redraw=true;}
+    else if(turn && journal.turn(turn))redraw=true;
+    continue;
+   }
+   if(showStartup && !mainMenu && !showStory && startupScene.dialogueText().empty() && !startupMachine.choiceCount() &&
+      event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat && event.kbd.keycode==Common::KEYCODE_j) {
+    if(journal.open(startupMachine.journalProgress())) {
+     showJournal=true;toolbar.hide();heldDirection=0;if(!startupScene.scriptWalking()){startupScene.cancelRoute();startupScene.walk(0,startupMachine);}_mixer->pauseAll(true);redraw=true;
+    }
+    continue;
+   }
    if(event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat && (event.kbd.keycode==Common::KEYCODE_q || event.kbd.keycode==Common::KEYCODE_u)) {
     if(event.kbd.keycode==Common::KEYCODE_q) quickSave(); else quickLoad();
     continue;
@@ -572,6 +665,22 @@ Common::Error SotcEngine::run() {
       if (!startupScene.scriptWalking()) { startupScene.cancelRoute(); startupScene.walk(0,startupMachine); }
       mainMenu=true; menuSelection=0; _mixer->pauseAll(true);
       debug("[sotc-toolbar] main menu opened");
+     }
+     else if(event.type==Common::EVENT_LBUTTONDOWN && x>=45 && x<90) {
+      Common::String label;
+      bool taken=startupScene.takeObject(label);
+      _system->displayMessageOnOSD(Common::U32String(taken ? label : Common::String("Face a nearby object to take it")));
+      toolbar.hide();if(taken)resumeScene();
+     }
+     else if(event.type==Common::EVENT_LBUTTONDOWN && x>=180 && x<225) {
+      inventoryIds.clear();inventoryNames.clear();inventorySelection=0;
+      for(unsigned i=0;i<256;++i) {
+       Common::String label;unsigned state=startupMachine.inventoryState(i);
+       if((state==1 || state==2) && startupScene.inventoryLabel(i,label)){inventoryIds.push_back(i);inventoryNames.push_back(label);}
+      }
+      showInventory=true;toolbar.hide();heldDirection=0;
+      if(!startupScene.scriptWalking()) {startupScene.cancelRoute();startupScene.walk(0,startupMachine);}
+      _mixer->pauseAll(true);
      }
      redraw=true; continue; // Never turn a toolbar click into a walk destination.
     }

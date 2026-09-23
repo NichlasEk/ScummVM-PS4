@@ -12,7 +12,7 @@ static unsigned readSlot(Common::SaveFileManager &files,const Common::String &pr
  delete in;
  if(!ok) return 0;
  Snapshot s(data.data(),data.size(),true);
- s.identity(0x43544f53); unsigned version=0; s.value(version,4); s.require(version>=1);
+ s.identity(0x43544f53); unsigned version=0; s.value(version,5); s.require(version>=1);
  unsigned generation=0,hash=0; s.value(generation); s.value(hash);
  return s.ok() && hash==Snapshot::hash(data.data()+16,data.size()-16) ? generation : 0;
 }
@@ -30,7 +30,7 @@ bool writeQuickSave(Common::SaveFileManager &files,const Common::String &prefix,
  if(generation==0xffffffffU) return false;
  ++generation; data.resize(kMaxSave);
  Snapshot s(data.data(),data.size(),false);
- s.identity(0x43544f53); s.identity(4); s.value(generation); unsigned checksum=0; s.value(checksum);
+ s.identity(0x43544f53); s.identity(5); s.value(generation); unsigned checksum=0; s.value(checksum);
  state.sync(s);
  if(!scene.roomSnapshot(s,machine) || !machine.snapshot(s) || !scene.snapshot(s) || !s.ok()) return false;
  data.resize(s.size()); checksum=Snapshot::hash(data.data()+16,data.size()-16);

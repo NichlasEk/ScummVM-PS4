@@ -1435,3 +1435,42 @@ proximity test uses 0xca0a/0xd1d1, updates local[id] to 1 and deactivates the
 hotspot. Object labels come from E.CC4 bank 1 (loader at 0x1625). Hook actions
 only after verifying their toolbar mapping and preserve the save tests.
 Pre-interior user-save backups: artifacts/sotc/pre-interior-saves/ (ignored).
+
+### Notebook, object gaze, pickup and first reading (2026-09-23)
+
+The notebook loads ICONE.VA2 poses 30/37, CTU.PFN and E.CC4 bank 2 from
+external game files. Original routines 0x3424/0x375d establish the two columns,
+13 lines per page, numbering and global[1] progress limit. CTU.PFN decoding
+follows 0x153ad/0x152a2. No artwork, font bitmap or story text is embedded.
+The current notebook spread matches the original arrival entry, pages 3/4.
+Left/right or clicks on the pages browse; Circle/right click/Escape closes.
+The book pauses scene updates and audio. Page-turn animation and notebook
+narration are not yet implemented.
+
+The fifth toolbar icon now opens an inventory selection list. Notebook (item
+0) opens Parker's journal; selecting other carried items sets local[id]=2,
+clearing other selected items as the original does at 0x3a24. The inventory
+selector still uses a plain GUI list, not the complete original icon panel.
+
+Gaze selection uses the original direction-dependent search rectangle
+(0xca0a) and active hotspot intersections (0xd1d1). A white dashed line joins
+the original eye anchor to the selected object's position minus six pixels Y
+(0xc25d). Dashes use a stable three-pixel-on/three-off pattern; random endpoint
+jitter and original depth ordering are not reproduced yet.
+The second toolbar icon picks up the object in view, updating local[id],
+inventory count and hotspot activation as in 0xcbb4. Facing away does not pick
+up the object. Original labels are loaded from E.CC4 bank 1.
+
+Opcode 47 selects the next actor resource category; category 1 uses the global
+MARCHE0 resource, then resets to category 0, as in 0x967d/0x968b. This removes
+the room-2/task-12 stop after taking Boleskine's diary. Save format 5 includes
+the pending category; older formats 1..4 still load.
+
+Validation: audit-journal.py checks original font/resource rendering, progress
+bounds, backward/forward paging and repeatable rendering. The rendered pages
+were visually compared with the user reference. audit-save.py verifies facing,
+pickup, duplicate rejection, inventory save restore, the complete pickup
+animation and using Boleskine's diary through the original reading script
+(local[1] becomes 65535). ASan/UBSan and VM audit pass; PS4 package builds.
+The user confirmed dashed gaze and passing the pickup stop in shadPS4; the
+new inventory selector still needs user playtesting. No physical-PS4 claim.

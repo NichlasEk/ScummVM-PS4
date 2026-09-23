@@ -38,6 +38,11 @@ public:
  unsigned brightness() const { return _brightness; }
  bool serviceRoom(ScriptMachine &machine,Common::String &status);
  bool background(unsigned index) override;
+ int lookedObject(int &x,int &y) const;
+ bool takeObject(Common::String &label);
+ bool inventoryLabel(unsigned id,Common::String &label);
+ bool objectLabel(unsigned slot,Common::String &label);
+ unsigned facing() const {return _animations[0].direction;}
  unsigned objectCount() const {
   unsigned count=0;for(unsigned i=0;i<20;++i) if(_state.byte(0x3300+i*8)) ++count;
   return count;
@@ -76,6 +81,7 @@ public:
  bool hide(unsigned actor) override;
  bool drawEnabled(unsigned actor,unsigned enabled) override;
  bool reset(unsigned actor, ScriptActor &state) override;
+ bool typedResource(unsigned actor,unsigned index,unsigned type) override;
  bool resource(unsigned actor, unsigned index) override;
  bool sequence(unsigned actor, unsigned sequence, ScriptActor &state) override;
 };

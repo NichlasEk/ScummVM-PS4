@@ -26,7 +26,26 @@ with tempfile.TemporaryDirectory(prefix='sotc-poses-') as temp:
     (temp / 'common/array.h').write_text('#include <vector>\n#include <stdint.h>\ntypedef uint8_t byte;\nnamespace Common { template<class T> using Array = std::vector<T>; }\n')
     (temp / 'test.cpp').write_text('''
 #include "engines/sotc/poserenderer.h"
+#include "engines/sotc/toolbar.h"
 #include "engines/sotc/explode.h"
+extern "C" bool toolbar(const uint8_t *p,unsigned n) {
+ Common::Array<byte> data(p,p+n); Sotc::Toolbar bar;
+ if(!bar.load(data) || bar.visible())return false;
+ bar.move(20,10);if(bar.visible())return false;
+ bar.move(20,1);if(!bar.visible() || bar.hover()!=0)return false;
+ auto previous=bar.pixels();
+ for(int i=0;i<7;++i) {
+  bar.move(i*45+20,20);
+  if(bar.hover()!=i || !bar.render() || bar.pixels()==previous)return false;
+  if(bar.menuAt(i*45+20,20)!=(i==6))return false;
+  previous=bar.pixels();
+ }
+ bar.move(300,39);if(!bar.visible())return false;
+ bar.move(300,40);if(bar.visible() || bar.menuAt(300,20))return false;
+ bar.move(-1,0);if(bar.visible())return false;
+ bar.move(320,0);if(bar.visible())return false;
+ bar.move(300,0);bar.hide();return !bar.visible();
+}
 extern "C" bool unpack(const uint8_t *p,unsigned n,uint8_t *o,unsigned m,unsigned f) {return Sotc::explode(p,n,o,m,f);}
 extern "C" bool render(const uint8_t *p,unsigned n,unsigned pose,int x,int y,unsigned clip,uint8_t *out,int next,unsigned fraction) {
  Common::Array<byte> data(p,p+n), screen(64000,119);
@@ -36,7 +55,7 @@ extern "C" bool render(const uint8_t *p,unsigned n,unsigned pose,int x,int y,uns
 }
 ''')
     subprocess.run(['c++', '-std=c++11', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
-                    '-I', str(temp), '-I', str(root), str(temp / 'test.cpp'), '-o', str(temp / 'test.so')], check=True)
+                    '-I', str(temp), '-I', str(root), '-I', str(root/'engines'), str(temp / 'test.cpp'), '-o', str(temp / 'test.so')], check=True)
     lib = c.CDLL(str(temp / 'test.so'))
     lib.render.restype = lib.unpack.restype = c.c_bool
     lib.render.argtypes = [c.c_char_p, c.c_uint, c.c_uint, c.c_int, c.c_int, c.c_uint, c.c_void_p, c.c_int, c.c_uint]
@@ -92,7 +111,8 @@ extern "C" bool render(const uint8_t *p,unsigned n,unsigned pose,int x,int y,uns
     assert not render(fixture([first, second]), next_pose=1, fraction=257) and set(out.raw) == {119}
     assert not render(fixture([first, line]), next_pose=1, fraction=64) and set(out.raw) == {119}
     report = []
-    for archive_name, name, pose, x, y in [('A00.PAK', 'VOITURE.VA2', 0, 120, 161),
+    for archive_name, name, pose, x, y in [('RES.PAK', 'ICONE.VA2', 0, 0, 0),
+                                         ('A00.PAK', 'VOITURE.VA2', 0, 120, 161),
                                          ('A00.PAK', 'BIRDS.VA2', 0, 72, 5),
                                          ('A00.PAK', 'BIRDS.VA2', 4, 84, 1),
                                          ('A00.PAK', 'SEAGULLS.VA2', 0, 0, 160)]:
@@ -106,6 +126,9 @@ extern "C" bool render(const uint8_t *p,unsigned n,unsigned pose,int x,int y,uns
             data = decoded.raw
         else:
             assert entry['method'] == 0
+        if name == 'ICONE.VA2':
+            lib.toolbar.argtypes=[c.c_char_p,c.c_uint];lib.toolbar.restype=c.c_bool
+            assert lib.toolbar(data,len(data))
         ok = render(data, pose, x, y, next_pose=1 if name == 'SEAGULLS.VA2' else -1, fraction=64)
         assert ok, (name, pose)
         report.append(dict(resource=name, pose=pose, supported=ok,

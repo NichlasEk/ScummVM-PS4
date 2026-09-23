@@ -1280,3 +1280,25 @@ build/package passed and the green/black dialog was opened in shadPS4;
 Audio, Control and Keymaps tabs and working sliders are visible. Local
 capture: artifacts/sotc/controls-menu.png. Saving uses existing OptionsDialog
 apply/flushToDisk; no separate SOTC sensitivity setting is introduced.
+
+## Original top-edge toolbar: presentation and menu entry
+
+The external RES.PAK/ICONE.VA2 neutral pose and seven highlighted poses now
+render the 320x40 toolbar over the scene. Moving the pointer into its top
+three rows opens it; moving below the bar closes it. Mouse and analog-stick
+pointer movement share the same path. Original highlights are spaced 45
+pixels apart. The rightmost disk/menu icon opens the current main menu,
+pausing simulation and audio, with access to Continue and Settings.
+
+This is a first toolbar slice, not a completed verb/inventory/save system.
+Other icons only show their hover highlight and an explicit unavailable
+status; their clicks are consumed without sending Parker to a destination.
+The disk icon currently means menu access, not save. SOTC has no runtime
+saving/loading or Q/U quicksave/quickload yet. That remains pending.
+
+Validation: PS4 build/package and actual-header pose/toolbar tests pass.
+Tests cover the activation strip, close boundary, out-of-range coordinates,
+all seven distinct original highlights and the menu hit region. Live
+shadPS4 displayed the toolbar over the carriage scene and the rightmost icon
+opened the menu. Captured locally in artifacts/sotc/toolbar-live.png; test
+report is toolbar-regression.json. Other verb actions remain unimplemented.

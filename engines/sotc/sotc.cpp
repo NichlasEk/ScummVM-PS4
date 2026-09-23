@@ -12,6 +12,7 @@
 #include "sotc/sound.h"
 #include "sotc/opening.h"
 #include "sotc/openingscene.h"
+#include "sotc/toolbar.h"
 #include "common/file.h"
 #include "common/events.h"
 #include "common/textconsole.h"
@@ -77,6 +78,9 @@ Common::Error SotcEngine::run() {
  uint32 nextFrame = 0;
  unsigned sequence = 0;
  Common::Array<byte> startupPixels; Common::String startupStatus;
+ Toolbar toolbar; Common::Array<byte> toolbarData;
+ if (!resources.load(3,toolbarData) || !toolbar.load(toolbarData))
+  return Common::Error(Common::kReadingFailed,"Cannot load original toolbar");
  SoundEffects sound(_mixer);
  ScriptMachine startupMachine; startupMachine.setSound(&sound); unsigned scriptTicks = 0; Common::String scriptStatus;
  StartupScene startupScene; startupMachine.setAnimation(&startupScene);
@@ -294,6 +298,12 @@ Common::Error SotcEngine::run() {
     font->drawString(&surface,"Experimental engine - opening scene",0,207,320,7,Graphics::kTextAlignCenter);
     font->drawString(&surface,"D-pad / click: select   Cross: confirm",0,226,320,7,Graphics::kTextAlignCenter);
    }
+   if (!mainMenu && showStartup && !showStory && toolbar.visible() && startupScene.dialogueText().empty()) {
+    if (!toolbar.render()) { surface.free(); return Common::Error(Common::kUnknownError,"Cannot draw toolbar"); }
+    memcpy(surface.getBasePtr(0,0),toolbar.pixels().data(),320*40);
+    surface.fillRect(Common::Rect(0,225,320,240),0);
+    font->drawString(&surface,toolbar.hover()==6 ? "Menu / settings" : "This action is not available in the preview yet",0,227,320,7,Graphics::kTextAlignCenter);
+   }
    if ((mainMenu || showStartup) && pointerY<480 && pointerX<640 && pointerX>=0 && pointerY>=0) {
     int px=pointerX/2,py=pointerY/2;
     for (int d=-3;d<=3;++d) {
@@ -326,7 +336,10 @@ Common::Error SotcEngine::run() {
   }
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
-   if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup || mainMenu) redraw=true; }
+   if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup || mainMenu) redraw=true;
+    if (showStartup && !mainMenu && !showStory && startupScene.dialogueText().empty()) toolbar.move(pointerX/2,pointerY/2);
+    else toolbar.hide();
+   }
    if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) debug("[sotc-input] type=%u key=%u",unsigned(event.type),unsigned(event.kbd.keycode));
    if (showCd) {
     if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) finishCd();
@@ -418,7 +431,7 @@ Common::Error SotcEngine::run() {
     continue;
    }
    if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) {
-    heldDirection=0;
+    toolbar.hide(); heldDirection=0;
     if (showStartup && !startupScene.scriptWalking()) { startupScene.cancelRoute(); startupScene.walk(0,startupMachine); }
     mainMenu=true; menuSelection=startupAvailable ? 0 : 1; _mixer->pauseAll(true); redraw=true;
     debug("[sotc-menu] opened; simulation and sound paused");
@@ -426,6 +439,19 @@ Common::Error SotcEngine::run() {
    }
    if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN) {
     event.type=Common::EVENT_LBUTTONDOWN; event.mouse.x=pointerX; event.mouse.y=pointerY;
+   }
+   if (showStartup && toolbar.visible() && startupScene.dialogueText().empty() &&
+       (event.type==Common::EVENT_LBUTTONDOWN || event.type==Common::EVENT_RBUTTONDOWN)) {
+    int x=event.mouse.x/2,y=event.mouse.y/2;
+    if (y>=0 && y<40 && x>=0 && x<320) {
+     if (event.type==Common::EVENT_LBUTTONDOWN && toolbar.menuAt(x,y)) {
+      toolbar.hide(); heldDirection=0;
+      if (!startupScene.scriptWalking()) { startupScene.cancelRoute(); startupScene.walk(0,startupMachine); }
+      mainMenu=true; menuSelection=0; _mixer->pauseAll(true);
+      debug("[sotc-toolbar] main menu opened");
+     }
+     redraw=true; continue; // Never turn a toolbar click into a walk destination.
+    }
    }
    if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_F8) {
     if (startupAvailable) { if (!startupScene.scriptWalking()) { startupScene.cancelRoute(); startupScene.walk(0,startupMachine); } heldDirection=0; showStartup = !showStartup; pal = 0; redraw = true; }

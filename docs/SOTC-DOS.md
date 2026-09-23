@@ -997,3 +997,26 @@ The script-machine audit and PS4 build passed. shadPS4 logged active speech
 playback for all six opening dialogue lines; the user confirmed audible speech.
 Dialogue advancement remains manual, and the subsequent opcode-94 room
 transition remains pending. Local trace: `artifacts/sotc/speech-live.log`.
+
+### Start menu and explicit New game
+
+Boot now waits in a functional menu rather than loading INIT.SAV immediately.
+Continue is unavailable before New game. New game resets the opening snapshot,
+VM, dialogue, speech and music; starting again asks for confirmation (No is
+the default). Continue resumes the existing scene. Options/ESC opens the menu
+and freezes simulation and mixer playback; Settings opens ScummVM's normal
+audio/keymap dialog. Cross confirms a selected menu entry independently of
+pointer position, and still interacts at the pointer during the scene.
+Mouse clicks also work. F8 retains the resource browser as a keyboard-only
+diagnostic, freeing Options for the menu.
+
+This is a new functional menu, not a reproduction of the original DOS menu.
+Its optional background is INTRO1.RAW read from the user's D05.PAK. No art is
+bundled. Original logos/intro sequencing, font, saved-game UI and progression
+past room 0 remain separate work. New game currently enters the known opening
+scene without the full original intro.
+
+Validation: PS4 build/package passed. shadPS4 trace shows boot waiting, New game,
+menu entry and a confirmed second reset; the menu and Settings dialog were
+visually inspected. Local evidence: menu-first-live.log, menu-live.log,
+main-menu.png and menu-settings.png under artifacts/sotc/.

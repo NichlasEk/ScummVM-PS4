@@ -17,6 +17,8 @@
 #include "graphics/fontman.h"
 #include "graphics/surface.h"
 #include "engines/util.h"
+#include "engines/dialogs.h"
+#include "gui/message.h"
 namespace Sotc {
 static void inspectRoomScripts(int bank) {
  Common::File file;
@@ -76,8 +78,16 @@ Common::Error SotcEngine::run() {
  SoundEffects sound(_mixer);
  ScriptMachine startupMachine; startupMachine.setSound(&sound); unsigned scriptTicks = 0; Common::String scriptStatus;
  StartupScene startupScene; startupMachine.setAnimation(&startupScene);
- bool startupAvailable = startupScene.load(startupPixels, startupStatus, startupMachine), showStartup = startupAvailable;
- if (startupAvailable) scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
+ bool startupAvailable = false, showStartup = false;
+ bool mainMenu = true; int menuSelection = 1;
+ Common::Array<byte> menuBackground;
+ Pak intro;
+ if (intro.open("D05.PAK")) {
+  for (unsigned i=0;i<intro.entries.size();++i)
+   if (intro.entries[i].name == "INTRO1.RAW") intro.load(i,menuBackground);
+ }
+ if (menuBackground.size()!=64000) menuBackground.clear();
+ debug("[sotc-menu] boot: waiting for New game");
 
  Common::Array<Common::String> dialogueLines; Common::String shownDialogue; unsigned dialoguePage=0;
  int pointerX=0,pointerY=0;
@@ -101,7 +111,7 @@ Common::Error SotcEngine::run() {
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
  while (!shouldQuit()) {
   // Diagnostic 10 Hz preview cadence; original scene pacing is not yet bound.
-  if (showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
+  if (!mainMenu && showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
    sceneStep(); nextSceneFrame=_system->getMillis()+100;
   }
   if (reload) {
@@ -134,7 +144,7 @@ Common::Error SotcEngine::run() {
   unsigned sequences = actorData.empty() ? 0 : va2Records(actorData.data(), actorData.size(), 2);
   unsigned steps = actorData.empty() ? 0 : va2SequenceLength(actorData.data(), actorData.size(), sequence);
   unsigned cycle = steps ? steps : actorFrames;
-  if (!showStartup && showActor && cycle && actorFrame + 1 < cycle && int32(_system->getMillis() - nextFrame) >= 0) {
+  if (!mainMenu && !showStartup && showActor && cycle && actorFrame + 1 < cycle && int32(_system->getMillis() - nextFrame) >= 0) {
    actorFrame = (actorFrame + 1) % cycle; nextFrame = _system->getMillis() + 150; redraw = true;
   }
   if (redraw) {
@@ -193,12 +203,27 @@ Common::Error SotcEngine::run() {
    } else { shownDialogue.clear(); dialogueLines.clear(); dialoguePage=0; }
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, showStartup ? (!startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
-   if (showStartup && pointerY<400 && pointerX<640 && pointerX>=0 && pointerY>=0) {
+   font->drawString(&surface, showStartup ? (!startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "F8: start scene  L1/R1: figure", 2, 227, 316, 7);
+   if (mainMenu) {
+    surface.fillRect(Common::Rect(320,240),0);
+    if (!menuBackground.empty()) memcpy(surface.getBasePtr(0,0),menuBackground.data(),64000);
+    surface.fillRect(Common::Rect(32,26,288,58),0);
+    font->drawString(&surface,"Shadow of the Comet",32,36,256,7,Graphics::kTextAlignCenter);
+    const char *labels[]={"Continue", "New game", "Settings", "Quit"};
+    for (int i=0;i<4;++i) {
+     const int y=78+i*26;
+     surface.fillRect(Common::Rect(64,y,256,y+22),0);
+     if (i==menuSelection) surface.frameRect(Common::Rect(64,y,256,y+22),7);
+     font->drawString(&surface,labels[i],68,y+6,184,i==0 && !startupAvailable ? 8 : 7,Graphics::kTextAlignCenter);
+    }
+    font->drawString(&surface,"Experimental engine - opening scene",0,207,320,7,Graphics::kTextAlignCenter);
+    font->drawString(&surface,"D-pad / click: select   Cross: confirm",0,226,320,7,Graphics::kTextAlignCenter);
+   }
+   if ((mainMenu || showStartup) && pointerY<480 && pointerX<640 && pointerX>=0 && pointerY>=0) {
     int px=pointerX/2,py=pointerY/2;
     for (int d=-3;d<=3;++d) {
      if (px+d>=0 && px+d<320) *static_cast<byte *>(surface.getBasePtr(px+d,py))=7;
-     if (py+d>=0 && py+d<200) *static_cast<byte *>(surface.getBasePtr(px,py+d))=7;
+     if (py+d>=0 && py+d<240) *static_cast<byte *>(surface.getBasePtr(px,py+d))=7;
     }
    }
    for (int y = 0; y < 480; ++y) for (int x = 0; x < 640; ++x)
@@ -207,8 +232,73 @@ Common::Error SotcEngine::run() {
   }
   Common::Event event;
   while (_eventMan->pollEvent(event)) {
-   if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup) redraw=true; }
+   if (event.type==Common::EVENT_MOUSEMOVE) { pointerX=event.mouse.x; pointerY=event.mouse.y; if (showStartup || mainMenu) redraw=true; }
    if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) debug("[sotc-input] type=%u key=%u",unsigned(event.type),unsigned(event.kbd.keycode));
+   // Menu owns input and freezes simulation; no scene is loaded until New game.
+   if (mainMenu) {
+    int movement=0; bool confirm=false;
+    if (event.type==Common::EVENT_KEYDOWN) {
+     if (event.kbd.keycode==Common::KEYCODE_UP) movement=-1;
+     if (event.kbd.keycode==Common::KEYCODE_DOWN) movement=1;
+     confirm=event.kbd.keycode==Common::KEYCODE_RETURN || event.kbd.keycode==Common::KEYCODE_SPACE;
+     if (event.kbd.keycode==Common::KEYCODE_ESCAPE && startupAvailable) {
+      mainMenu=false; _mixer->pauseAll(false); nextSceneFrame=_system->getMillis()+100; redraw=true;
+     }
+    }
+    if (event.type==Common::EVENT_JOYBUTTON_DOWN) {
+     if (event.joystick.button==Common::JOYSTICK_BUTTON_DPAD_UP) movement=-1;
+     if (event.joystick.button==Common::JOYSTICK_BUTTON_DPAD_DOWN) movement=1;
+     confirm=event.joystick.button==Common::JOYSTICK_BUTTON_A;
+    }
+    if (movement) {
+     do { menuSelection=(menuSelection+movement+4)%4; } while (!startupAvailable && menuSelection==0);
+     redraw=true;
+    }
+    if (event.type==Common::EVENT_MOUSEMOVE || event.type==Common::EVENT_LBUTTONDOWN) {
+     int x=event.mouse.x/2,y=event.mouse.y/2;
+     if (x>=64 && x<256 && y>=78 && y<178 && (y-78)%26<22) {
+      int selection=(y-78)/26;
+      if (selection!=0 || startupAvailable) { menuSelection=selection; redraw=true; confirm=event.type==Common::EVENT_LBUTTONDOWN; }
+     }
+    }
+    if (confirm) {
+     debug("[sotc-menu] selection=%d",menuSelection);
+     if (menuSelection==0 && startupAvailable) {
+      mainMenu=false; _mixer->pauseAll(false); nextSceneFrame=_system->getMillis()+100;
+     } else if (menuSelection==1) {
+      bool restart=true;
+      if (startupAvailable) {
+       GUI::MessageDialog question(Common::String("Start a new game? Current progress will be lost."),Common::String("No"),Common::String("Yes"));
+       restart=runDialog(question)==GUI::kMessageAlt;
+      }
+      if (restart) {
+       sound.stopSpeech(); sound.effect(255); sound.music(255);
+       startupAvailable=startupScene.load(startupPixels,startupStatus,startupMachine);
+       if (!startupAvailable) { surface.free(); _mixer->pauseAll(false); return Common::Error(Common::kReadingFailed,"Cannot load opening scene"); }
+       showStartup=true; scriptTicks=0; heldDirection=0; sceneFault=false; runScene=true;
+       shownDialogue.clear(); dialogueLines.clear(); dialoguePage=0; pal=0;
+       scriptStatus=stepStartupScripts(startupMachine,++scriptTicks);
+       mainMenu=false; _mixer->pauseAll(false); nextSceneFrame=_system->getMillis()+100;
+       debug("[sotc-menu] New game: opening scene reset");
+      }
+     } else if (menuSelection==2) {
+      GUI::ConfigDialog settings; runDialog(settings); syncSoundSettings();
+      _mixer->pauseAll(true);
+     } else if (menuSelection==3) quitGame();
+     redraw=true;
+    }
+    continue;
+   }
+   if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) {
+    heldDirection=0;
+    if (showStartup && !startupScene.scriptWalking()) { startupScene.cancelRoute(); startupScene.walk(0,startupMachine); }
+    mainMenu=true; menuSelection=startupAvailable ? 0 : 1; _mixer->pauseAll(true); redraw=true;
+    debug("[sotc-menu] opened; simulation and sound paused");
+    continue;
+   }
+   if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN) {
+    event.type=Common::EVENT_LBUTTONDOWN; event.mouse.x=pointerX; event.mouse.y=pointerY;
+   }
    if (event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_F8) {
     if (startupAvailable) { if (!startupScene.scriptWalking()) { startupScene.cancelRoute(); startupScene.walk(0,startupMachine); } heldDirection=0; showStartup = !showStartup; pal = 0; redraw = true; }
     continue;
@@ -289,6 +379,6 @@ Common::Error SotcEngine::run() {
   _system->updateScreen();
   _system->delayMillis(10);
  }
- surface.free(); return Common::kNoError;
+ _mixer->pauseAll(false); surface.free(); return Common::kNoError;
 }
 }

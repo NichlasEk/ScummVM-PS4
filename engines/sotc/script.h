@@ -23,9 +23,20 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
  switch (out.opcode) {
  case 2: // Disable current task, without advancing original IP (0x9f9f).
   return kInstruction;
+ case 6: // Counted relative loop, then byte iteration limit.
  case 64: // Pending event, branch when absent (0xa713).
  case 3: // Relative jump; displacement base is the operand, not its end.
   break;
+ case 31: case 32: case 33: {
+  if (v.size-p<3) return kTruncated;
+  out.variable=cc4Word(v.data+p,2); p+=2;
+  unsigned tag=v.data[p++];
+  if (tag!=11 && tag!=12 && tag!=13) return kUnsupported;
+  unsigned width=tag==12 ? 1 : 2;
+  if (v.size-p<width) return kTruncated;
+  out.valueIsVariable=tag==11; out.value=cc4Word(v.data+p,width);
+  out.next=p+width; return kInstruction;
+ }
  case 10: { // Compare variable with literal/variable, branch when false.
   if (v.size - p < 4) return kTruncated;
   out.variable = cc4Word(v.data + p, 2); p += 2;
@@ -40,6 +51,12 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   out.value = cc4Word(v.data + p, width); p += width;
   break;
  }
+ case 82: case 89: // Speaker, LE16 text, sequence; portrait adds resource.
+  if (v.size-p < (out.opcode==89 ? 5U : 4U)) return kTruncated;
+  out.argument=v.data[p++]; out.value=cc4Word(v.data+p,2); p+=2;
+  out.comparison=v.data[p++];
+  out.variable=out.opcode==89 ? v.data[p++] : 256;
+  out.next=p; return kInstruction;
  case 36: // Scripted actor destination, byte X doubled and byte Y.
  case 7: // Absolute actor position: byte X doubled, byte Y (0xa3ab).
   if (v.size - p < 2) return kTruncated;
@@ -62,8 +79,8 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
   p += 4;
   if (out.opcode == 66) break;
   out.next = p; return kInstruction;
- case 1: case 4: case 5: case 9: case 18: case 21: case 27: case 28: case 58: case 59:
- case 99: case 77: case 79: case 80: case 87: case 88: case 90: case 91: case 96:
+ case 1: case 4: case 5: case 9: case 15: case 16: case 18: case 21: case 27: case 28: case 58: case 59:
+ case 99: case 77: case 79: case 80: case 87: case 88: case 90: case 91: case 92: case 96:
   if (p >= v.size) return kTruncated;
   out.argument = v.data[p++]; out.next = p;
   return kInstruction;
@@ -77,6 +94,10 @@ inline ScriptDecode decodeScript(Cc4View v, uint32_t pc, ScriptInstruction &out)
  if (p > 65535) return kInvalid;
  out.target = int32_t(p) + relative;
  out.next = p + 2;
+ if (out.opcode==6) {
+  if (out.next>=v.size) return kTruncated;
+  out.argument=v.data[out.next++];
+ }
  // Cross-script branches have not been verified; expose rather than follow.
  if (out.target < 0 || uint32_t(out.target) >= v.size) return kInvalid;
  return kInstruction;

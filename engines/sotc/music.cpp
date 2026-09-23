@@ -56,7 +56,7 @@ bool Music::request(unsigned index) {
  {
   Common::StackLock lock(_mutex);
   if (index==255) { _pendingStop=true; _pendingStart=false; _playing=false; return true; }
-  if (_playing) return true; // Opcode 99 ignores requests while music is active.
+  if (_playing) return true; // Opcode 77 ignores requests while music is active.
   if (!_opened) { _opened=_archive.open("MUS.PAK"); if (!_opened) return false; }
   if (_driver.empty()) {
    Common::File file;

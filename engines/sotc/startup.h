@@ -14,6 +14,11 @@ class StartupScene : public ScriptAnimation {
  StartState _state;
  Common::Array<byte> _background, _scenery, _actorData[20];
  struct Animation { unsigned sequence, substep, mode, gate, base, direction; } _animations[11];
+ Common::Array<byte> _textFile;
+ Common::String _dialogueText;
+ bool _talking=false, _portrait=false, _restoreTalk=false;
+ unsigned _portraitHold=0, _portraitSequence=0;
+ unsigned _speaker=0, _talkSequence=0, _talkStep=0, _talkGate=0;
  ScriptMachine *_machine=nullptr;
  Route _route; bool _following=false, _scriptRoute=false;
  unsigned collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine,unsigned self=0) const;
@@ -30,12 +35,17 @@ public:
  bool destination(int x,int y,ScriptMachine &machine,bool scripted=false);
  bool move(unsigned actor,unsigned x,unsigned y,bool &pending) override;
  bool movementPending(unsigned actor,bool &pending) override;
+ bool dialogue(unsigned actor,unsigned text,unsigned sequence,unsigned portrait) override;
+ bool dialoguePending(bool &pending) override;
+ const Common::String &dialogueText() const { return _dialogueText; }
+ void finishDialogue() { _talking=false; }
  bool scriptWalking() const { return _scriptRoute; }
  void cancelRoute() { _following=false; _scriptRoute=false; _route.count=0; }
  bool movePlayer(ScriptMachine &machine);
  bool face(unsigned actor,unsigned direction) override;
  bool control(unsigned value,bool unlock,ScriptActor &actor) override;
  bool hide(unsigned actor) override;
+ bool drawEnabled(unsigned actor,unsigned enabled) override;
  bool reset(unsigned actor, ScriptActor &state) override;
  bool resource(unsigned actor, unsigned index) override;
  bool sequence(unsigned actor, unsigned sequence, ScriptActor &state) override;

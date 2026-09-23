@@ -903,3 +903,72 @@ Actual PS4 package under shadPS4: after actor 0 arrives at (104,171), West
 5. Both waits complete. Task 1 reaches opcode 82 at PC 48, with zero unsupported
 animation formats. Local ignored trace: `artifacts/sotc/actor-axis-live.log`.
 Next: opcode 82 and subsequent scene dialogue/event commands.
+
+## 2026-09-23: opening conversation and carriage departure
+
+The supplied R00 room-0 arrival now runs through all six dialogue records,
+portraits, the three characters boarding, and four carriage movement cycles.
+The PS4 eboot was rebuilt and exercised in shadPS4 with ordinary controller
+input, without modifying the original scripts or game files. Task 1 completes
+at PC 106; tasks 2, 3 and 4 complete. Task 11 reaches PC 43 / opcode 94 after
+24 executed commands. This is the next real boundary: transition/fade setup
+and loading room 21 are still unimplemented. No full-game or physical-PS4
+playability claim is made.
+
+Implemented in this slice:
+
+- 82/89 dialogue requests and scheduler wait bit 0x40. Text comes from the
+  user's E.CC4, nested bank `dialogueBank + 3`. The rolling subtraction is
+  original 0x7386/0x72c1: byte minus 84 times its payload-relative position.
+  Embedded zero bytes remain line breaks. Nothing is transcribed into source.
+- Portrait actor 10 loads the original A00 resources, plays its sequence and
+  disappears when dialogue completes. Normal speech restores sequence, frame
+  and advance gate. The text-only expression cycling follows 0x7be0.
+- Type-10 portrait graphics: bounded vertical run decoder, opaque versus
+  transparent runs, per-row X cursors and packet-selected delta coding.
+  Original dispatch 0x11636 and blitter 0x11736. Only decoding code is shipped.
+- Opcodes 15/16 (target relative to player X/Y), 92 (draw-list eligibility),
+  31/32/33 (word assignment/add/subtract), and 6 (task-local counted loop).
+  Position aliases 2/3, 5/6, etc. address live actors; global/local variable
+  arrays are mutable. Unknown aliases continue to stop rather than fabricate
+  values. Arithmetic wraps at 16 bits and restart resets the loop counter.
+
+**Correction to the earlier audio milestone:** opcode 77 is music and opcode
+99 is sampled audio, not vice versa. 0x961d calls 0xd5ad through a filename
+pointer at DS:423e, which points to MUS.PAK (DS:42d4). 0x9506 explicitly loads
+SMP.PAK at DS:4582. The previous binding happened to accept low indices but
+stopped on sample 36, K13.VOC, as MUS.PAK has only 15 entries. Both now use the
+proper existing player; 255 and busy behavior apply independently. The trace
+confirms K13.VOC, K13B.VOC and C7M.VOC as samples and SHADOW7.ADD as music.
+
+Validation:
+
+- `audit-scriptmachine.py`: routing of 77/99 to different hosts, dialogue
+  waits/rejected hosts/truncation, 16-bit arithmetic, live coordinate aliases,
+  persistent variables, four loop passes across timer yields, relative moves,
+  draw eligibility, plus previous scheduler tests.
+- `audit-dialogue.py EXE DATA`: 7,683 valid supplied records across E/D/S/I
+  match the actual original decryption routine run in Unicorn. Unused entries
+  and stale translated tail offsets are excluded; runtime validates each
+  requested offset pair so bad unused tail entries do not reject good text.
+- `audit-portraits.py EXE UNPACKED_A00`: all 163 referenced type-10 frames
+  match the original blitter pixel for pixel, including transparency.
+- Previous pose tests and 384 original animation render/update cases, three
+  resets and 40 facing transitions pass. PS4 build and package generation pass.
+- Ignored local evidence: `artifacts/sotc/dialogue-smoke.log` (tick 351 reaches
+  opcode 94), `dialogue-1.png` through `dialogue-6.png`, `vm-dialogue.json`.
+
+UI remains diagnostic: GUI font, a top text panel, eight wrapped lines per
+page, Cross/left-click to advance. Original font/layout, speech audio and
+original dialogue timeout are not claimed. Text source is currently English.
+Portrait resources currently use the loaded archive bank (verified A00 only).
+Scene cadence remains 10 Hz and pathfinding remains our bounded route finder.
+
+Continuation: task 11 has `94 40; 99 255; 44 21; 2`. Opcode 94 (0x990a)
+sets DS:6096 to its speed and DS:6084 to transition mode 2. Opcode 44
+(0x9f59) sets pending destination DS:2dfa (255 maps to -1). Implement room
+loading together with these deferred transitions; do not merely suppress 94
+or fade to a permanently black screen. Room 21 script 0 begins with opcode
+58/21, conditional palette selection (96), terrain setup (22), obstacle setup
+(23), actor setup and task activation. Its initialization must execute before
+normal room tasks; reusing INIT.SAV for every room would corrupt progress.

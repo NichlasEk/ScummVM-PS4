@@ -9,9 +9,9 @@ enum TaskResult { kReady, kDisabled, kTimerWait, kAnimationWait, kRegionWait,
 struct ScriptTask {
  Cc4View script;
  uint32_t pc;
- unsigned actor, flags, timer, rectangle[4], opcode, executed;
+ unsigned actor, flags, timer, loop, rectangle[4], opcode, executed;
  TaskResult result;
- ScriptTask() : pc(0), actor(0), flags(0x20), timer(0), rectangle{0,0,0,0}, opcode(0), executed(0), result(kDisabled) {}
+ ScriptTask() : pc(0), actor(0), flags(0x20), timer(0), loop(0), rectangle{0,0,0,0}, opcode(0), executed(0), result(kDisabled) {}
 };
 struct ScriptActor {
  int x, y;
@@ -22,6 +22,9 @@ public:
  virtual ~ScriptAnimation() {}
  virtual bool sequence(unsigned actor, unsigned sequence, ScriptActor &state) = 0;
  virtual bool hide(unsigned actor) = 0;
+ virtual bool drawEnabled(unsigned,unsigned) { return false; }
+ virtual bool dialogue(unsigned,unsigned,unsigned,unsigned) { return false; }
+ virtual bool dialoguePending(bool &) { return false; }
  virtual bool move(unsigned,unsigned,unsigned,bool &) { return false; }
  virtual bool movementPending(unsigned,bool &) { return false; }
  virtual bool face(unsigned,unsigned) { return false; }
@@ -41,6 +44,7 @@ class ScriptMachine {
  ScriptSound *_sound;
  ScriptAnimation *_animation;
  StartState _initial;
+ unsigned _globals[256], _locals[256];
  uint8_t _block[65536];
  ScriptTask _tasks[17];
  ScriptActor _actors[11];
@@ -51,6 +55,11 @@ class ScriptMachine {
  static int signed16(unsigned v) { v &= 65535; return v < 32768 ? int(v) : int(v) - 65536; }
  bool variable(unsigned id, unsigned &value) const {
   if (id == 33) { value = _randomValue; return _randomKnown; }
+  if (id>=1000 && id<1256) { value=_globals[id-1000]; return true; }
+  if (id>=2000 && id<2256) { value=_locals[id-2000]; return true; }
+  if (id>=2 && id<=30 && id%3!=1) {
+   const ScriptActor &a=_actors[(id-1)/3]; value=unsigned(id%3==2 ? a.x : a.y)&65535; return true;
+  }
   unsigned address;
   if (id == 0) address = 0x2df6;
   else if (id == 34) address = 0x2df0;
@@ -59,6 +68,18 @@ class ScriptMachine {
   else return false; // Runtime variables and actor aliases need live bindings.
   if (!_initial.range(address, 2)) return false;
   value = _initial.word(address); return true;
+ }
+ bool writeVariable(unsigned id,unsigned value) {
+  value&=65535;
+  if (id>=1000 && id<1256) { _globals[id-1000]=value; return true; }
+  if (id>=2000 && id<2256) { _locals[id-2000]=value; return true; }
+  if (id==33) { _randomValue=value; _randomKnown=true; return true; }
+  if (id>=2 && id<=30 && id%3!=1) {
+   ScriptActor &a=_actors[(id-1)/3];
+   if (id%3==2) a.x=signed16(value); else a.y=signed16(value);
+   return true;
+  }
+  return false;
  }
  bool overlaps(const ScriptTask &task) const {
   const ScriptActor &a = _actors[0];
@@ -81,6 +102,11 @@ public:
  ScriptMachine() : _sound(nullptr), _animation(nullptr), _count(0), _randomState(1), _randomValue(0), _randomKnown(false), _eventPending(false) {}
  // Explicit diagnostic seed: original startup seed source is not yet bound.
  void seedRandom(uint32_t seed) { _randomState = seed; }
+ unsigned randomRange(unsigned limit) {
+  if (limit<2) return 0;
+  _randomState=_randomState*uint32_t(0x015a4e35)+1;
+  return ((_randomState>>16)&0x7fff)%limit;
+ }
  uint32_t randomState() const { return _randomState; }
  bool randomValue(unsigned &value) const { value = _randomValue; return _randomKnown; }
  void setEventPending(bool pending) { _eventPending = pending; }
@@ -104,11 +130,12 @@ public:
   for (unsigned i = 0; i < block.size; ++i) _block[i] = block.data[i];
   block.data = _block;
   _initial = state;
+  for (unsigned i=0;i<256;++i) { _globals[i]=state.word(0x3b2a+i*2); _locals[i]=state.word(0x392a+i*2); }
   for (unsigned i = 0; i < state.word(0x2e02); ++i) {
    ScriptTask &t = _tasks[i]; t = ScriptTask();
    if (!cc4Entry(block, 2, i, t.script) || !state.taskPC(block, i, t.pc)) return false;
    unsigned a = 0x3110 + i * 22;
-   t.actor = state.byte(a + 8); t.flags = state.byte(a + 9); t.timer = state.word(a + 10);
+   t.actor = state.byte(a + 8); t.flags = state.byte(a + 9); t.timer = state.word(a + 10); t.loop=state.word(a+12);
    for (unsigned j = 0; j < 4; ++j) t.rectangle[j] = state.word(a + 14 + j * 2);
    t.result = t.flags & 0x20 ? kDisabled : kReady;
   }
@@ -122,7 +149,13 @@ public:
   if (index >= _count) return kInvalidScript;
   ScriptTask &t = _tasks[index];
   if (t.flags & 0x20) return t.result = kDisabled;
-  if (t.flags & ~0x27U) return t.result = kUnknownWait;
+  if (t.flags & ~0x67U) return t.result = kUnknownWait;
+  if (t.flags & 0x40) {
+   bool pending=false;
+   if (!_animation || !_animation->dialoguePending(pending)) return t.result=kAnimationUnavailable;
+   if (pending) return t.result=kAnimationWait;
+   t.flags &= ~0x40U;
+  }
   bool movementWaiting=false;
   if (t.flags & 1) {
    bool pending=false;
@@ -150,6 +183,23 @@ public:
    switch (op.opcode) {
    case 2: t.flags |= 0x20; ++t.executed; return t.result = kDisabled;
    case 3: next = op.target; break;
+   case 6:
+    t.loop=(t.loop+1)&65535;
+    if (t.loop<op.argument) next=op.target; else t.loop=0;
+    break;
+   case 31: case 32: case 33: {
+    unsigned value=op.value,current=0;
+    if (op.valueIsVariable && !variable(op.value,value)) return t.result=kUnknownVariable;
+    if (op.opcode!=31 && !variable(op.variable,current)) return t.result=kUnknownVariable;
+    if (op.opcode==32) value=current+value;
+    if (op.opcode==33) value=current-value;
+    if (!writeVariable(op.variable,value)) return t.result=kUnknownVariable;
+    break;
+   }
+   case 92:
+    if (t.actor>=11) return t.result=kInvalidScript;
+    if (!_animation || !_animation->drawEnabled(t.actor,op.argument)) return t.result=kAnimationUnavailable;
+    break;
    case 9:
     t.timer = op.argument; t.flags |= 2; t.pc = next; ++t.executed; return t.result = kTimerWait;
    case 10: {
@@ -162,16 +212,22 @@ public:
     if (t.actor>=11 || op.argument>4) return t.result=kInvalidScript;
     if (!_animation || !_animation->face(t.actor,op.argument)) return t.result=kAnimationUnavailable;
     break;
-   case 4: case 5: case 36: {
+   case 4: case 5: case 15: case 16: case 36: {
     if (t.actor>=11) return t.result=kInvalidScript;
     bool pending=false;
     unsigned x=op.argument,y=op.value;
     if (op.opcode==4) { x=op.argument*2; y=unsigned(_actors[t.actor].y)&65535; }
     if (op.opcode==5) { x=unsigned(_actors[t.actor].x)&65535; y=op.argument; }
+    if (op.opcode==15) { x=unsigned(_actors[0].x+op.argument)&65535; y=unsigned(_actors[t.actor].y)&65535; }
+    if (op.opcode==16) { x=unsigned(_actors[t.actor].x)&65535; y=unsigned(_actors[0].y+op.argument)&65535; }
     if (!_animation || !_animation->move(t.actor,x,y,pending)) return t.result=kAnimationUnavailable;
     if (pending) { t.flags|=1; t.pc=next; ++t.executed; return t.result=kRegionWait; }
     break;
    }
+   case 82: case 89:
+    if (op.argument>=10) return t.result=kInvalidScript;
+    if (!_animation || !_animation->dialogue(op.argument,op.value,op.comparison,op.variable)) return t.result=kAnimationUnavailable;
+    t.flags|=0x40; t.pc=next; ++t.executed; return t.result=kAnimationWait;
    case 18: case 19:
     if (op.opcode==18 && op.argument>4) return t.result=kInvalidScript;
     if (!_animation || !_animation->control(op.argument,op.opcode==19,_actors[0])) return t.result=kAnimationUnavailable;
@@ -195,7 +251,7 @@ public:
     if (op.argument >= _count) return t.result = kInvalidScript;
     if (op.opcode == 28) _tasks[op.argument].flags |= 0x20;
     else {
-     ScriptTask &other = _tasks[op.argument]; other.pc = 0; other.flags = 0; other.timer = 0; other.actor = 0; other.result = kReady;
+     ScriptTask &other = _tasks[op.argument]; other.pc = 0; other.flags = 0; other.timer = 0; other.loop=0; other.actor = 0; other.result = kReady;
      // Restarting self changes the original task IP too.
      if (op.argument == index) next = 0;
     }
@@ -225,19 +281,15 @@ public:
      t.flags |= 4; t.pc = next; ++t.executed; return t.result = kAnimationWait;
     }
     break;
-   case 99:
+   case 77:
     if (!_sound || !_sound->music(op.argument)) return t.result = kSoundUnavailable;
     break;
-   case 77:
+   case 99:
     if (!_sound || !_sound->effect(op.argument)) return t.result = kSoundUnavailable;
     break;
    case 79:
     // Borland rand at 0x17b5f; range helper 0x7051 does not draw for 0/1.
-    _randomValue = 0;
-    if (op.argument >= 2) {
-     _randomState = _randomState * uint32_t(0x015a4e35) + 1;
-     _randomValue = ((_randomState >> 16) & 0x7fff) % op.argument;
-    }
+    _randomValue = randomRange(op.argument);
     _randomKnown = true;
     break;
    case 39:

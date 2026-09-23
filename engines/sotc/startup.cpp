@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "sotc/startup.h"
+#include "sotc/dialogue.h"
 #include "sotc/startstate.h"
 #include "sotc/animation.h"
 #include "sotc/draworder.h"
@@ -31,6 +32,7 @@ Common::String stepStartupScripts(ScriptMachine &machine, unsigned tick) {
 bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, ScriptMachine &machine) {
  pixels.clear(); status = "INIT.SAV unavailable";
  Common::Array<byte> save, scripts;
+ _textFile.clear(); _dialogueText.clear(); _talking=false;
  _ready = false; _machine=&machine; cancelRoute();
  StartState &state = _state;
  if (!readFile("INIT.SAV", save) || !state.load(Cc4View(save.data(), save.size()))) return false;
@@ -145,6 +147,41 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
  }
  status = Common::String::format("INIT scene: %u drawn, %u unsupported", rendered, unsupported);
  return unsupported == 0;
+}
+bool StartupScene::dialogue(unsigned speaker,unsigned text,unsigned seq,unsigned portrait) {
+ if (!_ready || !_machine || speaker>=10 || _talking) return false;
+ if (_textFile.empty() && !readFile("E.CC4",_textFile)) return false;
+ byte decoded[16384]; unsigned size=0;
+ if (!dialogueRecord(Cc4View(_textFile.data(),_textFile.size()),_state.word(0x2e16)+3,text,decoded,sizeof(decoded),size)) return false;
+ unsigned id=speaker;
+ if (portrait!=256) {
+  id=10; ScriptActor actor=*_machine->actor(id);
+  if (!reset(id,actor) || !resource(id,portrait)) return false;
+  actor.x=0; actor.y=199; _machine->setActor(id,actor);
+ }
+ ScriptActor actor=*_machine->actor(id);
+ _talkSequence=_animations[id].sequence; _talkStep=actor.step; _talkGate=_animations[id].gate;
+ if (seq!=255) {
+  if (!sequence(id,seq,actor)) return false;
+  _machine->setActor(id,actor);
+ }
+ _dialogueText.clear();
+ for (unsigned i=1;i<size-(decoded[size-1]==0 ? 1 : 0);++i) _dialogueText+=decoded[i] ? char(decoded[i]) : '\n';
+ _speaker=speaker; _portrait=portrait!=256; _restoreTalk=seq!=255; _talking=true;
+ debug("[sotc-dialogue] actor=%u text=%u seq=%u portrait=%u bytes=%u",speaker,text,seq,portrait,size);
+ return true;
+}
+bool StartupScene::dialoguePending(bool &pending) {
+ pending=_talking;
+ if (pending) return true;
+ if (_portrait) { _visible[10]=false; _inDrawList[_speaker]=true; _portrait=false; }
+ else if (_restoreTalk) {
+  ScriptActor actor=*_machine->actor(_speaker);
+  if (!sequence(_speaker,_talkSequence,actor)) return false;
+  actor.step=_talkStep; _animations[_speaker].gate=_talkGate;
+  _machine->setActor(_speaker,actor);
+ }
+ _restoreTalk=false; _dialogueText.clear(); return true;
 }
 bool StartupScene::face(unsigned id,unsigned direction) {
  if (!_ready || id>=11 || direction>4) return false;
@@ -342,6 +379,10 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
  debug("[sotc-walk] x=%d y=%d step=%u",x,y,actor.step);
  return true;
 }
+bool StartupScene::drawEnabled(unsigned id,unsigned enabled) {
+ if (!_ready || id>=11) return false;
+ _inDrawList[id]=enabled!=0; return true;
+}
 bool StartupScene::hide(unsigned id) {
  if (!_ready || id>=11) return false;
  if (id) _visible[id]=false;
@@ -396,7 +437,7 @@ bool StartupScene::sequence(unsigned id, unsigned sequenceIndex, ScriptActor &ac
 unsigned StartupScene::advance(ScriptMachine &machine) {
  if (!_ready) return 0;
  unsigned unsupported=0;
- for (unsigned id=0;id<10;++id) {
+ for (unsigned id=0;id<11;++id) {
   if (!_visible[id]) continue; // Original 0x7d3f update eligibility.
   unsigned slot=_slots[id];
   if (slot>=20) { ++unsupported; continue; }
@@ -411,10 +452,17 @@ unsigned StartupScene::advance(ScriptMachine &machine) {
    animation.sequence=seq; animation.mode=0; animation.gate=255;
    actor.step=0; actor.steps=count; machine.setActor(id,actor); continue;
   }
-  SequenceStep step;
+  SequenceStep step; bool wrapped=false;
   if (!va2Step(data.data(),data.size(),animation.sequence,actor.step,step) ||
-      !advanceAnimation(step.control,animation.mode,animation.gate,actor.steps,actor.step,animation.substep)) {
+      !advanceAnimation(step.control,animation.mode,animation.gate,actor.steps,actor.step,animation.substep,&wrapped)) {
    ++unsupported; continue;
+  }
+  if (id==10 && wrapped && animation.sequence<4) {
+   // Text-only branch of original portrait controller 0x7be0. Hold the idle
+   // expression for ten loops; otherwise choose one of four mouth sequences.
+   if (!_portraitHold) { _portraitSequence=machine.randomRange(4); if (!_portraitSequence) _portraitHold=1; }
+   else if (++_portraitHold==10) _portraitHold=0;
+   if (!sequence(id,_portraitSequence,actor)) { ++unsupported; continue; }
   }
   machine.setActor(id,actor);
  }

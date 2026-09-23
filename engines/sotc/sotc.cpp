@@ -79,6 +79,7 @@ Common::Error SotcEngine::run() {
  bool startupAvailable = startupScene.load(startupPixels, startupStatus, startupMachine), showStartup = startupAvailable;
  if (startupAvailable) scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
 
+ Common::Array<Common::String> dialogueLines; Common::String shownDialogue; unsigned dialoguePage=0;
  int pointerX=0,pointerY=0;
  bool runScene = true; unsigned heldDirection=0;
  uint32 nextSceneFrame = _system->getMillis() + 100;
@@ -176,9 +177,19 @@ Common::Error SotcEngine::run() {
     title = runScene ? "Walk test - collision stops" : "Scene paused - not gameplay"; actorTitle = scriptStatus;
    }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
+   if (showStartup && !startupScene.dialogueText().empty()) {
+    if (shownDialogue!=startupScene.dialogueText()) {
+     shownDialogue=startupScene.dialogueText(); dialoguePage=0; dialogueLines.clear();
+     font->wordWrapText(shownDialogue,306,dialogueLines);
+    }
+    unsigned end=MIN<unsigned>(dialoguePage+8,dialogueLines.size());
+    surface.fillRect(Common::Rect(2,2,318,8+(end-dialoguePage)*font->getFontHeight()),0);
+    for (unsigned i=dialoguePage;i<end;++i)
+     font->drawString(&surface,dialogueLines[i],7,5+(i-dialoguePage)*font->getFontHeight(),306,7);
+   } else { shownDialogue.clear(); dialogueLines.clear(); dialoguePage=0; }
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, showStartup ? "D-pad: walk  Circle: destination" : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
+   font->drawString(&surface, showStartup ? (!startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "D-pad: walk  Circle: destination") : "Options: start scene  L1/R1: figure", 2, 227, 316, 7);
    if (showStartup && pointerY<400 && pointerX<640 && pointerX>=0 && pointerY>=0) {
     int px=pointerX/2,py=pointerY/2;
     for (int d=-3;d<=3;++d) {
@@ -241,6 +252,11 @@ Common::Error SotcEngine::run() {
     continue;
    }
    if (showStartup && event.type == Common::EVENT_LBUTTONDOWN) {
+    if (!startupScene.dialogueText().empty()) {
+     if (dialoguePage+8<dialogueLines.size()) dialoguePage+=8;
+     else startupScene.finishDialogue();
+     redraw=true; continue;
+    }
     runScene=false; sceneStep(); continue;
    }
    if (showStartup && !(event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_ESCAPE)) continue;

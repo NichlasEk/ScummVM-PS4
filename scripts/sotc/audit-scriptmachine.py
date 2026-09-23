@@ -18,19 +18,24 @@ with tempfile.TemporaryDirectory(prefix='sotc-vm-') as temp:
 #include "engines/sotc/scriptmachine.h"
 static Sotc::ScriptMachine vm;
 struct TestSound : Sotc::ScriptSound {
- unsigned last = 0, calls = 0; bool accept = true;
- bool effect(unsigned i) override { last = i; ++calls; return accept; }
- bool music(unsigned i) override { last = i; ++calls; return accept; }
+ unsigned last = 0, calls = 0, kind=0; bool accept = true;
+ bool effect(unsigned i) override { kind=99; last = i; ++calls; return accept; }
+ bool music(unsigned i) override { kind=77; last = i; ++calls; return accept; }
 } sound;
 struct TestAnimation : Sotc::ScriptAnimation {
  bool accept=false; unsigned calls=0;
  unsigned targetX=0,targetY=0,targetActor=0;
+ bool talking=false;
+ unsigned speaker=0,text=0,portrait=0;
+ bool dialogue(unsigned a,unsigned t,unsigned,unsigned p) override {if (!accept) return false; talking=true; speaker=a; text=t; portrait=p; return true;}
+ bool dialoguePending(bool &pending) override {pending=talking; return accept;}
  bool moving=false;
  bool move(unsigned actor,unsigned x,unsigned y,bool &pending) override {if (!accept) return false; targetX=x; targetY=y; targetActor=actor; pending=moving=true; return true;}
  bool movementPending(unsigned actor,bool &pending) override {if (!accept || actor!=targetActor) return false; pending=moving; return true;}
  unsigned lock=0;
  bool control(unsigned value,bool unlock,Sotc::ScriptActor &) override {if (!accept) return false; lock=unlock ? 0 : value ? lock|(1u<<value) : 15; return true;}
  bool face(unsigned,unsigned) override {return accept;}
+ bool drawEnabled(unsigned,unsigned) override {return accept;}
  bool hide(unsigned) override {return accept;}
  bool reset(unsigned,Sotc::ScriptActor &actor) override {if (!accept) return false; actor={0,0,4,2,0,1}; return true;}
  bool resource(unsigned,unsigned index) override {return accept && index==13;}
@@ -40,6 +45,8 @@ struct TestAnimation : Sotc::ScriptAnimation {
  }
 } animation;
 extern "C" unsigned moveTarget(unsigned i) {return i==0 ? animation.targetActor : i==1 ? animation.targetX : animation.targetY;}
+extern "C" void finishTalk() {animation.talking=false;}
+extern "C" unsigned talkValue(unsigned i) {return i==0 ? animation.speaker : i==1 ? animation.text : animation.portrait;}
 extern "C" void finishMove() { animation.moving=false; }
 extern "C" unsigned controlLock() {return animation.lock;}
 extern "C" void animationHost(bool enabled,bool accept) {
@@ -48,6 +55,7 @@ extern "C" void animationHost(bool enabled,bool accept) {
 extern "C" void soundHost(bool enabled,bool accept) {
  sound.calls=0; sound.accept=accept; vm.setSound(enabled ? &sound : nullptr);
 }
+extern "C" unsigned soundKind() {return sound.kind;}
 extern "C" unsigned soundLast() {return sound.last;}
 extern "C" unsigned soundCalls() {return sound.calls;}
 extern "C" bool load(const uint8_t *s,unsigned n,const uint8_t *b,unsigned m) {
@@ -134,6 +142,48 @@ extern "C" bool info(unsigned i,unsigned *out) {
     assert lib.visit(1) == 5 and info()[0] == 0
     assert lib.visit(17) == 7
     assert not lib.actor(11, 0, 0, 0, 1)
+
+    for opcode in (82,89):
+        script=[opcode,1,0x34,0x12,255]+([77] if opcode==89 else [])
+        fixture(script+[2])
+        lib.animationHost(True,False)
+        assert lib.visit(1)==11 and info()[0]==0
+        lib.animationHost(True,True)
+        assert lib.visit(1)==3 and info()[0]==len(script) and info()[1]==64
+        assert [lib.talkValue(i) for i in range(3)]==[1,0x1234,77 if opcode==89 else 256]
+        for _ in range(3):
+            assert lib.visit(1)==3 and info()[6]==1
+        lib.finishTalk()
+        assert lib.visit(1)==1 and info()[1]==32
+        for length in range(1,len(script)):
+            fixture(script[:length])
+            assert lib.visit(1)==7 and info()[0]==0
+
+    for opcode,index in ((77,2),(99,36),(99,37)):
+        fixture([opcode,index,2]);lib.soundHost(True,True)
+        assert lib.visit(1)==1 and lib.soundKind()==opcode and lib.soundLast()==index
+
+    # Original arithmetic is 16-bit; variable 20 aliases actor 6 X.
+    for opcode,initial,value,expected in ((31,0,65535,65535),(32,65535,2,1),(33,0,38,65498)):
+        script=[31,20,0,13,initial&255,initial>>8,opcode,20,0,13,value&255,value>>8,31,33,0,11,20,0,2]
+        fixture(script)
+        assert lib.visit(1)==1 and lib.randomValue()==expected
+    # Four loop passes, with the counter surviving timer yields.
+    fixture([33,20,0,12,2,9,1,6,248,255,4,31,33,0,11,20,0,2])
+    for _ in range(4):assert lib.visit(1)==2
+    assert lib.visit(1)==1 and lib.randomValue()==65528
+    for variable in (1000,1010,1255,2000,2255):
+        fixture([31,variable&255,variable>>8,12,42,31,33,0,11,variable&255,variable>>8,2])
+        assert lib.visit(1)==1 and lib.randomValue()==42
+    fixture([31,31,0,12,1,2])
+    assert lib.visit(1)==9 and info()[0]==0
+    for opcode in (15,16):
+        fixture([21,1,opcode,7,2]);lib.actor(0,104,171,0,1);lib.actor(1,62,164,0,1)
+        lib.animationHost(True,True)
+        assert lib.visit(1)==4
+        assert [lib.moveTarget(i) for i in range(3)]==([1,111,164] if opcode==15 else [1,62,178])
+        lib.finishMove();assert lib.visit(1)==1
+    fixture([92,0,2]);lib.animationHost(True,True);assert lib.visit(1)==1
 
     for seed in (0, 1, 0xffffffff, 123456789):
         for limit in (0, 1, 2, 255):

@@ -10,7 +10,7 @@ bool SoundEffects::effect(unsigned index) {
   _mixer->stopHandle(_handle);
   debug("[sotc-sfx] stop"); return true;
  }
- // Original 0xd5ad tests driver busy before loading a sample; no queue or restart.
+ // Original 0x9506 tests driver busy before loading a sample; no queue or restart.
  if (_mixer->isSoundHandleActive(_handle)) {
   debug("[sotc-sfx] busy, ignoring sample=%u", index); return true;
  }

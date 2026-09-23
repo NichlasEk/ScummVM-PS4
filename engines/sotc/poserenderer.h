@@ -3,6 +3,7 @@
 #define SOTC_POSERENDERER_H
 #include "common/array.h"
 #include "pose.h"
+#include "portrait.h"
 namespace Sotc {
 class PoseRenderer {
  Common::Array<byte> _pixels, _mask, _working;
@@ -88,10 +89,10 @@ class PoseRenderer {
    int px = x + va2Signed16(xy), py = y + va2Signed16(xy + 2);
    if (type == 0 && points == 1) {
     if (!render(data, ref, px, py, -1, depth + 1)) return false;
-   } else if (type == 1 && points == 1) {
-    if (ref & 0x7000) return false;
+   } else if ((type == 1 || type == 10) && points == 1) {
+    if (ref & (type==10 ? 0xf000 : 0x7000)) return false;
     unsigned width, height;
-    if (!va2Frame(data.data(), data.size(), ref & 0xfff, _pixels.data(), _mask.data(), _pixels.size(), width, height)) return false;
+    if (!(type==10 ? va2Portrait(data.data(),data.size(),ref,_pixels.data(),_mask.data(),_pixels.size(),width,height) : va2Frame(data.data(), data.size(), ref & 0xfff, _pixels.data(), _mask.data(), _pixels.size(), width, height))) return false;
     for (unsigned row = 0; row < height; ++row) for (unsigned col = 0; col < width; ++col) {
      unsigned source = row * width + ((ref & 0x8000) ? width - 1 - col : col);
      if (_mask[source] && !dot(px + int(col), py - int(height) + 1 + int(row), _pixels[source])) return false;

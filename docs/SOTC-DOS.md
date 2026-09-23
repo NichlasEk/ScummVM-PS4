@@ -1554,3 +1554,22 @@ flags and exit records determine the bank; no flags are forced to leave.
 PS4 package rebuilt and launched in shadPS4. The fourth toolbar icon was
 activated with Cross at the bench; the original "Doctor COBBLE has good taste,
 I must say." response appeared. Evidence: `artifacts/sotc/examine-live.png`.
+
+### Room 13 temporary doorway obstacle (2026-09-23)
+
+Implemented opcode 68 from SHADOW.EXE 0xa893..0xa903. It reads byte X/2
+and byte Y, walks the obstacle table backwards, and sets right=left for every
+record whose left/top matches. Count and record positions stay unchanged;
+the collision reader already ignores zero-width records. A missing match is
+a successful no-op. This removes the temporary barrier installed by opcode 60
+while the man enters his house in room 13/task 1 (PC 56), rather than skipping
+an unknown instruction or forcing story state.
+
+The real-asset ASan/UBSan journey now leaves Cobble's house, takes its lower
+right exit into room 13, runs the original entrance sequence through task 1's
+end at PC 59, and checks all tasks for stops. Room 13 save/restore is exact.
+Additional checks cover multiple matching obstacles, unrelated records,
+repeated removal, absent matches, and rejected invalid coordinates.
+The audit also verifies that the actual room 13 obstacle at (146,166) has
+right=left after the original task completes. PS4 package and VM audit pass;
+the updated package is launched in shadPS4. No full-chapter validation claimed.

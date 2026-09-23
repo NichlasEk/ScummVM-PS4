@@ -37,6 +37,7 @@ public:
  virtual bool background(unsigned) { return false; }
  virtual bool object(unsigned,unsigned,unsigned) { return false; }
  virtual bool removeObject(unsigned) { return false; }
+ virtual bool removeObstacle(unsigned,unsigned) {return false;}
  virtual bool obstacle(const unsigned *) { return false; }
  virtual bool actorLabel(unsigned,unsigned) { return false; }
  virtual bool terrain(Cc4View) { return false; }
@@ -328,6 +329,9 @@ public:
    case 14:
     for(unsigned j=0;j<4;++j) t.rectangle[j]=op.rectangle[j];
     if(!overlaps(t)) next=op.target;
+    break;
+   case 68:
+    if(!_animation || !_animation->removeObstacle(op.argument,op.value))return t.result=kAnimationUnavailable;
     break;
    case 60:
     if (!_animation || !_animation->obstacle(op.rectangle)) return t.result=kAnimationUnavailable;

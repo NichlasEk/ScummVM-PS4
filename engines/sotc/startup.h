@@ -52,6 +52,7 @@ public:
  bool object(unsigned id,unsigned x,unsigned y) override;
  bool removeObject(unsigned id) override;
  bool obstacle(const unsigned *rectangle) override;
+ bool removeObstacle(unsigned x,unsigned y) override;
  bool actorLabel(unsigned actor,unsigned label) override {
   return actor<11 && _state.setByte(0x2e54+actor*52+28,label);
  }

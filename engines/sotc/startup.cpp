@@ -169,6 +169,18 @@ bool StartupScene::obstacle(const unsigned *rectangle) {
  for(unsigned i=0;i<4;++i) _state.setByte(address+i,rectangle[i]/(i%2 ? 1 : 2));
  return _state.setByte(0x3542,count+1);
 }
+bool StartupScene::removeObstacle(unsigned x,unsigned y) {
+ if(!_ready || x>510 || (x&1) || y>255)return false;
+ unsigned count=_state.byte(0x3542);
+ if(count>249)return false;
+ // Original 0xa893 visits all records, retaining their slots and count.
+ // Equal left/right edges mark an inactive obstacle in collision detection.
+ for(unsigned i=count;i;--i) {
+  unsigned p=0x3544+(i-1)*4;
+  if(_state.byte(p)==x/2 && _state.byte(p+1)==y)_state.setByte(p+2,x/2);
+ }
+ return true;
+}
 bool StartupScene::terrain(Cc4View data) {
  // Original 0x104bc: integer line rasterization, including vertical segments.
  if(data.size<4 || data.size%2 || data.size>128 || data.data[0]!=0) return false;

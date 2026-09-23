@@ -261,6 +261,35 @@ int main() {
  assert(readQuickSave(files,"hall",m,scene,saved,pixels,status));
  assert(readQuickSave(files,"outside",m,scene,saved,pixels,status));assert(state(m,scene)==before);
  for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);
+ // Follow the outdoor exit below Cobble's house into room 13.
+ assert(scene.destination(210,220,m));
+ for(unsigned tick=0;tick<500;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+ std::cout<<"Room 13 departure sequence: bank="<<scene.bank()<<" room="<<scene.room()<<" task1pc="<<m.task(1)->pc<<std::endl;
+ assert(scene.bank()==0 && scene.room()==13);
+ for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);
+ assert(m.task(1)->opcode==2 && m.task(1)->pc==59);
+ before=state(m,scene);
+ unsigned doorwayRecords=0;
+ for(unsigned i=0;i<cc4Word(before.data()+(0x3542-0x2dee)*4,4);++i){
+  unsigned p=(0x3544+i*4-0x2dee)*4;
+  if(cc4Word(before.data()+p,4)==73 && cc4Word(before.data()+p+4,4)==166){assert(cc4Word(before.data()+p+8,4)==73);++doorwayRecords;}
+ }
+ assert(doorwayRecords==1);
+ assert(writeQuickSave(files,"room13",m,scene,saved));
+ assert(readQuickSave(files,"outside",m,scene,saved,pixels,status));
+ assert(readQuickSave(files,"room13",m,scene,saved,pixels,status));assert(state(m,scene)==before);
+ // All matching origins are disabled without removing or renumbering slots.
+ unsigned rectangles[3][4]={{20,180,40,190},{22,180,42,190},{20,180,60,195}};
+ for(auto &rectangle:rectangles)assert(scene.obstacle(rectangle));
+ before=state(m,scene);auto expected=before;
+ auto stateByte=[&](unsigned a){return cc4Word(before.data()+(a-0x2dee)*4,4);};
+ unsigned obstacleCount=stateByte(0x3542);
+ for(unsigned i=0;i<obstacleCount;++i){unsigned p=0x3544+i*4;if(stateByte(p)==10 && stateByte(p+1)==180)expected[(p+2-0x2dee)*4]=10;}
+ assert(scene.removeObstacle(20,180));assert(state(m,scene)==expected);
+ assert(scene.removeObstacle(20,180));assert(state(m,scene)==expected);
+ assert(scene.removeObstacle(510,255));assert(state(m,scene)==expected);
+ assert(!scene.removeObstacle(21,180));assert(state(m,scene)==expected);
+ assert(readQuickSave(files,"room13",m,scene,saved,pixels,status));
  std::cout<<"Exit probe bank="<<scene.bank()<<" room="<<scene.room()<<" x="<<m.actor(0)->x<<" y="<<m.actor(0)->y<<"\n";
  std::cout<<"Object facing, pickup and inventory save restore passed\n";
  std::cout<<"Door probe ends in bank "<<scene.bank()<<" room "<<scene.room()<<"\n";

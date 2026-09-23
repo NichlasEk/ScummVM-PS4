@@ -1,6 +1,6 @@
 # Shadow of the Comet: initial DOS investigation
 
-Inspected 2026-09-23. This is format research, not a playable engine.
+Inspected 2026-09-23. A separate resource-preview engine now exists; this is not a playable game.
 
 ## Local evidence
 
@@ -23,8 +23,8 @@ or a distributed package.
 
 All 23 main-game PAK directories have been parsed with resource bounds checked.
 Example: D00.PAK contains F00.RAW with a declared unpacked size of 64000 bytes,
-consistent with a 320×200 indexed background, but image and palette decoding
-have not yet been verified. A00.PAK includes STUBBS0.VA2; MUS.PAK includes
+now verified as a 320×200 indexed background. The original CTU.PAL palette
+renders it in the PS4 viewer; scripted palette changes are still unimplemented. A00.PAK includes STUBBS0.VA2; MUS.PAK includes
 SHADOW1.ADD; SMP.PAK includes C27.VOC.
 
 PAK entry headers contain an additional-descriptor size, packed and unpacked
@@ -32,8 +32,8 @@ sizes, method byte, flags byte, metadata length, metadata and payload.
 Observed methods are 0 and 1, with flags 0 or 6.
 This agrees with the layout in
 [FITD's PAK reader](https://github.com/jmimu/AITD_PakEdit/blob/main/fitd/pak.cpp),
-which dispatches method 1 to PAK_explode. Successful SOTC decompression is
-still required before considering decoder compatibility proven. ZIP implode
+which dispatches method 1 to PAK_explode. The new bounded decoder has now decoded all 884 entries across the 23 archives;
+all compressed entries match both FITD and Info-ZIP byte for byte. ZIP implode
 must not be confused with PKWARE DCL or PICE's headerless zlib path.
 
 Reproduce the directory audit:
@@ -62,4 +62,42 @@ Implementation milestones:
 
 Not established: CC4 opcode meanings, language-file mapping, complete NAR
 layout, ADD music decoding, animation semantics, or later-chapter behavior.
-No runtime engine or PS4 package has been built for SOTC yet.
+
+## Resource-preview engine
+
+`engines/sotc/` contains a separate ScummVM detector, bounds-checked PAK reader,
+ZIP-implode decoder and background viewer. The decoder handles both observed
+flag variants (0 and 6); invalid flags and truncated streams are rejected.
+The preview loads original resources at runtime, including the four palettes
+from RES.PAK. Palette selection is manual: CC4-driven palette changes are not
+implemented. No character animation, scripts, audio playback or saves yet.
+
+```sh
+scripts/sotc/build.sh
+scripts/sotc/run-emulator.sh build/sotc-DOS/disc-files/SHADOW
+python3 scripts/sotc/audit-resources.py build/sotc-DOS/disc-files/SHADOW > artifacts/sotc/resource-audit.json
+```
+
+The audit compiles the actual engine decoder and compares each compressed entry
+with the system `unzip` decoder. It also checks truncated input and unsupported
+flags. Reports and extracted resources remain ignored.
+
+- Left/right or D-pad left/right: previous/next background.
+- Up/down or D-pad up/down: next/previous D00–D09 scenery archive.
+- P on a native desktop, or Square (V in the emulator profile): next palette.
+- Circle/right click (B in the emulator profile): previous background.
+- Touchpad (Space in the emulator profile), or Escape on native desktop: exit viewer.
+- Desktop left click advances and right click goes back; F7 releases mouse capture.
+
+PS4 title ID: SCVM00004. Build/source/stage directories use `scummvm-sotc`;
+package: `dist/sotc-experimental/ScummVM-PS4-SOTC-preview.pkg`.
+The emulator uses `.tools/xdg-sotc` and separate config/cache directories.
+On USB, place original files in `scummvm/games/sotc/SHADOW/` (or directly in
+`scummvm/games/sotc/`). Without those files the package opens the launcher.
+The package contains engine code and ScummVM support files, not game data.
+
+Validation: PS4 package built and booted in shadPS4 as SCVM00004. Original
+F00.RAW was captured on screen; click-forward/back and palette switching were
+exercised, and the user confirmed graphics work. Right click initially mapped
+to Exit; it now maps to previous image. The viewer contains 155 full-size RAW
+backgrounds across D00–D09. Physical PS4 hardware has not been tested yet.

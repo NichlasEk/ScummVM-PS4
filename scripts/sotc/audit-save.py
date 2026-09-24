@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory',type=Path)
+p.add_argument('--cobble-save',type=Path,help='Exercise Cobble doorway from the right side using a copied save')
 p.add_argument('--forest-save',type=Path,help='Exercise the west exit from Cobble house in a copied save')
 p.add_argument('--resume-save',type=Path,help='Resume a copied save for 300 frames without script or animation failures')
 p.add_argument('--probe-save',type=Path,help='Load a copied pharmacy save and verify resume, movement and exit')
@@ -70,6 +71,18 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="cobble") {
+   m.requestRoom(0,17);assert(scene.serviceRoom(m,status));
+   for(unsigned tick=0;tick<30;++tick){scene.finishDialogue();m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+   ScriptActor actor=*m.actor(0);actor.x=argc>3 ? std::stoi(argv[3]) : 163;actor.y=153;m.setActor(0,actor);
+   for(unsigned tick=0;tick<300;++tick){
+    scene.finishDialogue();assert(scene.movePlayer(m));m.tick();
+    if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+   }
+   assert(scene.bank()==1 && scene.room()==0);
+   std::cout<<"Cobble door entered from x="<<actor.x<<" into bank="<<scene.bank()<<" room="<<scene.room()<<" without stopped scripts\n";return 0;
+  }
   if(argc>2 && std::string(argv[2])=="forest") {
    assert(scene.bank()==0 && scene.room()==17);
    m.tick();
@@ -453,4 +466,8 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')]+([str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+ subprocess.run([str(t/'test')]+([str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+
+ if a.cobble_save:
+  for x in (143,153):
+   subprocess.run([str(t/'test'),str(a.cobble_save.resolve()),'cobble',str(x)],cwd=a.directory.resolve(),check=True)

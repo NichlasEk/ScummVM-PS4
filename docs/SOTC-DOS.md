@@ -1818,3 +1818,19 @@ using the existing BULLE.VA2 box renderer, CTU.PFN font and orange palette index
 menus, cleared on load/room change/dialogue, and does not block item scripts.
 Original dialogue/choice renderer audits and PS4 package build pass; in-game
 pickup appearance still needs user playtesting.
+
+### Cobble doorway alignment (2026-09-24)
+
+Reproduced room 17 script 3 opcode 5 at PC 28: from (163,153), the script
+requests (163,145), but the player's footprint protrudes past the door's
+X=140..166 exit. DOS 0xd24a confirms that up/down exits require full footprint
+containment, so this check remains intact. The route planner now aligns a
+scripted vertical target into its matching doorway when the centre lies inside
+that opening and the aligned target actually yields an exit collision.
+
+`audit-save.py --cobble-save` uses a copied post-forest save, enters room 17 and
+replays the door script from X=143,153,163 at Y=153. All three enter bank 1,
+room 0 and run 300 frames without VM/render/animation failures. The forest
+cursor/departure and pharmacy/square regressions also pass. PS4 package rebuilt.
+Backup: artifacts/sotc/cobble-door-backup/; logs: cobble-door-after.log,
+cobble-forest-regression.log, cobble-pharmacy-regression.log.

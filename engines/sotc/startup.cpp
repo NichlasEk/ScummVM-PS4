@@ -679,6 +679,22 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
   }
   if(!found)exit=0;
  }
+ // A region trigger can start a vertical doorway walk while the player's
+ // centre is inside the opening but a foot extends past its jamb. Preserve
+ // the original full-footprint exit test (DOS 0xd24a); align the route with
+ // that opening instead of rejecting the scripted destination.
+ if(scripted && x==a.x && y!=a.y) {
+  unsigned d=y<a.y ? 1 : 3;
+  if(collisionAt(x,y,d,machine)==0x100) {
+   for(unsigned i=0;i<_state.word(0x2dfc);++i) {
+    unsigned p=0x3090+i*8;if(_state.byte(p)!=d)continue;
+    int left=_state.word(p+4),right=_state.word(p+6);
+    if(x<left || x>right || right>319 || right-left<int(a.halfWidth*2))continue;
+    int aligned=x<left+int(a.halfWidth) ? left+a.halfWidth : x>right-int(a.halfWidth) ? right-a.halfWidth : x;
+    if((collisionAt(aligned,y,d,machine)&0xff00)==0x400){x=aligned;break;}
+   }
+  }
+ }
  // A two-coordinate script destination can also lie beyond an exit (for
  // example the foyer door). End at its first boundary tile, not deeper in
  // impassable terrain behind it.

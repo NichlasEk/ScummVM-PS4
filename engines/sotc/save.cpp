@@ -55,6 +55,10 @@ bool readQuickSave(Common::SaveFileManager &files,const Common::String &prefix,S
     !candidate.snapshot(s,version) || !candidateScene.snapshot(s,true,version) || !s.ok() || s.size()!=data.size()-16 ||
     !candidateScene.render(candidatePixels,candidateStatus,candidate)) return false;
  machine.adopt(candidate); scene.adopt(candidateScene,machine);
+ // A saved diagnostic stop may come from an older, incomplete engine. Retry
+ // from the saved PC on the next normal frame; sceneStep still checks every
+ // script/animation failure. Do not erase task results or skip instructions.
+ if(restored.fault) { restored.running=true; restored.fault=false; }
  state=restored; pixels=candidatePixels; status=candidateStatus;
  return true;
 }

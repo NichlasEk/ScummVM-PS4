@@ -58,6 +58,13 @@ extern "C" bool frame(const uint8_t*p,unsigned n,unsigned i,uint8_t*d,uint8_t*m,
     assert decode(bytes(mirrored), 0)
     assert mask.raw[:16] == bytes([0] * 10 + [1] * 4 + [0] * 2)
     assert pixels.raw[10:14] == bytes([3, 2, 1, 0])
+    # Lower prefix bits do not select another codec or change pixel orientation.
+    for prefix in (0x0040, 0x7fff, 0x8040, 0xffff):
+        marked = bytearray(fixture)
+        struct.pack_into('<H', marked, 26, prefix)
+        assert decode(bytes(marked), 0)
+        expected = [0] * 10 + [1] * 4 + [0] * 2 if prefix & 0x8000 else [0, 0, 1, 1, 1, 1] + [0] * 10
+        assert mask.raw[:16] == bytes(expected)
     # A following record's prefix may be nonzero; it is not trailing payload.
     # Two one-layer poses; the second prefix is 0x0008 (as in WEST0 pose 52).
     poses = struct.pack('<IIH', 10, 22, 0)

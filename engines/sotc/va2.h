@@ -37,7 +37,8 @@ inline bool va2Frame(const uint8_t *data, uint32_t size, unsigned index,
  if (index + 1 < count) { if (end - start < 2) return false; end -= 2; }
  if (end - start < 2) return false;
  unsigned orientation = unsigned(data[start - 2]) | (unsigned(data[start - 1]) << 8);
- if (orientation & ~0x8000U) return false;
+ // Original 0x14a31 only tests bit 15 after XOR with the pose flags.
+ // Lower prefix bits are not codec flags (CHARETTE.VA2 uses 0x0040).
  unsigned w = data[start] * 16, h = data[start + 1];
  // Explicit empty frames are used by dummy/hidden objects.
  if (!w && !h && end - start == 2) return true;

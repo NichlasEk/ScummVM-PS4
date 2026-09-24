@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory',type=Path)
+p.add_argument('--probe-save',type=Path,help='Load a copied pharmacy save and verify resume, movement and exit')
 a=p.parse_args()
 root=Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix='sotc-save-') as tmp:
@@ -34,7 +35,7 @@ inline unsigned READ_LE_UINT16(const byte*p){return p[0]|unsigned(p[1])<<8;}
 inline unsigned READ_LE_UINT32(const byte*p){return READ_LE_UINT16(p)|READ_LE_UINT16(p+2)<<16;}
 ''')
  for name in ['debug','textconsole']:
-  (t/'common'/f'{name}.h').write_text('#pragma once\ninline void '+('debug' if name=='debug' else 'warning')+'(const char*,...) {}\n')
+  (t/'common'/f'{name}.h').write_text('#pragma once\n#include <cstdio>\n#include <cstdarg>\ninline void '+('debug(const char*,...) {}' if name=='debug' else 'warning(const char *f,...) {va_list a;va_start(a,f);vfprintf(stderr,f,a);va_end(a);fputc(10,stderr);}')+'\n')
  (t/'common/savefile.h').write_text('''#pragma once
 #include "common/array.h"
 #include "common/str.h"
@@ -57,11 +58,33 @@ static std::vector<byte> state(ScriptMachine &m,StartupScene &scene) {
  std::vector<byte> data(400000);Snapshot s(data.data(),data.size(),false);
  assert(scene.roomSnapshot(s,m));assert(m.snapshot(s));assert(scene.snapshot(s));data.resize(s.size());return data;
 }
-int main() {
+int main(int argc,char **argv) {
  std::cout.setf(std::ios::unitbuf);
  ScriptMachine m; StartupScene scene; Common::Array<byte> pixels;Common::String status;
  m.setSound(&sound);m.setAnimation(&scene);assert(scene.load(pixels,status,m));
  Common::SaveFileManager files;SaveState saved;saved.ticks=47;
+ if(argc>1) {
+  std::ifstream in(argv[1],std::ios::binary);assert(in);
+  files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
+  assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
+  std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  assert(saved.running && !saved.fault && scene.bank()==1 && scene.room()==3);
+  for(unsigned i=0;i<m.count();++i)if(m.task(i)->result>=kUnknownWait)
+   std::cout<<"Retry task "<<i<<" opcode="<<m.task(i)->opcode<<" pc="<<m.task(i)->pc<<std::endl;
+  for(unsigned tick=0;tick<20;++tick){assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);}
+  int x=m.actor(0)->x,y=m.actor(0)->y;assert(scene.destination(170,145,m));
+  for(unsigned tick=0;tick<250;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);}
+  assert(m.actor(0)->x!=x || m.actor(0)->y!=y);
+  assert(scene.destination(160,220,m));
+  for(unsigned tick=0;tick<500;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);}
+  assert(scene.bank()==0 && scene.room()==13);
+  std::cout<<"Copied pharmacy save resumed, walked and exited without stopped scripts\n";
+  assert(scene.destination(319,190,m));
+  for(unsigned tick=0;tick<500;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+  assert(scene.bank()==0 && scene.room()==12);
+  for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);
+  std::cout<<"Right exit reached room 12 and rendered 500 frames without stops\n";return 0;
+ }
  // Active scripted waits, RNG and moving route must survive, not just position.
  m.tick();m.seedRandom(9123);m.randomRange(17);m.setEventPending(true);
  assert(scene.destination(225,176,m));
@@ -69,6 +92,12 @@ int main() {
  for(unsigned i=0;i<3;++i){scene.movePlayer(m);scene.advance(m);}
  assert(state(m,scene)!=before);
  assert(readQuickSave(files,"test",m,scene,saved,pixels,status));assert(state(m,scene)==before);assert(saved.ticks==47);
+ // Diagnostic stops retry after loading; deliberate pauses remain paused.
+ saved.running=false;saved.fault=true;assert(writeQuickSave(files,"fault",m,scene,saved));
+ assert(readQuickSave(files,"fault",m,scene,saved,pixels,status));assert(saved.running && !saved.fault && state(m,scene)==before);
+ saved.running=false;assert(writeQuickSave(files,"paused",m,scene,saved));
+ assert(readQuickSave(files,"paused",m,scene,saved,pixels,status));assert(!saved.running && !saved.fault && state(m,scene)==before);
+ saved.running=true;
  // Restore independently into a fresh session, then execute both states forward.
  ScriptMachine other;StartupScene otherScene;other.setSound(&sound);other.setAnimation(&otherScene);
  assert(readQuickSave(files,"test",other,otherScene,saved,pixels,status));assert(state(other,otherScene)==before);
@@ -384,4 +413,4 @@ int main() {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')],cwd=a.directory.resolve(),check=True)
+ subprocess.run([str(t/'test')]+([str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)

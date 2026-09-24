@@ -425,7 +425,8 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
      ok = renderer.pose(scenery, 0, 0, 0, 0, 0, 319, 199, sceneryLayer);
    }
    ++sceneryLayer;
-   if (ok) ++rendered; else ++unsupported;
+   if (ok) ++rendered;
+   else { ++unsupported; warning("[sotc-render] room=%u scenery layer=%u",room(),sceneryLayer-1); }
    continue;
   }
   if (id >= 11) { ++unsupported; continue; }
@@ -435,7 +436,7 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
   const Common::Array<byte> &data = actorData[slot];
   const ScriptActor &actor = *machine.actor(id);
   unsigned sequence = _animations[id].sequence, stepIndex = actor.step;
-  SequenceStep step;
+  SequenceStep step={};
   int x = actor.x, y = actor.y, mx = 0, my = 0;
   int nextPose = -1; unsigned fraction = 0;
   bool ok = va2Step(data.data(), data.size(), sequence, stepIndex, step);
@@ -453,7 +454,12 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
   }
   ok = ok && renderer.pose(data, step.pose, x, y, _clips[id][0], _clips[id][1], _clips[id][2], _clips[id][3], -1, nextPose, fraction);
 
-  if (ok) ++rendered; else ++unsupported;
+  if (ok) ++rendered;
+  else {
+   ++unsupported;
+   warning("[sotc-render] room=%u actor=%u slot=%u sequence=%u step=%u pose=%u next=%d fraction=%u",room(),id,slot,sequence,stepIndex,step.pose,nextPose,fraction);
+   warning("[sotc-render] resource type=%u index=%u bytes=%u",_types[slot],_indices[slot],unsigned(data.size()));
+  }
  }
  for(unsigned i=0;i<_lightningLines.size();i+=5){
   int x=_lightningLines[i],y=_lightningLines[i+1],ex=_lightningLines[i+2],ey=_lightningLines[i+3];

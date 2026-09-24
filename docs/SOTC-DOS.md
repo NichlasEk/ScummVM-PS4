@@ -1670,3 +1670,28 @@ physical PS4 behavior, cinematic timing/audio synchronization, and exact DOS
 text layout still require playtesting. No claim that the complete game has
 been played through. Next useful validation is the continuous story route
 from Cobble's house, retaining saves before each new sequence.
+
+### Recover diagnostic stops in older saves (2026-09-24)
+
+The pharmacy save at tick 10217 (format 5, bank 1 / room 3) retained a
+diagnostic fault from script 4, opcode 63 at PC 2. Loading restored the fault
+flag and therefore blocked both clicks and D-pad movement even after opcode
+63 had been implemented. Successful loads now retry saved faults on the next
+normal frame, keeping script PCs and results intact. Normal frame validation
+still stops on unresolved errors; deliberate pauses without faults remain
+paused. Existing save files are not rewritten.
+
+Validation: `audit-save.py --probe-save <copied-save>` loaded that exact save,
+resumed script 4, moved the player through the pharmacy and exited to bank 0 /
+room 13 with no stopped scripts. Logs and untouched save backups are under
+`artifacts/sotc/pharmacy-restore-*`. The save audit also checks fault recovery
+and preservation of deliberate pauses.
+
+The subsequent right exit from room 13 exposed a separate render failure in
+room 12: A00.PAK's CHARETTE.VA2 has a frame prefix of 0x0040. Our decoder
+rejected all prefix bits except bit 15, whereas the original blitter at
+load-image 0x14a31 only uses bit 15 for orientation. The lower bits are now
+ignored without relaxing payload/size checks. The copied-save probe includes
+this exit and 500 frames in room 12; pose and frame audits cover the cart and
+prefix bits with and without mirroring. Render failures now log the actor,
+resource and pose to make subsequent reports easier to diagnose.

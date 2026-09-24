@@ -113,6 +113,7 @@ extern "C" bool render(const uint8_t *p,unsigned n,unsigned pose,int x,int y,uns
     report = []
     for archive_name, name, pose, x, y in [('RES.PAK', 'ICONE.VA2', 0, 0, 0),
                                          ('A00.PAK', 'VOITURE.VA2', 0, 120, 161),
+                                         ('A00.PAK', 'CHARETTE.VA2', 0, 160, 170),
                                          ('A00.PAK', 'BIRDS.VA2', 0, 72, 5),
                                          ('A00.PAK', 'BIRDS.VA2', 4, 84, 1),
                                          ('A00.PAK', 'SEAGULLS.VA2', 0, 0, 160)]:

@@ -15,6 +15,7 @@
 #include "sotc/openingscene.h"
 #include "sotc/toolbar.h"
 #include "sotc/journal.h"
+#include "sotc/inventory.h"
 #include "sotc/save.h"
 #include "common/config-manager.h"
 #include "common/file.h"
@@ -85,6 +86,7 @@ Common::Error SotcEngine::run() {
  Toolbar toolbar; Common::Array<byte> toolbarData;
  if (!resources.load(3,toolbarData) || !toolbar.load(toolbarData))
   return Common::Error(Common::kReadingFailed,"Cannot load original toolbar");
+ Inventory inventory;
  Journal journal; bool showJournal=false,showInventory=false;
  Common::Array<unsigned> inventoryIds;Common::Array<Common::String> inventoryNames;unsigned inventorySelection=0;
  Common::Array<byte> journalFont,journalText,inventoryIcons;unsigned inventoryIcon=0;
@@ -95,6 +97,8 @@ Common::Error SotcEngine::run() {
  journalText.resize(journalFile.size());
  if(journalFile.read(journalText.data(),journalText.size())!=journalText.size() || !journal.load(toolbarData,journalFont,journalText))
   return Common::Error(Common::kReadingFailed,"Invalid diary resources");
+ if(!inventory.load(toolbarData,inventoryIcons,journalFont))
+  return Common::Error(Common::kReadingFailed,"Invalid inventory resources");
  DialogueBox dialogueBox; Common::Array<byte> bubbleData;
  if(!resources.load(1,bubbleData) || !dialogueBox.load(journalFont,bubbleData))
   return Common::Error(Common::kReadingFailed,"Cannot load original dialogue resources");
@@ -463,16 +467,13 @@ Common::Error SotcEngine::run() {
     font->drawString(&surface,"D-pad: choose  Cross / click: confirm",2,227,316,7);
    }
    if(showInventory) {
-    surface.fillRect(Common::Rect(20,35,300,195),0);surface.frameRect(Common::Rect(20,35,300,195),7);
-    font->drawString(&surface,"Select an item to read / use",25,40,270,7,Graphics::kTextAlignCenter);
+    Common::Array<byte> panel=startupPixels;
+    if(!inventory.render(panel,inventoryIds,inventoryNames,inventorySelection)) {
+     surface.free();return Common::Error(Common::kReadingFailed,"Cannot render original inventory");
+    }
+    memcpy(surface.getBasePtr(0,0),panel.data(),64000);
     surface.fillRect(Common::Rect(0,200,320,240),0);
     font->drawString(&surface,"D-pad: select  Cross: read/use  Circle: close",0,218,320,7,Graphics::kTextAlignCenter);
-    unsigned first=inventorySelection/8*8;
-    for(unsigned i=first;i<inventoryIds.size() && i<first+8;++i) {
-     int y=58+(i-first)*16;
-     if(i==inventorySelection)surface.frameRect(Common::Rect(24,y,296,y+15),7);
-     font->drawString(&surface,inventoryNames[i],29,y+3,262,7);
-    }
    }
    if(showJournal) {
     Common::Array<byte> book=startupPixels;
@@ -484,7 +485,7 @@ Common::Error SotcEngine::run() {
    if ((mainMenu || showStartup) && pointerY<480 && pointerX<640 && pointerX>=0 && pointerY>=0) {
     int px=pointerX/2,py=pointerY/2;
     unsigned direction=showStartup && !mainMenu && !showInventory && !showJournal && !showStory && !showCd &&
-     !toolbar.visible() && startupScene.dialogueText().empty() && !startupMachine.choiceCount() ? startupScene.exitDirection(px,py) : 0;
+     !toolbar.visible() && startupScene.dialogueText().empty() && !startupMachine.choiceCount() ? startupScene.exitDirection(px,py) : showInventory ? 2 : 0;
     if(direction && cursorReady[direction-1]) {
      for(int y=0;y<16;++y)for(int x=0;x<16;++x) {
       int dx=px+x-7,dy=py+y-7;
@@ -544,10 +545,15 @@ Common::Error SotcEngine::run() {
     }
     if(event.type==Common::EVENT_MOUSEMOVE || event.type==Common::EVENT_LBUTTONDOWN) {
      int x=event.mouse.x/2,y=event.mouse.y/2;
-     if(x>=24 && x<296 && y>=58 && y<186) {
-      unsigned i=inventorySelection/8*8+(y-58)/16;
-      if(i<inventoryIds.size()){inventorySelection=i;redraw=true;confirm=event.type==Common::EVENT_LBUTTONDOWN;}
+     pointerX=event.mouse.x;pointerY=event.mouse.y;
+     int i=inventory.itemAt(x,y,inventorySelection,inventoryIds.size());
+     if(i>=0){inventorySelection=unsigned(i);redraw=true;}
+     if(event.type==Common::EVENT_LBUTTONDOWN && x>=159 && x<167) {
+      unsigned first=inventorySelection/Inventory::kRows*Inventory::kRows;
+      if(y>=52 && y<59 && first) {inventorySelection=first-Inventory::kRows;confirm=false;redraw=true;}
+      if(y>=183 && y<191 && first+Inventory::kRows<inventoryIds.size()) {inventorySelection=first+Inventory::kRows;confirm=false;redraw=true;}
      }
+     if(event.type==Common::EVENT_MOUSEMOVE)redraw=true;
     }
     if(delta && !inventoryIds.empty()){inventorySelection=(inventorySelection+inventoryIds.size()+delta)%inventoryIds.size();redraw=true;}
     if(confirm && inventorySelection<inventoryIds.size()) {

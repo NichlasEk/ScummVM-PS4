@@ -1776,3 +1776,25 @@ loads the copied frozen save, runs 300 frames without errors, and checks that
 the door script progresses. Evidence is in `artifacts/sotc/door-freeze-*`.
 Animation failures now log actor/resource/sequence details and display an
 animation failure in the HUD instead of the misleading zero-script-stops line.
+
+### Original inventory and Cobble west departure (2026-09-24)
+
+Inventory now uses external ICONE.VA2 pose 16, OBJECTS.VA2 item poses and
+CTU.PFN yellow labels. Compact rows, hover selection, D-pad confirmation and
+original page arrows replace the diagnostic black list. The existing notebook
+and item-use paths are preserved. `audit-inventory.py` exercises the actual
+renderer, empty inventory, page boundaries and row hit testing; preview is
+`artifacts/sotc/inventory-preview.png`.
+
+Room 17 script 13 (`28 00 00 05 c7 12 00 04 00 5e 14 2c 00 50 02 02`)
+walks Parker to X=0 before fading and explicitly entering the forest. Routing
+previously rejected that position because his footprint crosses the viewport
+edge. Scripted horizontal departure now permits that edge footprint while
+retaining terrain height, obstacle, actor and existing exit checks. Manual
+movement still uses the normal boundary check.
+
+Reproduced opcode 4 at PC 7 from copied save tick 297974, at X=14,Y=174.
+`audit-save.py --forest-save artifacts/sotc/forest-freeze-backup/frozen.quick1`
+now completes the departure and runs 500 frames without script/animation
+failures. Pharmacy restore/exit, square clipping and room 1 render regression
+also pass. PS4 preview package rebuilt with `scripts/sotc/build.sh`.

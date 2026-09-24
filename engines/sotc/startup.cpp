@@ -577,7 +577,7 @@ bool StartupScene::walk(unsigned direction, ScriptMachine &machine,bool scripted
  debug("[sotc-walk] direction=%u moving=%u sequence=%u",facing,unsigned(moving),sequenceIndex);
  return true;
 }
-unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine,unsigned self) const {
+unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine,unsigned self,bool scripted) const {
  const ScriptActor &actor=*machine.actor(self);
  unsigned char terrain[320],obstacles[255*4];
  for (unsigned i=0;i<320;++i) terrain[i]=_state.byte(0x339e + i);
@@ -604,6 +604,11 @@ unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMa
    if(hit)return 0x400|i;
   }
  }
+ // Scripted departures may walk the actor's centre to the screen edge
+ // before fading and changing rooms explicitly (room 17 west exit).
+ if(!self && scripted && collision==0x100 &&
+    ((direction==4 && candidate.left<=0 && candidate.top>terrain[0]) ||
+     (direction==2 && candidate.right>=319 && candidate.top>terrain[319]))) collision=0;
  if (!collision) collision=obstacleCollision(obstacles,count,candidate);
  if (!collision) {
   CollisionActor actors[11];
@@ -672,7 +677,7 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
    if((collisionAt(tx,ty,d,machine)&0xff00)==0x400){x=tx;y=ty;break;}
   }
  }
- bool found=_route.find(a.x,a.y,x,y,[&](int nx,int ny,unsigned d) { if(exit && nx==x && ny==y && d!=exit)return false;unsigned hit=collisionAt(nx,ny,d,machine);return hit==0 || ((hit&0xff00)==0x400 && nx==x && ny==y); },!scripted);
+ bool found=_route.find(a.x,a.y,x,y,[&](int nx,int ny,unsigned d) { if(exit && nx==x && ny==y && d!=exit)return false;unsigned hit=collisionAt(nx,ny,d,machine,0,scripted);return hit==0 || ((hit&0xff00)==0x400 && nx==x && ny==y); },!scripted);
  _following=found && _route.count; _scriptRoute=scripted && _following;
  debug("[sotc-route] target=%d,%d found=%u steps=%u",x,y,unsigned(found),_route.count);
  return found;
@@ -704,7 +709,7 @@ bool StartupScene::move(unsigned id,unsigned x,unsigned y,bool &pending) {
   return true;
  }
  unsigned oldMode=_animations[0].mode; _animations[0].mode=0;
- if (!destination(x,y,*_machine,true)) { _animations[0].mode=oldMode; return false; }
+ if (!destination(x,y,*_machine,true)) { warning("[sotc-move] actor=0 from=%d,%d target=%u,%u",_machine->actor(0)->x,_machine->actor(0)->y,x,y); _animations[0].mode=oldMode; return false; }
  pending=_following; return true;
 }
 bool StartupScene::movementPending(unsigned id,bool &pending) {
@@ -783,7 +788,7 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
    unsigned p=_route.points[_route.count-1]; int x=p%320,y=p/320;
    unsigned d=x>actor.x ? 2 : x<actor.x ? 4 : y>actor.y ? 3 : 1;
    if (d!=_walkDirection) break;
-   unsigned hit=collisionAt(x,y,d,machine);
+   unsigned hit=collisionAt(x,y,d,machine,0,_scriptRoute);
    if((hit&0xff00)==0x400) {
     unsigned p=0x3090+(hit&255)*8;machine.requestRoom(_state.byte(p+1),_state.byte(p+2));cancelRoute();_walking=false;return true;
    }

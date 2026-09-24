@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory',type=Path)
+p.add_argument('--forest-save',type=Path,help='Exercise the west exit from Cobble house in a copied save')
 p.add_argument('--resume-save',type=Path,help='Resume a copied save for 300 frames without script or animation failures')
 p.add_argument('--probe-save',type=Path,help='Load a copied pharmacy save and verify resume, movement and exit')
 a=p.parse_args()
@@ -69,6 +70,16 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="forest") {
+   assert(scene.bank()==0 && scene.room()==17);
+   scene.destination(0,174,m);
+   for(unsigned tick=0;tick<500;++tick){
+    scene.finishDialogue();assert(scene.movePlayer(m));m.tick();
+    if(!scene.serviceRoom(m,status)){std::cerr<<status<<" x="<<m.actor(0)->x<<" y="<<m.actor(0)->y<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+    for(unsigned i=0;i<m.count();++i)if(m.task(i)->result>=kUnknownWait){std::cerr<<"task="<<i<<" op="<<m.task(i)->opcode<<" x="<<m.actor(0)->x<<" y="<<m.actor(0)->y<<std::endl;assert(false);}
+   }
+   assert(scene.room()!=17 || scene.bank()!=0);std::cout<<"Forest exit completed without stops\n";return 0;
+  }
   if(argc>2) {
    assert(saved.running && !saved.fault);
    unsigned startBank=scene.bank(),startRoom=scene.room(),startExecuted=m.task(1)->executed;
@@ -435,4 +446,4 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')]+([str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+ subprocess.run([str(t/'test')]+([str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)

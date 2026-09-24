@@ -1748,3 +1748,16 @@ depth ordering. The copied-save probe enters room 1 and renders 30 frames;
 pose tests also cover the original F01 resource. Dialogue tests cover timed
 paging, suspended timers, final-page audio waits, and missing-speech fallback.
 Build/test logs: `artifacts/sotc/dialogue-auto-room1-*`, `room1-probe.log`.
+
+### Original-resource answer boxes (2026-09-24)
+
+Multiple-choice replies now use separate BULLE.VA2 boxes sized with CTU.PFN.
+The highlighted reply uses palette 159; other replies use palette 22. Mouse
+hitboxes match each reply's width and height. D-pad/confirm behavior and script
+branch targets are unchanged. Long lists scroll by complete answer boxes to
+keep the selected answer visible. The generic black panel/white outline is gone.
+
+`audit-dialogue-box.py` additionally renders original E.CC4 bank 3 records
+314/315 (the Boleskine/money question), verifies distinct widths and both text
+colors, and writes `artifacts/sotc/choice-box-preview.png`. Existing speech
+pagination/timer tests pass; PS4 build log: `choice-box-build.log`.

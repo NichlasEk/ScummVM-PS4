@@ -51,14 +51,18 @@ public:
   if(speechMs && total)return unsigned(uint64_t(speechMs)*weight/total);
   return weight*20; // Readable fallback when no recording is available.
  }
- bool render(Common::Array<byte> &screen,unsigned page,int anchorX,int anchorY,bool portrait) const {
-  if(page>=count())return false;
-  unsigned end=page+3<count() ? page+3 : count();
+ void size(unsigned page,unsigned rows,int &w,int &h) const {
+  unsigned end=page+rows<count() ? page+rows : count();
   while(end>page+1 && _lines[end-1].empty())--end;
   unsigned width=0;for(unsigned i=page;i<end;++i){unsigned w=_font.width(_lines[i].c_str());if(w>width)width=w;}
-  int w=((int(width)+13)/8)*8,h=((int(end-page)*int(_font.height())+13)/8)*8;
+  w=((int(width)+13)/8)*8;h=((int(end-page)*int(_font.height())+13)/8)*8;
   if(w<24)w=24;if(w>319)w=319;
-  int left=portrait ? 0 : anchorX-w/2,top=portrait ? 160 : anchorY;
+ }
+ bool render(Common::Array<byte> &screen,unsigned page,int anchorX,int anchorY,bool portrait,byte color=0,bool alignLeft=false,unsigned rows=3) const {
+  if(page>=count())return false;
+  unsigned end=page+rows<count() ? page+rows : count();
+  int w,h;size(page,rows,w,h);if(h>199)return false;
+  int left=portrait ? 0 : alignLeft ? anchorX : anchorX-w/2,top=portrait ? 160 : anchorY;
   if(left<0)left=0;if(left+w>319)left=319-w;
   if(top<0)top=0;if(top+h>199)top=199-h;
   int right=left+w,bottom=top+h;
@@ -71,7 +75,7 @@ public:
    if(!renderer.pose(_bubble,1,left,y) || !renderer.pose(_bubble,6,right-16,y))return false;
   if(!renderer.pose(_bubble,0,left,top+8) || !renderer.pose(_bubble,5,right-16,top+8) ||
      !renderer.pose(_bubble,2,left,bottom) || !renderer.pose(_bubble,7,right-16,bottom))return false;
-  for(unsigned i=page;i<end;++i)_font.draw(screen,_lines[i].c_str(),left+3,top+3+(i-page)*_font.height(),0);
+  for(unsigned i=page;i<end;++i)_font.draw(screen,_lines[i].c_str(),left+3,top+3+(i-page)*_font.height(),color);
   return true;
  }
 };

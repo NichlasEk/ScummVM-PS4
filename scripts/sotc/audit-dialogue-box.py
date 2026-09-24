@@ -39,6 +39,22 @@ extern "C" bool test(const uint8_t*i,unsigned ni,const uint8_t*f,unsigned nf,con
  for(unsigned page=0;page<box.count();page=box.next(page))if(!box.render(screen,page,-500,-500,false))return false;
  return true;
 }
+
+extern "C" bool choices(const uint8_t*i,unsigned ni,const uint8_t*f,unsigned nf,const uint8_t*t,unsigned nt,uint8_t*out){
+ Common::Array<byte> bubble(i,i+ni),font(f,f+nf),screen(64000,119);
+ int y=16,lastWidth=0;
+ for(unsigned index=314;index<=315;++index){
+  Sotc::DialogueBox box;if(!box.load(font,bubble))return false;
+  uint8_t decoded[16384];unsigned n;if(!Sotc::dialogueRecord(Sotc::Cc4View(t,nt),3,index,decoded,sizeof(decoded),n))return false;
+  Common::String text;for(unsigned j=1;j+1<n;++j)text+=decoded[j] ? char(decoded[j]) : ' ';
+  box.text(text);int w,h;box.size(0,box.count(),w,h);
+  if(h!=16 || (index==315 && w>=lastWidth))return false;
+  if(!box.render(screen,0,12,y,false,index==314 ? 159 : 22,true,box.count()))return false;
+  lastWidth=w;y+=h;
+ }
+ for(unsigned j=0;j<64000;++j)out[j]=screen[j];return true;
+}
+
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-shared','-fPIC','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),'-o',str(t/'test.so')],check=True)
  lib=c.CDLL(str(t/'test.so'));lib.test.restype=lib.unpack.restype=c.c_bool
@@ -52,3 +68,8 @@ extern "C" bool test(const uint8_t*i,unsigned ni,const uint8_t*f,unsigned nf,con
  from PIL import Image
  image=Image.frombytes('P',(320,200),out.raw);image.putpalette(load(5));image.resize((960,600)).save(str(root/'artifacts/sotc/dialogue-box-preview.png'))
  print('Original Jugg dialogue: 11 authored lines, four pages, original font/bubble, bounds and long-line wrapping passed')
+ lib.choices.restype=c.c_bool
+ assert lib.choices(icons,len(icons),font,len(font),text,len(text),out)
+ assert out.raw.count(bytes([159]))>30 and out.raw.count(bytes([22]))>30
+ image=Image.frombytes('P',(320,200),out.raw);image.putpalette(load(5));image.resize((960,600)).save(str(root/'artifacts/sotc/choice-box-preview.png'))
+ print('Original choice texts 314/315: separate widths, compact rows and selected/unselected colors passed')

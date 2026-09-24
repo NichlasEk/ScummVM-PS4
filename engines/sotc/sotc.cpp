@@ -426,40 +426,37 @@ Common::Error SotcEngine::run() {
    if(showStartup && !mainMenu && !showStory && startupMachine.choiceCount()) {
     toolbar.hide();
     unsigned count=startupMachine.choiceCount(),selected=startupMachine.choiceSelection();
-    Common::Array<Common::String> lines[6],heading;Common::String text;
+    DialogueBox answers[6],heading;Common::String text;
     if(!startupScene.choiceText(startupMachine.choiceHeader(),text)) {
      surface.free();return Common::Error(Common::kReadingFailed,"Cannot load dialogue choices");
     }
-    if(!text.empty()) font->wordWrapText(text,288,heading);
-    int lineHeight=font->getFontHeight(),starts[6],heights[6],total=6+heading.size()*lineHeight;
+    heading.load(journalFont,bubbleData);heading.text(text);
+    int widths[6],heights[6],headingWidth=0,headingHeight=0,total=0;
+    if(heading.count()){heading.size(0,heading.count(),headingWidth,headingHeight);total+=headingHeight;}
     for(unsigned i=0;i<count;++i) {
      if(!startupScene.choiceText(startupMachine.choiceText(i),text)) {
       surface.free();return Common::Error(Common::kReadingFailed,"Cannot load dialogue choice text");
      }
-     font->wordWrapText(text,278,lines[i]);starts[i]=total;
-     heights[i]=MAX<int>(1,lines[i].size())*lineHeight+6;total+=heights[i];
+     answers[i].load(journalFont,bubbleData);answers[i].text(text.empty() ? " " : text);
+     answers[i].size(0,answers[i].count(),widths[i],heights[i]);total+=heights[i];
     }
-    int height=MIN<int>(184,total+4),left=CLIP<int>(startupMachine.choiceX(),2,18);
-    int top=CLIP<int>(startupMachine.choiceY(),2,198-height);
-    int scroll=MAX<int>(0,starts[selected]+heights[selected]-(height-4));
-    surface.fillRect(Common::Rect(left,top,left+300,top+height),0);
-    surface.frameRect(Common::Rect(left,top,left+300,top+height),7);
-    for(unsigned j=0;j<heading.size();++j) {
-     int y=top+4+j*lineHeight-scroll;
-     if(y>=top+2 && y+lineHeight<top+height-2) font->drawString(&surface,heading[j],left+6,y,288,7);
-    }
-    for(unsigned i=0;i<6;++i) choiceRects[i]=Common::Rect();
-    for(unsigned i=0;i<count;++i) {
-     int rowTop=top+starts[i]-scroll,rowBottom=rowTop+heights[i];
-     int visibleTop=MAX<int>(top+2,rowTop),visibleBottom=MIN<int>(top+height-2,rowBottom);
-     if(visibleBottom<=visibleTop) continue;
-     choiceRects[i]=Common::Rect(left+3,visibleTop,left+297,visibleBottom);
-     if(i==selected) surface.frameRect(choiceRects[i],7);
-     for(unsigned j=0;j<lines[i].size();++j) {
-      int y=rowTop+3+j*lineHeight;
-      if(y>=top+2 && y+lineHeight<=top+height-2) font->drawString(&surface,lines[i][j],left+12,y,278,7);
+    int left=CLIP<int>(startupMachine.choiceX(),0,18),top=CLIP<int>(startupMachine.choiceY(),0,MAX<int>(0,199-MIN<int>(total,199)));
+    unsigned first=0;int available=199-top;
+    // Keep complete answer boxes visible when a long list needs scrolling.
+    if(total>available){headingHeight=0;int throughSelected=0;for(unsigned i=0;i<=selected;++i)throughSelected+=heights[i];while(first<selected && throughSelected>available)throughSelected-=heights[first++];}
+    Common::Array<byte> choicePixels;choicePixels.resize(64000);memcpy(choicePixels.data(),surface.getBasePtr(0,0),64000);
+    int y=top;
+    if(headingHeight){heading.render(choicePixels,0,left,y,false,0,true,heading.count());y+=headingHeight;}
+    for(unsigned i=0;i<6;++i)choiceRects[i]=Common::Rect();
+    for(unsigned i=first;i<count;++i) {
+     if(y+heights[i]>199)break;
+     int x=MIN<int>(left,319-widths[i]);
+     if(!answers[i].render(choicePixels,0,x,y,false,i==selected ? 159 : 22,true,answers[i].count())) {
+      surface.free();return Common::Error(Common::kReadingFailed,"Cannot render original answer box");
      }
+     choiceRects[i]=Common::Rect(x,y,x+widths[i],y+heights[i]);y+=heights[i];
     }
+    memcpy(surface.getBasePtr(0,0),choicePixels.data(),64000);
     surface.fillRect(Common::Rect(0,225,320,240),0);
     font->drawString(&surface,"D-pad: choose  Cross / click: confirm",2,227,316,7);
    }

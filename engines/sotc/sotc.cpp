@@ -164,11 +164,14 @@ Common::Error SotcEngine::run() {
  const unsigned cursorFrames[4]={1,4,0,3}; // up, right, down, left
  for(unsigned i=0;i<4;++i){unsigned w=0,h=0;cursorReady[i]=va2Frame(cursorData.data(),cursorData.size(),cursorFrames[i],cursorPixels[i],cursorMasks[i],256,w,h) && w==16 && h==16;}
  int pointerX=0,pointerY=0;
+ unsigned mapDirections=0;bool mapConfirm=false;
+ auto mapActive=[&](){return startupScene.bank()==1 && startupScene.room()==12;};
  bool runScene = true, sceneFault = false; unsigned heldDirection=0;
  uint32 nextSceneFrame = _system->getMillis() + 100;
  auto sceneStep = [&]() {
   if(startupMachine.waitingForInput())return;
   if (!startupScene.fading() && !startupScene.movePlayer(startupMachine)) { runScene=false; sceneFault=true; redraw=true; return; }
+  startupMachine.setScriptInput(mapActive() ? mapDirections : 0,mapActive() && mapConfirm);mapConfirm=false;
   scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
   if(startupScene.cinematicActive())heldDirection=0;
   if(startupMachine.menuRequested()){startupMachine.dismissMenuRequest();mainMenu=true;menuSelection=0;_mixer->pauseAll(true);redraw=true;return;}
@@ -208,7 +211,7 @@ Common::Error SotcEngine::run() {
   sound.stopSpeech(); sound.effect(255); sound.music(255);
   sound.music(state.music); startupScene.resumeSpeech();
   scriptTicks=state.ticks; runScene=state.running; sceneFault=state.fault; heldDirection=0;
-  pickupRemaining=0;
+  pickupRemaining=0;mapDirections=0;mapConfirm=false;
   startupAvailable=showStartup=true; mainMenu=showStory=showOpening=showCd=false; pal=0; toolbar.hide();
   shownDialogue=startupScene.dialogueText(); dialogueBox.text(shownDialogue);
   dialoguePage=state.page<dialogueBox.count() ? state.page : 0;
@@ -399,7 +402,7 @@ Common::Error SotcEngine::run() {
    } else { shownDialogue.clear(); dialoguePage=0; }
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, showStartup ? (startupMachine.waitingForInput() ? "Click / Cross: continue" : startupScene.cinematicActive() ? "Cross: skip  Options: menu" : !startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "F8: start scene  L1/R1: figure", 2, 227, 316, 7);
+   font->drawString(&surface, showStartup ? (mapActive() ? "D-pad: move pencil  Cross / click: mark" : startupMachine.waitingForInput() ? "Click / Cross: continue" : startupScene.cinematicActive() ? "Cross: skip  Options: menu" : !startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "F8: start scene  L1/R1: figure", 2, 227, 316, 7);
    if (mainMenu) {
     surface.fillRect(Common::Rect(320,240),0);
     if (!menuBackground.empty()) memcpy(surface.getBasePtr(0,0),menuBackground.data(),64000);
@@ -537,6 +540,22 @@ Common::Error SotcEngine::run() {
     default:break;
     }
     if(key!=Common::KEYCODE_INVALID){event.type=Common::EVENT_KEYDOWN;event.kbd.keycode=key;event.kbdRepeat=false;}
+   }
+   if(showStartup && !mainMenu && !showInventory && !showJournal && mapActive()) {
+    bool down=event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_JOYBUTTON_DOWN;
+    bool up=event.type==Common::EVENT_KEYUP || event.type==Common::EVENT_JOYBUTTON_UP;
+    unsigned bit=0;
+    if(event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) {
+     switch(event.kbd.keycode){case Common::KEYCODE_UP:bit=1;break;case Common::KEYCODE_DOWN:bit=2;break;case Common::KEYCODE_LEFT:bit=4;break;case Common::KEYCODE_RIGHT:bit=8;break;default:break;}
+    } else if(down || up) {
+     switch(event.joystick.button){case Common::JOYSTICK_BUTTON_DPAD_UP:bit=1;break;case Common::JOYSTICK_BUTTON_DPAD_DOWN:bit=2;break;case Common::JOYSTICK_BUTTON_DPAD_LEFT:bit=4;break;case Common::JOYSTICK_BUTTON_DPAD_RIGHT:bit=8;break;default:break;}
+    }
+    if(bit){if(down)mapDirections|=bit;else mapDirections&=~bit;continue;}
+    if(event.type==Common::EVENT_LBUTTONDOWN ||
+       (event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat && (event.kbd.keycode==Common::KEYCODE_SPACE || event.kbd.keycode==Common::KEYCODE_RETURN)) ||
+       (event.type==Common::EVENT_JOYBUTTON_DOWN && event.joystick.button==Common::JOYSTICK_BUTTON_A)) {mapConfirm=true;continue;}
+    if(event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE){mapDirections=0;mapConfirm=false;}
+    if(event.type==Common::EVENT_MOUSEMOVE || event.type==Common::EVENT_RBUTTONDOWN){toolbar.hide();continue;}
    }
    if(showStartup && !mainMenu && startupScene.cinematicActive()) {
     if(event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE){mainMenu=true;menuSelection=0;_mixer->pauseAll(true);redraw=true;continue;}

@@ -1862,3 +1862,23 @@ accidentally crossing a door trigger; it now explicitly clicks the doorway.
 PS4 preview package rebuilt. No running emulator restart or input injection:
 the user is playing the previous binary. Visual walking feel remains to be
 playtested in the new build.
+
+### Map pencil input (2026-09-24)
+
+Room 12 bank 1 task 1 stopped at PC 2 on assignment to variable 32.
+Original variable resolver 0x90f2 points variable 31 to DS:60bc (raw direction
+bits) and 32 to DS:5e40 (Enter/fire confirmation); 0x89ef..0x8c11 populates them.
+The VM now binds these transient values and permits script writes to confirmation.
+Host input is released on restore/room adoption, without changing the save format.
+
+Map controls consume arrows/D-pad as bits 1/2/4/8 and Cross/left-click,
+Enter or Space as confirmation. The original script animates the pencil,
+updates its grid coordinates, draws the mark and returns to the bedroom.
+The HUD describes these controls; ordinary walking/toolbar interaction does not
+consume map inputs.
+
+Copied fault save tick 360839: artifacts/sotc/map-input-backup/current.quick1.
+`audit-save.py --map-save` verifies all four directions, release, all four grid
+limits, a single confirmation press, marking animation and return to bank 1
+room 2. Bedroom doorway regression also passes. PS4 preview rebuilt; this
+build includes the previously staged diagonal click-walking changes.

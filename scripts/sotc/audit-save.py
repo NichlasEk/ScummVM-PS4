@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory',type=Path)
+p.add_argument('--map-save',type=Path,help='Exercise pencil movement and confirmation in copied map save')
 p.add_argument('--bedroom-save',type=Path,help='Probe hidden player in a copied bedroom save')
 p.add_argument('--cobble-save',type=Path,help='Exercise Cobble doorway from the right side using a copied save')
 p.add_argument('--forest-save',type=Path,help='Exercise the west exit from Cobble house in a copied save')
@@ -72,6 +73,32 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="map") {
+   assert(scene.bank()==1 && scene.room()==12);
+   auto frame=[&](unsigned input,bool confirm){m.setScriptInput(input,confirm);assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);};
+   for(unsigned i=0;i<30;++i)frame(0,false);
+   const unsigned bits[4]={8,2,4,1};const int dx[4]={32,0,-32,0},dy[4]={0,32,0,-32};
+   for(unsigned d=0;d<4;++d){
+    int x=m.actor(1)->x,y=m.actor(1)->y;
+    for(unsigned i=0;i<200 && m.actor(1)->x==x && m.actor(1)->y==y;++i)frame(bits[d],false);
+    assert(m.actor(1)->x==x+dx[d] && m.actor(1)->y==y+dy[d]);
+    for(unsigned i=0;i<100;++i)frame(0,false);
+    assert(m.actor(1)->x==x+dx[d] && m.actor(1)->y==y+dy[d]);
+   }
+   // Held directions stop at all four authored grid limits.
+   const int limitX[4]={292,292,36,36},limitY[4]={20,180,180,20};
+   for(unsigned d=0;d<4;++d){
+    for(unsigned i=0;i<1800;++i)frame(bits[d],false);
+    assert(m.actor(1)->x==limitX[d] && m.actor(1)->y==limitY[d]);
+    for(unsigned i=0;i<100;++i)frame(bits[d],false);
+    assert(m.actor(1)->x==limitX[d] && m.actor(1)->y==limitY[d]);
+   }
+   for(unsigned i=0;i<100;++i)frame(0,false);
+   frame(0,true);
+   for(unsigned i=0;i<600 && scene.room()==12;++i)frame(0,false);
+   assert(scene.bank()==1 && scene.room()==2);
+   std::cout<<"Map pencil: four directions, release, all grid boundaries, mark animation and bedroom return passed\n";return 0;
+  }
   if(argc>2 && std::string(argv[2])=="bedroom") {
    assert(scene.bank()==1 && scene.room()==2);
    int startX=m.actor(0)->x,startY=m.actor(0)->y;
@@ -482,7 +509,7 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')]+([str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+ subprocess.run([str(t/'test')]+([str(a.map_save.resolve()),'map'] if a.map_save else [str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
 
  if a.cobble_save:
   for x in (143,153):

@@ -85,9 +85,12 @@ class ScriptMachine {
  uint32_t _randomState;
  unsigned _randomValue;
  bool _randomKnown, _eventPending;
+ unsigned _directionInput=0,_confirmInput=0;
  bool _talkPending=false,_inputWait=false,_menuRequested=false;
  static int signed16(unsigned v) { v &= 65535; return v < 32768 ? int(v) : int(v) - 65536; }
  bool variable(unsigned id, unsigned &value) const {
+  if(id==31){value=_directionInput;return true;}
+  if(id==32){value=_confirmInput;return true;}
   if (id==0) { value=_previousRoom; return true; }
   if (id==34) { value=_previousBank; return true; }
   if (id == 33) { value = _randomValue; return _randomKnown; }
@@ -107,6 +110,7 @@ class ScriptMachine {
  }
  bool writeVariable(unsigned id,unsigned value) {
   value&=65535;
+  if(id==32){_confirmInput=value;return true;}
   if (id>=1000 && id<1256) { _globals[id-1000]=value; return true; }
   if (id>=2000 && id<2256) { _locals[id-2000]=value; return true; }
   if (id==33) { _randomValue=value; _randomKnown=true; return true; }
@@ -216,7 +220,11 @@ public:
  void requestRoom(unsigned bank,unsigned room) {_pendingBank=bank;_pendingRoom=room;}
  unsigned pendingBank() const { return _pendingBank; }
  unsigned pendingRoom() const { return _pendingRoom; }
+ // Original variable pointers: 31 -> DS:60bc (direction bits),
+ // 32 -> DS:5e40 (Enter/fire confirmation), populated by 0x89ef..0x8c11.
+ void setScriptInput(unsigned directions,bool confirm){_directionInput=directions&15;_confirmInput=confirm ? 1 : 0;}
  bool enterRoom(Cc4View block,unsigned previousRoom,unsigned previousBank) {
+  _directionInput=_confirmInput=0;
   unsigned count=cc4Count(block,2);
   if (!count || count>17 || block.size>sizeof(_block)) return false;
   for(unsigned i=0;i<count;++i) { Cc4View script; if(!cc4Entry(block,2,i,script) || !script.size) return false; }
@@ -229,6 +237,7 @@ public:
  }
  // Copy validated state while keeping host audio/animation bindings and rebasing views.
  void adopt(const ScriptMachine &other) {
+  _directionInput=_confirmInput=0;
   _initial=other._initial; _count=other._count;
   _choiceCount=other._choiceCount;_choiceTask=other._choiceTask;_choiceHeader=other._choiceHeader;
   _choiceX=other._choiceX;_choiceY=other._choiceY;_choiceSelection=other._choiceSelection;

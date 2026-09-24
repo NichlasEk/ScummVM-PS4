@@ -1897,3 +1897,22 @@ Copied fault: artifacts/sotc/inn-stop-backup/frozen.quick1. The new
 `audit-save.py --inn-save` regression verifies actor 3 reaches X=0, task 5
 advances and 600 frames render/animate without failure. Pharmacy exit/square
 regression also passes; PS4 package rebuilt.
+
+### Inn bench trap after smoothed entry (2026-09-24)
+
+The click-route facing look-ahead introduced a regression at room boundaries:
+visual facing could differ from the direction of the final collision step.
+DOS entrance selection (0x7e48) matches the reciprocal doorway against player
+direction. Carrying the visual facing across the inn door instead selected the
+(160,190) fallback, inside obstacle 3 (the bench). Exit collisions now commit
+the actual crossing direction before requesting the next room.
+
+The copied stuck save is recovered conservatively: only (160,190) inside an
+obstacle, with no active scripted route/input lock/dialogue and exactly one
+matching bottom return exit, is repositioned to that doorway on load. No story
+variables or inventory are changed. Backup: artifacts/sotc/inn-bench-backup/.
+
+`audit-save.py --inn-entry-save` reproduces entry from outside and verifies
+(112,199), then free walking. `--inn-stuck-save` verifies the older stuck save
+can leave the recovered entrance. Full audit-save passes, including 74
+cinematics / 2564 frames. PS4 package rebuilt.

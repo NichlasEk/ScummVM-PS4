@@ -355,6 +355,30 @@ bool StartupScene::snapshot(Snapshot &s,bool reloadResources,unsigned version) {
   for(unsigned kind=0;kind<2;++kind){Common::Array<int> &a=kind ? _lightningLines : _lightningRequests;unsigned n=a.size();s.value(n,kind ? 2000 : 160);s.require(n%(kind ? 5 : 4)==0);if(s.reading())a.resize(n);for(unsigned i=0;s.ok() && i<n;++i){s.value(a[i]);s.require(a[i]>=-2 && a[i]<=513);}}
  }
  else if(s.reading()){_zoom=_paletteMode=_paletteAmount=0;_cinematic.skip();_lightningRequests.clear();_lightningLines.clear();}
+ // Older click-route builds could carry their look-ahead facing across an
+ // exit, causing DOS entrance matching to fall back to (160,190). Repair
+ // only that blocked default position with one unambiguous return exit.
+ if(s.ok() && s.reading() && reloadResources && _machine && !_inputLocks && !_scriptRoute && !_talking && _animations[0].mode==0) {
+  ScriptActor player=*_machine->actor(0);
+  unsigned collision=collisionAt(player.x,player.y,1,*_machine);
+  if(player.x==160 && player.y==190 && (collision&0xff00)==0x300) {
+   unsigned matches=0,entry=0;
+   for(unsigned i=0;i<_state.word(0x2dfc);++i){unsigned p=0x3090+i*8;
+    if(_state.byte(p+1)==_state.word(0x2df0) && _state.byte(p+2)==_state.word(0x2df6)){entry=p;++matches;}
+   }
+   if(matches==1 && _state.byte(entry)==3) {
+    int left=_state.word(entry+4),right=_state.word(entry+6);
+    if(left<=right && right<320) {
+     ScriptActor repaired=player;repaired.x=(left+right)/2;repaired.y=199;
+     if(sequence(0,0,repaired)) {
+      cancelRoute();_walking=false;_walkDirection=1;_animations[0].direction=1;_animations[0].mode=0;_animations[0].base=0;
+      _machine->setActor(0,repaired);
+      warning("[sotc-entrance] repaired blocked fallback position from old save");
+     }
+    }
+   }
+  }
+ }
  return s.ok();
 }
 bool StartupScene::cinematic(unsigned resource,unsigned sequence,unsigned backdrop,unsigned repeat,Cc4View cues) {
@@ -852,7 +876,7 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
    _route.credit-=cost;
    unsigned hit=collisionAt(x,y,d,machine,0,_scriptRoute);
    if((hit&0xff00)==0x400) {
-    unsigned p=0x3090+(hit&255)*8;machine.requestRoom(_state.byte(p+1),_state.byte(p+2));cancelRoute();_walking=false;return true;
+    unsigned p=0x3090+(hit&255)*8;_animations[0].direction=d;_walkDirection=d;machine.requestRoom(_state.byte(p+1),_state.byte(p+2));cancelRoute();_walking=false;return true;
    }
    if (hit) { cancelRoute(); return walk(0,machine); }
    actor.x=x; actor.y=y; machine.setActor(0,actor); --_route.count;

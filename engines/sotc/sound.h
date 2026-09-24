@@ -12,12 +12,14 @@ class SoundEffects : public ScriptSound {
  Pak _samples;
  Music _music;
  bool _opened;
+ unsigned _speechLengthMs=0;
 public:
  explicit SoundEffects(Audio::Mixer *mixer) : _mixer(mixer), _music(mixer), _opened(false) {}
  ~SoundEffects() override { _mixer->stopHandle(_handle); stopSpeech(); }
  bool speech(unsigned bank,unsigned index) override;
  bool speechActive() const { return _mixer->isSoundHandleActive(_speechHandle); }
- void stopSpeech() override { _mixer->stopHandle(_speechHandle); }
+ unsigned speechLengthMs() const {return _speechLengthMs;}
+ void stopSpeech() override { _mixer->stopHandle(_speechHandle); _speechLengthMs=0; }
  bool effect(unsigned index) override;
  bool repeatedEffect(unsigned index,unsigned count) override;
  unsigned musicTrack() { return _music.currentTrack(); }

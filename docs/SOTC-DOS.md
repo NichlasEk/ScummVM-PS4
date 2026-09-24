@@ -1728,3 +1728,23 @@ use their existing UI.
 checks its 11 lines/four pages, original resource rendering, bounds, and long
 line wrapping. `dialogue-box-test.log`, `dialogue-box-preview.png`, and
 `dialogue-box-build.log` record validation; the journal audit also passes.
+
+### Automatic dialogue paging and room 1 scenery (2026-09-24)
+
+Dialogue pages advance without clicks. Page weights use the original
+0xb7fe..0xb80f font-width/4 accumulation with a minimum of 100. For voiced
+dialogue the current preview distributes the NAR recording duration across
+these weights; this is approximate synchronization, not original DOS cadence
+or word timestamps. Unvoiced pages use 20 ms per weight unit. The last page
+waits for both its timer and the mixer speech handle to finish. Manual clicks
+still advance/skip. Menus, journal, inventory and scene pause suspend the timer.
+Loading starts a fresh timer for the saved page; existing speech restore still
+restarts the recording rather than seeking into it.
+
+Room 1's two F01.VA2 scenery references carry bit 15 (horizontal mirror).
+The scene renderer had passed these raw references as pose indices. It now
+renders the selected layer through the pose interpreter, retaining flags and
+depth ordering. The copied-save probe enters room 1 and renders 30 frames;
+pose tests also cover the original F01 resource. Dialogue tests cover timed
+paging, suspended timers, final-page audio waits, and missing-speech fallback.
+Build/test logs: `artifacts/sotc/dialogue-auto-room1-*`, `room1-probe.log`.

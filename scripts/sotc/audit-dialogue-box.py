@@ -21,6 +21,12 @@ extern "C" bool test(const uint8_t*i,unsigned ni,const uint8_t*f,unsigned nf,con
  if(!Sotc::dialogueRecord(Sotc::Cc4View(t,nt),3,240,decoded,sizeof(decoded),n))return false;
  Common::String text;for(unsigned j=1;j+1<n;++j)text+=decoded[j] ? char(decoded[j]) : '\n';
  box.text(text);if(box.count()!=11 || !box.more(0) || box.next(0)!=3)return false;
+ unsigned total=0;for(unsigned page=0;page<box.count();page=box.next(page))total+=box.pageDelay(page,30000);
+ if(total>30000 || total<29996 || box.pageDelay(0,0)<2000)return false;
+ Sotc::DialogueTimer timer;timer.reset(2000);
+ if(timer.advance(99999,false,false,false) || timer.advance(1999,true,false,true) || !timer.advance(1,true,false,true))return false;
+ timer.reset(100);if(timer.advance(100,true,true,true) || !timer.advance(0,true,true,false))return false;
+ timer.reset(100);if(timer.advance(99,true,true,false) || !timer.advance(1,true,true,false))return false;
  if(!box.render(screen,0,160,160,true))return false;
  for(unsigned j=0;j<64000;++j)out[j]=screen[j];
  for(unsigned j=0;j<160*320;++j)if(screen[j]!=119)return false;

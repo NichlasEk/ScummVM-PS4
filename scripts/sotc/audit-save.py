@@ -94,7 +94,10 @@ int main(int argc,char **argv) {
   assert(scene.render(pixels,status,m));assert(pixels==edge);
   assert(scene.clip(0,true,32,318));assert(scene.render(pixels,status,m));assert(pixels!=edge);
   assert(scene.clip(0,true,0,319));
-  std::cout<<"Square entry resets stale player clipping; explicit script clipping still works\n";return 0;
+  std::cout<<"Square entry resets stale player clipping; explicit script clipping still works\n";
+  m.requestRoom(0,1);assert(scene.serviceRoom(m,status));assert(scene.room()==1);
+  for(unsigned tick=0;tick<30;++tick){scene.finishDialogue();m.tick();assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+  std::cout<<"Room 1 mirrored scenery renders without failures\n";return 0;
  }
  // Active scripted waits, RNG and moving route must survive, not just position.
  m.tick();m.seedRandom(9123);m.randomRange(17);m.setEventPending(true);

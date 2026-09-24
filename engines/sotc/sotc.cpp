@@ -150,6 +150,7 @@ Common::Error SotcEngine::run() {
  };
 
  Common::String shownDialogue; unsigned dialoguePage=0;
+ DialogueTimer dialogueTimer; uint32 dialogueLastTime=_system->getMillis();
  Common::Array<Common::String> storyLines; Common::String storyText; unsigned storyPage=0;
  Common::Rect choiceRects[6];
  Common::Array<byte> cursorData;
@@ -203,6 +204,7 @@ Common::Error SotcEngine::run() {
   startupAvailable=showStartup=true; mainMenu=showStory=showOpening=showCd=false; pal=0; toolbar.hide();
   shownDialogue=startupScene.dialogueText(); dialogueBox.text(shownDialogue);
   dialoguePage=state.page<dialogueBox.count() ? state.page : 0;
+  dialogueTimer.reset(dialogueBox.pageDelay(dialoguePage,sound.speechLengthMs()));dialogueLastTime=_system->getMillis();
   scriptStatus=Common::String::format("Restored at script tick %u",scriptTicks);
   _mixer->pauseAll(false); nextSceneFrame=_system->getMillis()+100; redraw=true;
   debug("[sotc-save] load ok=1 tick=%u actor=%d,%d",scriptTicks,startupMachine.actor(0)->x,startupMachine.actor(0)->y);
@@ -249,6 +251,20 @@ Common::Error SotcEngine::run() {
     if (animatedOpening.failed()) { surface.free(); return Common::Error(Common::kUnknownError,"Story script could not continue"); }
     finishStory();
    }
+  }
+  uint32 dialogueNow=_system->getMillis(),dialogueElapsed=dialogueNow-dialogueLastTime;
+  dialogueLastTime=dialogueNow;
+  if(shownDialogue!=startupScene.dialogueText()) {
+   shownDialogue=startupScene.dialogueText();dialoguePage=0;dialogueBox.text(shownDialogue);
+   dialogueTimer.reset(dialogueBox.pageDelay(0,sound.speechLengthMs()));dialogueElapsed=0;
+  }
+  bool dialogueActive=showStartup && runScene && !sceneFault && !mainMenu && !showInventory && !showJournal && !showStory && !shownDialogue.empty();
+  if(dialogueTimer.advance(dialogueElapsed,dialogueActive,!dialogueBox.more(dialoguePage),sound.speechActive())) {
+   if(dialogueBox.more(dialoguePage)) {
+    dialoguePage=dialogueBox.next(dialoguePage);
+    dialogueTimer.reset(dialogueBox.pageDelay(dialoguePage,sound.speechLengthMs()));
+   } else startupScene.finishDialogue();
+   redraw=true;
   }
   // Diagnostic 10 Hz preview cadence; original scene pacing is not yet bound.
   if (!showInventory && !showJournal && !showStory && !mainMenu && showStartup && runScene && int32(_system->getMillis()-nextSceneFrame)>=0) {
@@ -353,6 +369,7 @@ Common::Error SotcEngine::run() {
    if (showStartup && !startupScene.dialogueText().empty()) {
     if (shownDialogue!=startupScene.dialogueText()) {
      shownDialogue=startupScene.dialogueText(); dialoguePage=0; dialogueBox.text(shownDialogue);
+     dialogueTimer.reset(dialogueBox.pageDelay(0,sound.speechLengthMs()));dialogueLastTime=_system->getMillis();
     }
     Common::Array<byte> dialogPixels;dialogPixels.resize(64000);
     memcpy(dialogPixels.data(),surface.getBasePtr(0,0),64000);
@@ -789,7 +806,10 @@ Common::Error SotcEngine::run() {
     if (sceneFault) continue;
     if (!startupScene.dialogueText().empty()) {
      if (event.type==Common::EVENT_LBUTTONDOWN) {
-      if (dialogueBox.more(dialoguePage)) dialoguePage=dialogueBox.next(dialoguePage);
+      if (dialogueBox.more(dialoguePage)) {
+       dialoguePage=dialogueBox.next(dialoguePage);
+       dialogueTimer.reset(dialogueBox.pageDelay(dialoguePage,sound.speechLengthMs()));dialogueLastTime=_system->getMillis();
+      }
       else startupScene.finishDialogue();
       resumeScene(); redraw=true;
      }

@@ -35,6 +35,22 @@ public:
  unsigned count() const {return _lines.size();}
  unsigned next(unsigned page) const {return page+3;}
  bool more(unsigned page) const {return next(page)<count();}
+ unsigned pageWeight(unsigned page) const {
+  unsigned ticks=0;
+  for(unsigned i=page;i<count() && i<page+3;++i) {
+   ticks+=_font.width(_lines[i].c_str())/4;
+   if(ticks<100)ticks=100; // Original 0xb7fe..0xb80f.
+  }
+  return ticks;
+ }
+ unsigned pageDelay(unsigned page,unsigned speechMs) const {
+  unsigned weight=pageWeight(page),total=0;
+  for(unsigned i=0;i<count();i=next(i))total+=pageWeight(i);
+  // The preview's scene clock is not the DOS clock. Distribute a voiced
+  // recording over its pages; no word/page timestamps exist in this UI.
+  if(speechMs && total)return unsigned(uint64_t(speechMs)*weight/total);
+  return weight*20; // Readable fallback when no recording is available.
+ }
  bool render(Common::Array<byte> &screen,unsigned page,int anchorX,int anchorY,bool portrait) const {
   if(page>=count())return false;
   unsigned end=page+3<count() ? page+3 : count();
@@ -57,6 +73,16 @@ public:
      !renderer.pose(_bubble,2,left,bottom) || !renderer.pose(_bubble,7,right-16,bottom))return false;
   for(unsigned i=page;i<end;++i)_font.draw(screen,_lines[i].c_str(),left+3,top+3+(i-page)*_font.height(),0);
   return true;
+ }
+};
+class DialogueTimer {
+ unsigned _remaining=0;
+public:
+ void reset(unsigned ms) {_remaining=ms;}
+ bool advance(unsigned elapsed,bool active,bool lastPage,bool speechActive) {
+  if(!active)return false;
+  _remaining=elapsed>=_remaining ? 0 : _remaining-elapsed;
+  return !_remaining && (!lastPage || !speechActive);
  }
 };
 }

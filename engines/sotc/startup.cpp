@@ -423,9 +423,9 @@ bool StartupScene::render(Common::Array<byte> &pixels, Common::String &status, c
    bool ok = false;
    if (haveSceneryPose && sceneryLayer < sceneryCount) {
     const uint8_t *layer = sceneryLayers + sceneryLayer * 8;
-    if (layer[0] == 0 && layer[1] == 1) // Original 0xc806: nested pose.
-     ok = renderer.pose(scenery, va2LE16(layer + 2), va2Signed16(layer + 4), va2Signed16(layer + 6));
-    else if (layer[0] == 1 && layer[1] == 1)
+    // Let the pose interpreter retain nested flags (notably 0x8000 mirror).
+    // Passing the raw reference as a pose index rejected room 1's scenery.
+    if ((layer[0] == 0 || layer[0] == 1) && layer[1] == 1)
      ok = renderer.pose(scenery, 0, 0, 0, 0, 0, 319, 199, sceneryLayer);
    }
    ++sceneryLayer;

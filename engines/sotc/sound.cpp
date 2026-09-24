@@ -44,6 +44,7 @@ bool SoundEffects::speech(unsigned bank,unsigned index) {
  Audio::AudioStream *stream=Audio::makeRawStream(owned,samples,rate,Audio::FLAG_UNSIGNED,DisposeAfterUse::YES);
  if (!stream) { free(owned); return false; }
  _mixer->playStream(Audio::Mixer::kSpeechSoundType,&_speechHandle,stream);
+ _speechLengthMs=unsigned(uint64_t(samples)*1000/rate);
  debug("[sotc-speech] bank=%u text=%u parts=%u samples=%u rate=%u active=%u",bank,index,parts,samples,rate,unsigned(_mixer->isSoundHandleActive(_speechHandle)));
  return true;
 }

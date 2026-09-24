@@ -99,8 +99,9 @@ Common::Error SotcEngine::run() {
   return Common::Error(Common::kReadingFailed,"Invalid diary resources");
  if(!inventory.load(toolbarData,inventoryIcons,journalFont))
   return Common::Error(Common::kReadingFailed,"Invalid inventory resources");
- DialogueBox dialogueBox; Common::Array<byte> bubbleData;
- if(!resources.load(1,bubbleData) || !dialogueBox.load(journalFont,bubbleData))
+ DialogueBox dialogueBox,pickupBox; unsigned pickupRemaining=0,pickupBank=0,pickupRoom=0;
+ Common::Array<byte> bubbleData;
+ if(!resources.load(1,bubbleData) || !dialogueBox.load(journalFont,bubbleData) || !pickupBox.load(journalFont,bubbleData))
   return Common::Error(Common::kReadingFailed,"Cannot load original dialogue resources");
  SoundEffects sound(_mixer);
  ScriptMachine startupMachine; startupMachine.setSound(&sound); unsigned scriptTicks = 0; Common::String scriptStatus;
@@ -207,6 +208,7 @@ Common::Error SotcEngine::run() {
   sound.stopSpeech(); sound.effect(255); sound.music(255);
   sound.music(state.music); startupScene.resumeSpeech();
   scriptTicks=state.ticks; runScene=state.running; sceneFault=state.fault; heldDirection=0;
+  pickupRemaining=0;
   startupAvailable=showStartup=true; mainMenu=showStory=showOpening=showCd=false; pal=0; toolbar.hide();
   shownDialogue=startupScene.dialogueText(); dialogueBox.text(shownDialogue);
   dialoguePage=state.page<dialogueBox.count() ? state.page : 0;
@@ -260,6 +262,12 @@ Common::Error SotcEngine::run() {
   }
   uint32 dialogueNow=_system->getMillis(),dialogueElapsed=dialogueNow-dialogueLastTime;
   dialogueLastTime=dialogueNow;
+  if(pickupRemaining) {
+   if(pickupBank!=startupScene.bank() || pickupRoom!=startupScene.room() || !startupScene.dialogueText().empty())pickupRemaining=0;
+   else if(showStartup && !mainMenu && !showInventory && !showJournal && !showStory)
+    pickupRemaining=dialogueElapsed>=pickupRemaining ? 0 : pickupRemaining-dialogueElapsed;
+   if(!pickupRemaining)redraw=true;
+  }
   if(shownDialogue!=startupScene.dialogueText()) {
    shownDialogue=startupScene.dialogueText();dialoguePage=0;dialogueBox.text(shownDialogue);
    dialogueTimer.reset(dialogueBox.pageDelay(0,sound.speechLengthMs()));dialogueElapsed=0;
@@ -370,6 +378,13 @@ Common::Error SotcEngine::run() {
      }
     }
     title = runScene ? "Walk test - collision stops" : "Scene paused - not gameplay"; actorTitle = scriptStatus;
+   }
+   if(showStartup && !mainMenu && !showInventory && !showJournal && !showStory && pickupRemaining) {
+    Common::Array<byte> labelPixels;labelPixels.resize(64000);
+    memcpy(labelPixels.data(),surface.getBasePtr(0,0),64000);
+    const ScriptActor &actor=*startupMachine.actor(0);
+    if(pickupBox.render(labelPixels,0,actor.x,actor.y-65,false,22))
+     memcpy(surface.getBasePtr(0,0),labelPixels.data(),64000);
    }
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
    if (showStartup && !startupScene.dialogueText().empty()) {
@@ -749,7 +764,10 @@ Common::Error SotcEngine::run() {
      else if(event.type==Common::EVENT_LBUTTONDOWN && x>=45 && x<90) {
       Common::String label;
       bool taken=startupScene.takeObject(label);
-      _system->displayMessageOnOSD(Common::U32String(taken ? label : Common::String("Face a nearby object to take it")));
+      if(taken) {
+       pickupBox.text(label);pickupRemaining=2000;
+       pickupBank=startupScene.bank();pickupRoom=startupScene.room();
+      } else _system->displayMessageOnOSD(Common::U32String("Face a nearby object to take it"));
       toolbar.hide();if(taken)resumeScene();
      }
      else if(event.type==Common::EVENT_LBUTTONDOWN && x>=180 && x<225) {

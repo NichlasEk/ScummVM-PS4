@@ -1809,3 +1809,12 @@ exits. Terrain height prevents the arrow appearing over the sky.
 
 The copied room-17 save regression asserts west arrows at X=0 and X=12,Y=174,
 no arrows in the sky/interior, then completes the same departure for 500 frames.
+
+### Pickup name bubbles (2026-09-24)
+
+Successful toolbar pickup displays the item name above Parker for two seconds,
+using the existing BULLE.VA2 box renderer, CTU.PFN font and orange palette index
+22. This replaces the generic OSD name notification. The bubble is hidden in
+menus, cleared on load/room change/dialogue, and does not block item scripts.
+Original dialogue/choice renderer audits and PS4 package build pass; in-game
+pickup appearance still needs user playtesting.

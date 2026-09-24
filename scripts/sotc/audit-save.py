@@ -83,7 +83,18 @@ int main(int argc,char **argv) {
   for(unsigned tick=0;tick<500;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
   assert(scene.bank()==0 && scene.room()==12);
   for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);
-  std::cout<<"Right exit reached room 12 and rendered 500 frames without stops\n";return 0;
+  std::cout<<"Right exit reached room 12 and rendered 500 frames without stops\n";
+  // A doorway clip from the previous room must not hide the player at the
+  // square's left edge. Exercise both horizontal and vertical stale bounds.
+  assert(scene.clip(0,true,32,318) && scene.clip(0,false,40,150));
+  m.requestRoom(0,11);assert(scene.serviceRoom(m,status));assert(scene.room()==11);
+  ScriptActor actor=*m.actor(0);actor.x=8;actor.y=146;m.setActor(0,actor);
+  assert(scene.render(pixels,status,m));auto edge=pixels;
+  assert(scene.clip(0,true,0,319) && scene.clip(0,false,0,199));
+  assert(scene.render(pixels,status,m));assert(pixels==edge);
+  assert(scene.clip(0,true,32,318));assert(scene.render(pixels,status,m));assert(pixels!=edge);
+  assert(scene.clip(0,true,0,319));
+  std::cout<<"Square entry resets stale player clipping; explicit script clipping still works\n";return 0;
  }
  // Active scripted waits, RNG and moving route must survive, not just position.
  m.tick();m.seedRandom(9123);m.randomRange(17);m.setEventPending(true);

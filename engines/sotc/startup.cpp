@@ -272,6 +272,10 @@ bool StartupScene::serviceRoom(ScriptMachine &machine,Common::String &status) {
  next._restoreTalk=false; next._dialogueText.clear();
  for(unsigned i=0;i<11;++i) { next._moves[i].active=false; next._collisionBypass[i]=false; if(i) next._visible[i]=false; }
  next._inDrawList[0]=true;
+ // Original 0x80fb..0x810c clears the previous room's player clipping before
+ // the new room init runs. Its scripts may then set their own doorway mask.
+ next._clips[0][0]=next._clips[0][1]=0;
+ next._clips[0][2]=319; next._clips[0][3]=199;
  TaskResult result=candidate.visit(0);
  if(result>=kUnknownWait) {
   status=Common::String::format("Room %u init stopped: opcode %u at %u",destination,candidate.task(0)->opcode,candidate.task(0)->pc);

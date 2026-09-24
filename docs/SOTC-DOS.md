@@ -1695,3 +1695,18 @@ ignored without relaxing payload/size checks. The copied-save probe includes
 this exit and 500 frames in room 12; pose and frame audits cover the cart and
 prefix bits with and without mirroring. Render failures now log the actor,
 resource and pose to make subsequent reports easier to diagnose.
+
+### Player clipping carried between rooms (2026-09-24)
+
+The square's disappearing/cut-off player was not a scenery depth problem.
+The saved pharmacy route retained horizontal clipping 32..318 from earlier
+scripts, hiding the player at x=8 and cutting his left side at x=35. Original
+SHADOW.EXE 0x80fb..0x810c resets player bounds to (0,0)-(319,199) before the
+next room initializes. `serviceRoom` now does the same; new-room scripts can
+still apply their own doorway clipping. Existing room snapshots retain their
+explicit clip state until the next room transition.
+
+The copied-save probe enters square room 11 with stale horizontal and vertical
+clipping, verifies that rendering at (8,146) matches full bounds, and checks
+that an explicit script clip still changes the pixels. Evidence:
+`artifacts/sotc/square-clip-probe.log` and `square-clip-build.log`.

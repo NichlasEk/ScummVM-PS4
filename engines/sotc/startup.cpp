@@ -810,7 +810,9 @@ bool StartupScene::moveOthers(ScriptMachine &machine) {
   if (!_moves[id].active) continue;
   if (!_visible[id]) { _moves[id].active=false; continue; }
   ScriptActor actor=*machine.actor(id); Animation &a=_animations[id];
-  unsigned slot=_slots[id]; if (slot>=20 || a.mode==2) return false;
+  // DOS 0x82c4 moves walking actors even when another task selects a
+  // mode-2 sequence. Its frame deltas remain the movement source.
+  unsigned slot=_slots[id]; if (slot>=20) return false;
   const Common::Array<byte> &data=_actorData[slot]; SequenceStep step;
   if (!va2Step(data.data(),data.size(),a.sequence,actor.step,step)) return false;
   int dx=step.dx,dy=step.dy,speed=_state.byte(0x2e2a); if (speed>=128) speed-=256;

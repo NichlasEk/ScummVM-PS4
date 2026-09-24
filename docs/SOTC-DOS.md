@@ -1947,3 +1947,20 @@ Copied fault: artifacts/sotc/room19-backup/frozen.quick0. New audit-save
 `--room19-save` replays 600 frames through the guided passage into bank 3
 room 0, then verifies restoreCollision blocks the same target and bypass
 permits it. Inn seating/ordinary exit regression and full save audit pass.
+
+### Pharmacy concurrent walking and sequence (2026-09-24)
+
+Tick 375078, bank 1 room 3: task 12 is moving actor 3 toward X=124
+while task 14 selects sequence 8 in mode 2. moveOthers rejected mode 2,
+pausing the game before the next script tick. DOS movement routine 0x82c4
+checks the walking base, not the sequence mode (0x82e2); opcode 87 sets
+mode 2 at 0x9439 without cancelling the movement flags. NPC movement now
+continues using the selected sequence's deltas instead of reporting failure.
+
+Fault backup: artifacts/sotc/pharmacy-movement-backup/frozen.quick1.
+`audit-save.py --pharmacy-movement-save` reproduces the overlapping state,
+advances dialogue at 90-frame intervals and verifies the authored return to
+bank 0 room 13. It intentionally ends at that room transition. An exploratory
+instant-dialogue run additionally encountered a route failure in room 13
+script 4 from (158,152) toward (150,159); subsequent room behavior remains
+to be investigated separately. Full save audit passes; PS4 preview rebuilt.

@@ -170,7 +170,7 @@ Common::Error SotcEngine::run() {
  uint32 nextSceneFrame = _system->getMillis() + 100;
  auto sceneStep = [&]() {
   if(startupMachine.waitingForInput())return;
-  if (!startupScene.fading() && !startupScene.movePlayer(startupMachine)) { runScene=false; sceneFault=true; redraw=true; return; }
+  if (!startupScene.fading() && !startupScene.movePlayer(startupMachine)) { scriptStatus="Movement update failed (see log)";runScene=false; sceneFault=true; redraw=true; return; }
   startupMachine.setScriptInput(mapActive() ? mapDirections : 0,mapActive() && mapConfirm);mapConfirm=false;
   scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
   if(startupScene.cinematicActive())heldDirection=0;

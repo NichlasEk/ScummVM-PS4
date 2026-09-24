@@ -587,10 +587,12 @@ unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMa
  for (unsigned i=0;i<count*4;++i) obstacles[i]=_state.byte(0x3544+i);
  Footprint candidate=footprint(x,y,actor.halfWidth,actor.footHeight);
  unsigned collision=terrainCollision(terrain,candidate,direction);
- // Scripted NPC departures may target X=320/324. Retain terrain height
+ // Scripted NPC departures may target X=0 or X=320/324. Retain terrain height
  // checks, but do not turn the viewport edge into a wall on that departure.
  if(self && _moves[self].active && _moves[self].x>=320 && direction==2 && collision==0x100 &&
     candidate.right>=319 && candidate.top>terrain[319]) collision=0;
+ if(self && _moves[self].active && _moves[self].x==0 && direction==4 && collision==0x100 &&
+    candidate.left<=0 && candidate.top>terrain[0]) collision=0;
  if(!self && (collision || (direction==3 && candidate.bottom==199))) {
   // Original 0xd32f consults exits after a terrain/boundary collision.
   // Treat the last bottom row as the exit step for the bounded click planner.

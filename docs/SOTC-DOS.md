@@ -1882,3 +1882,18 @@ Copied fault save tick 360839: artifacts/sotc/map-input-backup/current.quick1.
 limits, a single confirmation press, marking animation and return to bank 1
 room 2. Bedroom doorway regression also passes. PS4 preview rebuilt; this
 build includes the previously staged diagonal click-walking changes.
+
+### Dead Horse Inn NPC west departure (2026-09-24)
+
+Live tick 368668 paused before the next VM tick: actor 3's scripted move to
+(0,171) encountered a terrain boundary at candidate (4,171). The HUD still
+showed the previous successful script tick, hence three waiting / zero stopped.
+NPC edge departure handling existed only for rightward targets >=320. It now
+also permits leftward targets exactly at X=0, retaining terrain-height,
+obstacle and actor checks. Other NPC moves retain normal collision handling.
+Movement update failures now replace the stale HUD text with an explicit error.
+
+Copied fault: artifacts/sotc/inn-stop-backup/frozen.quick1. The new
+`audit-save.py --inn-save` regression verifies actor 3 reaches X=0, task 5
+advances and 600 frames render/animate without failure. Pharmacy exit/square
+regression also passes; PS4 package rebuilt.

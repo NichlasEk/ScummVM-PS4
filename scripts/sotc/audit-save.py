@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory',type=Path)
+p.add_argument('--forest-entry-save',type=Path,help='Resume forest offscreen entrance')
 p.add_argument('--pharmacy-movement-save',type=Path,help='Resume overlapping pharmacy movement and animation')
 p.add_argument('--room19-save',type=Path,help='Resume guided walk at room 19 doorway')
 p.add_argument('--inn-seat-save',type=Path,help='Exercise scripted seating through inn exit region')
@@ -79,6 +80,29 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="forest-entry") {
+   assert(scene.bank()==2 && scene.room()==3 && m.actor(0)->x==340);
+   m.tick();assert(scene.serviceRoom(m,status));assert(scene.movePlayer(m));
+   assert(m.actor(0)->x<340 && m.actor(0)->x>=320);
+   auto entering=state(m,scene);
+   assert(writeQuickSave(files,"entry",m,scene,saved));
+   assert(readQuickSave(files,"entry",m,scene,saved,pixels,status));
+   assert(state(m,scene)==entering);
+   for(unsigned i=0;i<600;++i){
+    if(i%90==0)scene.finishDialogue();
+    assert(scene.movePlayer(m));m.tick();
+    if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+   }
+   std::cout<<"end player="<<m.actor(0)->x<<","<<m.actor(0)->y<<" bank="<<scene.bank()<<" room="<<scene.room()<<std::endl;
+   assert(m.actor(0)->x>=0 && m.actor(0)->x<320);
+   int oldX=m.actor(0)->x,oldY=m.actor(0)->y;
+   assert(scene.destination(160,190,m));
+   for(unsigned i=0;i<200;++i){assert(scene.movePlayer(m));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+   assert(m.actor(0)->x!=oldX || m.actor(0)->y!=oldY);
+   std::cout<<"Offscreen entrance, mid-entry save restore and free walking pass\n";
+   return 0;
+  }
   if(argc>2 && std::string(argv[2])=="pharmacy-movement") {
    assert(scene.bank()==1 && scene.room()==3);
    bool dialogueAdvanced=false;
@@ -609,7 +633,7 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')]+([str(a.pharmacy_movement_save.resolve()),'pharmacy-movement'] if a.pharmacy_movement_save else [str(a.room19_save.resolve()),'room19'] if a.room19_save else [str(a.inn_seat_save.resolve()),'seat'] if a.inn_seat_save else [str(a.inn_stuck_save.resolve()),'stuck'] if a.inn_stuck_save else [str(a.inn_entry_save.resolve()),'entry'] if a.inn_entry_save else [str(a.inn_save.resolve()),'inn'] if a.inn_save else [str(a.map_save.resolve()),'map'] if a.map_save else [str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+ subprocess.run([str(t/'test')]+([str(a.forest_entry_save.resolve()),'forest-entry'] if a.forest_entry_save else [str(a.pharmacy_movement_save.resolve()),'pharmacy-movement'] if a.pharmacy_movement_save else [str(a.room19_save.resolve()),'room19'] if a.room19_save else [str(a.inn_seat_save.resolve()),'seat'] if a.inn_seat_save else [str(a.inn_stuck_save.resolve()),'stuck'] if a.inn_stuck_save else [str(a.inn_entry_save.resolve()),'entry'] if a.inn_entry_save else [str(a.inn_save.resolve()),'inn'] if a.inn_save else [str(a.map_save.resolve()),'map'] if a.map_save else [str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
 
  if a.cobble_save:
   for x in (143,153):

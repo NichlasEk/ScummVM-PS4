@@ -98,7 +98,7 @@ public:
  const Common::String &dialogueText() const { return _dialogueText; }
  void finishDialogue() { _talking=false; if (_machine) _machine->stopSpeech(); }
  bool scriptWalking() const { return _scriptRoute; }
- void cancelRoute() { _following=false; _scriptRoute=false; _route.count=0; _route.credit=0; }
+ void cancelRoute() { _moves[0].active=false; _following=false; _scriptRoute=false; _route.count=0; _route.credit=0; }
  bool movePlayer(ScriptMachine &machine);
  bool face(unsigned actor,unsigned direction) override;
  bool control(unsigned value,bool unlock,ScriptActor &actor) override;

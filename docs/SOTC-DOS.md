@@ -1991,3 +1991,19 @@ closed, so no new save at the pictured stair stop could be captured.
 Validation: latest user-save pharmacy replay, full save/cinematic audit,
 inn seating/ordinary exit, guided room 19 bypass and projected target,
 Cobble doorway approaches, and forest departure pass. PS4 preview rebuilt.
+
+### Scripted entrances from outside the viewport (2026-09-24)
+
+Bank 2 room 3 task 1 PC 8 asks Parker to walk from (340,177) to
+(310,177). Route::find correctly rejects an off-grid start, but scripted
+entrances must reach the viewport before invoking that bounded planner.
+Player movement now retains an entry target in the already serialized actor-0
+move slot, consumes the normal animation movement budget to reach the grid,
+and then plans the visible remainder. This applies to starts beyond any of
+the four screen edges, without a room-specific exception. Cancelling movement
+clears the entry state and movement waits include that state.
+
+Backup: artifacts/sotc/forest-bank-stop-backup/sotc-sotc.quick0, tick 378864.
+`audit-save.py --forest-entry-save` verifies actual movement from X=340,
+a round trip through save/load while still offscreen, 600 frames through the
+scripted continuation to bank 2 room 17, and subsequent user walking.

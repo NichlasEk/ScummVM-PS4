@@ -804,12 +804,20 @@ bool StartupScene::move(unsigned id,unsigned x,unsigned y,bool &pending) {
   return true;
  }
  unsigned oldMode=_animations[0].mode; _animations[0].mode=0;
+ const ScriptActor &player=*_machine->actor(0);
+ if((player.x<0 || player.x>=320 || player.y<0 || player.y>=200) && x<320 && y<200) {
+  cancelRoute();
+  unsigned d=player.x<0 ? 2 : player.x>=320 ? 4 : player.y<0 ? 3 : 1;
+  if(!walk(d,*_machine,true)){_animations[0].mode=oldMode;return false;}
+  _moves[0].active=true;_moves[0].x=x;_moves[0].y=y;_scriptRoute=true;
+  pending=true;return true;
+ }
  if (!destination(x,y,*_machine,true)) { warning("[sotc-move] actor=0 from=%d,%d target=%u,%u",_machine->actor(0)->x,_machine->actor(0)->y,x,y); _animations[0].mode=oldMode; return false; }
  pending=_following; return true;
 }
 bool StartupScene::movementPending(unsigned id,bool &pending) {
  if (!_ready || id>=10) return false;
- pending=(id ? _moves[id].active : _following) && _visible[id];
+ pending=(id ? _moves[id].active : (_following || _moves[0].active)) && _visible[id];
  if (!pending) {
   // Original 0xaf9b selects sequence zero when movement wait completes.
   unsigned slot=_slots[id]; if (slot>=20) return false;
@@ -880,6 +888,23 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
  int speed=_state.byte(0x2e2a); if (speed>=128) speed-=256;
  walkDelta(_walkDirection,speed,_state.signedWord(0x2e24),_state.signedWord(0x2e26),
            _state.word(0x2df8)==_state.word(0x2dfa),dx,dy);
+ // Authored entrances can start outside the planner's 320x200 grid.
+ // Consume real animation travel up to the visible edge, then plan the rest.
+ if(_moves[0].active) {
+  unsigned budget=unsigned(dx<0 ? -dx : dx)+unsigned(dy<0 ? -dy : dy);
+  while(budget-- && (actor.x<0 || actor.x>=320 || actor.y<0 || actor.y>=200)) {
+   unsigned d=actor.x<0 ? 2 : actor.x>=320 ? 4 : actor.y<0 ? 3 : 1;
+   if(d!=_walkDirection)return walk(d,machine,true);
+   actor.x+=d==2 ? 1 : d==4 ? -1 : 0;
+   actor.y+=d==3 ? 1 : d==1 ? -1 : 0;
+   machine.setActor(0,actor);
+  }
+  if(actor.x>=0 && actor.x<320 && actor.y>=0 && actor.y<200) {
+   int x=_moves[0].x,y=_moves[0].y;_moves[0].active=false;
+   return destination(x,y,machine,true);
+  }
+  return true;
+ }
  if (_following) {
   unsigned budget=unsigned(dx<0 ? -dx : dx)+unsigned(dy<0 ? -dy : dy);
   _route.credit+=budget*256;

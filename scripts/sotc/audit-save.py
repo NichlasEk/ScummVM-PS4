@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory',type=Path)
+p.add_argument('--bedroom-save',type=Path,help='Probe hidden player in a copied bedroom save')
 p.add_argument('--cobble-save',type=Path,help='Exercise Cobble doorway from the right side using a copied save')
 p.add_argument('--forest-save',type=Path,help='Exercise the west exit from Cobble house in a copied save')
 p.add_argument('--resume-save',type=Path,help='Resume a copied save for 300 frames without script or animation failures')
@@ -71,6 +72,20 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="bedroom") {
+   assert(scene.bank()==1 && scene.room()==2);
+   int startX=m.actor(0)->x,startY=m.actor(0)->y;
+   assert(scene.destination(160,170,m));
+   for(unsigned tick=0;tick<200;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+   assert(m.actor(0)->x!=startX && m.actor(0)->y==startY);
+   // Once the door region is cleared, vertical walking must unlock again.
+   assert(scene.destination(160,170,m));
+   for(unsigned tick=0;tick<200;++tick){assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+   assert(m.actor(0)->x==160 && m.actor(0)->y==170);
+   auto visible=pixels;assert(scene.drawEnabled(0,0));assert(scene.render(pixels,status,m));assert(pixels!=visible);
+   std::cout<<"Bedroom doorway: click moves sideways, releases vertical lock and renders player on floor\n";return 0;
+  }
+
   if(argc>2 && std::string(argv[2])=="cobble") {
    m.requestRoom(0,17);assert(scene.serviceRoom(m,status));
    for(unsigned tick=0;tick<30;++tick){scene.finishDialogue();m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
@@ -352,8 +367,9 @@ int main(int argc,char **argv) {
   assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
  }
  assert(examined);assert(!m.eventPending());
- // The path crosses the foyer door region and invokes its scripted return.
- assert(scene.examine());assert(scene.destination(160,180,m));assert(!m.eventPending());
+ // Click the foyer doorway explicitly; a smoothed route towards the floor
+ // no longer takes the old L-shaped detour through the door trigger.
+ assert(scene.examine());assert(scene.destination(160,132,m));assert(!m.eventPending());
  for(unsigned tick=0;tick<250;++tick){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
  assert(scene.bank()==1 && scene.room()==1);
  assert(scene.destination(160,220,m));
@@ -466,7 +482,7 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')]+([str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+ subprocess.run([str(t/'test')]+([str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
 
  if a.cobble_save:
   for x in (143,153):

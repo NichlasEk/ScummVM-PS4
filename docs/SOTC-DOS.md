@@ -1834,3 +1834,31 @@ room 0 and run 300 frames without VM/render/animation failures. The forest
 cursor/departure and pharmacy/square regressions also pass. PS4 package rebuilt.
 Backup: artifacts/sotc/cobble-door-backup/; logs: cobble-door-after.log,
 cobble-forest-regression.log, cobble-pharmacy-regression.log.
+
+### Smoothed click walking and partial doorway locks (2026-09-24)
+
+Click routes retain bounded four-neighbour collision search, then use bounded
+line-of-sight shortening to form dense diagonal-capable paths. Both cardinal
+sides of every diagonal are tested, including again during movement, so the
+actor cannot cut obstacle corners. Facing looks eight route pixels ahead rather
+than following every rasterized step; diagonal distance costs 362/256 pixels
+with fractional travel credit, avoiding the usual sqrt(2) speedup. Scripted
+routes retain their cardinal choreography. Existing save layout remains valid;
+only transient subpixel credit is reset on restore.
+
+The hidden-bedroom report was reproduced from copied save tick 313717, bank 1
+room 2, player (43,124). Task 5 deliberately locks only up/down while waiting
+for Parker to leave the door region. Click routing previously rejected every
+nonzero input lock. It now rejects only fully locked input and checks individual
+directions during planning and movement. The bedroom regression verifies a
+sideways click leaves the doorway, then a floor click reaches (160,170) and
+renders a visible player, without forcing clips or visibility.
+
+Validation: audit-route (straight diagonals, blocked corners, original INIT
+obstacles); bedroom, forest, pharmacy and three-position Cobble doorway save
+regressions; full audit-save including 74 cinematics / 2564 frames. All pass.
+The old foyer regression clicked the floor and depended on its L-shaped route
+accidentally crossing a door trigger; it now explicitly clicks the doorway.
+PS4 preview package rebuilt. No running emulator restart or input injection:
+the user is playing the previous binary. Visual walking feel remains to be
+playtested in the new build.

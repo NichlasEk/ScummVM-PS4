@@ -327,6 +327,7 @@ bool StartupScene::snapshot(Snapshot &s,bool reloadResources,unsigned version) {
  s.value(_speaker,9); s.value(_speechText,65535); s.value(_talkSequence,65535); s.value(_talkStep,65535); s.value(_talkGate,255);
  s.value(_following); s.value(_scriptRoute); s.value(_inputLocks,15);
  s.value(_walkDirection,4); s.require(_walkDirection!=0); s.value(_walking);
+ if(s.reading())_route.credit=0; // Fractional movement is not persisted in the save format.
  s.value(_route.count,64000);
  for(unsigned i=0;s.ok() && i<_route.count;++i) s.value(_route.points[i],63999);
  unsigned length=_dialogueText.size(); s.value(length,16384);
@@ -621,7 +622,7 @@ unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMa
  return collision;
 }
 unsigned StartupScene::exitDirection(int x,int y) const {
- if(!_ready || _inputLocks || x<0 || x>=320 || y<0 || y>=240)return 0;
+ if(!_ready || _inputLocks==15 || x<0 || x>=320 || y<0 || y>=240)return 0;
  for(unsigned i=0;i<_state.word(0x2dfc);++i) {
   unsigned p=0x3090+i*8,d=_state.byte(p);int l=_state.word(p+4),r=_state.word(p+6);
   if(l>319 || r>319)continue;
@@ -665,7 +666,7 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
  cancelRoute();
  unsigned exit=!scripted ? exitDirection(x,y) : 0;
  if(exit==3)y=199;
- if (!_ready || (!scripted && _inputLocks) || _animations[0].mode==2) return false;
+ if (!_ready || (!scripted && _inputLocks==15) || _animations[0].mode==2) return false;
  walk(0,machine);
  const ScriptActor &a=*machine.actor(0);
  if(exit==1 || exit==2 || exit==4) {
@@ -718,7 +719,15 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
    if((collisionAt(tx,ty,d,machine)&0xff00)==0x400){x=tx;y=ty;break;}
   }
  }
- bool found=_route.find(a.x,a.y,x,y,[&](int nx,int ny,unsigned d) { if(exit && nx==x && ny==y && d!=exit)return false;unsigned hit=collisionAt(nx,ny,d,machine,0,scripted);return hit==0 || ((hit&0xff00)==0x400 && nx==x && ny==y); },!scripted);
+ auto passable=[&](int nx,int ny,unsigned d) {
+  const unsigned masks[5]={0,1,8,2,4};
+  if(!scripted && (_inputLocks & masks[d]))return false;
+  if(exit && nx==x && ny==y && d!=exit)return false;
+  unsigned hit=collisionAt(nx,ny,d,machine,0,scripted);
+  return hit==0 || ((hit&0xff00)==0x400 && nx==x && ny==y);
+ };
+ bool found=_route.find(a.x,a.y,x,y,passable,!scripted);
+ if(found && !scripted)_route.smooth(a.x,a.y,passable);
  _following=found && _route.count; _scriptRoute=scripted && _following;
  debug("[sotc-route] target=%d,%d found=%u steps=%u",x,y,unsigned(found),_route.count);
  return found;
@@ -811,6 +820,7 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
   if (!_route.count || _animations[0].mode==2) { cancelRoute(); return walk(0,machine); }
   const ScriptActor &a=*machine.actor(0); unsigned p=_route.points[_route.count-1];
   unsigned d=int(p%320)>a.x ? 2 : int(p%320)<a.x ? 4 : int(p/320)>a.y ? 3 : 1;
+  if(!_scriptRoute)d=_route.facing(a.x,a.y);
   if (!walk(d,machine,_scriptRoute)) { cancelRoute(); return false; }
  }
  if (!_walking) return true;
@@ -825,10 +835,19 @@ bool StartupScene::movePlayer(ScriptMachine &machine) {
            _state.word(0x2df8)==_state.word(0x2dfa),dx,dy);
  if (_following) {
   unsigned budget=unsigned(dx<0 ? -dx : dx)+unsigned(dy<0 ? -dy : dy);
-  while (budget-- && _route.count) {
+  _route.credit+=budget*256;
+  while (_route.count) {
    unsigned p=_route.points[_route.count-1]; int x=p%320,y=p/320;
    unsigned d=x>actor.x ? 2 : x<actor.x ? 4 : y>actor.y ? 3 : 1;
-   if (d!=_walkDirection) break;
+   unsigned cost=x!=actor.x && y!=actor.y ? 362 : 256;
+   if(_route.credit<cost)break;
+   if (_scriptRoute && d!=_walkDirection) {_route.credit=0;break;}
+   if(!_scriptRoute && !Route::clearStep(actor.x,actor.y,x,y,[&](int nx,int ny,unsigned dir){
+    if(_inputLocks & masks[dir])return false;
+    unsigned hit=collisionAt(nx,ny,dir,machine);
+    return hit==0 || ((hit&0xff00)==0x400 && nx==x && ny==y && (x==actor.x || y==actor.y));
+   })) {cancelRoute();return walk(0,machine);}
+   _route.credit-=cost;
    unsigned hit=collisionAt(x,y,d,machine,0,_scriptRoute);
    if((hit&0xff00)==0x400) {
     unsigned p=0x3090+(hit&255)*8;machine.requestRoom(_state.byte(p+1),_state.byte(p+2));cancelRoute();_walking=false;return true;

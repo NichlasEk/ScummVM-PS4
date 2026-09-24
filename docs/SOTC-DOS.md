@@ -1798,3 +1798,14 @@ Reproduced opcode 4 at PC 7 from copied save tick 297974, at X=14,Y=174.
 now completes the departure and runs 500 frames without script/animation
 failures. Pharmacy restore/exit, square clipping and room 1 render regression
 also pass. PS4 preview package rebuilt with `scripts/sotc/build.sh`.
+
+### Cursor for scripted edge exits (2026-09-24)
+
+The forest departure now shows the original yellow west arrow. It has no
+opcode-23 exit record, so the cursor additionally recognizes active opcode-40
+edge-region waits followed by a straight-line walk/fade/room-change sequence.
+Branching, disabled, interior-region and unrelated scripts are not inferred as
+exits. Terrain height prevents the arrow appearing over the sky.
+
+The copied room-17 save regression asserts west arrows at X=0 and X=12,Y=174,
+no arrows in the sky/interior, then completes the same departure for 500 frames.

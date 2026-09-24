@@ -633,6 +633,31 @@ unsigned StartupScene::exitDirection(int x,int y) const {
    if(x>=l-8 && x<=r+8 && y>=t-12 && y<=b+8)return d;
   }
  }
+ // Some exits are opcode-40 edge regions followed by a scripted walk,
+ // fade and explicit room change, rather than opcode-23 exit records.
+ // Inspect only the currently waiting straight-line path; never advertise
+ // arbitrary regions or speculate across branches and disabled tasks.
+ if(_machine && y<200 && y>=int(_state.byte(0x339e + x))-12) {
+  for(unsigned i=0;i<_machine->count();++i) {
+   const ScriptTask &task=*_machine->task(i);
+   if(task.result!=kRegionWait || task.actor!=0 || task.flags)continue;
+   ScriptInstruction region;
+   if(decodeScript(task.script,task.pc,region)!=kInstruction || region.opcode!=40)continue;
+   const unsigned *r=region.rectangle;
+   unsigned direction=r[0]==0 && r[2]<=16 ? 4 : r[2]>=318 && r[0]>=302 ? 2 :
+    r[1]==0 && r[3]<=16 ? 1 : r[3]>=199 && r[1]>=183 ? 3 : 0;
+   if(!direction || x<int(r[0])-8 || x>int(r[2])+8 || y<int(r[1])-8 || y>int(r[3])+8)continue;
+   unsigned pc=region.next;
+   for(unsigned n=0;n<16;++n) {
+    ScriptInstruction op;
+    if(decodeScript(task.script,pc,op)!=kInstruction)break;
+    if(op.opcode==44)return direction;
+    if(op.opcode!=18 && op.opcode!=19 && op.opcode!=4 && op.opcode!=5 &&
+       op.opcode!=93 && op.opcode!=94 && op.opcode!=80)break;
+    pc=op.next;
+   }
+  }
+ }
  return 0;
 }
 bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted) {

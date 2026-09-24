@@ -72,6 +72,13 @@ int main(int argc,char **argv) {
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
   if(argc>2 && std::string(argv[2])=="forest") {
    assert(scene.bank()==0 && scene.room()==17);
+   m.tick();
+   assert(scene.exitDirection(0,174)==4);
+   assert(scene.exitDirection(12,174)==4);
+   assert(scene.exitDirection(40,174)==0);
+   assert(scene.exitDirection(0,0)==0);
+   assert(scene.exitDirection(160,174)==0);
+   std::cout<<"Scripted forest exit has west cursor; sky and room interior do not\n";
    scene.destination(0,174,m);
    for(unsigned tick=0;tick<500;++tick){
     scene.finishDialogue();assert(scene.movePlayer(m));m.tick();

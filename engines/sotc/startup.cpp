@@ -603,6 +603,9 @@ bool StartupScene::walk(unsigned direction, ScriptMachine &machine,bool scripted
  return true;
 }
 unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine,unsigned self,bool scripted) const {
+ // Opcode 34 marks scripted actors as collision-free (DOS actor byte +23).
+ // Player routes must honor the same flag as NPC movement.
+ if(!self && scripted && _collisionBypass[0])return 0;
  const ScriptActor &actor=*machine.actor(self);
  unsigned char terrain[320],obstacles[255*4];
  for (unsigned i=0;i<320;++i) terrain[i]=_state.byte(0x339e + i);
@@ -711,7 +714,7 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
  // centre is inside the opening but a foot extends past its jamb. Preserve
  // the original full-footprint exit test (DOS 0xd24a); align the route with
  // that opening instead of rejecting the scripted destination.
- if(scripted && x==a.x && y!=a.y) {
+ if(scripted && !_collisionBypass[0] && x==a.x && y!=a.y) {
   unsigned d=y<a.y ? 1 : 3;
   if(collisionAt(x,y,d,machine,0,scripted)==0x100) {
    for(unsigned i=0;i<_state.word(0x2dfc);++i) {
@@ -726,7 +729,7 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
  // A two-coordinate script destination can also lie beyond an exit (for
  // example the foyer door). End at its first boundary tile, not deeper in
  // impassable terrain behind it.
- if(scripted && x!=a.x && y!=a.y) {
+ if(scripted && !_collisionBypass[0] && x!=a.x && y!=a.y) {
   for(unsigned d=1;d<=4;++d) {
    if((d==1 && y>=a.y) || (d==2 && x<=a.x) || (d==3 && y<=a.y) || (d==4 && x>=a.x))continue;
    if((collisionAt(x,y,d,machine,0,scripted)&0xff00)!=0x400)continue;
@@ -739,7 +742,7 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
   }
  }
  // Stop a scripted axis destination at the first original exit collision.
- if(scripted && (x==a.x || y==a.y)) {
+ if(scripted && !_collisionBypass[0] && (x==a.x || y==a.y)) {
   int tx=a.x,ty=a.y;unsigned d=x>a.x ? 2 : x<a.x ? 4 : y>a.y ? 3 : 1;
   for(unsigned step=0;step<520 && (tx!=x || ty!=y);++step) {
    tx+=d==2 ? 1 : d==4 ? -1 : 0;ty+=d==3 ? 1 : d==1 ? -1 : 0;

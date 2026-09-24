@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory',type=Path)
+p.add_argument('--room19-save',type=Path,help='Resume guided walk at room 19 doorway')
 p.add_argument('--inn-seat-save',type=Path,help='Exercise scripted seating through inn exit region')
 p.add_argument('--inn-stuck-save',type=Path,help='Restore older blocked inn entrance save')
 p.add_argument('--inn-entry-save',type=Path,help='Enter inn from outside and walk away from doorway')
@@ -77,6 +78,17 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="room19") {
+   assert(scene.bank()==0 && scene.room()==19 && m.task(4)->pc==32);
+   assert(m.actor(0)->x==118 && m.actor(0)->y==168);
+   for(unsigned i=0;i<600;++i){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);for(unsigned j=0;j<m.count();++j)assert(m.task(j)->result<kUnknownWait);}
+   assert(scene.bank()==3 && scene.room()==0);
+   // Restoring collision must make the same terrain impassable again.
+   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
+   assert(scene.restoreCollision(0));assert(!scene.destination(140,168,m,true));
+   assert(scene.bypass(0));assert(scene.destination(140,168,m,true));
+   std::cout<<"Guided doorway walk reaches bank 3 room 0; bypass/restore honors terrain\n";return 0;
+  }
   if(argc>2 && std::string(argv[2])=="seat") {
    assert(scene.bank()==1 && scene.room()==10);
    // Resume the real authored seating tail immediately after dialogue 629.
@@ -571,7 +583,7 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')]+([str(a.inn_seat_save.resolve()),'seat'] if a.inn_seat_save else [str(a.inn_stuck_save.resolve()),'stuck'] if a.inn_stuck_save else [str(a.inn_entry_save.resolve()),'entry'] if a.inn_entry_save else [str(a.inn_save.resolve()),'inn'] if a.inn_save else [str(a.map_save.resolve()),'map'] if a.map_save else [str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+ subprocess.run([str(t/'test')]+([str(a.room19_save.resolve()),'room19'] if a.room19_save else [str(a.inn_seat_save.resolve()),'seat'] if a.inn_seat_save else [str(a.inn_stuck_save.resolve()),'stuck'] if a.inn_stuck_save else [str(a.inn_entry_save.resolve()),'entry'] if a.inn_entry_save else [str(a.inn_save.resolve()),'inn'] if a.inn_save else [str(a.map_save.resolve()),'map'] if a.map_save else [str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
 
  if a.cobble_save:
   for x in (143,153):

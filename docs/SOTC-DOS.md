@@ -1932,3 +1932,18 @@ replays the actual task 4 seating tail from PC 296, verifies the seated pose
 and room, then reloads the pre-conversation state to verify ordinary user exit.
 Inn entry regression and full save audit also pass (74 cinematics, 2564 frames).
 PS4 preview rebuilt. Backup save tick 371730 predates the conversation.
+
+### Guided room 19 doorway collision bypass (2026-09-24)
+
+Live tick 373588: bank 0 room 19 task 4 PC 32 (opcode 4) requested
+Parker's move from (118,168) to (140,168). Immediately preceding opcode 34
+had enabled collision bypass, but only NPC movement honored that flag.
+Player route collision and doorway alignment now respect scripted bypass.
+Normal user walking still uses collision, and opcode 35 restores it.
+Original opcode 34 at DOS 0x9369 sets actor byte +23 to 8; original movement
+checks that flag at 0xcecd/0xd081.
+
+Copied fault: artifacts/sotc/room19-backup/frozen.quick0. New audit-save
+`--room19-save` replays 600 frames through the guided passage into bank 3
+room 0, then verifies restoreCollision blocks the same target and bypass
+permits it. Inn seating/ordinary exit regression and full save audit pass.

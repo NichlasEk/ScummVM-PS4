@@ -51,6 +51,7 @@ public:
   return actor<11 && _state.setWord(0x2e54+actor*52+30,x) && _state.setWord(0x2e54+actor*52+32,y);
  }
  unsigned textX() const {return _state.word(0x2e54+_speaker*52+30);}
+ bool portraitDialogue() const {return _portrait;}
  unsigned textY() const {return _state.word(0x2e54+_speaker*52+32);}
  unsigned brightness() const { return _brightness; }
  bool serviceRoom(ScriptMachine &machine,Common::String &status);

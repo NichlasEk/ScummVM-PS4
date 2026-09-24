@@ -13,6 +13,7 @@ class JournalFont {
   unsigned p=_table+(c-_first)*2;return unsigned(_data[p])*256+_data[p+1];
  }
 public:
+ unsigned height() const {return _height;}
  bool load(const Common::Array<byte> &data) {
   if(data.size()<8) return false;
   _data=data;_first=data[0];_height=data[2];_stride=data[3] ? data[3] : va2LE16(data.data()+4);

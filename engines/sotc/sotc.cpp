@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "sotc/dialoguebox.h"
 #include "sotc/sotc.h"
 #include "common/error.h"
 #include "common/system.h"
@@ -94,6 +95,9 @@ Common::Error SotcEngine::run() {
  journalText.resize(journalFile.size());
  if(journalFile.read(journalText.data(),journalText.size())!=journalText.size() || !journal.load(toolbarData,journalFont,journalText))
   return Common::Error(Common::kReadingFailed,"Invalid diary resources");
+ DialogueBox dialogueBox; Common::Array<byte> bubbleData;
+ if(!resources.load(1,bubbleData) || !dialogueBox.load(journalFont,bubbleData))
+  return Common::Error(Common::kReadingFailed,"Cannot load original dialogue resources");
  SoundEffects sound(_mixer);
  ScriptMachine startupMachine; startupMachine.setSound(&sound); unsigned scriptTicks = 0; Common::String scriptStatus;
  StartupScene startupScene; startupMachine.setAnimation(&startupScene);
@@ -145,7 +149,7 @@ Common::Error SotcEngine::run() {
   debug("[sotc-menu] opening finished or skipped; waiting for New game");
  };
 
- Common::Array<Common::String> dialogueLines; Common::String shownDialogue; unsigned dialoguePage=0;
+ Common::String shownDialogue; unsigned dialoguePage=0;
  Common::Array<Common::String> storyLines; Common::String storyText; unsigned storyPage=0;
  Common::Rect choiceRects[6];
  Common::Array<byte> cursorData;
@@ -197,9 +201,8 @@ Common::Error SotcEngine::run() {
   sound.music(state.music); startupScene.resumeSpeech();
   scriptTicks=state.ticks; runScene=state.running; sceneFault=state.fault; heldDirection=0;
   startupAvailable=showStartup=true; mainMenu=showStory=showOpening=showCd=false; pal=0; toolbar.hide();
-  shownDialogue=startupScene.dialogueText(); dialogueLines.clear();
-  FontMan.getFontByUsage(Graphics::FontManager::kGUIFont)->wordWrapText(shownDialogue,306,dialogueLines);
-  dialoguePage=state.page<dialogueLines.size() ? state.page : 0;
+  shownDialogue=startupScene.dialogueText(); dialogueBox.text(shownDialogue);
+  dialoguePage=state.page<dialogueBox.count() ? state.page : 0;
   scriptStatus=Common::String::format("Restored at script tick %u",scriptTicks);
   _mixer->pauseAll(false); nextSceneFrame=_system->getMillis()+100; redraw=true;
   debug("[sotc-save] load ok=1 tick=%u actor=%d,%d",scriptTicks,startupMachine.actor(0)->x,startupMachine.actor(0)->y);
@@ -349,16 +352,13 @@ Common::Error SotcEngine::run() {
    const Graphics::Font *font = FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
    if (showStartup && !startupScene.dialogueText().empty()) {
     if (shownDialogue!=startupScene.dialogueText()) {
-     shownDialogue=startupScene.dialogueText(); dialoguePage=0; dialogueLines.clear();
-     font->wordWrapText(shownDialogue,306,dialogueLines);
+     shownDialogue=startupScene.dialogueText(); dialoguePage=0; dialogueBox.text(shownDialogue);
     }
-    unsigned end=MIN<unsigned>(dialoguePage+8,dialogueLines.size());
-    int textLeft=CLIP<int>(int(startupScene.textX())-153,2,12);
-    int textTop=CLIP<int>(startupScene.textY(),2,MAX<int>(2,194-(end-dialoguePage)*font->getFontHeight()));
-    surface.fillRect(Common::Rect(textLeft,textTop,318,textTop+6+(end-dialoguePage)*font->getFontHeight()),0);
-    for (unsigned i=dialoguePage;i<end;++i)
-     font->drawString(&surface,dialogueLines[i],textLeft+5,textTop+3+(i-dialoguePage)*font->getFontHeight(),313-textLeft,7);
-   } else { shownDialogue.clear(); dialogueLines.clear(); dialoguePage=0; }
+    Common::Array<byte> dialogPixels;dialogPixels.resize(64000);
+    memcpy(dialogPixels.data(),surface.getBasePtr(0,0),64000);
+    if(dialogueBox.render(dialogPixels,dialoguePage,startupScene.textX(),startupScene.textY(),startupScene.portraitDialogue()))
+     memcpy(surface.getBasePtr(0,0),dialogPixels.data(),64000);
+   } else { shownDialogue.clear(); dialoguePage=0; }
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
    font->drawString(&surface, showStartup ? (startupMachine.waitingForInput() ? "Click / Cross: continue" : startupScene.cinematicActive() ? "Cross: skip  Options: menu" : !startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "F8: start scene  L1/R1: figure", 2, 227, 316, 7);
@@ -641,7 +641,7 @@ Common::Error SotcEngine::run() {
        startupAvailable=startupScene.load(startupPixels,startupStatus,startupMachine);
        if (!startupAvailable) { surface.free(); _mixer->pauseAll(false); return Common::Error(Common::kReadingFailed,"Cannot load opening scene"); }
        showStartup=true; scriptTicks=0; heldDirection=0; sceneFault=false; runScene=true;
-       shownDialogue.clear(); dialogueLines.clear(); dialoguePage=0; pal=0;
+       shownDialogue.clear(); dialoguePage=0; pal=0;
        Common::File storyFile; Common::Array<byte> storyBytes;
        if (!storyFile.open(Common::Path("E.CC4")) || storyFile.size()<1 || storyFile.size()>4*1024*1024) {
         surface.free(); return Common::Error(Common::kReadingFailed,"Cannot read story subtitles");
@@ -789,7 +789,7 @@ Common::Error SotcEngine::run() {
     if (sceneFault) continue;
     if (!startupScene.dialogueText().empty()) {
      if (event.type==Common::EVENT_LBUTTONDOWN) {
-      if (dialoguePage+8<dialogueLines.size()) dialoguePage+=8;
+      if (dialogueBox.more(dialoguePage)) dialoguePage=dialogueBox.next(dialoguePage);
       else startupScene.finishDialogue();
       resumeScene(); redraw=true;
      }

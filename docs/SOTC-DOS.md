@@ -1710,3 +1710,21 @@ The copied-save probe enters square room 11 with stale horizontal and vertical
 clipping, verifies that rendering at (8,146) matches full bounds, and checks
 that an explicit script clip still changes the pixels. Evidence:
 `artifacts/sotc/square-clip-probe.log` and `square-clip-build.log`.
+
+### Compact original-resource dialogue boxes (2026-09-24)
+
+Gameplay speech now uses CTU.PFN and the nine BULLE.VA2 border/interior poses
+from the user's RES.PAK. Original authored line breaks are retained and shown
+three at a time, matching the text loop at 0xb701; excessively wide lines wrap
+within the screen. The tiled box follows 0xb8a2. Portrait dialogue is placed
+at the lower left; scene dialogue uses the speaker anchor within screen bounds.
+Clicks advance pages, with speech/script completion only after the last page.
+The existing saved page field remains a line offset; older saves load against
+the new layout, so a save made mid-page with the old GUI font can resume at a
+different text position. Opening-cinematic subtitles and choice menus still
+use their existing UI.
+
+`audit-dialogue-box.py` decodes Jugg's original greeting (bank 3, text 240),
+checks its 11 lines/four pages, original resource rendering, bounds, and long
+line wrapping. `dialogue-box-test.log`, `dialogue-box-preview.png`, and
+`dialogue-box-build.log` record validation; the journal audit also passes.

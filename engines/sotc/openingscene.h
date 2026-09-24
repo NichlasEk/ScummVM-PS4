@@ -28,6 +28,7 @@ class OpeningScene {
  unsigned _activeTask=2,_randomValue=0; uint32 _randomState=1;
  unsigned _brightness=0,_fade=0,_fadeStep=0,_fadeClock=0,_clock=0;
  bool _done=false,_failed=false,_story=false,_talking=false;
+ bool _managedDialoguePages=false;
  unsigned _speechBank=0,_textX=0,_textY=0,_textColor=7;
  Common::Array<byte> _textFile;
  Common::String _dialogue;
@@ -52,6 +53,8 @@ public:
  unsigned textX() const { return _textX; }
  unsigned textY() const { return _textY; }
  unsigned textColor() const { return _textColor; }
+ bool portraitDialogue() const { return _portrait; }
+ void manageDialoguePages() { _managedDialoguePages=true; }
  void finishDialogue();
  void advance(unsigned elapsed);
  bool done() const { return _done; }

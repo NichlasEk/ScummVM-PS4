@@ -293,7 +293,7 @@ void OpeningScene::advance(unsigned elapsed) {
  if (_done) return;
  if (_cd && _talking) {
   _dialogueClock+=elapsed;
-  if (_dialogueClock>=2500 && !_sound.speechActive()) finishDialogue();
+  if (!_managedDialoguePages && _dialogueClock>=2500 && !_sound.speechActive()) finishDialogue();
  }
  if (_fade) {
   _fadeClock+=elapsed;

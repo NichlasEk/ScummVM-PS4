@@ -34,5 +34,5 @@ project="$root/build/scummvm-sotc-android/android_project"
 mkdir -p "$project/lib/x86_64"
 cp "$root/build/scummvm-sotc-android-x86_64/libscummvm.so" "$project/lib/x86_64/"
 "$project/gradlew" -p "$project" assembleDebug > "$root/artifacts/sotc/android/universal-build.log" 2>&1
-cp "$project/build/outputs/apk/debug/ScummVM-debug.apk" "$root/dist/sotc-android/SOTC-Preview-0.1.0.apk"
-sha256sum "$root/dist/sotc-android/SOTC-Preview-0.1.0.apk"
+cp "$project/build/outputs/apk/debug/ScummVM-debug.apk" "$root/dist/sotc-android/SOTC-Preview-0.1.1.apk"
+sha256sum "$root/dist/sotc-android/SOTC-Preview-0.1.1.apk"

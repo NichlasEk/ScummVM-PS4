@@ -99,9 +99,9 @@ Common::Error SotcEngine::run() {
   return Common::Error(Common::kReadingFailed,"Invalid diary resources");
  if(!inventory.load(toolbarData,inventoryIcons,journalFont))
   return Common::Error(Common::kReadingFailed,"Invalid inventory resources");
- DialogueBox dialogueBox,pickupBox; unsigned pickupRemaining=0,pickupBank=0,pickupRoom=0;
+ DialogueBox dialogueBox,pickupBox,storyBox; unsigned pickupRemaining=0,pickupBank=0,pickupRoom=0;
  Common::Array<byte> bubbleData;
- if(!resources.load(1,bubbleData) || !dialogueBox.load(journalFont,bubbleData) || !pickupBox.load(journalFont,bubbleData))
+ if(!resources.load(1,bubbleData) || !dialogueBox.load(journalFont,bubbleData) || !pickupBox.load(journalFont,bubbleData) || !storyBox.load(journalFont,bubbleData))
   return Common::Error(Common::kReadingFailed,"Cannot load original dialogue resources");
  SoundEffects sound(_mixer);
  ScriptMachine startupMachine; startupMachine.setSound(&sound); unsigned scriptTicks = 0; Common::String scriptStatus;
@@ -156,7 +156,8 @@ Common::Error SotcEngine::run() {
 
  Common::String shownDialogue; unsigned dialoguePage=0;
  DialogueTimer dialogueTimer; uint32 dialogueLastTime=_system->getMillis();
- Common::Array<Common::String> storyLines; Common::String storyText; unsigned storyPage=0;
+ Common::String storyText; unsigned storyPage=0; DialogueTimer storyTimer;
+ animatedOpening.manageDialoguePages(); cdOpening.manageDialoguePages();
  Common::Rect choiceRects[6];
  Common::Array<byte> cursorData;
  resources.load(9,cursorData); // Original CURSOR.VA2, never bundled with the engine.
@@ -230,7 +231,7 @@ Common::Error SotcEngine::run() {
  };
  auto finishCd=[&]() {
   showCd=false; sound.stopSpeech(); sound.music(255); sound.effect(255);
-  storyText.clear(); storyLines.clear(); storyPage=0; openingLast=_system->getMillis(); redraw=true;
+  storyText.clear();  storyPage=0; openingLast=_system->getMillis(); redraw=true;
   debug("[sotc-cd] finished or skipped; starting R05 logos");
  };
  Graphics::Surface surface; surface.create(320, 240, Graphics::PixelFormat::createFormatCLUT8());
@@ -265,6 +266,19 @@ Common::Error SotcEngine::run() {
   }
   uint32 dialogueNow=_system->getMillis(),dialogueElapsed=dialogueNow-dialogueLastTime;
   dialogueLastTime=dialogueNow;
+  if(showStory || showCd) {
+   OpeningScene &cinematic=showCd ? cdOpening : animatedOpening;
+   if(storyText!=cinematic.dialogueText()) {
+    storyText=cinematic.dialogueText();storyPage=0;storyBox.text(storyText);
+    storyTimer.reset(storyBox.pageDelay(0,sound.speechLengthMs()));
+   } else if(!storyText.empty() && storyTimer.advance(dialogueElapsed,true,!storyBox.more(storyPage),sound.speechActive())) {
+    if(storyBox.more(storyPage)) {
+     storyPage=storyBox.next(storyPage);storyTimer.reset(storyBox.pageDelay(storyPage,sound.speechLengthMs()));
+    } else cinematic.finishDialogue();
+    redraw=true;
+   }
+  }
+
   if(pickupRemaining) {
    if(pickupBank!=startupScene.bank() || pickupRoom!=startupScene.room() || !startupScene.dialogueText().empty())pickupRemaining=0;
    else if(showStartup && !mainMenu && !showInventory && !showJournal && !showStory)
@@ -437,14 +451,13 @@ Common::Error SotcEngine::run() {
     for (unsigned i=0;i<768;++i) faded[i]=scenePalette[i]*brightness/255;
     _system->getPaletteManager()->setPalette(faded,0,256);
     if ((showStory || showCd) && !cinematic.dialogueText().empty()) {
-     if (storyText!=cinematic.dialogueText()) {
-      storyText=cinematic.dialogueText(); storyPage=0; storyLines.clear(); font->wordWrapText(storyText,300,storyLines);
+     Common::Array<byte> storyPixels=cinematic.pixels();
+     if(!storyBox.render(storyPixels,storyPage,cinematic.textX(),cinematic.textY(),cinematic.portraitDialogue())) {
+      surface.free();return Common::Error(Common::kReadingFailed,"Cannot render opening dialogue");
      }
-     unsigned end=MIN<unsigned>(storyPage+8,storyLines.size());
-     int left=CLIP<int>(int(cinematic.textX())-150,0,20),top=CLIP<int>(20+cinematic.textY(),20,120);
-     surface.fillRect(Common::Rect(left,top,left+300,top+4+(end-storyPage)*font->getFontHeight()),0);
-     for (unsigned i=storyPage;i<end;++i) font->drawString(&surface,storyLines[i],left,top+2+(i-storyPage)*font->getFontHeight(),300,cinematic.textColor(),Graphics::kTextAlignCenter);
-    } else { storyText.clear(); storyLines.clear(); storyPage=0; }
+     memcpy(surface.getBasePtr(0,20),storyPixels.data(),64000);
+    }
+
 
    }
    if(showStartup && !mainMenu && !showStory && startupMachine.choiceCount()) {
@@ -634,7 +647,7 @@ Common::Error SotcEngine::run() {
     if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) finishCd();
     else if (!cdOpening.dialogueText().empty() && (event.type==Common::EVENT_LBUTTONDOWN ||
       (event.type==Common::EVENT_KEYDOWN && !event.kbdRepeat && event.kbd.keycode==Common::KEYCODE_RETURN))) {
-     if (storyPage+8<storyLines.size()) storyPage+=8;
+     if (storyBox.more(storyPage)) { storyPage=storyBox.next(storyPage); storyTimer.reset(storyBox.pageDelay(storyPage,sound.speechLengthMs())); }
      else cdOpening.finishDialogue();
      redraw=true;
     }
@@ -644,7 +657,7 @@ Common::Error SotcEngine::run() {
     if (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_ESCAPE) finishStory();
     else if (!animatedOpening.dialogueText().empty() &&
       (event.type==Common::EVENT_LBUTTONDOWN || (event.type==Common::EVENT_KEYDOWN && event.kbd.keycode==Common::KEYCODE_RETURN))) {
-     if (storyPage+8<storyLines.size()) storyPage+=8; else animatedOpening.finishDialogue();
+     if (storyBox.more(storyPage)) { storyPage=storyBox.next(storyPage); storyTimer.reset(storyBox.pageDelay(storyPage,sound.speechLengthMs())); } else animatedOpening.finishDialogue();
      redraw=true;
     }
     continue;
@@ -707,7 +720,7 @@ Common::Error SotcEngine::run() {
            !animatedOpening.startStory(Cc4View(openingScript.data(),openingScript.size()),Cc4View(storyBytes.data(),storyBytes.size()))) {
         surface.free(); return Common::Error(Common::kReadingFailed,"Cannot initialize story scene");
        }
-       showStory=true; openingLast=_system->getMillis(); storyText.clear(); storyLines.clear(); storyPage=0;
+       showStory=true; openingLast=_system->getMillis(); storyText.clear();  storyPage=0;
        mainMenu=false; _mixer->pauseAll(false); nextSceneFrame=_system->getMillis()+100;
        debug("[sotc-menu] New game: opening scene reset");
       }
@@ -718,7 +731,7 @@ Common::Error SotcEngine::run() {
       openingClock=OpeningClock(openingPlan); openingAnimated=false; openingMusicClock=0;
       showOpening=openingImages[0].size()==64000 && openingImages[1].size()==64000;
       showCd=!cdScript.empty() && cdOpening.startCd(Cc4View(cdScript.data(),cdScript.size()),Cc4View(cdText.data(),cdText.size()));
-      openingLast=_system->getMillis(); storyText.clear(); storyLines.clear(); storyPage=0;
+      openingLast=_system->getMillis(); storyText.clear();  storyPage=0;
       _mixer->pauseAll(false);
       if(!showOpening && !showCd) _system->displayMessageOnOSD(Common::U32String("Opening resources are unavailable"));
       debug("[sotc-menu] replay opening cd=%u",unsigned(showCd));

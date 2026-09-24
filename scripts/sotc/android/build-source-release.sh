@@ -13,4 +13,4 @@ project="$src/build-arm64-v8a/android_project"
 mkdir -p "$project/lib/x86_64"
 cp "$src/build-x86_64/libscummvm.so" "$project/lib/x86_64/"
 "$project/gradlew" -p "$project" assembleDebug
-cp "$project/build/outputs/apk/debug/ScummVM-debug.apk" "$src/SOTC-Preview-0.1.0.apk"
+cp "$project/build/outputs/apk/debug/ScummVM-debug.apk" "$src/SOTC-Preview-0.1.1.apk"

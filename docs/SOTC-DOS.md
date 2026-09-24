@@ -1916,3 +1916,19 @@ variables or inventory are changed. Backup: artifacts/sotc/inn-bench-backup/.
 (112,199), then free walking. `--inn-stuck-save` verifies the older stuck save
 can leave the recovered entrance. Full audit-save passes, including 74
 cinematics / 2564 frames. PS4 package rebuilt.
+
+### Inn seating accidentally exits the room (2026-09-24)
+
+After dialogue 629 ("Shall we have a seat?"), bank 1 room 10 task 4
+walks Parker through (134,199) before turning to (228,199) and seating
+him at (228,190). The click planner's synthetic bottom exit at Y=199
+incorrectly fired during this authored movement. Original terrain collision
+only reports the bottom boundary beyond Y=199. The synthetic exit now applies
+only to user walking; destination boundary probes carry the scripted flag too.
+Opcode 34/35 collision bypass is unchanged (restored before this path).
+
+`audit-save.py --inn-seat-save artifacts/sotc/inn-seat-backup/sotc-sotc.quick0`
+replays the actual task 4 seating tail from PC 296, verifies the seated pose
+and room, then reloads the pre-conversation state to verify ordinary user exit.
+Inn entry regression and full save audit also pass (74 cinematics, 2564 frames).
+PS4 preview rebuilt. Backup save tick 371730 predates the conversation.

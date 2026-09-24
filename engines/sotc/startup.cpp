@@ -617,9 +617,10 @@ unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMa
     candidate.right>=319 && candidate.top>terrain[319]) collision=0;
  if(self && _moves[self].active && _moves[self].x==0 && direction==4 && collision==0x100 &&
     candidate.left<=0 && candidate.top>terrain[0]) collision=0;
- if(!self && (collision || (direction==3 && candidate.bottom==199))) {
+ if(!self && (collision || (!scripted && direction==3 && candidate.bottom==199))) {
   // Original 0xd32f consults exits after a terrain/boundary collision.
-  // Treat the last bottom row as the exit step for the bounded click planner.
+  // Only user walking treats the last row as an exit for the bounded
+  // click planner. Scripts can target Y=199 before turning (inn seating).
   for(unsigned i=0;i<_state.word(0x2dfc);++i) {
    unsigned p=0x3090+i*8;if(_state.byte(p)!=direction)continue;
    int l=_state.word(p+4),r=_state.word(p+6);if(l>319 || r>319)continue;
@@ -702,7 +703,7 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
   for(int n=0;n<(exit==1 ? 200 : 320);++n) {
    int tx=exit==1 ? x : exit==2 ? n : 319-n;
    int ty=exit==1 ? 199-n : y;
-   if((collisionAt(tx,ty,exit,machine)&0xff00)==0x400){x=tx;y=ty;found=true;break;}
+   if((collisionAt(tx,ty,exit,machine,0,scripted)&0xff00)==0x400){x=tx;y=ty;found=true;break;}
   }
   if(!found)exit=0;
  }
@@ -712,13 +713,13 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
  // that opening instead of rejecting the scripted destination.
  if(scripted && x==a.x && y!=a.y) {
   unsigned d=y<a.y ? 1 : 3;
-  if(collisionAt(x,y,d,machine)==0x100) {
+  if(collisionAt(x,y,d,machine,0,scripted)==0x100) {
    for(unsigned i=0;i<_state.word(0x2dfc);++i) {
     unsigned p=0x3090+i*8;if(_state.byte(p)!=d)continue;
     int left=_state.word(p+4),right=_state.word(p+6);
     if(x<left || x>right || right>319 || right-left<int(a.halfWidth*2))continue;
     int aligned=x<left+int(a.halfWidth) ? left+a.halfWidth : x>right-int(a.halfWidth) ? right-a.halfWidth : x;
-    if((collisionAt(aligned,y,d,machine)&0xff00)==0x400){x=aligned;break;}
+    if((collisionAt(aligned,y,d,machine,0,scripted)&0xff00)==0x400){x=aligned;break;}
    }
   }
  }
@@ -728,10 +729,10 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
  if(scripted && x!=a.x && y!=a.y) {
   for(unsigned d=1;d<=4;++d) {
    if((d==1 && y>=a.y) || (d==2 && x<=a.x) || (d==3 && y<=a.y) || (d==4 && x>=a.x))continue;
-   if((collisionAt(x,y,d,machine)&0xff00)!=0x400)continue;
+   if((collisionAt(x,y,d,machine,0,scripted)&0xff00)!=0x400)continue;
    for(unsigned n=0;n<520;++n) {
     int nx=x+(d==4 ? 1 : d==2 ? -1 : 0),ny=y+(d==1 ? 1 : d==3 ? -1 : 0);
-    if((collisionAt(nx,ny,d,machine)&0xff00)!=0x400)break;
+    if((collisionAt(nx,ny,d,machine,0,scripted)&0xff00)!=0x400)break;
     x=nx;y=ny;
    }
    break;
@@ -742,7 +743,7 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
   int tx=a.x,ty=a.y;unsigned d=x>a.x ? 2 : x<a.x ? 4 : y>a.y ? 3 : 1;
   for(unsigned step=0;step<520 && (tx!=x || ty!=y);++step) {
    tx+=d==2 ? 1 : d==4 ? -1 : 0;ty+=d==3 ? 1 : d==1 ? -1 : 0;
-   if((collisionAt(tx,ty,d,machine)&0xff00)==0x400){x=tx;y=ty;break;}
+   if((collisionAt(tx,ty,d,machine,0,scripted)&0xff00)==0x400){x=tx;y=ty;break;}
   }
  }
  auto passable=[&](int nx,int ny,unsigned d) {

@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory',type=Path)
+p.add_argument('--inn-seat-save',type=Path,help='Exercise scripted seating through inn exit region')
 p.add_argument('--inn-stuck-save',type=Path,help='Restore older blocked inn entrance save')
 p.add_argument('--inn-entry-save',type=Path,help='Enter inn from outside and walk away from doorway')
 p.add_argument('--inn-save',type=Path,help='Resume NPC west departure at the inn')
@@ -76,6 +77,31 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="seat") {
+   assert(scene.bank()==1 && scene.room()==10);
+   // Resume the real authored seating tail immediately after dialogue 629.
+   ScriptActor player=*m.actor(0);player.x=196;player.y=100;m.setActor(0,player);
+   ScriptTask &seat=*const_cast<ScriptTask *>(m.task(4));
+   seat.pc=296;seat.actor=0;seat.flags=0;seat.result=kReady;
+   for(unsigned i=0;i<600 && seat.result!=kDisabled;++i){
+    assert(scene.movePlayer(m));assert(m.visit(4)<kUnknownWait);
+    assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+    assert(scene.bank()==1 && scene.room()==10);
+   }
+   assert(seat.result==kDisabled && m.actor(0)->x==228 && m.actor(0)->y==190);
+   std::cout<<"Original seating script passes door, switches resource and finishes seated inside inn\n";
+   // The same boundary must still work as an intentional user exit.
+   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
+   player=*m.actor(0);player.x=112;player.y=185;m.setActor(0,player);
+   assert(scene.destination(112,199,m));
+   for(unsigned i=0;i<100 && scene.bank()==1;++i){
+    assert(scene.movePlayer(m));assert(scene.serviceRoom(m,status));
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+   }
+   assert(scene.bank()==0 && scene.room()==12);
+   std::cout<<"User click still exits inn normally\n";return 0;
+  }
+
   if(argc>2 && std::string(argv[2])=="stuck") {
    assert(scene.bank()==1 && scene.room()==10);
    assert(m.actor(0)->x==112 && m.actor(0)->y==199);
@@ -545,7 +571,7 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')]+([str(a.inn_stuck_save.resolve()),'stuck'] if a.inn_stuck_save else [str(a.inn_entry_save.resolve()),'entry'] if a.inn_entry_save else [str(a.inn_save.resolve()),'inn'] if a.inn_save else [str(a.map_save.resolve()),'map'] if a.map_save else [str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+ subprocess.run([str(t/'test')]+([str(a.inn_seat_save.resolve()),'seat'] if a.inn_seat_save else [str(a.inn_stuck_save.resolve()),'stuck'] if a.inn_stuck_save else [str(a.inn_entry_save.resolve()),'entry'] if a.inn_entry_save else [str(a.inn_save.resolve()),'inn'] if a.inn_save else [str(a.map_save.resolve()),'map'] if a.map_save else [str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
 
  if a.cobble_save:
   for x in (143,153):

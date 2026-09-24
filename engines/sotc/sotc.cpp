@@ -172,6 +172,8 @@ Common::Error SotcEngine::run() {
   }
   bool rendered = startupScene.render(startupPixels,startupStatus,startupMachine);
   unsigned blockedAnimations = rendered ? startupScene.advance(startupMachine) : 1;
+  if(!rendered)scriptStatus=startupStatus;
+  else if(blockedAnimations)scriptStatus=Common::String::format("Room %u: %u animation update(s) failed",startupScene.room(),blockedAnimations);
   if (!rendered || blockedAnimations) runScene = false;
   for (unsigned i=0;i<startupMachine.count();++i)
    if (startupMachine.task(i)->result >= kUnknownWait) runScene = false;

@@ -7,7 +7,9 @@ namespace Sotc {
 inline bool advanceAnimation(unsigned control, unsigned mode, unsigned gate,
                              unsigned count, unsigned &step, unsigned &substep, bool *wrapped = nullptr) {
  if (wrapped) *wrapped=false;
- if(gate!=255 && mode==2 && (control>>14)<=1){substep=0;return true;}
+ // Original 0x7b30 tests the hold gate before reading the sequence count.
+ // Facing a held actor can leave mode 0 with count 0; it remains a valid pose.
+ if(gate!=255 && (mode==0 || mode==2) && (control>>14)<=1){substep=0;return true;}
  if (!count || step >= count || mode > 2 || mode == 1 || (control >> 14) > 1) return false;
  unsigned kind = control >> 14, parameter = control & 0x3fff;
  if (mode == 2) {

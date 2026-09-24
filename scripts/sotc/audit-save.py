@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory',type=Path)
+p.add_argument('--resume-save',type=Path,help='Resume a copied save for 300 frames without script or animation failures')
 p.add_argument('--probe-save',type=Path,help='Load a copied pharmacy save and verify resume, movement and exit')
 a=p.parse_args()
 root=Path(__file__).resolve().parents[2]
@@ -68,6 +69,13 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2) {
+   assert(saved.running && !saved.fault);
+   unsigned startBank=scene.bank(),startRoom=scene.room(),startExecuted=m.task(1)->executed;
+   for(unsigned tick=0;tick<300;++tick){assert(scene.movePlayer(m));m.tick();if(!scene.serviceRoom(m,status)){std::cerr<<status<<std::endl;assert(false);}assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);for(unsigned i=0;i<m.count();++i)assert(m.task(i)->result<kUnknownWait);}
+   assert(scene.bank()!=startBank || scene.room()!=startRoom || m.task(1)->executed>startExecuted);
+   std::cout<<"Copied save resumed for 300 frames without failures; door script progressed\n";return 0;
+  }
   assert(saved.running && !saved.fault && scene.bank()==1 && scene.room()==3);
   for(unsigned i=0;i<m.count();++i)if(m.task(i)->result>=kUnknownWait)
    std::cout<<"Retry task "<<i<<" opcode="<<m.task(i)->opcode<<" pc="<<m.task(i)->pc<<std::endl;
@@ -427,4 +435,4 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')]+([str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+ subprocess.run([str(t/'test')]+([str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)

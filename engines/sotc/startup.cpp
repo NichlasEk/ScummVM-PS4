@@ -890,9 +890,10 @@ unsigned StartupScene::advance(ScriptMachine &machine) {
    animation.sequence=seq; animation.mode=0; animation.gate=255;
    actor.step=0; actor.steps=count; machine.setActor(id,actor); continue;
   }
-  SequenceStep step; bool wrapped=false;
+  SequenceStep step={}; bool wrapped=false;
   if (!va2Step(data.data(),data.size(),animation.sequence,actor.step,step) ||
       !advanceAnimation(step.control,animation.mode,animation.gate,actor.steps,actor.step,animation.substep,&wrapped)) {
+   warning("[sotc-animation] bank=%u room=%u actor=%u resource=%u type=%u sequence=%u frame=%u count=%u mode=%u gate=%u control=%u",bank(),room(),id,_indices[slot],_types[slot],animation.sequence,actor.step,actor.steps,animation.mode,animation.gate,step.control);
    ++unsupported; continue;
   }
   if (id==10 && wrapped && animation.sequence<4) {

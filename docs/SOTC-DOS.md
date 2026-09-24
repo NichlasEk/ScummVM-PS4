@@ -1761,3 +1761,18 @@ keep the selected answer visible. The generic black panel/white outline is gone.
 314/315 (the Boleskine/money question), verifies distinct widths and both text
 colors, and writes `artifacts/sotc/choice-box-preview.png`. Existing speech
 pagination/timer tests pass; PS4 build log: `choice-box-build.log`.
+
+### Held player pose during the hall door animation (2026-09-24)
+
+The bank 1 / room 15 save at tick 294274 reproduced a scene freeze with zero
+stopped VM tasks. Actor 0 had mode 0, gate 0 and count 0 while actor 1 opened
+the door. `advanceAnimation` accepted this held state only in mode 2. Original
+0x7b30 checks the hold gate before the count for both modes, so mode 0 is now
+accepted too, without advancing its frame. Invalid unheld sequences still fail.
+
+`audit-animation.py` compares held mode 0/2 states against the original EXE,
+alongside the existing 384 render/update cases. `audit-save.py --resume-save`
+loads the copied frozen save, runs 300 frames without errors, and checks that
+the door script progresses. Evidence is in `artifacts/sotc/door-freeze-*`.
+Animation failures now log actor/resource/sequence details and display an
+animation failure in the HUD instead of the misleading zero-script-stops line.

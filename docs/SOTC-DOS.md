@@ -1964,3 +1964,30 @@ bank 0 room 13. It intentionally ends at that room transition. An exploratory
 instant-dialogue run additionally encountered a route failure in room 13
 script 4 from (158,152) toward (150,159); subsequent room behavior remains
 to be investigated separately. Full save audit passes; PS4 preview rebuilt.
+
+### Shared scripted target projection / pharmacy stairs (2026-09-24)
+
+Room 13 task 4 requests (150,159) from (158,152); terrain at the target's
+footprint edges is 169 and 152. The cardinal route planner cannot reach that
+raw point. Scripted player destinations now use the existing terrain/footprint
+projection to select reachable ground (Y=173 here). Collision bypass retains
+exact coordinates, and actual exit collisions/off-screen departures retain
+the doorway handling. This is shared logic, without a room-number condition.
+
+DOS 0xceaf calls 0xcc93 for target preparation, except when collision bypass
+is enabled. The original excludes targets matching any exit span; the bounded
+preview planner instead excludes actual exit collisions, otherwise a broad
+bottom-exit span suppresses necessary projection everywhere above that exit.
+This is a deliberate planner adaptation, not a complete port of DOS routing.
+NPC target normalization and the remaining boundary adaptations still need
+separate validation before broader unification of the walking system.
+
+The pharmacy regression now covers 3000 frames through the outside scene,
+task 4 progression, and a user click away from the stairs. Both the earlier
+fault save and latest user save (tick 375405, still inside the pharmacy) are
+backed up under artifacts/sotc/pharmacy-steps-backup/. The emulator was already
+closed, so no new save at the pictured stair stop could be captured.
+
+Validation: latest user-save pharmacy replay, full save/cinematic audit,
+inn seating/ordinary exit, guided room 19 bypass and projected target,
+Cobble doorway approaches, and forest departure pass. PS4 preview rebuilt.

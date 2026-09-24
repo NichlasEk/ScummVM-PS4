@@ -82,26 +82,37 @@ int main(int argc,char **argv) {
   if(argc>2 && std::string(argv[2])=="pharmacy-movement") {
    assert(scene.bank()==1 && scene.room()==3);
    bool dialogueAdvanced=false;
-   for(unsigned i=0;i<3000 && scene.bank()==1 && scene.room()==3;++i){
+   for(unsigned i=0;i<3000;++i){
     if(i%90==0)scene.finishDialogue();
     assert(scene.movePlayer(m));m.tick();
-    if(m.task(14)->pc>12)dialogueAdvanced=true;
+    if(scene.bank()==1 && scene.room()==3 && m.task(14)->pc>12)dialogueAdvanced=true;
     if(!scene.serviceRoom(m,status)){std::cerr<<status<<" frame="<<i<<std::endl;assert(false);}
     assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
     for(unsigned j=0;j<m.count();++j)assert(m.task(j)->result<kUnknownWait);
    }
-   assert(dialogueAdvanced && scene.bank()==0 && scene.room()==13);
-   std::cout<<"Concurrent NPC movement/animation survives; pharmacy dialogue exits to room 13\n";return 0;
+   assert(dialogueAdvanced && scene.bank()==0 && scene.room()==13 && m.task(4)->pc>6);
+   assert(m.actor(0)->y>=171);
+   assert(scene.destination(150,185,m));
+   for(unsigned i=0;i<100;++i){assert(scene.movePlayer(m));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+   assert(m.actor(0)->x==150 && m.actor(0)->y==185);
+   std::cout<<"Concurrent NPC movement/animation survives; pharmacy dialogue exits and runs 3000 frames through room 13\n";return 0;
   }
   if(argc>2 && std::string(argv[2])=="room19") {
    assert(scene.bank()==0 && scene.room()==19 && m.task(4)->pc==32);
    assert(m.actor(0)->x==118 && m.actor(0)->y==168);
    for(unsigned i=0;i<600;++i){scene.finishDialogue();assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);for(unsigned j=0;j<m.count();++j)assert(m.task(j)->result<kUnknownWait);}
    assert(scene.bank()==3 && scene.room()==0);
-   // Restoring collision must make the same terrain impassable again.
+   // Restoring collision projects the target onto the ground; bypass keeps it exact.
    assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
-   assert(scene.restoreCollision(0));assert(!scene.destination(140,168,m,true));
+   for(unsigned id=1;id<10;++id)assert(scene.hide(id));
+   assert(scene.restoreCollision(0));assert(scene.destination(140,168,m,true));
+   for(unsigned i=0;i<200;++i){assert(scene.movePlayer(m));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+   assert(m.actor(0)->x==140 && m.actor(0)->y>168);
+   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
+   for(unsigned id=1;id<10;++id)assert(scene.hide(id));
    assert(scene.bypass(0));assert(scene.destination(140,168,m,true));
+   for(unsigned i=0;i<200;++i){assert(scene.movePlayer(m));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
+   assert(m.actor(0)->x==140 && m.actor(0)->y==168);
    std::cout<<"Guided doorway walk reaches bank 3 room 0; bypass/restore honors terrain\n";return 0;
   }
   if(argc>2 && std::string(argv[2])=="seat") {

@@ -27,6 +27,7 @@ class StartupScene : public ScriptAnimation {
  unsigned _speaker=0, _talkSequence=0, _talkStep=0, _talkGate=0;
  ScriptMachine *_machine=nullptr;
  Route _route; bool _following=false, _scriptRoute=false;
+ unsigned exitCollisionAt(int x,int y,unsigned direction,const ScriptActor &actor) const;
  unsigned collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine,unsigned self=0,bool scripted=false) const;
  unsigned _inputLocks=0;
  unsigned _walkDirection; bool _walking;

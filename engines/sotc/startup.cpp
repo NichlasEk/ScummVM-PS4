@@ -602,6 +602,20 @@ bool StartupScene::walk(unsigned direction, ScriptMachine &machine,bool scripted
  debug("[sotc-walk] direction=%u moving=%u sequence=%u",facing,unsigned(moving),sequenceIndex);
  return true;
 }
+unsigned StartupScene::exitCollisionAt(int x,int y,unsigned direction,const ScriptActor &actor) const {
+ Footprint candidate=footprint(x,y,actor.halfWidth,actor.footHeight);
+  for(unsigned i=0;i<_state.word(0x2dfc);++i) {
+   unsigned p=0x3090+i*8;if(_state.byte(p)!=direction)continue;
+   int l=_state.word(p+4),r=_state.word(p+6);if(l>319 || r>319)continue;
+   int t=_state.byte(0x339e + l),b=l==r ? 199 : direction==3 ? 199 : _state.byte(0x339e + r);
+   if(direction==3 && l!=r)t=199;
+   if(t>b){int swap=t;t=b;b=swap;}
+   bool hit=(direction==1 || direction==3) ? candidate.left>=l && candidate.right<=r :
+    candidate.top>=t && candidate.top<=b && (direction==2 ? candidate.right>=l : candidate.left<=r);
+   if(hit)return 0x400|i;
+  }
+ return 0;
+}
 unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMachine &machine,unsigned self,bool scripted) const {
  // Opcode 34 marks scripted actors as collision-free (DOS actor byte +23).
  // Player routes must honor the same flag as NPC movement.
@@ -624,16 +638,8 @@ unsigned StartupScene::collisionAt(int x,int y,unsigned direction,const ScriptMa
   // Original 0xd32f consults exits after a terrain/boundary collision.
   // Only user walking treats the last row as an exit for the bounded
   // click planner. Scripts can target Y=199 before turning (inn seating).
-  for(unsigned i=0;i<_state.word(0x2dfc);++i) {
-   unsigned p=0x3090+i*8;if(_state.byte(p)!=direction)continue;
-   int l=_state.word(p+4),r=_state.word(p+6);if(l>319 || r>319)continue;
-   int t=_state.byte(0x339e + l),b=l==r ? 199 : direction==3 ? 199 : _state.byte(0x339e + r);
-   if(direction==3 && l!=r)t=199;
-   if(t>b){int swap=t;t=b;b=swap;}
-   bool hit=(direction==1 || direction==3) ? candidate.left>=l && candidate.right<=r :
-    candidate.top>=t && candidate.top<=b && (direction==2 ? candidate.right>=l : candidate.left<=r);
-   if(hit)return 0x400|i;
-  }
+  unsigned exit=exitCollisionAt(x,y,direction,actor);
+  if(exit)return exit;
  }
  // Scripted departures may walk the actor's centre to the screen edge
  // before fading and changing rooms explicitly (room 17 west exit).
@@ -748,6 +754,15 @@ bool StartupScene::destination(int x,int y,ScriptMachine &machine,bool scripted)
    tx+=d==2 ? 1 : d==4 ? -1 : 0;ty+=d==3 ? 1 : d==1 ? -1 : 0;
    if((collisionAt(tx,ty,d,machine,0,scripted)&0xff00)==0x400){x=tx;y=ty;break;}
   }
+ }
+ // Normalize ordinary scripted destinations with the DOS terrain/footprint
+ // projection (0xceaf -> 0xcc93). For this bounded planner, exempt actual
+ // exit collisions rather than every point sharing an exit's horizontal span.
+ // Keep explicit off-screen departures on their existing boundary path.
+ if(scripted && !_collisionBypass[0] && x>0 && x<319 && y>=0 && y<200) {
+  bool exits=false;
+  for(unsigned d=1;d<=4;++d)if((collisionAt(x,y,d,machine,0,true)&0xff00)==0x400)exits=true;
+  if(!exits && !projectApproach(_state.range(0x339e,320),x,y,a.halfWidth,a.footHeight))return false;
  }
  auto passable=[&](int nx,int ny,unsigned d) {
   const unsigned masks[5]={0,1,8,2,4};

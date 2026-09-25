@@ -284,6 +284,9 @@ int main(void) {
   VkFence fence;
   VkFenceCreateInfo fci = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
   CHECK(vkCreateFence(device, &fci, NULL, &fence));
+#ifdef READBACK_PROBE
+  if (check_readback_rejections(cmd)) return 2;
+#endif
 #ifdef UPLOAD_PROBE
   if (check_upload_rejections(cmd))
     return 2;
@@ -299,6 +302,9 @@ int main(void) {
     CHECK(vkResetFences(device, 1, &fence));
     VkCommandBufferBeginInfo begin = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+#ifdef READBACK_PROBE
+    memset(readback_bytes, 0xcd, 65536);
+#endif
     CHECK(vkBeginCommandBuffer(cmd, &begin));
 #ifdef RESOURCE_PROBE
     resource_barrier(cmd, frame);
@@ -355,6 +361,17 @@ int main(void) {
                            .pCommandBuffers = &cmd};
     CHECK(vkQueueSubmit(queue, 1, &submit, fence));
     CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ULL));
+#ifdef READBACK_PROBE
+    if (check_readback(frame)) return 2;
+    if (frame == 7) {
+      memset(readback_bytes, 0xcd, 65536);
+      CHECK(vkResetFences(device, 1, &fence));
+      CHECK(vkQueueSubmit(queue, 1, &submit, fence));
+      CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ULL));
+      if (check_readback(frame)) return 2;
+      fprintf(report,"PASS readback command buffer resubmission\n");
+    }
+#endif
 #ifdef UPLOAD_PROBE
     if (frame == 7) {
       CHECK(vkResetFences(device, 1, &fence));

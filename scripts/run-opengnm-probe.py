@@ -3,6 +3,7 @@
 import argparse
 import ctypes as c
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -17,9 +18,12 @@ selection.add_argument('--vulkan', action='store_true')
 variants = parser.add_mutually_exclusive_group()
 variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
+variants.add_argument('--readback', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
+if args.readback:
+    args.composite = True
 if args.upload or args.sprites:
     args.resources = True
 if (args.resources or args.composite) and not args.vulkan:
@@ -29,13 +33,20 @@ title_id = 'SCVM00009' if args.vulkan else 'SCVM00008' if args.textures else 'SC
 root = Path(__file__).resolve().parent.parent
 os.chdir(root)
 profile = root / ('.tools/xdg-vulkan' if args.vulkan else '.tools/xdg-opengnm')
+if args.readback:
+    # Isolated diagnostic profile: mode 0 disables GPU -> CPU visibility.
+    config_path = profile / 'shadPS4/config.json'
+    config = json.loads(config_path.read_text()) if config_path.exists() else {}
+    config.setdefault('GPU', {})['readbacks_mode'] = 2  # Precise in pinned shadPS4.
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config, indent=2))
 reports = root / 'artifacts/opengnm'
 if mode != 'triangle':
     reports /= mode
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
     if args.composite:
-        reports /= 'composite'
+        reports /= 'readback' if args.readback else 'composite'
     elif args.resources:
         reports /= 'sprites' if args.sprites else 'upload' if args.upload else 'resources'
 reports.mkdir(parents=True, exist_ok=True)
@@ -119,6 +130,9 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.readback and (guest_log.read_text().count('PASS readback frame ') != 9 or
+                                  'PASS readback command buffer resubmission' not in guest_log.read_text()):
+                raise RuntimeError('Readback pixel/guard checks did not complete')
             if args.upload and 'PASS upload command buffer resubmission' not in guest_log.read_text():
                 raise RuntimeError('Upload resubmission check did not complete')
             shutil.copy2(guest_log.with_name('scummvm-vulkan-driver.log'), reports / 'driver.log')

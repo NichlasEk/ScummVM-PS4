@@ -221,8 +221,9 @@ and uint32 index buffers, matrix transforms, clears, readback and legacy GLSL
 translation/reflection. The probes use prebuilt SPIR-V; they do not yet provide these GL-facing facilities.
 The indexed vertex-buffer checkpoint below now covers the native buffer/matrix path.
 
-The next gate is clears/readback, followed by the actual
-translated shader effects before enabling an OpenGL context in ScummVM.
+The native transfer-clear/readback checkpoint is recorded below. Remaining gates
+include partial attachment clears and actual translated shader effects before
+enabling an OpenGL context in ScummVM.
 No general OpenGL translator has been integrated by these probes, and no TWP
 startup on this open stack is claimed. Physical PS4 verification remains open.
 
@@ -272,3 +273,62 @@ optimal upload (582 checks and resubmission) and composite (1,230 checks) regres
 pass with the same driver/compiler changes. Host compiler tests include both new
 sprite shaders. Stable ScummVM 1.17 retains SHA-256
 `c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.
+
+## Transfer clears and GPU-to-CPU readback
+
+The independent `--readback` mode extends the offscreen blend probe with
+`vkCmdClearColorImage` and `vkCmdCopyImageToBuffer`. Transfer clear is now a
+bounded, checked path for full single-mip/single-layer RGBA8 UNORM images. It
+clamps components before quantization and fills the entire allocated surface,
+including tile padding. A constant 32-bit pixel is invariant under tiling;
+filling only width*height bytes would leave holes in padded tiled surfaces.
+Unsupported formats/ranges return an error rather than an approximate clear.
+This does **not** establish render-pass loadOp clear, partial/scissored attachment
+clear, depth/stencil clear or sRGB clear support.
+
+Readback supports single-sample 2D RGBA8 UNORM/sRGB images, one mip/layer,
+including render targets. It first copies the full physical image surface on
+the GPU, then uses GPA surface addresses to copy contiguous spans from that
+snapshot into the requested linear buffer rows. This supports buffer offsets,
+image offsets and both explicit and tightly packed row pitches. No source pixel
+is read on the CPU while recording commands. Scratch allocations are retained
+per command buffer, allocated to the actual surface size with 64-KiB alignment;
+there are at most 16 readback calls per recording, each bounded to a 16-MiB
+surface. Reset/re-record and destruction follow the command-buffer GPU lifetime.
+Explicit barriers and a completed fence precede the CPU oracle.
+
+The test uses an 80x60 tiled UNORM render target and a 64-KiB host-coherent buffer.
+It checks alternating clamped clear colors, the rendered/blended full image,
+a pitched crop across all four quadrants and a tightly packed crop. Every byte
+outside the copies must retain its sentinel. Invalid row pitch, destination
+bounds, mip selection, image bounds and clear ranges are rejected. Frame 7 is
+submitted a second time without re-recording after poisoning the destination.
+The existing 1,230-point screenshot oracle still verifies the presented image.
+
+Reproduce with `scripts/build-vulkan-probe.sh --readback` followed by
+`xvfb-run -a -s '-screen 0 1280x720x24' python3 scripts/run-opengnm-probe.py --vulkan --readback`.
+Package: `dist/ScummVM-PS4-Vulkan-Readback.pkg`; reports:
+`artifacts/vulkan/readback/`. This remains the separate SCVM00009 diagnostic.
+
+The runner enables `GPU.readbacks_mode=2` (Precise) only in the isolated diagnostic
+profile `.tools/xdg-vulkan`. The tested shadPS4 v0.18.0 revision is
+`e3ce810f3a653f43ac64ebab63023de281a4103a`; mode 0 disables CPU visibility of GPU
+writes. Source inspection at that revision also showed that image-to-buffer
+alias synchronization expects the image base address, motivating the full-surface
+snapshot before copying tiled spans. Direct small-span copies failed this test.
+These are emulator results; physical PS4 cache visibility is not yet validated.
+
+Next: partial/attachment clears and the GL translation/reflection boundary.
+The native full-image transfer operations can now underpin screenshot/readPixels
+work, but ScummVM does not yet have an OpenGL context on this stack.
+
+Readback validation: all six rejection cases return their expected errors; nine
+64-KiB CPU comparisons (eight frames plus resubmission), the 1,230-point screenshot
+oracle and complete resource cleanup pass. This tests GPU-produced pixels, not
+just submission success. Scratch capacity exhaustion is included in the rejection
+cases. The diagnostic leaves stable ScummVM package 1.17 unchanged.
+
+Regression results with the same driver: basic triangle, optimal texture upload
+(including resubmission), offscreen blending and indexed vertex/matrix probes all
+pass their pixel oracles and lifecycle cleanup. The runnable readback diagnostic
+is restored after these checks.

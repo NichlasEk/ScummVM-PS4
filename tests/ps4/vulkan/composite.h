@@ -8,6 +8,9 @@ static VkDescriptorSetLayout off_set_layout;
 static VkDescriptorPool off_pool;
 static VkDescriptorSet off_set;
 static VkSampler off_sampler;
+#ifdef READBACK_PROBE
+#include "readback.h"
+#endif
 static int create_offscreen(VkDevice device, VkPhysicalDevice physical) {
   VkImageCreateInfo ic = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                           .imageType = VK_IMAGE_TYPE_2D,
@@ -18,7 +21,11 @@ static int create_offscreen(VkDevice device, VkPhysicalDevice physical) {
                           .samples = VK_SAMPLE_COUNT_1_BIT,
                           .tiling = VK_IMAGE_TILING_OPTIMAL,
                           .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                   VK_IMAGE_USAGE_SAMPLED_BIT};
+                                   VK_IMAGE_USAGE_SAMPLED_BIT
+#ifdef READBACK_PROBE
+                                   | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+#endif
+                                   };
   CHECK(vkCreateImage(device, &ic, NULL, &off_image));
   VkMemoryRequirements req;
   vkGetImageMemoryRequirements(device, off_image, &req);
@@ -112,6 +119,9 @@ static int create_offscreen(VkDevice device, VkPhysicalDevice physical) {
                                     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                 .pImageInfo = &ii};
   vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
+  #ifdef READBACK_PROBE
+  if (create_readback(device, physical)) return 2;
+  #endif
   return 0;
 }
 static void draw_offscreen(VkCommandBuffer cmd, unsigned frame,
@@ -127,9 +137,16 @@ static void draw_offscreen(VkCommandBuffer cmd, unsigned frame,
       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .image = off_image,
       .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+#ifndef READBACK_PROBE
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0,
                        NULL, 0, NULL, 1, &barrier);
+#endif
+#ifdef READBACK_PROBE
+  readback_clear(cmd,frame);
+  readback_barrier(cmd, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    VK_ACCESS_TRANSFER_READ_BIT,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+#endif
   VkRenderPassBeginInfo rp = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                               .renderPass = off_pass,
                               .framebuffer = off_fb,
@@ -149,6 +166,10 @@ static void draw_offscreen(VkCommandBuffer cmd, unsigned frame,
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines[2]);
   vkCmdDraw(cmd, 3, 1, 0, 0);
   vkCmdEndRenderPass(cmd);
+#ifdef READBACK_PROBE
+  readback_render(cmd);
+  return;
+#endif
   barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
   barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
   barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -158,6 +179,11 @@ static void draw_offscreen(VkCommandBuffer cmd, unsigned frame,
                        NULL, 1, &barrier);
 }
 static void destroy_offscreen(VkDevice device) {
+#ifdef READBACK_PROBE
+  vkUnmapMemory(device,readback_memory);
+  vkDestroyBuffer(device,readback_buffer,NULL);
+  vkFreeMemory(device,readback_memory,NULL);
+#endif
   vkDestroyDescriptorPool(device, off_pool, NULL);
   vkDestroyDescriptorSetLayout(device, off_set_layout, NULL);
   vkDestroySampler(device, off_sampler, NULL);

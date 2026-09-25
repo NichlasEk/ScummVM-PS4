@@ -9,8 +9,11 @@ reports="$root/artifacts/vulkan"
 mkdir -p "$probe" "$reports"
 cp "$root/tests/ps4/vulkan/draw.c" "$probe/draw.c"
 cp "$root/tests/ps4/vulkan/resources.h" "$probe/resources.h"
-if [[ "${1:-}" == --resources ]]; then
+if [[ "${1:-}" == --resources || "${1:-}" == --upload ]]; then
  sed -i '1i#define RESOURCE_PROBE 1' "$probe/draw.c"
+fi
+if [[ "${1:-}" == --upload ]]; then
+ sed -i '1i#define UPLOAD_PROBE 1' "$probe/draw.c"
 fi
 python3 "$root/scripts/prepare-vulkan-shaders.py" "$probe" "$@"
 content=IV0000-SCVM00009_00-SCUMMVMVULKAN001
@@ -29,6 +32,9 @@ fi
 package=ScummVM-PS4-Vulkan-Probe.pkg
 if [[ "${1:-}" == --resources ]]; then
  package=ScummVM-PS4-Vulkan-Resources.pkg
+fi
+if [[ "${1:-}" == --upload ]]; then
+ package=ScummVM-PS4-Vulkan-Upload.pkg
 fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"

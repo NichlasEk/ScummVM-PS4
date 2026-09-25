@@ -221,7 +221,14 @@ int main(void) {
   VkFence fence;
   VkFenceCreateInfo fci = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
   CHECK(vkCreateFence(device, &fci, NULL, &fence));
+#ifdef UPLOAD_PROBE
+  if (check_upload_rejections(cmd))
+    return 2;
+#endif
   for (unsigned frame = 0; frame < 8; frame++) {
+#ifdef UPLOAD_PROBE
+    memset(staging_data, 0, 8192);
+#endif
     uint32_t index;
     CHECK(vkAcquireNextImageKHR(device, swap, 1000000000ULL, VK_NULL_HANDLE,
                                 fence, &index));
@@ -251,11 +258,23 @@ int main(void) {
     }
     vkCmdEndRenderPass(cmd);
     CHECK(vkEndCommandBuffer(cmd));
+#ifdef UPLOAD_PROBE
+    /* Write after recording: a CPU copy during recording would sample zeros. */
+    fill_staging();
+#endif
     VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
                            .commandBufferCount = 1,
                            .pCommandBuffers = &cmd};
     CHECK(vkQueueSubmit(queue, 1, &submit, fence));
     CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ULL));
+#ifdef UPLOAD_PROBE
+    if (frame == 7) {
+      CHECK(vkResetFences(device, 1, &fence));
+      CHECK(vkQueueSubmit(queue, 1, &submit, fence));
+      CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ULL));
+      fprintf(report, "PASS upload command buffer resubmission\n");
+    }
+#endif
     VkPresentInfoKHR present = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
                                 .swapchainCount = 1,
                                 .pSwapchains = &swap,

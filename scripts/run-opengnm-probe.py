@@ -15,7 +15,10 @@ selection.add_argument('--uniforms', action='store_true')
 selection.add_argument('--textures', action='store_true')
 selection.add_argument('--vulkan', action='store_true')
 parser.add_argument('--resources', action='store_true')
+parser.add_argument('--upload', action='store_true')
 args = parser.parse_args()
+if args.upload:
+    args.resources = True
 if args.resources and not args.vulkan:
     parser.error('--resources requires --vulkan')
 mode = 'vulkan' if args.vulkan else 'textures' if args.textures else 'uniforms' if args.uniforms else 'triangle'
@@ -29,7 +32,7 @@ if mode != 'triangle':
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
     if args.resources:
-        reports /= 'resources'
+        reports /= 'upload' if args.upload else 'resources'
 reports.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, XDG_DATA_HOME=str(profile), SDL_VIDEODRIVER='x11')
 emulator = root / '.tools/shadps4/Shadps4-sdl.AppImage'
@@ -95,7 +98,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
                 shutil.copy2(guest_log, reports / 'triangle-result.txt')
                 check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
-                                        str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else [])],
+                                        str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else []), *(['--upload'] if args.upload else [])],
                                        capture_output=True, text=True)
                 (reports / 'pixel-test.log').write_text(check.stdout + check.stderr)
                 check.check_returncode()
@@ -111,6 +114,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.upload and 'PASS upload command buffer resubmission' not in guest_log.read_text():
+                raise RuntimeError('Upload resubmission check did not complete')
             shutil.copy2(guest_log.with_name('scummvm-vulkan-driver.log'), reports / 'driver.log')
             print('PASS Vulkan lifecycle cleanup')
     finally:

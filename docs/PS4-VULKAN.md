@@ -111,11 +111,57 @@ referenced by recorded/pending commands is not an update-after-bind feature.
 This supersedes the earlier statement that Vulkan textures/UBOs were unvalidated.
 It does not establish support for arbitrary Vulkan resources, optimal-image
 uploads, render-to-texture, blending/depth or overlapping submissions. Physical
-PS4 remains untested. Next: GPU buffer-to-image upload and image transitions,
-then blending/render-target sampling and a feature audit against the OpenGL
-translator before wiring it into ScummVM.
+PS4 remains untested. The upload checkpoint below adds GPU buffer-to-image transfer and conservative
+barriers. Next: blending/render-target sampling and a feature audit against the
+OpenGL translator before wiring it into ScummVM.
 
 Final regression: the original Vulkan triangle still passes all 154 pixel
 checks and lifecycle cleanup with this driver/compiler. The standalone compiler
 resource fixtures pass as well. The runnable `eboot.bin` is restored to the
 resource probe after the basic-triangle regression.
+
+## GPU tiled upload checkpoint
+
+The `--upload` variant creates an optimal-tiling 37×23 RGBA8 image, then uploads
+it through `vkCmdCopyBufferToImage`. Two unequal subregions use a nonzero buffer
+offset, a 43-pixel source row stride and a nonzero destination X offset. The
+staging buffer is cleared before recording every frame and populated only after
+`vkEndCommandBuffer`: the image must be copied by the GPU when submitted.
+The CPU oracle models all 37×23 texels, including nearest/bilinear filtering and
+clamping, independently of the driver's tiling code.
+
+```sh
+scripts/build-vulkan-probe.sh --upload
+xvfb-run -a -s '-screen 0 1280x720x24' python3 scripts/run-opengnm-probe.py --vulkan --upload
+```
+
+Output: `dist/ScummVM-PS4-Vulkan-Upload.pkg` and SHA-256 sidecar; runtime reports
+and screenshot: `artifacts/vulkan/upload/`. This uses the same SCVM00009 diagnostic
+title. The basic and resource modes are still available.
+
+The driver computes tiled destination addresses using OpenGNM GpuAddr and emits
+CP DMA copies, coalescing adjacent source/destination spans. No source pixels are
+read during recording. Transfer-to-sampling barriers use a command-buffer-owned
+GPU completion label, EOP flush/wait and texture-cache acquisition. The label is
+reset by GPU commands on every execution, including resubmission. Recording a
+barrier no longer changes the global image layout before submission. Labels are
+released with their owning command buffers.
+
+Scope: single-mip, single-layer, single-sample 2D RGBA8 UNORM/SRGB uploads to
+sampled textures. Unsupported shapes and source bounds errors fail command
+recording rather than silently using linear addressing. Cross-queue ownership
+and simultaneous use of one command buffer are explicitly unsupported. Packet
+buffer exhaustion is reported; per-span DMA is a correctness bridge, not yet a
+high-throughput upload solution for large textures. Compressed formats, mip-chain
+uploads, 3D/array images, image readback and image-to-image/blit operations remain
+unvalidated. This is still emulator evidence, not physical PS4 verification.
+
+The upload test also rejects unsupported mip uploads, out-of-range source reads,
+queue ownership transfer and simultaneous command-buffer use. The last frame
+resubmits the same recorded command buffer to exercise completion-label reuse.
+
+Validation: the upload mode passed 582 pixel checks, all negative recording
+checks, command-buffer resubmission and lifecycle cleanup in shadPS4. The basic
+Vulkan triangle (154 pixel checks) and original resource mode (582) also passed
+with the new barrier implementation. The upload executable was restored after
+these regression runs. The stable ScummVM package hash remains unchanged.

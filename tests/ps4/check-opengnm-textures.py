@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent CPU oracle for the GPU's 2x2 texture, filters and UBO transform."""
+"""Independent CPU oracle for the GPU texture, filters and UBO transform."""
 import math
 import sys
 from PIL import Image
@@ -9,13 +9,17 @@ assert im.size == (1280, 720), im.size
 texels = [(240, 40, 20, 255), (30, 220, 70, 128),
           (50, 90, 230, 64), (180, 160, 100, 192)]
 
+width, height = (37, 23) if '--upload' in sys.argv else (2, 2)
+
 def texel(x, y):
-    return texels[max(0, min(1, y)) * 2 + max(0, min(1, x))]
+    x = int(max(0, min(width - 1, x)) >= width // 2)
+    y = int(max(0, min(height - 1, y)) >= height // 2)
+    return texels[y * 2 + x]
 
 def sample(u, v, linear):
     if not linear:
-        return texel(math.floor(u * 2), math.floor(v * 2))
-    x, y = u * 2 - .5, v * 2 - .5
+        return texel(math.floor(u * width), math.floor(v * height))
+    x, y = u * width - .5, v * height - .5
     ix, iy = math.floor(x), math.floor(y)
     fx, fy = x - ix, y - iy
     return [sum(texel(ix + dx, iy + dy)[c] * wx * wy

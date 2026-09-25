@@ -47,10 +47,186 @@ index 8c44223..0d1d405 100644
 +
 +libpsbc/psbc_compile.orbis.o: libpsbc/psbc_compile.h
 diff --git a/libpsbc/psbc_compile.c b/libpsbc/psbc_compile.c
-index bacbc6a..da5bfd5 100644
+index bacbc6a..5782d80 100644
 --- a/libpsbc/psbc_compile.c
 +++ b/libpsbc/psbc_compile.c
-@@ -930,6 +930,89 @@ static void setup_target(PsbcTarget target,
+@@ -225,6 +225,8 @@ static PsbcResult buildshaderbinary(
+     const uint32_t* code, uint32_t code_dw,
+     uint8_t** out_data, size_t* out_size
+ ) {
++    const uint64_t inputmask = ctx->nir->info.inputs_read &
++        (ctx->stage == MESA_SHADER_FRAGMENT ? ~VARYING_BIT_POS : ~0ULL);
+     uint32_t codesize = code_dw * sizeof(uint32_t);
+     if (ctx->nir->info.stage == MESA_SHADER_VERTEX &&
+         ctx->rinfo->vs.has_prolog) {
+@@ -240,8 +242,8 @@ static PsbcResult buildshaderbinary(
+      * jump instruction to a fetch "shader" */
+     if (ctx->nir->info.stage == MESA_SHADER_VERTEX &&
+         ctx->rinfo->vs.has_prolog) {
+-        /* s_swappc_b64 s[0:1], s[0:1] */
+-        newcode[0] = 0xbe802100;
++        /* Return in s[0:1]; fetch address comes from the declared prolog pair. */
++        newcode[0] = 0xbe802100 | ctx->rargs->ac.args[ctx->rargs->prolog_inputs.arg_index].offset;
+         nextcode += 1;
+     }
+ 
+@@ -281,25 +283,25 @@ static PsbcResult buildshaderbinary(
+     switch (ctx->stage) {
+     case MESA_SHADER_VERTEX:
+     case MESA_SHADER_TESS_EVAL:  /* DS outputs vertices like VS */
+-        shspecificsize += util_bitcount64(ctx->nir->info.inputs_read) *
++        shspecificsize += util_bitcount64(inputmask) *
+                           sizeof(GnmVertexInputSemantic);
+         shspecificsize +=
+             outputswritten * sizeof(GnmVertexExportSemantic);
+         break;
+     case MESA_SHADER_FRAGMENT:
+-        shspecificsize += util_bitcount64(ctx->nir->info.inputs_read) *
++        shspecificsize += util_bitcount64(inputmask) *
+                           sizeof(GnmPixelInputSemantic);
+         break;
+     case MESA_SHADER_GEOMETRY:
+         /* GS has input/export semantics like VS */
+-        shspecificsize += util_bitcount64(ctx->nir->info.inputs_read) *
++        shspecificsize += util_bitcount64(inputmask) *
+                           sizeof(GnmVertexInputSemantic);
+         shspecificsize +=
+             outputswritten * sizeof(GnmVertexExportSemantic);
+         break;
+     case MESA_SHADER_TESS_CTRL:
+         /* HS has input semantics (from VS outputs) but no export semantics */
+-        shspecificsize += util_bitcount64(ctx->nir->info.inputs_read) *
++        shspecificsize += util_bitcount64(inputmask) *
+                           sizeof(GnmVertexInputSemantic);
+         break;
+     default:
+@@ -433,7 +435,7 @@ static PsbcResult buildshaderbinary(
+                         clip_dist_mask,
+                 },
+             .numinputsemantics =
+-                util_bitcount64(ctx->nir->info.inputs_read),
++                util_bitcount64(inputmask),
+             .numexportsemantics = outputswritten,
+         };
+         memcpy(buf + offset, &vsh, sizeof(vsh));
+@@ -483,7 +485,7 @@ static PsbcResult buildshaderbinary(
+                     ),
+                 },
+             .numinputsemantics =
+-                util_bitcount64(ctx->nir->info.inputs_read),
++                util_bitcount64(inputmask),
+         };
+         memcpy(buf + offset, &psh, sizeof(psh));
+         offset += sizeof(psh);
+@@ -549,7 +551,7 @@ static PsbcResult buildshaderbinary(
+                         S_028B90_ENABLE(ctx->rinfo->gs.invocations > 0),
+                 },
+             .numinputsemantics =
+-                util_bitcount64(ctx->nir->info.inputs_read),
++                util_bitcount64(inputmask),
+             .numexportsemantics = outputswritten,
+         };
+         memcpy(buf + offset, &gsh, sizeof(gsh));
+@@ -609,7 +611,7 @@ static PsbcResult buildshaderbinary(
+                     .vgthosmintesslevel = 1,
+                 },
+             .numinputsemantics =
+-                util_bitcount64(ctx->nir->info.inputs_read),
++                util_bitcount64(inputmask),
+         };
+         memcpy(buf + offset, &hsh, sizeof(hsh));
+         offset += sizeof(hsh);
+@@ -633,7 +635,7 @@ static PsbcResult buildshaderbinary(
+                     .spishaderpgmrsrc2es = ctx->config->rsrc2,
+                 },
+             .numinputsemantics =
+-                util_bitcount64(ctx->nir->info.inputs_read),
++                util_bitcount64(inputmask),
+             .numexportsemantics = outputswritten,
+         };
+         memcpy(buf + offset, &esh, sizeof(esh));
+@@ -658,7 +660,7 @@ static PsbcResult buildshaderbinary(
+                     .spishaderpgmrsrc2ls = ctx->config->rsrc2,
+                 },
+             .numinputsemantics =
+-                util_bitcount64(ctx->nir->info.inputs_read),
++                util_bitcount64(inputmask),
+             .numexportsemantics = outputswritten,
+         };
+         memcpy(buf + offset, &lsh, sizeof(lsh));
+@@ -709,8 +711,8 @@ static PsbcResult buildshaderbinary(
+     switch (ctx->stage) {
+     case MESA_SHADER_VERTEX:
+     case MESA_SHADER_TESS_EVAL:  /* DS uses same semantics as VS */
+-        for (uint32_t i = 0;
+-             i < util_bitcount64(ctx->nir->info.inputs_read); i += 1) {
++        u_foreach_bit64(slot, inputmask) {
++            const unsigned i = slot - VERT_ATTRIB_GENERIC0;
+             const GnmVertexInputSemantic input = {
+                 .semantic = i,
+                 .vgpr =
+@@ -725,30 +727,39 @@ static PsbcResult buildshaderbinary(
+             memcpy(buf + offset, &input, sizeof(input));
+             offset += sizeof(input);
+         }
+-        for (uint32_t i = 0; i < outputswritten; i += 1) {
++        u_foreach_bit64(slot, ctx->nir->info.outputs_written & ~VARYING_BIT_POS) {
+             const GnmVertexExportSemantic out = {
+-                .semantic = 15 + i,
+-                .outindex = i,
++                .semantic = slot,
++                .outindex = ctx->rinfo->outinfo.vs_output_param_offset[slot],
+                 .exportf16 = 0,
+             };
+             memcpy(buf + offset, &out, sizeof(out));
+             offset += sizeof(out);
+         }
+         break;
+-    case MESA_SHADER_FRAGMENT:
+-        for (uint32_t i = 0;
+-             i < util_bitcount64(ctx->nir->info.inputs_read); i += 1) {
+-            const GnmPixelInputSemantic input = {
+-                .semantic = 15 + i,
+-            };
+-            memcpy(buf + offset, &input, sizeof(input));
+-            offset += sizeof(input);
++    case MESA_SHADER_FRAGMENT: {
++        /* Preserve lowered interpolation slots; locations need not be dense. */
++        GnmPixelInputSemantic inputs[32] = {0};
++        nir_foreach_function_impl(impl, ctx->nir) {
++            nir_foreach_block(block, impl) {
++                nir_foreach_instr(instr, block) {
++                    if (instr->type != nir_instr_type_intrinsic) continue;
++                    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
++                    if (intr->intrinsic != nir_intrinsic_load_interpolated_input &&
++                        intr->intrinsic != nir_intrinsic_load_input) continue;
++                    unsigned base = nir_intrinsic_base(intr);
++                    if (base < 32) inputs[base].semantic = nir_intrinsic_io_semantics(intr).location;
++                }
++            }
++        }
++        memcpy(buf + offset, inputs, util_bitcount64(inputmask) * sizeof(inputs[0]));
++        offset += util_bitcount64(inputmask) * sizeof(inputs[0]);
+         }
+         break;
+     case MESA_SHADER_GEOMETRY:
+         /* GS input/export semantics use the same vertex semantic format */
+         for (uint32_t i = 0;
+-             i < util_bitcount64(ctx->nir->info.inputs_read); i += 1) {
++             i < util_bitcount64(inputmask); i += 1) {
+             const GnmVertexInputSemantic input = {
+                 .semantic = i,
+             };
+@@ -769,7 +780,7 @@ static PsbcResult buildshaderbinary(
+         /* HS input semantics describe which VS outputs are read.
+          * No export semantics — HS outputs go to LDS for DS. */
+         for (uint32_t i = 0;
+-             i < util_bitcount64(ctx->nir->info.inputs_read); i += 1) {
++             i < util_bitcount64(inputmask); i += 1) {
+             const GnmVertexInputSemantic input = {
+                 .semantic = i,
+             };
+@@ -930,6 +941,89 @@ static void setup_target(PsbcTarget target,
  
  /* === Main compilation function === */
  
@@ -140,20 +316,29 @@ index bacbc6a..da5bfd5 100644
  PsbcResult psbc_compile_shader(
      const uint32_t*       spirv,
      size_t                spirv_size,
-@@ -1019,6 +1102,12 @@ PsbcResult psbc_compile_shader(
+@@ -1018,12 +1112,21 @@ PsbcResult psbc_compile_shader(
+     /* Gather info again — outputs_read can be out-of-date */
      nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
      radv_nir_lower_io(nir);
- 
++    if (mesa_stage == MESA_SHADER_FRAGMENT)
++        NIR_PASS(_, nir, ac_nir_assign_fs_input_locations);
++
 +    if (!psbc_supported_resources(nir, opts)) {
 +        ralloc_free(nir);
 +        psbc_shutdown();
 +        return PSBC_RESULT_UNSUPPORTED_RESOURCE;
 +    }
-+
+ 
      /* Shader info + args + postprocess */
      radv_nir_shader_info_init(stage.stage, stage.next_stage, &stage.info);
  
-@@ -1033,6 +1122,18 @@ PsbcResult psbc_compile_shader(
+     struct radv_shader_layout layout = {0};
+     struct radv_graphics_state_key gfx_state = {0};
++    gfx_state.vs.has_prolog = mesa_stage == MESA_SHADER_VERTEX;
+     gfx_state.ps.epilog.spi_shader_col_format = V_028714_SPI_SHADER_FP16_ABGR;
+     gfx_state.ps.epilog.color_is_int8 = 0xff;
+     gfx_state.ps.has_epilog = false;
+@@ -1033,6 +1136,18 @@ PsbcResult psbc_compile_shader(
          RADV_PIPELINE_GRAPHICS, false, &stage.info
      );
  
@@ -172,7 +357,7 @@ index bacbc6a..da5bfd5 100644
      /* Determine previous stage for shader args declaration.
       * HS/GS need previous_stage=VERTEX so that the merged-pipeline args
       * (prolog_inputs, vertex_buffers, etc.) are declared for the NIR
-@@ -1144,6 +1245,7 @@ const char* psbc_result_string(PsbcResult result) {
+@@ -1144,6 +1259,7 @@ const char* psbc_result_string(PsbcResult result) {
      switch (result) {
      case PSBC_RESULT_OK:               return "success";
      case PSBC_RESULT_INVALID_SPIRV:    return "invalid SPIR-V bytecode";
@@ -337,7 +522,7 @@ index 61fe2b4..7dc552b 100644
     /* Allocate memory and upload. */
     shader_part->alloc = radv_alloc_shader_memory(device, shader_part->code_size, false, NULL);
 diff --git a/src/amd/vulkan/radv_shader_args.c b/src/amd/vulkan/radv_shader_args.c
-index 029dc1f..3039114 100644
+index 029dc1f..dae7437 100644
 --- a/src/amd/vulkan/radv_shader_args.c
 +++ b/src/amd/vulkan/radv_shader_args.c
 @@ -114,14 +114,15 @@ add_ud_arg(struct radv_shader_args_state *state, unsigned size, enum ac_arg_type
@@ -359,6 +544,33 @@ index 029dc1f..3039114 100644
  }
  
  static void
+@@ -202,7 +203,7 @@ declare_vs_specific_input_sgprs(struct radv_shader_args_state *state, const stru
+ 
+    if (info->type != RADV_SHADER_TYPE_GS_COPY) {
+       if (info->vs.vb_desc_usage_mask) {
+-         RADV_ADD_UD_ARG(state, 1, AC_ARG_CONST_ADDR, ac.vertex_buffers, AC_UD_VS_VERTEX_BUFFERS);
++         RADV_ADD_UD_ARG(state, 2, AC_ARG_CONST_ADDR, ac.vertex_buffers, AC_UD_VS_VERTEX_BUFFERS);
+       }
+ 
+       RADV_ADD_UD_ARG(state, 1, AC_ARG_VALUE, ac.base_vertex, AC_UD_VS_BASE_VERTEX_START_INSTANCE);
+@@ -433,7 +434,7 @@ declare_unmerged_vs_tcs_args(struct radv_shader_args_state *state, const enum am
+ {
+    /* SGPRs */
+    RADV_ADD_UD_ARG(state, 2, AC_ARG_VALUE, prolog_inputs, AC_UD_VS_PROLOG_INPUTS);
+-   RADV_ADD_UD_ARG(state, 1, AC_ARG_CONST_ADDR, ac.vertex_buffers, AC_UD_VS_VERTEX_BUFFERS);
++   RADV_ADD_UD_ARG(state, 2, AC_ARG_CONST_ADDR, ac.vertex_buffers, AC_UD_VS_VERTEX_BUFFERS);
+    RADV_ADD_UD_ARG(state, 1, AC_ARG_VALUE, ac.base_vertex, AC_UD_VS_BASE_VERTEX_START_INSTANCE);
+    RADV_ADD_UD_ARG(state, 1, AC_ARG_VALUE, ac.draw_id, AC_UD_VS_BASE_VERTEX_START_INSTANCE);
+    RADV_ADD_UD_ARG(state, 1, AC_ARG_VALUE, ac.start_instance, AC_UD_VS_BASE_VERTEX_START_INSTANCE);
+@@ -482,7 +483,7 @@ declare_unmerged_vs_tes_gs_args(struct radv_shader_args_state *state, const enum
+ {
+    /* SGPRs */
+    RADV_ADD_UD_ARG(state, 2, AC_ARG_VALUE, prolog_inputs, AC_UD_VS_PROLOG_INPUTS);
+-   RADV_ADD_UD_ARG(state, 1, AC_ARG_CONST_ADDR, ac.vertex_buffers, AC_UD_VS_VERTEX_BUFFERS);
++   RADV_ADD_UD_ARG(state, 2, AC_ARG_CONST_ADDR, ac.vertex_buffers, AC_UD_VS_VERTEX_BUFFERS);
+    RADV_ADD_UD_ARG(state, 1, AC_ARG_VALUE, ac.base_vertex, AC_UD_VS_BASE_VERTEX_START_INSTANCE);
+    RADV_ADD_UD_ARG(state, 1, AC_ARG_VALUE, ac.draw_id, AC_UD_VS_BASE_VERTEX_START_INSTANCE);
+    RADV_ADD_UD_ARG(state, 1, AC_ARG_VALUE, ac.start_instance, AC_UD_VS_BASE_VERTEX_START_INSTANCE);
 @@ -1003,7 +1004,7 @@ radv_declare_shader_args(const struct radv_compiler_info *compiler_info,
           assert(user_sgpr_info.remaining_sgprs >= RADV_MAX_HEAPS);
           user_sgpr_info.remaining_sgprs -= RADV_MAX_HEAPS;

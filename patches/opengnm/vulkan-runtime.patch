@@ -47,20 +47,22 @@ index e104443..d31c329 100644
  	      sce_module/libc.prx sce_module/libSceFios2.prx $(PKG_CONTENT_ID).pkg
  	@rm -rf sce_sys sce_module
 diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
-index 7634d6b..54329ac 100644
+index 7634d6b..ab207e4 100644
 --- a/include/vk_ps4_internal.h
 +++ b/include/vk_ps4_internal.h
-@@ -246,6 +246,9 @@ struct VkPs4CommandBuffer {
+@@ -246,6 +246,11 @@ struct VkPs4CommandBuffer {
      } current_render_pass;
      /* Current pipeline */
      VkPs4Pipeline *current_pipeline;
 +    VkPs4DescriptorSet *graphics_set0;
 +    VkResult resource_error;
 +    GnmDirectMemory barrier_label;
++    GnmDirectMemory vertex_tables;
++    uint32_t vertex_tables_used;
      /* Bound vertex buffers */
      struct {
          VkBuffer buffer;
-@@ -457,6 +460,10 @@ struct VkPs4Pipeline {
+@@ -457,6 +462,10 @@ struct VkPs4Pipeline {
      /* Compiled GCN shader binaries — kept alive for the pipeline's lifetime
       * because the stage registers contain GPU addresses that point into
       * these buffers.  Freed in DestroyPipeline. */
@@ -71,7 +73,15 @@ index 7634d6b..54329ac 100644
      void *vs_binary;
      void *ps_binary;
      void *gs_binary;
-@@ -572,6 +579,7 @@ struct VkPs4DescriptorPool {
+@@ -496,6 +505,7 @@ struct VkPs4Pipeline {
+     VkPipelineMultisampleStateCreateInfo multisample_state;
+     /* Fetch shader (generated from vertex input) */
+     void *fetch_shader;
++    GnmDirectMemory fetch_shader_mem;
+     size_t fetch_shader_size;
+     bool has_fetch_shader;
+     bool has_ps;          /* true if fragment shader was set */
+@@ -572,6 +582,7 @@ struct VkPs4DescriptorPool {
       * freed sets are kept in the free list for reuse instead of being
       * returned to the allocator.  This reduces allocation overhead for
       * apps that frequently allocate/free descriptor sets. */
@@ -79,7 +89,7 @@ index 7634d6b..54329ac 100644
      uint32_t sets_allocated;
      uint32_t sets_freed;
  #define VK_PS4_MAX_POOLED_SETS 256
-@@ -583,6 +591,8 @@ struct VkPs4DescriptorSet {
+@@ -583,6 +594,8 @@ struct VkPs4DescriptorSet {
      VkPs4ObjectType type;
      VkPs4Device *device;
      VkPs4DescriptorPool *pool;
@@ -88,7 +98,7 @@ index 7634d6b..54329ac 100644
      VkPs4DescriptorSetLayout *layout;
      VkPs4DescriptorBinding bindings[VK_PS4_MAX_DESCRIPTOR_BINDINGS];
      uint32_t binding_count;
-@@ -676,6 +686,8 @@ struct VkPs4Swapchain {
+@@ -676,6 +689,8 @@ struct VkPs4Swapchain {
  #define VK_PS4_CHECK_OBJ(handle, expected_type) \
      (VK_PS4_TO_OBJ(handle) && *(VK_PS4_TO_OBJ(handle)) == (expected_type))
  
@@ -98,7 +108,7 @@ index 7634d6b..54329ac 100644
  void *vk_ps4_alloc(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
  void *vk_ps4_alloc_zero(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
 diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
-index 168c1f3..1ec37ae 100644
+index 168c1f3..fa3357f 100644
 --- a/src/vk_ps4_command.c
 +++ b/src/vk_ps4_command.c
 @@ -11,6 +11,7 @@
@@ -118,81 +128,90 @@ index 168c1f3..1ec37ae 100644
      }
  
      /* Re-emit fetch shader */
-@@ -758,6 +761,7 @@ vk_ps4_DestroyCommandPool(VkDevice device, VkCommandPool commandPool, const VkAl
+@@ -758,6 +761,8 @@ vk_ps4_DestroyCommandPool(VkDevice device, VkCommandPool commandPool, const VkAl
          VkPs4CommandBuffer *cmd = pool->command_buffers[i];
          if (cmd) {
              if (cmd->pm4_buffer) vk_ps4_free(alloc, cmd->pm4_buffer);
 +            if (cmd->barrier_label.allocated) sceGnmDirectMemoryRelease(&cmd->barrier_label);
++            if (cmd->vertex_tables.allocated) sceGnmDirectMemoryRelease(&cmd->vertex_tables);
              vk_ps4_free(alloc, cmd);
              pool->command_buffers[i] = NULL;
          }
-@@ -769,6 +773,7 @@ vk_ps4_DestroyCommandPool(VkDevice device, VkCommandPool commandPool, const VkAl
+@@ -769,6 +774,8 @@ vk_ps4_DestroyCommandPool(VkDevice device, VkCommandPool commandPool, const VkAl
          if (pool->free_list[i]) {
              if (pool->free_list[i]->pm4_buffer)
                  vk_ps4_free(alloc, pool->free_list[i]->pm4_buffer);
 +            if (pool->free_list[i]->barrier_label.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->barrier_label);
++            if (pool->free_list[i]->vertex_tables.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->vertex_tables);
              vk_ps4_free(alloc, pool->free_list[i]);
              pool->free_list[i] = NULL;
          }
-@@ -807,6 +812,7 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
+@@ -807,6 +814,8 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
                      VkPs4CommandBuffer *c = (VkPs4CommandBuffer *)pCommandBuffers[j];
                      if (c) {
                          if (c->pm4_buffer) vk_ps4_free(alloc, c->pm4_buffer);
 +                        if (c->barrier_label.allocated) sceGnmDirectMemoryRelease(&c->barrier_label);
++                        if (c->vertex_tables.allocated) sceGnmDirectMemoryRelease(&c->vertex_tables);
                          vk_ps4_free(alloc, c);
                      }
                      pCommandBuffers[j] = VK_NULL_HANDLE;
-@@ -823,6 +829,8 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
+@@ -823,18 +832,25 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
          cmd->is_recording = false;
          cmd->is_begin = false;
          cmd->current_pipeline = NULL;
 +        cmd->graphics_set0 = NULL;
 +        cmd->resource_error = VK_SUCCESS;
          cmd->vertex_binding_count = 0;
++    cmd->vertex_tables_used = 0;
  
          /* Allocate PM4 buffer if not reused */
-@@ -830,11 +838,13 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
+         if (!cmd->pm4_buffer) {
              cmd->pm4_buffer_size = VK_PS4_CMD_BUFFER_SIZE / sizeof(uint32_t);
              cmd->pm4_buffer = vk_ps4_alloc_zero(alloc, cmd->pm4_buffer_size * sizeof(uint32_t), 256);
              if (!cmd->pm4_buffer) {
 -                vk_ps4_free(alloc, cmd);
 +                if (cmd->barrier_label.allocated) sceGnmDirectMemoryRelease(&cmd->barrier_label);
++                if (cmd->vertex_tables.allocated) sceGnmDirectMemoryRelease(&cmd->vertex_tables);
 +            vk_ps4_free(alloc, cmd);
                  for (uint32_t j = 0; j < i; j++) {
                      VkPs4CommandBuffer *c = (VkPs4CommandBuffer *)pCommandBuffers[j];
                      if (c) {
                          if (c->pm4_buffer) vk_ps4_free(alloc, c->pm4_buffer);
 +                        if (c->barrier_label.allocated) sceGnmDirectMemoryRelease(&c->barrier_label);
++                        if (c->vertex_tables.allocated) sceGnmDirectMemoryRelease(&c->vertex_tables);
                          vk_ps4_free(alloc, c);
                      }
                      pCommandBuffers[j] = VK_NULL_HANDLE;
-@@ -853,7 +863,8 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
+@@ -853,7 +869,9 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
                  pool->command_buffers[pool->command_buffer_count++] = cmd;
              } else {
                  vk_ps4_free(alloc, cmd->pm4_buffer);
 -                vk_ps4_free(alloc, cmd);
 +                if (cmd->barrier_label.allocated) sceGnmDirectMemoryRelease(&cmd->barrier_label);
++                if (cmd->vertex_tables.allocated) sceGnmDirectMemoryRelease(&cmd->vertex_tables);
 +            vk_ps4_free(alloc, cmd);
                  for (uint32_t j = 0; j < i; j++) {
                      VkPs4CommandBuffer *c = (VkPs4CommandBuffer *)pCommandBuffers[j];
                      if (c) {
-@@ -864,6 +875,7 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
+@@ -864,6 +882,8 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
                              }
                          }
                          if (c->pm4_buffer) vk_ps4_free(alloc, c->pm4_buffer);
 +                        if (c->barrier_label.allocated) sceGnmDirectMemoryRelease(&c->barrier_label);
++                        if (c->vertex_tables.allocated) sceGnmDirectMemoryRelease(&c->vertex_tables);
                          vk_ps4_free(alloc, c);
                      }
                      pCommandBuffers[j] = VK_NULL_HANDLE;
-@@ -910,6 +922,7 @@ vk_ps4_FreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
+@@ -910,6 +930,8 @@ vk_ps4_FreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
              pool->free_list[pool->free_count++] = cmd;
          } else {
              if (cmd->pm4_buffer) vk_ps4_free(alloc, cmd->pm4_buffer);
 +            if (cmd->barrier_label.allocated) sceGnmDirectMemoryRelease(&cmd->barrier_label);
++            if (cmd->vertex_tables.allocated) sceGnmDirectMemoryRelease(&cmd->vertex_tables);
              vk_ps4_free(alloc, cmd);
          }
      }
-@@ -917,7 +930,8 @@ vk_ps4_FreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
+@@ -917,7 +939,8 @@ vk_ps4_FreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
  
  VKAPI_ATTR VkResult VKAPI_CALL
  vk_ps4_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo *pBeginInfo) {
@@ -202,16 +221,18 @@ index 168c1f3..1ec37ae 100644
      if (!commandBuffer) return VK_ERROR_INITIALIZATION_FAILED;
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
      if (!cmd->pm4_buffer) return VK_ERROR_INITIALIZATION_FAILED;
-@@ -939,6 +953,8 @@ vk_ps4_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBe
+@@ -939,7 +962,10 @@ vk_ps4_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBe
      cmd->pm4_used = (uint32_t)(cmd->gnm_cmd.cmdptr - cmd->gnm_cmd.beginptr);
      /* Reset all tracking state */
      cmd->current_pipeline = NULL;
 +    cmd->graphics_set0 = NULL;
 +    cmd->resource_error = VK_SUCCESS;
      cmd->vertex_binding_count = 0;
++    cmd->vertex_tables_used = 0;
      cmd->vertex_buffers_dirty = false;
      memset(&cmd->index_buffer, 0, sizeof(cmd->index_buffer));
-@@ -959,7 +975,7 @@ vk_ps4_EndCommandBuffer(VkCommandBuffer commandBuffer) {
+     memset(cmd->vertex_buffers, 0, sizeof(cmd->vertex_buffers));
+@@ -959,7 +985,7 @@ vk_ps4_EndCommandBuffer(VkCommandBuffer commandBuffer) {
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
      cmd->is_recording = false;
      cmd->pm4_used = (uint32_t)(cmd->gnm_cmd.cmdptr - cmd->gnm_cmd.beginptr);
@@ -220,32 +241,36 @@ index 168c1f3..1ec37ae 100644
  }
  
  VKAPI_ATTR VkResult VKAPI_CALL
-@@ -974,6 +990,8 @@ vk_ps4_ResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFla
+@@ -974,7 +1000,10 @@ vk_ps4_ResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFla
      cmd->is_recording = false;
      /* Reset all tracking state */
      cmd->current_pipeline = NULL;
 +    cmd->graphics_set0 = NULL;
 +    cmd->resource_error = VK_SUCCESS;
      cmd->vertex_binding_count = 0;
++    cmd->vertex_tables_used = 0;
      cmd->vertex_buffers_dirty = false;
      memset(&cmd->index_buffer, 0, sizeof(cmd->index_buffer));
-@@ -1000,6 +1018,7 @@ vk_ps4_ResetCommandPool(VkDevice device, VkCommandPool commandPool, VkCommandPoo
+     memset(cmd->vertex_buffers, 0, sizeof(cmd->vertex_buffers));
+@@ -1000,6 +1029,8 @@ vk_ps4_ResetCommandPool(VkDevice device, VkCommandPool commandPool, VkCommandPoo
          if (pool->free_list[i]) {
              if (pool->free_list[i]->pm4_buffer)
                  vk_ps4_free(alloc, pool->free_list[i]->pm4_buffer);
 +            if (pool->free_list[i]->barrier_label.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->barrier_label);
++            if (pool->free_list[i]->vertex_tables.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->vertex_tables);
              vk_ps4_free(alloc, pool->free_list[i]);
              pool->free_list[i] = NULL;
          }
-@@ -1021,6 +1040,7 @@ vk_ps4_TrimCommandPool(VkDevice device, VkCommandPool commandPool, VkCommandPool
+@@ -1021,6 +1052,8 @@ vk_ps4_TrimCommandPool(VkDevice device, VkCommandPool commandPool, VkCommandPool
          if (pool->free_list[i]) {
              if (pool->free_list[i]->pm4_buffer)
                  vk_ps4_free(alloc, pool->free_list[i]->pm4_buffer);
 +            if (pool->free_list[i]->barrier_label.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->barrier_label);
++            if (pool->free_list[i]->vertex_tables.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->vertex_tables);
              vk_ps4_free(alloc, pool->free_list[i]);
              pool->free_list[i] = NULL;
          }
-@@ -1098,6 +1118,8 @@ vk_ps4_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeli
+@@ -1098,6 +1131,8 @@ vk_ps4_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeli
          /* Set pixel shader only if the pipeline has one */
          if (pipe->has_ps) {
              sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &pipe->ps_regs);
@@ -254,7 +279,7 @@ index 168c1f3..1ec37ae 100644
          }
  
          /* Bind fetch shader if the pipeline has one */
-@@ -1208,10 +1230,10 @@ vk_ps4_CmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uin
+@@ -1208,10 +1243,10 @@ vk_ps4_CmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uin
           * GNM viewport: scale = half-dimension, offset = center */
          vp_info.scale[0] = vp->width * 0.5f;
          vp_info.scale[1] = vp->height * 0.5f;
@@ -267,7 +292,7 @@ index 168c1f3..1ec37ae 100644
          sceGnmDrawCmdSetViewport(&cmd->gnm_cmd, firstViewport + i, &vp_info);
      }
  }
-@@ -1223,6 +1245,13 @@ vk_ps4_CmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint3
+@@ -1223,6 +1258,13 @@ vk_ps4_CmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint3
  
      for (uint32_t i = 0; i < scissorCount; i++) {
          const VkRect2D *sc = &pScissors[i];
@@ -281,23 +306,248 @@ index 168c1f3..1ec37ae 100644
          sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd,
              sc->offset.x, sc->offset.y,
              sc->offset.x + sc->extent.width,
-@@ -1453,6 +1482,7 @@ vk_ps4_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t ins
+@@ -1372,43 +1414,16 @@ vk_ps4_CmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t firstBinding
+     if (!commandBuffer || !pBuffers) return;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+ 
++    if (firstBinding >= VK_PS4_MAX_VERTEX_BINDINGS || bindingCount > VK_PS4_MAX_VERTEX_BINDINGS - firstBinding) {
++        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
++    }
+     for (uint32_t i = 0; i < bindingCount; i++) {
+         uint32_t idx = firstBinding + i;
+         if (idx < VK_PS4_MAX_VERTEX_BINDINGS) {
+             cmd->vertex_buffers[idx].buffer = pBuffers[i];
+             cmd->vertex_buffers[idx].offset = pOffsets ? pOffsets[i] : 0;
+ 
+-            /* Build GnmBuffer descriptor for this vertex buffer */
+-            VkPs4Buffer *vk_buf = (VkPs4Buffer *)pBuffers[i];
+-            if (vk_buf && vk_buf->memory && vk_buf->memory->gnm_mem.mapped) {
+-                void *gpu_addr = (char *)vk_buf->memory->gnm_mem.mapped +
+-                                 vk_buf->memory_offset +
+-                                 (pOffsets ? pOffsets[i] : 0);
+-                /* Create a vertex buffer descriptor.
+-                 * Format and stride will be set by the fetch shader based
+-                 * on the vertex input layout. For now, use a raw buffer
+-                 * with the stride from the vertex input binding. */
+-                uint32_t stride = 0;
+-                uint32_t num_elements = 0;
+-                /* Get stride from pipeline vertex input state if available */
+-                if (cmd->current_pipeline && cmd->current_pipeline->vertex_input_state.pVertexBindingDescriptions) {
+-                    const VkPipelineVertexInputStateCreateInfo *vi =
+-                        &cmd->current_pipeline->vertex_input_state;
+-                    for (uint32_t b = 0; b < vi->vertexBindingDescriptionCount; b++) {
+-                        if (vi->pVertexBindingDescriptions[b].binding == idx) {
+-                            stride = vi->pVertexBindingDescriptions[b].stride;
+-                            break;
+-                        }
+-                    }
+-                }
+-                if (stride == 0) stride = (uint32_t)vk_buf->create_info.size;
+-                num_elements = (uint32_t)(vk_buf->create_info.size / stride);
+-                cmd->gnm_vertex_buffers[idx] = sceGnmCreateVertexBuffer(
+-                    gpu_addr, GNM_FMT_R32_FLOAT, stride, num_elements
+-                );
+-            } else {
+-                memset(&cmd->gnm_vertex_buffers[idx], 0, sizeof(GnmBuffer));
+-            }
++
+         }
+     }
+     /* Update vertex_binding_count only for bindings that were actually stored.
+@@ -1428,6 +1443,9 @@ VKAPI_ATTR void VKAPI_CALL
+ vk_ps4_CmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType) {
+     if (!commandBuffer) return;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
++    if (indexType != VK_INDEX_TYPE_UINT16 && indexType != VK_INDEX_TYPE_UINT32) {
++        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
++    }
+     cmd->index_buffer.buffer = buffer;
+     cmd->index_buffer.offset = offset;
+     cmd->index_buffer.type = indexType;
+@@ -1448,24 +1466,81 @@ vk_ps4_CmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDevi
+     }
+ }
+ 
++/* Snapshot descriptors per draw: later binds must not mutate earlier draws. */
++static bool vk_ps4_emit_vertex_table(VkPs4CommandBuffer *cmd) {
++    VkPs4Pipeline *pipe = cmd->current_pipeline;
++    if (!pipe || !pipe->vs_input_semantic_count) return true;
++    if (!pipe->has_fetch_shader || !pipe->has_vb_table_slot) goto unsupported;
++    const VkPipelineVertexInputStateCreateInfo *vi = &pipe->vertex_input_state;
++    uint32_t count = pipe->vs_input_semantic_count;
++    if (count > VK_PS4_MAX_VERTEX_BINDINGS) goto unsupported;
++    GnmBuffer table[VK_PS4_MAX_VERTEX_BINDINGS] = {0};
++    for (uint32_t i = 0; i < count; ++i) {
++        const VkVertexInputAttributeDescription *attr = NULL;
++        const VkVertexInputBindingDescription *binding = NULL;
++        for (uint32_t j = 0; j < vi->vertexAttributeDescriptionCount; ++j)
++            if (vi->pVertexAttributeDescriptions[j].location == pipe->vs_input_semantics[i].semantic)
++                attr = &vi->pVertexAttributeDescriptions[j];
++        if (!attr || attr->binding >= VK_PS4_MAX_VERTEX_BINDINGS) goto unsupported;
++        for (uint32_t j = 0; j < vi->vertexBindingDescriptionCount; ++j)
++            if (vi->pVertexBindingDescriptions[j].binding == attr->binding)
++                binding = &vi->pVertexBindingDescriptions[j];
++        uint32_t bytes;
++        switch (attr->format) {
++        case VK_FORMAT_R32_SFLOAT: bytes = 4; break;
++        case VK_FORMAT_R32G32_SFLOAT: bytes = 8; break;
++        case VK_FORMAT_R32G32B32_SFLOAT: bytes = 12; break;
++        case VK_FORMAT_R32G32B32A32_SFLOAT: bytes = 16; break;
++        default: goto unsupported;
++        }
++        if (!binding || binding->inputRate != VK_VERTEX_INPUT_RATE_VERTEX ||
++            !binding->stride || binding->stride > 16383 || attr->offset > binding->stride ||
++            bytes > binding->stride - attr->offset) goto unsupported;
++        VkPs4Buffer *buf = (VkPs4Buffer *)cmd->vertex_buffers[attr->binding].buffer;
++        VkDeviceSize offset = cmd->vertex_buffers[attr->binding].offset;
++        if (!buf || !buf->memory || !buf->memory->gnm_mem.mapped ||
++            offset > buf->create_info.size || attr->offset > buf->create_info.size - offset)
++            goto unsupported;
++        offset += attr->offset;
++        VkDeviceSize remaining = buf->create_info.size - offset;
++        if (remaining < bytes || (remaining - bytes) / binding->stride >= UINT32_MAX)
++            goto unsupported;
++        table[i] = sceGnmCreateVertexBuffer(
++            (char *)buf->memory->gnm_mem.mapped + buf->memory_offset + offset,
++            vk_ps4_vk_format_to_gnm_buffer(attr->format), binding->stride,
++            (uint32_t)((remaining - bytes) / binding->stride + 1));
++    }
++    uint32_t size = count * sizeof(GnmBuffer);
++    if (cmd->vertex_tables_used + size > 65536) goto exhausted;
++    if (!cmd->vertex_tables.allocated && sceGnmDirectMemoryAllocate(
++            &cmd->vertex_tables, 65536, 65536, GNM_DIRECT_MEMORY_TYPE_WC_GARLIC,
++            GNM_PROT_CPU_GPU_RW) != GNM_ERROR_OK) goto exhausted;
++    void *snapshot = (char *)cmd->vertex_tables.mapped + cmd->vertex_tables_used;
++    memcpy(snapshot, table, size);
++    cmd->vertex_tables_used += size;
++    sceGnmDrawCmdSetPointerUserData(&cmd->gnm_cmd, GNM_STAGE_VS,
++                                  pipe->vertex_buffer_table_slot, snapshot);
++    return true;
++unsupported:
++    cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT;
++    return false;
++exhausted:
++    cmd->resource_error = VK_ERROR_OUT_OF_DEVICE_MEMORY;
++    return false;
++}
++
+ VKAPI_ATTR void VKAPI_CALL
+ vk_ps4_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
                 uint32_t firstVertex, uint32_t firstInstance) {
      if (!commandBuffer) return;
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+-
+-    /* Emit vertex buffer table if dirty and pipeline has a VB table slot */
+-    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+-        cmd->current_pipeline->has_fetch_shader &&
+-        cmd->current_pipeline->has_vb_table_slot &&
+-        cmd->vertex_binding_count > 0) {
+-        sceGnmDrawCmdSetPointerUserData(
+-            &cmd->gnm_cmd, GNM_STAGE_VS,
+-            cmd->current_pipeline->vertex_buffer_table_slot,
+-            cmd->gnm_vertex_buffers
+-        );
+-        cmd->vertex_buffers_dirty = false;
++    if (cmd->current_pipeline && cmd->current_pipeline->vs_input_semantic_count &&
++        (firstVertex || firstInstance || instanceCount != 1)) {
++        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
+     }
 +    if (!vk_ps4_emit_resource_table(cmd)) return;
++
++    if (!vk_ps4_emit_vertex_table(cmd)) return;
  
-     /* Emit vertex buffer table if dirty and pipeline has a VB table slot */
-     if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
-@@ -1527,6 +1557,7 @@ vk_ps4_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32
+     /* Always set instance count to avoid state leak from previous draw */
+     sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, instanceCount);
+@@ -1527,19 +1602,13 @@ vk_ps4_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32
                        uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
      if (!commandBuffer) return;
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+-
+-    /* Emit vertex buffer table if dirty and pipeline has a VB table slot */
+-    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+-        cmd->current_pipeline->has_fetch_shader &&
+-        cmd->current_pipeline->has_vb_table_slot &&
+-        cmd->vertex_binding_count > 0) {
+-        sceGnmDrawCmdSetPointerUserData(
+-            &cmd->gnm_cmd, GNM_STAGE_VS,
+-            cmd->current_pipeline->vertex_buffer_table_slot,
+-            cmd->gnm_vertex_buffers
+-        );
+-        cmd->vertex_buffers_dirty = false;
++    if (cmd->current_pipeline && cmd->current_pipeline->vs_input_semantic_count &&
++        (vertexOffset || firstInstance || instanceCount != 1)) {
++        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
+     }
 +    if (!vk_ps4_emit_resource_table(cmd)) return;
++
++    if (!vk_ps4_emit_vertex_table(cmd)) return;
  
-     /* Emit vertex buffer table if dirty and pipeline has a VB table slot */
-     if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
-@@ -2046,58 +2077,72 @@ vk_ps4_CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, V
+     /* Always set instance count to avoid state leak from previous draw */
+     sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, instanceCount);
+@@ -1595,6 +1664,12 @@ vk_ps4_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32
+      * vertexOffset is handled by the shader via gl_VertexIndex user-data. */
+     VkPs4Buffer *buf = (VkPs4Buffer *)cmd->index_buffer.buffer;
+     if (buf && buf->memory && buf->memory->gnm_mem.mapped) {
++        uint32_t index_size = cmd->index_buffer.type == VK_INDEX_TYPE_UINT32 ? 4 : 2;
++        VkDeviceSize offset = cmd->index_buffer.offset;
++        if (offset > buf->create_info.size || offset % index_size ||
++            (uint64_t)firstIndex + indexCount > (buf->create_info.size - offset) / index_size) {
++            cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
++        }
+         void *gpu_addr = (char *)buf->memory->gnm_mem.mapped + buf->memory_offset +
+                          cmd->index_buffer.offset;
+         GnmDrawModifier mod = {0};
+@@ -1605,8 +1680,7 @@ vk_ps4_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32
+             sceGnmDrawCmdDrawIndex2(&cmd->gnm_cmd, indexCount, gpu_addr, mod);
+         }
+     } else {
+-        /* Fallback: auto-draw */
+-        sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, indexCount);
++        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT;
+     }
+ }
+ 
+@@ -1617,18 +1691,7 @@ vk_ps4_CmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceS
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+     VkPs4Buffer *buf = (VkPs4Buffer *)buffer;
+ 
+-    /* Emit vertex buffer table if dirty */
+-    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+-        cmd->current_pipeline->has_fetch_shader &&
+-        cmd->current_pipeline->has_vb_table_slot &&
+-        cmd->vertex_binding_count > 0) {
+-        sceGnmDrawCmdSetPointerUserData(
+-            &cmd->gnm_cmd, GNM_STAGE_VS,
+-            cmd->current_pipeline->vertex_buffer_table_slot,
+-            cmd->gnm_vertex_buffers
+-        );
+-        cmd->vertex_buffers_dirty = false;
+-    }
++    if (!vk_ps4_emit_vertex_table(cmd)) return;
+ 
+     if (!buf->memory || !buf->memory->gnm_mem.mapped) return;
+ 
+@@ -1660,18 +1723,7 @@ vk_ps4_CmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, Vk
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+     VkPs4Buffer *buf = (VkPs4Buffer *)buffer;
+ 
+-    /* Emit vertex buffer table if dirty */
+-    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+-        cmd->current_pipeline->has_fetch_shader &&
+-        cmd->current_pipeline->has_vb_table_slot &&
+-        cmd->vertex_binding_count > 0) {
+-        sceGnmDrawCmdSetPointerUserData(
+-            &cmd->gnm_cmd, GNM_STAGE_VS,
+-            cmd->current_pipeline->vertex_buffer_table_slot,
+-            cmd->gnm_vertex_buffers
+-        );
+-        cmd->vertex_buffers_dirty = false;
+-    }
++    if (!vk_ps4_emit_vertex_table(cmd)) return;
+ 
+     if (!buf->memory || !buf->memory->gnm_mem.mapped) return;
+ 
+@@ -2046,58 +2098,72 @@ vk_ps4_CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, V
      if (!src || !dst || !src->memory || !dst->memory) return;
      if (!src->memory->gnm_mem.mapped || !dst->memory->gnm_mem.mapped) return;
  
@@ -417,7 +667,7 @@ index 168c1f3..1ec37ae 100644
  }
  
  VKAPI_ATTR void VKAPI_CALL
-@@ -2516,19 +2561,40 @@ vk_ps4_CmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags sr
+@@ -2516,19 +2582,40 @@ vk_ps4_CmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags sr
      if (!commandBuffer) return;
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
  
@@ -927,7 +1177,7 @@ index 6545469..d50b826 100644
      pLayout->size = pLayout->depthPitch * img->create_info.extent.depth;
  }
 diff --git a/src/vk_ps4_pipeline.c b/src/vk_ps4_pipeline.c
-index b621e66..267f7bc 100644
+index b621e66..ee8dd61 100644
 --- a/src/vk_ps4_pipeline.c
 +++ b/src/vk_ps4_pipeline.c
 @@ -19,7 +19,7 @@
@@ -1016,7 +1266,7 @@ index b621e66..267f7bc 100644
                          pipe->has_ds_vs = true;
                          if (metadata.shadercode) {
                              sceGnmVsRegsSetAddress(&pipe->vs_regs,
-@@ -517,6 +550,8 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+@@ -517,10 +550,12 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
  
          /* A graphics pipeline must have at least VS with valid registers */
          if (!compile_ok || !vs_found) {
@@ -1025,7 +1275,75 @@ index b621e66..267f7bc 100644
              vk_ps4_free(alloc, pipe->vertex_bindings);
              vk_ps4_free(alloc, pipe->vertex_attributes);
              vk_ps4_free(alloc, pipe->blend_attachments);
-@@ -667,6 +702,10 @@ vk_ps4_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
+-            vk_ps4_free(alloc, pipe->fetch_shader);
++            if (pipe->fetch_shader_mem.allocated) sceGnmDirectMemoryRelease(&pipe->fetch_shader_mem);
+             if (pipe->vs_binary)  vk_ps4_free(alloc, pipe->vs_binary);
+             if (pipe->ps_binary)  vk_ps4_free(alloc, pipe->ps_binary);
+             if (pipe->gs_binary)  vk_ps4_free(alloc, pipe->gs_binary);
+@@ -564,36 +599,19 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+                 goto skip_fetch_shader;
+             }
+ 
+-            /* Build instancing modes from Vulkan vertex input binding descriptions */
+-            GnmFetchShaderInstancingMode inst_modes[VK_PS4_MAX_VERTEX_BINDINGS];
+-            uint32_t num_inst_modes = 0;
+-            if (ci->pVertexInputState) {
+-                const VkPipelineVertexInputStateCreateInfo *vi = ci->pVertexInputState;
+-                num_inst_modes = vi->vertexBindingDescriptionCount;
+-                if (num_inst_modes > VK_PS4_MAX_VERTEX_BINDINGS) num_inst_modes = VK_PS4_MAX_VERTEX_BINDINGS;
+-                for (uint32_t b = 0; b < num_inst_modes; b++) {
+-                    VkVertexInputRate rate = vi->pVertexBindingDescriptions[b].inputRate;
+-                    inst_modes[b] = (rate == VK_VERTEX_INPUT_RATE_INSTANCE) ?
+-                        GNM_FETCH_MODE_INSTANCEID : GNM_FETCH_MODE_VERTEXINDEX;
+-                }
+-            }
+-
+             GnmFetchShaderCreateInfo fetch_ci = {0};
+             fetch_ci.regs = &pipe->vs_regs;
+             fetch_ci.vtxinputs = pipe->vs_input_semantics;
+             fetch_ci.numvtxinputs = pipe->vs_input_semantic_count;
+             fetch_ci.inputusages = pipe->vs_input_usage_slots;
+             fetch_ci.numinputusages = pipe->vs_input_usage_slot_count;
+-            if (num_inst_modes > 0) {
+-                fetch_ci.instancedata = inst_modes;
+-                fetch_ci.numinstancedata = num_inst_modes;
+-            }
+-
+             uint32_t fetch_size = 0;
+             GnmError gerr = sceGnmFetchShaderCalcSize(&fetch_size, &fetch_ci);
+             if (gerr == GNM_ERROR_OK && fetch_size > 0) {
+                 /* Allocate fetch shader (must be 256-byte aligned) */
+-                pipe->fetch_shader = vk_ps4_alloc_zero(alloc, fetch_size, 256);
++                if (sceGnmDirectMemoryAllocate(&pipe->fetch_shader_mem, fetch_size, 65536,
++                        GNM_DIRECT_MEMORY_TYPE_WC_GARLIC, GNM_PROT_CPU_GPU_RW) == GNM_ERROR_OK)
++                    pipe->fetch_shader = pipe->fetch_shader_mem.mapped;
+                 if (pipe->fetch_shader) {
+                     pipe->fetch_shader_size = fetch_size;
+                     GnmFetchShaderResults fetch_res = {0};
+@@ -606,14 +624,20 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+                         pipe->has_fetch_shader_slot = has_fs_slot;
+                         pipe->has_vb_table_slot = has_vb_slot;
+                     } else {
+-                        vk_ps4_free(alloc, pipe->fetch_shader);
++                        if (pipe->fetch_shader_mem.allocated) sceGnmDirectMemoryRelease(&pipe->fetch_shader_mem);
+                         pipe->fetch_shader = NULL;
+                         pipe->fetch_shader_size = 0;
+                     }
+                 }
+             }
+         }
+-        skip_fetch_shader: ;
++        skip_fetch_shader:
++        if (pipe->vs_input_semantic_count && !pipe->has_fetch_shader) {
++            vk_ps4_DestroyPipeline(device, (VkPipeline)pipe, pAllocator);
++            pPipelines[i] = VK_NULL_HANDLE;
++            overall_result = VK_ERROR_FEATURE_NOT_PRESENT;
++            continue;
++        }
+ 
+         /* Extract push constant inline register mapping from input usage slots.
+          * psbc emits IMM_ALUFLOATCONST slots for each inlined push constant
+@@ -667,6 +691,10 @@ vk_ps4_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
                                 const VkComputePipelineCreateInfo *pCreateInfos,
                                 const VkAllocationCallbacks *pAllocator,
                                 VkPipeline *pPipelines) {
@@ -1036,7 +1354,7 @@ index b621e66..267f7bc 100644
  
      if (!device || !pCreateInfos || !pPipelines) {
          return VK_ERROR_INITIALIZATION_FAILED;
-@@ -715,7 +754,7 @@ vk_ps4_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
+@@ -715,7 +743,7 @@ vk_ps4_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
              }
          } else {
              VkResult vr = vk_ps4_compile_shader_module(
@@ -1045,7 +1363,16 @@ index b621e66..267f7bc 100644
              );
              if (vr != VK_SUCCESS) {
                  if (binary && binary != mod->binary) {
-@@ -843,6 +882,8 @@ vk_ps4_DestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationC
+@@ -832,7 +860,7 @@ vk_ps4_DestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationC
+     VkPs4Pipeline *pipe = (VkPs4Pipeline *)pipeline;
+     const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
+     if (pipe->fetch_shader) {
+-        vk_ps4_free(alloc, pipe->fetch_shader);
++        if (pipe->fetch_shader_mem.allocated) sceGnmDirectMemoryRelease(&pipe->fetch_shader_mem);
+     }
+     if (pipe->vertex_bindings) {
+         vk_ps4_free(alloc, pipe->vertex_bindings);
+@@ -843,6 +871,8 @@ vk_ps4_DestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationC
      if (pipe->blend_attachments) {
          vk_ps4_free(alloc, pipe->blend_attachments);
      }
@@ -1054,7 +1381,7 @@ index b621e66..267f7bc 100644
      /* Free compiled GCN shader binaries (kept alive because stage
       * registers contain GPU addresses pointing into them) */
      if (pipe->vs_binary)  vk_ps4_free(alloc, pipe->vs_binary);
-@@ -864,6 +905,8 @@ vk_ps4_CreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *p
+@@ -864,6 +894,8 @@ vk_ps4_CreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *p
      VkPs4Device *dev = (VkPs4Device *)device;
      const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
  
@@ -1063,7 +1390,7 @@ index b621e66..267f7bc 100644
      VkPs4PipelineLayout *layout = vk_ps4_alloc_zero(alloc, sizeof(*layout), 16);
      if (!layout) return VK_ERROR_OUT_OF_HOST_MEMORY;
      layout->type = VK_PS4_OBJ_PIPELINE_LAYOUT;
-@@ -915,6 +958,24 @@ vk_ps4_DestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout, c
+@@ -915,6 +947,24 @@ vk_ps4_DestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout, c
  
  /* === Descriptor set layout === */
  
@@ -1088,7 +1415,7 @@ index b621e66..267f7bc 100644
  VKAPI_ATTR VkResult VKAPI_CALL
  vk_ps4_CreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
                                   const VkAllocationCallbacks *pAllocator, VkDescriptorSetLayout *pSetLayout) {
-@@ -925,6 +986,7 @@ vk_ps4_CreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCre
+@@ -925,6 +975,7 @@ vk_ps4_CreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCre
      VkPs4Device *dev = (VkPs4Device *)device;
      const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
  
@@ -1096,7 +1423,7 @@ index b621e66..267f7bc 100644
      VkPs4DescriptorSetLayout *layout = vk_ps4_alloc_zero(alloc, sizeof(*layout), 16);
      if (!layout) return VK_ERROR_OUT_OF_HOST_MEMORY;
      layout->type = VK_PS4_OBJ_DESCRIPTOR_SET_LAYOUT;
-@@ -1018,151 +1080,95 @@ vk_ps4_CreateDescriptorPool(VkDevice device, const VkDescriptorPoolCreateInfo *p
+@@ -1018,151 +1069,95 @@ vk_ps4_CreateDescriptorPool(VkDevice device, const VkDescriptorPoolCreateInfo *p
      return VK_SUCCESS;
  }
  
@@ -1238,6 +1565,12 @@ index b621e66..267f7bc 100644
 -            if (set->bindings[b].buffers) vk_ps4_free(alloc, set->bindings[b].buffers);
 -            if (set->bindings[b].textures) vk_ps4_free(alloc, set->bindings[b].textures);
 -            if (set->bindings[b].samplers) vk_ps4_free(alloc, set->bindings[b].samplers);
+-        }
+-        /* Add to the pool's free list for reuse, or free if pool is full */
+-        if (pool && pool->free_count < VK_PS4_MAX_POOLED_SETS) {
+-            pool->free_list[pool->free_count++] = set;
+-        } else {
+-            vk_ps4_free(alloc, set);
 +    for (uint32_t i = 0; i < count; ++i) {
 +        VkPs4DescriptorSet **link = &pool->live_sets;
 +        while (*link && *link != (VkPs4DescriptorSet *)sets[i]) link = &(*link)->next;
@@ -1247,12 +1580,6 @@ index b621e66..267f7bc 100644
 +            release_set(set);
 +            --pool->sets_allocated;
          }
--        /* Add to the pool's free list for reuse, or free if pool is full */
--        if (pool && pool->free_count < VK_PS4_MAX_POOLED_SETS) {
--            pool->free_list[pool->free_count++] = set;
--        } else {
--            vk_ps4_free(alloc, set);
--        }
 -        if (pool) pool->sets_freed++;
      }
      return VK_SUCCESS;

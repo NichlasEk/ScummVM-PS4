@@ -218,11 +218,10 @@ The standard TWP blend function matches the new straight-alpha test exactly.
 Texture sampling, explicit synchronization and render-target composition now
 have bounded native Vulkan evidence. However, TWP also needs streamed vertex
 and uint32 index buffers, matrix transforms, clears, readback and legacy GLSL
-translation/reflection. The current probes use procedural vertices and prebuilt
-SPIR-V; they do not provide any of those GL-facing facilities.
+translation/reflection. The probes use prebuilt SPIR-V; they do not yet provide these GL-facing facilities.
+The indexed vertex-buffer checkpoint below now covers the native buffer/matrix path.
 
-The next gate is a native indexed sprite test using TWP's position/color/UV
-vertex layout and a matrix UBO. Then verify clears/readback and the actual
+The next gate is clears/readback, followed by the actual
 translated shader effects before enabling an OpenGL context in ScummVM.
 No general OpenGL translator has been integrated by these probes, and no TWP
 startup on this open stack is claimed. Physical PS4 verification remains open.
@@ -232,3 +231,44 @@ Composite regression: the basic triangle (154 samples) and optimal-upload mode
 The runnable composite executable is restored afterward. Stable ScummVM package
 SHA-256 is unchanged; this milestone adds verified coverage of existing driver
 paths rather than enabling a new game backend.
+
+## Indexed vertex inputs and matrix transforms
+
+The `--sprites` diagnostic exercises TWP's 32-byte interleaved layout: float2
+position at byte 0, float4 color at byte 8 and float2 UV at byte 24. An indexed
+textured triangle deliberately reuses the texture oracle, now with interpolated
+UVs and vertex color instead of fragment-coordinate-generated UVs. Its nonidentity
+mat4 UBO scales and flips the input positions. It uses a 32-byte vertex binding
+offset, 160-byte uint32 index binding offset and firstIndex=1, with poisoned
+padding to catch offset mistakes. The vertex buffer is bound before the pipeline.
+A second, offscreen draw changes the vertex binding offset; it must not mutate
+the first draw's descriptor table.
+
+The compiler now enables the external vertex fetch prolog, emits its actual
+SGPR address, reserves a full 64-bit vertex-table pointer, assigns fragment
+input locations and preserves the real VS-export/PS-input semantic mapping.
+Previously multiple fragment attributes silently shared interpolation slot zero.
+The driver allocates fetch code and immutable per-draw descriptor snapshots in
+GPU-visible memory, and derives each attribute's format, offset and record count
+from the pipeline and bound buffer. A command buffer has a 64-KiB descriptor
+arena, reset only when recording is reset; exhaustion is reported rather than
+wrapping over descriptors still referenced by recorded draws.
+
+Supported vertex scope is per-vertex float1/2/3/4 attributes, nonzero stride,
+one instance, zero base vertex/firstVertex/firstInstance. Other vertex draw
+parameters report an error at EndCommandBuffer. This is bounded native coverage,
+not a complete Vulkan implementation, GL translator, TWP startup or physical-PS4
+validation. Buffer contents and descriptor sets still obey normal caller-managed
+GPU lifetime/synchronization rules.
+
+Reproduce with `scripts/build-vulkan-probe.sh --sprites`, then
+`xvfb-run -a -s '-screen 0 1280x720x24' python3 scripts/run-opengnm-probe.py --vulkan --sprites`.
+Reports are under `artifacts/vulkan/sprites/`; the separate diagnostic package is
+`dist/ScummVM-PS4-Vulkan-Sprites.pkg` (SCVM00009).
+
+Validation: 577 texture samples plus 5 background checks and complete eight-frame
+lifecycle pass in shadPS4, including both draws. The basic triangle (154 checks),
+optimal upload (582 checks and resubmission) and composite (1,230 checks) regressions
+pass with the same driver/compiler changes. Host compiler tests include both new
+sprite shaders. Stable ScummVM 1.17 retains SHA-256
+`c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.

@@ -22,6 +22,9 @@ static FILE *report;
   } while (0)
 #ifdef RESOURCE_PROBE
 #include "resources.h"
+#ifdef SPRITES_PROBE
+#include "sprites.h"
+#endif
 #endif
 #ifdef COMPOSITE_PROBE
 #include "composite.h"
@@ -136,6 +139,9 @@ int main(void) {
     CHECK(vkCreateShaderModule(device, &mci, NULL, &modules[i]));
   }
 #ifdef RESOURCE_PROBE
+  #ifdef SPRITES_PROBE
+  if (create_sprites(device, physical)) return 2;
+  #endif
   if (create_resources(device, physical))
     return 2;
 #endif
@@ -174,6 +180,17 @@ int main(void) {
          .pName = "main"}};
     VkPipelineVertexInputStateCreateInfo vi = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+#ifdef SPRITES_PROBE
+    VkVertexInputBindingDescription vb = {0, 32, VK_VERTEX_INPUT_RATE_VERTEX};
+    VkVertexInputAttributeDescription attrs[] = {
+      {0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
+      {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 8},
+      {2, 0, VK_FORMAT_R32G32_SFLOAT, 24}};
+    if (i == 1) {
+      vi.vertexBindingDescriptionCount = 1; vi.pVertexBindingDescriptions = &vb;
+      vi.vertexAttributeDescriptionCount = 3; vi.pVertexAttributeDescriptions = attrs;
+    }
+#endif
     VkPipelineInputAssemblyStateCreateInfo ia = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
@@ -285,6 +302,11 @@ int main(void) {
     CHECK(vkBeginCommandBuffer(cmd, &begin));
 #ifdef RESOURCE_PROBE
     resource_barrier(cmd, frame);
+#ifdef SPRITES_PROBE
+    /* Bind before the pipeline: attribute formats belong to draw-time state. */
+    VkDeviceSize initial_vertex_offset = 32;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &sprite_buffer, &initial_vertex_offset);
+#endif
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
                             &resource_sets[1], 0, NULL);
 #endif
@@ -309,6 +331,17 @@ int main(void) {
     for (unsigned i = 0; i < 2; i++) {
 #endif
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines[i]);
+#ifdef SPRITES_PROBE
+      if (i == 1) {
+        VkDeviceSize offset;
+        vkCmdBindIndexBuffer(cmd, sprite_buffer, 160, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmd, 3, 1, 1, 0, 0);
+        /* A later bind must not overwrite the first draw's descriptor snapshot. */
+        offset = 256;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &sprite_buffer, &offset);
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+      } else
+#endif
       vkCmdDraw(cmd, 3, 1, 0, 0);
     }
     vkCmdEndRenderPass(cmd);
@@ -357,6 +390,10 @@ int main(void) {
   vkDestroyRenderPass(device, pass, NULL);
   vkDestroySwapchainKHR(device, swap, NULL);
 #ifdef RESOURCE_PROBE
+  #ifdef SPRITES_PROBE
+  vkDestroyBuffer(device, sprite_buffer, NULL);
+  vkFreeMemory(device, sprite_memory, NULL);
+  #endif
   if (destroy_resources(device))
     return 2;
 #endif

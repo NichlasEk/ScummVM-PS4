@@ -19,6 +19,8 @@ for name in names:
     filename = name
     if name.startswith('triangle') and ('--resources' in sys.argv or '--upload' in sys.argv):
         filename = name.replace('triangle', 'resources')
+    if name.startswith('triangle') and '--sprites' in sys.argv:
+        filename = name.replace('triangle', 'sprites')
     subprocess.run(['glslc', '-fshader-stage=' + stage, str(source / (filename + '.glsl')),
                     '-o', str(binary)], check=True)
     subprocess.run(['spirv-val', str(binary)], check=True)

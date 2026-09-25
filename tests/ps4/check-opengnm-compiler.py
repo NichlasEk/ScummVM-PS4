@@ -80,3 +80,7 @@ layout(location=0) out vec4 color;
 void main() { color=p.color; }
 ''', False)
 compile_shader('storage-buffer', 'compute', (compiler / 'tests/test.comp').read_text(), False)
+
+for stage, suffix in [('vertex', 'vert'), ('fragment', 'frag')]:
+    compile_shader('sprite-' + stage, stage,
+        (root / ('tests/ps4/vulkan/sprites_' + suffix + '.glsl')).read_text())

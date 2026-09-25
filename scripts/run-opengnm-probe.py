@@ -17,9 +17,10 @@ selection.add_argument('--vulkan', action='store_true')
 variants = parser.add_mutually_exclusive_group()
 variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
+variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
-if args.upload:
+if args.upload or args.sprites:
     args.resources = True
 if (args.resources or args.composite) and not args.vulkan:
     parser.error('Vulkan probe variants require --vulkan')
@@ -36,7 +37,7 @@ if args.vulkan:
     if args.composite:
         reports /= 'composite'
     elif args.resources:
-        reports /= 'upload' if args.upload else 'resources'
+        reports /= 'sprites' if args.sprites else 'upload' if args.upload else 'resources'
 reports.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, XDG_DATA_HOME=str(profile), SDL_VIDEODRIVER='x11')
 emulator = root / '.tools/shadps4/Shadps4-sdl.AppImage'

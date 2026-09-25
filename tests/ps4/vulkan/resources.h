@@ -108,6 +108,10 @@ static int create_resources(VkDevice device, VkPhysicalDevice physical) {
   memcpy((char *)mapped + 64, tint, sizeof(tint));
   memcpy((char *)mapped + 128, bias, sizeof(bias));
   memcpy((char *)mapped + 192, scale, sizeof(scale));
+#ifdef SPRITES_PROBE
+  const float matrix[16] = {.5,0,0,0, 0,-.5,0,0, 0,0,1,0, 0,0,0,1};
+  memcpy((char *)mapped + 192, matrix, sizeof(matrix));
+#endif
   vkUnmapMemory(device, uniform_memory);
   VkImageCreateInfo ic = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                           .imageType = VK_IMAGE_TYPE_2D,
@@ -177,7 +181,7 @@ static int create_resources(VkDevice device, VkPhysicalDevice physical) {
   }
   VkDescriptorBufferInfo bi[] = {{uniform_buffer, 64, 32},
                                  {uniform_buffer, 128, 16},
-                                 {uniform_buffer, 192, 16}};
+                                 {uniform_buffer, 192, 64}};
   VkDescriptorImageInfo ii[] = {
       {texture_samplers[0], texture_view, VK_IMAGE_LAYOUT_GENERAL},
       {texture_samplers[1], texture_view, VK_IMAGE_LAYOUT_GENERAL}};

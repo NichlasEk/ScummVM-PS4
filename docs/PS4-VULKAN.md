@@ -382,3 +382,53 @@ Regressions for the basic triangle, optimal texture upload, offscreen blending,
 indexed vertices/matrices and standalone transfer-clear/readback all pass. The
 runnable partial-clear diagnostic is restored afterward; stable ScummVM retains
 SHA-256 `c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.
+
+## Actual TWP shader translation and register-budget correction
+
+`python3 scripts/prepare-twp-shaders.py` extracts the six original GLSL bodies
+from the local ScummVM checkout: shared vertex shader, default texture shader,
+grayscale, ghost, sepia and two-texture fade. It translates the bounded legacy
+interface to Vulkan GLSL 450, validates SPIR-V, reflects compiled decorations,
+and compiles each to a PS4 GCN binary with structural and CRC verification.
+`python3 tests/ps4/check-twp-shaders.py` checks the resulting interface contracts
+and rejection of declarations outside the supported subset.
+
+The bridge reserves set 0 binding 0 for the vertex uniform block, binding 1 for
+the fragment uniform block, and bindings 2/3 for the two combined samplers.
+Position/color/UV locations are 0/1/2; color/UV varyings are 0/1 in both stages,
+even when source declarations appear in a different order. Uniform block sizes,
+member offsets, matrix stride and array stride come from SPIR-V decorations and
+types. Notably, `RandomValue[5]` starts at byte 16 with stride 16, and `TimeLapse`
+is at byte 96 in a 112-byte block. The transform block is 64 bytes, ghost block
+64 bytes, and fade block 16 bytes. The manifest records source and SPIR-V hashes.
+Reports and generated GLSL/SPIR-V/GCN are under `artifacts/vulkan/twp-shaders/`.
+Generated shader sources retain ScummVM's licensing; the original source files
+are neither modified nor copied into the tracked diagnostic fixtures.
+
+The first real grayscale shader aborted in ACO spilling. The standalone
+compiler's GFX7 target incorrectly advertised only 12 scalar registers and 64
+vector registers per wave, with 120 physical scalar registers per SIMD. Its
+GCN budgets now match the vendored Mesa `ac_fill_compiler_info`: GFX7 has 512
+physical SGPRs per SIMD, allocations of 8..104 in units of 8, and 256 VGPRs.
+The GFX8/Tonga target follows Mesa's fixed 96-SGPR allocation for SGPRInitBug,
+800 physical SGPRs and 256 VGPRs. Both targets have four SIMDs per CU. PS5
+settings are unchanged. All six actual shaders compile and pass binary checks
+for both base PS4 and Neo on the host. The correction also cross-compiles in
+the native PS4 compiler library; it is persisted in `psbc-build.patch`.
+
+This is an offline shader bridge, not runtime `glCompileShader`/`glLinkProgram`,
+GL uniform locations, a complete reflection API, or rendered TWP effects.
+Only the declarations present in the six sources are supported. It preserves
+shader body math; GL-to-Vulkan clip/depth conventions still belong to the future
+GL-facing backend. There is no SDL GL context and no game-start claim. Next:
+feed these exact SPIR-V shaders and reflected uniform layouts to a native draw
+probe, compare effect pixels, then connect GL state and context handling.
+
+Validation for this checkpoint: existing compiler acceptance/rejection tests
+pass, as do all six native Vulkan regressions in shadPS4 (basic, upload,
+composition, sprites, readback and rectangle clear). See
+`artifacts/vulkan/twp-regression-*.log` and `twp-compiler-regression.log`.
+Those GPU tests exercise existing diagnostic shaders with the corrected compiler;
+they do not render the six TWP effects yet. The prior runnable diagnostic is
+restored after the tests. No package is replaced by this offline milestone;
+stable ScummVM retains the SHA-256 recorded above. Physical hardware is untested.

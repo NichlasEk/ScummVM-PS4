@@ -36,7 +36,7 @@ if not bindings.exists():
  bindings.write_text(text)
 ini=profile/'data/scummvm/scummvm.ini'
 if not ini.exists():
- ini.write_text('[scummvm]\nextrapath=/app0/data\ngui_theme=builtin\nsavepath=/data/scummvm/saves\ngfx_mode=normal\njoystick_num=0\nfullscreen=false\nconfirm_exit=false\nps4_usb_sandbox=false\nenable_unsupported_game_warning=false\n')
+ ini.write_text('[scummvm]\nextrapath=/app0/data\ngui_theme=scummremastered\nsavepath=/data/scummvm/saves\ngfx_mode=normal\njoystick_num=0\nfullscreen=false\nconfirm_exit=false\nps4_usb_sandbox=false\nenable_unsupported_game_warning=false\n')
 PY
 ulimit -c 0
 printf 'SOTC: original game data mounted separately at /mnt/usb0\n'

@@ -3,6 +3,23 @@
 Historical initial milestone. For package 1.09's expanded engine selection and
 remaining dependency ports, see [ENGINE-SUPPORT.md](ENGINE-SUPPORT.md).
 
+## Modern launcher (package 1.10, 2026-09-25)
+
+New configurations now select ScummVM Modern Theme Remastered, the orange
+launcher also used by Android. Packaging builds `scummremastered.zip` from
+the patched layout sources and installs it under `/app0/data`. This uses the
+existing theme renderer and built-in bitmap fonts; no new target libraries
+are required. Existing configurations retain their selected theme. To switch,
+use Global Options → GUI → Theme and choose the remastered theme.
+
+Artifact: `dist/ScummVM-PS4-2.9.1.pkg` (SCVM00002, package version 1.10).
+Validated the actual PS4 executable in shadPS4 0.18.0 on an isolated X11
+display: orange launcher, readable text and controls, cursor movement and
+opening the themed About dialog with emulated Cross. Evidence is under
+`artifacts/emulator/modern-launcher.png`, `modern-about.png` and
+`modern-launcher.log`. This does not validate installation on physical PS4.
+Game-cover artwork support is not part of this change.
+
 The actual ScummVM launcher boots in shadPS4 0.18.0. This is the PS4-targeted
 SELF from the same staging directory used to produce its installable PKG.
 It is not the diagnostic application or a native Linux ScummVM executable.

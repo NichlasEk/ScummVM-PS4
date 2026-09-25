@@ -43,7 +43,7 @@
 +			} else {
 +			fputs("[scummvm]\nextrapath=/app0/data\nthemepath=/app0/data\n"
 +			      "savepath=/data/scummvm/saves\nbrowser_lastpath=/\n"
-+			      "gui_theme=builtin\njoystick_num=0\nfullscreen=false\n"
++			      "gui_theme=scummremastered\njoystick_num=0\nfullscreen=false\n"
 +			      "gfx_mode=normal\n", config);
 +			}
 +			fclose(config);

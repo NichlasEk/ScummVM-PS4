@@ -194,12 +194,10 @@ No emulator source or proprietary graphics module was patched or introduced.
    Keep unsupported-resource guards for paths without working implementations.
 2. Run the native probe on physical PS4; retain the emulator checks as a
    separate regression gate.
-3. Link a real Vulkan probe against the target archives, resolve runtime
-   dependencies, test drawing/presentation and query advertised features.
-   `llvm-nm -u libvulkan_ps4.so` currently includes unprovided Blake3 SIMD
-   implementations and Mesa helpers; the `.so` build permits unresolved
-   references. Those must be resolved with actual implementations/portable
-   build selection before claiming a loadable Vulkan runtime.
+3. The first native Vulkan draw/presentation/lifecycle gate now passes in
+   shadPS4, with real portable compiler dependencies. See
+   [PS4-VULKAN.md](PS4-VULKAN.md) for reproduction and the still-unvalidated
+   resource binding and overlapping submission paths.
 4. Compare those features with the chosen OpenGL translator's requirements;
    integrate only after real Vulkan tests pass. Then audit ScummVM launcher,
    TWP shaders/effects, input, audio, transitions and save/load.

@@ -12,6 +12,32 @@ index 21c97d3..ed6b0cf 100644
  
  # C11 threads compat (POSIX implementation)
  C11_THREADS_SRCS = src/c11/impl/threads_posix.c src/c11/impl/time.c
+diff --git a/Makefile.orbis b/Makefile.orbis
+index 8c44223..d55f137 100644
+--- a/Makefile.orbis
++++ b/Makefile.orbis
+@@ -36,12 +36,11 @@ AMD_COMMON_NIR_OBJS := $(AMD_COMMON_NIR_SRCS:.c=.orbis.o)
+ RADV_OBJS := $(RADV_SRCS:.c=.orbis.o)
+ RADV_NIR_OBJS := $(RADV_NIR_SRCS:.c=.orbis.o)
+ UTIL_SRCS := $(filter-out \
+-	src/util/log.c \
+ 	src/util/mesa_cache_db.c \
+ 	src/util/mesa_cache_db_multipart.c \
+ 	,$(UTIL_SRCS))
+ UTIL_OBJS := $(patsubst %.c,%.orbis.o,$(filter %.c,$(UTIL_SRCS))) $(patsubst %.cpp,%.orbis.cpp.o,$(filter %.cpp,$(UTIL_SRCS)))
+-UTIL_FORMAT_SRCS := $(filter-out src/util/format/u_format_s3tc.c,$(UTIL_FORMAT_SRCS))
++# Build the real format implementation; the format table references it.
+ UTIL_FORMAT_OBJS := $(UTIL_FORMAT_SRCS:.c=.orbis.o)
+ COMPILER_COMMON_OBJS := $(COMPILER_COMMON_SRCS:.c=.orbis.o)
+ BLAKE3_SRCS := $(filter-out src/util/blake3/blake3_neon.c,$(BLAKE3_SRCS))
+@@ -90,3 +89,7 @@ clean:
+ 	find . -name '*.orbis.o' -delete
+ 	find . -name '*.orbis.cpp.o' -delete
+ 	rm -f $(LIBPSBC)
++
++# This build includes the portable BLAKE3 implementation, not SIMD objects.
++src/util/blake3/blake3_dispatch.orbis.o: CFLAGS += -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0
++src/util/blake3/blake3_dispatch.orbis.o: Makefile.orbis
 diff --git a/libpsbc/psbc_compile.c b/libpsbc/psbc_compile.c
 index bacbc6a..5b7ee20 100644
 --- a/libpsbc/psbc_compile.c
@@ -320,3 +346,59 @@ index 029dc1f..3039114 100644
  
           if (info->force_indirect_descriptors || remaining_sgprs < num_desc_set) {
              user_sgpr_info.indirect_all_descriptor_sets = true;
+diff --git a/src/util/log.c b/src/util/log.c
+index b594a8f..2a5afdb 100644
+--- a/src/util/log.c
++++ b/src/util/log.c
+@@ -31,7 +31,7 @@
+ #include "util/ralloc.h"
+ #include "util/u_debug.h"
+ 
+-#if DETECT_OS_POSIX
++#if DETECT_OS_POSIX && !defined(__ORBIS__)
+ #include <syslog.h>
+ #include "util/u_process.h"
+ #endif
+@@ -142,7 +142,14 @@ mesa_log_init_once(void)
+ 
+    mesa_log_file = stderr;
+ 
+-#if !DETECT_OS_WINDOWS
++#if defined(__ORBIS__)
++   const char *log_file = os_get_option("MESA_LOG_FILE");
++   FILE *fp = fopen(log_file ? log_file : "/data/scummvm-vulkan-mesa.log", "a");
++   if (fp) {
++      mesa_log_file = fp;
++      mesa_log_control |= MESA_LOG_CONTROL_FILE;
++   }
++#elif !DETECT_OS_WINDOWS
+    if (__normal_user()) {
+       FILE *fp = NULL;
+ 
+@@ -168,7 +175,7 @@ mesa_log_init_once(void)
+    }
+ #endif
+ 
+-#if DETECT_OS_POSIX
++#if DETECT_OS_POSIX && !defined(__ORBIS__)
+    if (mesa_log_control & MESA_LOG_CONTROL_SYSLOG)
+       openlog(util_get_process_name(), LOG_NDELAY | LOG_PID, LOG_USER);
+ #endif
+@@ -316,7 +323,7 @@ logger_file(enum mesa_log_level level,
+       free(msg);
+ }
+ 
+-#if DETECT_OS_POSIX
++#if DETECT_OS_POSIX && !defined(__ORBIS__)
+ 
+ static inline int
+ level_to_syslog(enum mesa_log_level l)
+@@ -452,7 +459,7 @@ mesa_log_v(enum mesa_log_level level, const char *tag, const char *format,
+                   va_list va);
+    } loggers[] = {
+       { MESA_LOG_CONTROL_FILE, logger_file },
+-#if DETECT_OS_POSIX
++#if DETECT_OS_POSIX && !defined(__ORBIS__)
+       { MESA_LOG_CONTROL_SYSLOG, logger_syslog },
+ #endif
+ #if DETECT_OS_ANDROID

@@ -13,20 +13,27 @@ parser = argparse.ArgumentParser()
 selection = parser.add_mutually_exclusive_group()
 selection.add_argument('--uniforms', action='store_true')
 selection.add_argument('--textures', action='store_true')
+selection.add_argument('--vulkan', action='store_true')
 args = parser.parse_args()
-mode = 'textures' if args.textures else 'uniforms' if args.uniforms else 'triangle'
-title_id = 'SCVM00008' if args.textures else 'SCVM00007' if args.uniforms else 'SCVM00006'
+mode = 'vulkan' if args.vulkan else 'textures' if args.textures else 'uniforms' if args.uniforms else 'triangle'
+title_id = 'SCVM00009' if args.vulkan else 'SCVM00008' if args.textures else 'SCVM00007' if args.uniforms else 'SCVM00006'
 root = Path(__file__).resolve().parent.parent
 os.chdir(root)
-profile = root / '.tools/xdg-opengnm'
+profile = root / ('.tools/xdg-vulkan' if args.vulkan else '.tools/xdg-opengnm')
 reports = root / 'artifacts/opengnm'
 if mode != 'triangle':
     reports /= mode
+if args.vulkan:
+    reports = root / 'artifacts/vulkan'
 reports.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, XDG_DATA_HOME=str(profile), SDL_VIDEODRIVER='x11')
 emulator = root / '.tools/shadps4/Shadps4-sdl.AppImage'
 guest = root / f'.tools/opengnm-stack/freegnm-examples/{mode}/eboot.bin'
 guest_log = profile / f'shadPS4/data/scummvm-opengnm-{mode}.log'
+if args.vulkan:
+    guest = root / '.tools/opengnm-stack/vulkan-ps4/eboot.bin'
+    guest_log = profile / 'shadPS4/data/scummvm-vulkan-probe.log'
+success_marker = 'PASS Vulkan draw loop' if args.vulkan else 'PASS submission/flip loop'
 if guest_log.exists():
     guest_log.unlink()  # This probe's own previous report, never a game save.
 screens = profile / 'shadPS4/screenshots'
@@ -77,7 +84,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             candidates = set(screens.glob(title_id + '*.png')) - before
-            if candidates and 'PASS submission/flip loop' in guest_log.read_text():
+            if candidates and success_marker in guest_log.read_text():
                 time.sleep(.3)  # Let the capture writer finish.
                 screenshot = max(candidates, key=lambda f: f.stat().st_mtime)
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
@@ -92,6 +99,15 @@ with (reports / 'triangle-emulator.log').open('w') as log:
             time.sleep(.25)
         else:
             raise RuntimeError('No completed probe/framebuffer capture; F12 binding required')
+        if args.vulkan:
+            deadline = time.monotonic() + 20
+            while 'PASS Vulkan lifecycle' not in guest_log.read_text():
+                if time.monotonic() >= deadline or p.poll() is not None:
+                    raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
+                time.sleep(.25)
+            shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            shutil.copy2(guest_log.with_name('scummvm-vulkan-driver.log'), reports / 'driver.log')
+            print('PASS Vulkan lifecycle cleanup')
     finally:
         p.terminate()
         try:

@@ -28,6 +28,7 @@ patch_once() {
  git -C "$directory" apply "$patch"
 }
 patch_once "$stack/opengnm-psbc" "$root/patches/opengnm/psbc-build.patch"
+patch_once "$stack/vulkan-ps4" "$root/patches/opengnm/vulkan-runtime.patch"
 patch_once "$stack/opengnm" "$root/patches/opengnm/gnm-init.patch"
 patch_once "$stack/freegnm-examples" "$root/patches/opengnm/triangle-probe.patch"
 python3 "$root/scripts/prepare-opengnm-psbc.py" "$stack/opengnm-psbc"

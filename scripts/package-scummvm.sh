@@ -46,6 +46,8 @@ cp "$root/build/ps4-freetype/install/share/licenses/freetype/GPLv2.TXT" "$stage/
 cp "$root/build/ps4-freetype/install/share/licenses/freetype/FTL.TXT" "$stage/data/freetype-FTL.TXT"
 cp "$root/build/ps4-freetype/install/share/licenses/freetype/LICENSE.TXT" "$stage/data/freetype-LICENSE.TXT"
 cp "$root/build/ps4-vorbis/install/share/licenses/"{libogg-COPYING,libvorbis-COPYING} "$stage/data/"
+cp "$root/build/ps4-png/install/share/licenses/"{libpng-LICENSE,zlib-LICENSE} "$stage/data/"
+cp "$root/build/ps4-theora/install/share/licenses/libtheora-COPYING" "$stage/data/"
 cp "$source_dir/COPYING" "$stage/data/COPYING"
 cp "$source_dir/COPYRIGHT" "$stage/data/COPYRIGHT"
 cp "$source_dir/common/lua/COPYRIGHT" "$stage/data/lua-COPYRIGHT"
@@ -62,8 +64,8 @@ if [[ -e "$sfo" ]]; then mv "$sfo" "$sfo.previous"; fi
 for pair in APP_TYPE:1 ATTRIBUTE:0 DOWNLOAD_DATA_SIZE:0 SYSTEM_VER:0; do
  "${pkgtool}" sfo_setentry "$sfo" "${pair%%:*}" --type Integer --maxsize 4 --value "${pair#*:}"
 done
-"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.15
-"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.15
+"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.17
+"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.17
 "$pkgtool" sfo_setentry "$sfo" CATEGORY --type Utf8 --maxsize 4 --value gd
 "$pkgtool" sfo_setentry "$sfo" CONTENT_ID --type Utf8 --maxsize 48 --value "$content_id"
 "$pkgtool" sfo_setentry "$sfo" TITLE_ID --type Utf8 --maxsize 12 --value "$title_id"
@@ -72,7 +74,7 @@ package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right
     sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING data/COPYRIGHT
     data/libjpeg-turbo-LICENSE.md data/libjpeg-turbo-README.ijg data/libmad-COPYING data/libmad-COPYRIGHT
     data/freetype-FTL.TXT data/freetype-LICENSE.TXT data/freetype-GPLv2.TXT
-    data/libogg-COPYING data/libvorbis-COPYING
+    data/libogg-COPYING data/libvorbis-COPYING data/libpng-LICENSE data/zlib-LICENSE data/libtheora-COPYING
     data/lua-COPYRIGHT data/vkeybd_default.zip data/scummremastered.zip games/README.txt)
 # Use upstream's conditional data manifest for the engines actually compiled.
 # Only these support files are packaged, never arbitrary staged game folders.

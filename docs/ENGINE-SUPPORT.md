@@ -2,6 +2,22 @@
 
 Build: ScummVM 2.9.1. The 1.09 baseline below is extended by the 1.11 JPEG and 1.12 MP3 ports.
 
+## PNG and Theora ports (packages 1.16 / 1.17, 2026-09-25)
+
+Static zlib 1.3.2 and libpng 1.6.58 remove the dependency blockers for
+CRAB, Glk, Sludge and Wintermute (101 main engines in the PNG build).
+The subsequent libtheoradec 1.2.0 port enables Broken Sword 2.5 and Tetraedge,
+bringing the configuration to 103 main engines. Tetraedge's Syberia support
+is for the upstream-supported Mac editions, not original Windows executables.
+
+PNG's 30 generated images match independent pixel oracles on host and PS4;
+three malformed inputs are rejected. Theora's 72 decoded frames across
+4:2:0, 4:2:2 and 4:4:4 match FFmpeg exactly on host and PS4; truncated/invalid
+streams are rejected. See [PNG](PS4-PNG.md) and [Theora](PS4-THEORA.md).
+Broken Sword 2.5 reached its animated menu and intro with captions and nonzero
+audio output in shadPS4. Gameplay/save-load and physical PS4 remain open.
+These codec tests do not establish compatibility for every newly enabled game.
+
 ## Ogg/Vorbis port (package 1.15, 2026-09-25)
 
 Static libogg 1.3.6 and libvorbis/libvorbisfile 1.3.7 enable The Longest Journey
@@ -161,29 +177,22 @@ The package copies upstream's configured engine-data manifests, including
 required `.dat`/table files, script patches, core support data and the virtual
 keyboard pack into `/app0/data`. It does not package the user's game directories.
 
-## Remaining exclusions: package 1.15
+## Remaining exclusions: package 1.17
 
 This table reflects current configure results, not the historical 1.09 list.
 TestBed and Playground3D are deliberately disabled test engines and omitted.
 
 | Engine / game family | Mandatory dependencies still missing |
 | --- | --- |
-| CRAB | PNG |
-| Glk Interactive Fiction games | PNG |
-| Hpl1 | GIF, PNG, OpenGL with shaders |
+| Hpl1 | GIF, OpenGL with shaders |
 | QD Engine | MPEG-2 |
-| Sludge | PNG |
-| Broken Sword 2.5 | PNG, Theora decoder |
-| Tetraedge | PNG, Theora decoder |
-| Thimbleweed Park | PNG, OpenGL with shaders |
+| Thimbleweed Park | OpenGL with shaders |
 | The Watchmaker | Classic OpenGL |
-| Wintermute | PNG |
 
 ## Work still needed
 
-1. **Images:** port zlib/libpng, then GIF for HPL1. PNG alone removes the
-   remaining configure blockers for CRAB, Glk, Sludge and Wintermute.
-2. **Video:** port libtheora's decoder and libmpeg2. Verify cutscenes and
+1. **Images:** GIF remains missing for HPL1; that engine also needs shaders.
+2. **Video:** port libmpeg2 for QDEngine. Verify cutscenes and
    audio/video timing; compilation is insufficient.
 3. **Graphics backend:** HPL1 and Thimbleweed Park require OpenGL shaders;
    The Watchmaker requires classic OpenGL. The SDL software-output backend
@@ -194,7 +203,8 @@ TestBed and Playground3D are deliberately disabled test engines and omitted.
 5. **Gameplay verification:** test startup, input, rendering, audio, save/load
    and progression using owned game data in shadPS4 and on physical PS4.
 
-JPEG (1.11), MAD (1.12), FreeType (1.14), and Ogg/Vorbis (1.15) are now ported.
+JPEG (1.11), MAD (1.12), FreeType (1.14), Ogg/Vorbis (1.15), PNG/zlib (1.16)
+and Theora (1.17) are now ported.
 No host libraries were substituted. Newly enabled games still need testing.
 `SCUMMVM_ENGINES=scumm,scumm_7_8,he scripts/build-scummvm.sh` can select a narrower
 build. Unsetting `SCUMMVM_ENGINES` restores the broad default. The configuration

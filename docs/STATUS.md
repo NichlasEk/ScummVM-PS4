@@ -1,5 +1,17 @@
 # Status
 
+## 2026-09-25: PNG/zlib and Theora, package 1.17
+
+PNG/zlib and Theora are now statically linked with 103 main engines.
+Thirty synthetic PNGs match independent pixel oracles on PS4, and 72 Theora
+frames across three color formats match FFmpeg; malformed inputs are rejected.
+The full executable starts Broken Sword 2.5 from the supplied installer data,
+renders its animated menu, accepts New Game and plays the intro with captions
+and nonzero audio output. Gameplay/save-load and physical PS4 checks remain open.
+See [PNG](PS4-PNG.md), [Theora](PS4-THEORA.md), and the updated
+[engine list](ENGINE-SUPPORT.md). OpenGL is audited but not implemented;
+[the next milestone](PS4-OPENGL.md) starts with context/shader capability testing.
+
 ## 2026-09-25: codec and font ports, package 1.15
 
 The PS4 build now includes JPEG, MP3, FreeType and Ogg/Vorbis support and

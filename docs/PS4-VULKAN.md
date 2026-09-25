@@ -283,8 +283,9 @@ clamps components before quantization and fills the entire allocated surface,
 including tile padding. A constant 32-bit pixel is invariant under tiling;
 filling only width*height bytes would leave holes in padded tiled surfaces.
 Unsupported formats/ranges return an error rather than an approximate clear.
-This does **not** establish render-pass loadOp clear, partial/scissored attachment
-clear, depth/stencil clear or sRGB clear support.
+This transfer checkpoint does **not** establish render-pass loadOp clear,
+depth/stencil clear or sRGB clear support. Partial color attachment clears are
+covered by the later checkpoint below.
 
 Readback supports single-sample 2D RGBA8 UNORM/sRGB images, one mip/layer,
 including render targets. It first copies the full physical image surface on
@@ -293,8 +294,8 @@ snapshot into the requested linear buffer rows. This supports buffer offsets,
 image offsets and both explicit and tightly packed row pitches. No source pixel
 is read on the CPU while recording commands. Scratch allocations are retained
 per command buffer, allocated to the actual surface size with 64-KiB alignment;
-there are at most 16 readback calls per recording, each bounded to a 16-MiB
-surface. Reset/re-record and destruction follow the command-buffer GPU lifetime.
+there are at most 16 scratch-backed transfer/clear operations per recording,
+each bounded to a 16-MiB surface. Reset/re-record and destruction follow the command-buffer GPU lifetime.
 Explicit barriers and a completed fence precede the CPU oracle.
 
 The test uses an 80x60 tiled UNORM render target and a 64-KiB host-coherent buffer.
@@ -318,7 +319,8 @@ alias synchronization expects the image base address, motivating the full-surfac
 snapshot before copying tiled spans. Direct small-span copies failed this test.
 These are emulator results; physical PS4 cache visibility is not yet validated.
 
-Next: partial/attachment clears and the GL translation/reflection boundary.
+Next: the GL translation/reflection boundary, with partial attachment clears
+covered by the checkpoint below.
 The native full-image transfer operations can now underpin screenshot/readPixels
 work, but ScummVM does not yet have an OpenGL context on this stack.
 
@@ -332,3 +334,51 @@ Regression results with the same driver: basic triangle, optimal texture upload
 (including resubmission), offscreen blending and indexed vertex/matrix probes all
 pass their pixel oracles and lifecycle cleanup. The runnable readback diagnostic
 is restored after these checks.
+
+## Partial color attachment clears
+
+`--rectclear` verifies `vkCmdClearAttachments` on the same tiled 80x60 target.
+The previous implementation wrote linear rows into tiled images; its depth path
+also treated over-clearing as acceptable. The new bounded color path rejects
+unsupported aspects and uses a GPU snapshot of the complete backing surface,
+GPA-addressed constant fills for only the requested rectangles, then a GPU copy
+back with cache synchronization. It preserves unselected pixels, all RGBA
+components, and the bound pipeline, blending, viewport and scissor state.
+No CPU pixel copying and no game/room-specific exceptions are involved.
+
+The test binds the left-half scissor and alpha-blend pipeline, clears rectangles
+on both sides, adds an overlapping rectangle with a different color, then draws
+without re-binding the pipeline or scissor. Clears ignore those draw states;
+subsequent drawing must still use them. The CPU oracle checks every pixel of the
+result plus pitched/tight crops and untouched destination guards. The 1,230-point
+screenshot oracle includes the cleared areas. Eight frames plus re-submission
+exercise cache reuse and ordering. Four additional recording-only rejection tests
+cover depth aspect, unsupported array layer and rectangles outside the render area.
+
+This test also exposed a shadPS4 v0.18.0 cache-coherence gap in direct GPU fills
+of an image after GPU buffer copies. Full transfer clear now fills a temporary
+GPU surface and copies it into the image, using the same image-invalidation path
+as partial clears. The change is exercised across alternating clear colors.
+
+Supported attachment scope is RGBA8 UNORM, single-sample 2D, one mip/layer and
+ordinary framebuffers. Multiple/overlapping rectangles are supported; depth,
+stencil, sRGB, imageless framebuffers and other layouts are explicitly outside
+this path. Render-pass loadOp clears are still unverified. Readback, transfer
+clear and each cleared attachment share the command buffer's 16 retained scratch
+slots, each capped at 16 MiB. A clear copies the full backing surface twice, so
+this is a correctness-first path; its bandwidth cost has not been benchmarked.
+Physical PS4 behavior remains unverified.
+
+Reproduce with `scripts/build-vulkan-probe.sh --rectclear`, then
+`xvfb-run -a -s '-screen 0 1280x720x24' python3 scripts/run-opengnm-probe.py --vulkan --rectclear`.
+Package: `dist/ScummVM-PS4-Vulkan-RectClear.pkg`; reports:
+`artifacts/vulkan/rectclear/`. The package is separate from stable ScummVM 1.17.
+The next integration step is translating and reflecting TWP's actual shaders,
+then wiring those operations through a GL-facing context.
+
+Partial-clear validation: all ten rejection checks, nine 64-KiB CPU comparisons,
+the 1,230-point screenshot oracle and lifecycle cleanup pass in shadPS4.
+Regressions for the basic triangle, optimal texture upload, offscreen blending,
+indexed vertices/matrices and standalone transfer-clear/readback all pass. The
+runnable partial-clear diagnostic is restored afterward; stable ScummVM retains
+SHA-256 `c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.

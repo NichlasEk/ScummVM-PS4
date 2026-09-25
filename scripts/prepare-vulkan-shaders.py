@@ -9,7 +9,7 @@ source = Path(__file__).resolve().parent.parent / 'tests/ps4/vulkan'
 target = Path(sys.argv[1])
 target.mkdir(parents=True, exist_ok=True)
 arrays = ['/* Generated SPIR-V, not precompiled GCN. */\n#include <stdint.h>\n']
-if '--composite' in sys.argv or '--readback' in sys.argv:
+if '--composite' in sys.argv or '--readback' in sys.argv or '--rectclear' in sys.argv:
     names = ('background_vert', 'composite_base_frag', 'composite_overlay_frag', 'composite_sample_frag')
 else:
     names = ('background_vert', 'background_frag', 'triangle_vert', 'triangle_frag')

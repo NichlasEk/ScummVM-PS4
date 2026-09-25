@@ -110,7 +110,7 @@ index 7634d6b..0339d62 100644
  void *vk_ps4_alloc(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
  void *vk_ps4_alloc_zero(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
 diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
-index 168c1f3..b6abbe0 100644
+index 168c1f3..a29e061 100644
 --- a/src/vk_ps4_command.c
 +++ b/src/vk_ps4_command.c
 @@ -11,6 +11,7 @@
@@ -871,14 +871,14 @@ index 168c1f3..b6abbe0 100644
 -            if (img) img->layout = b->newLayout;
 +        if (b->srcQueueFamilyIndex != b->dstQueueFamilyIndex) {
 +            cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
-+        }
-+    }
+         }
+     }
 +    for (uint32_t i = 0; i < bufferMemoryBarrierCount; ++i) {
 +        const VkBufferMemoryBarrier *b = &pBufferMemoryBarriers[i];
 +        if (b->srcQueueFamilyIndex != b->dstQueueFamilyIndex) {
 +            cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
-         }
-     }
++        }
++    }
 +    if (!cmd->barrier_label.allocated &&
 +        sceGnmDirectMemoryAllocate(&cmd->barrier_label, 4, 65536,
 +            GNM_DIRECT_MEMORY_TYPE_WC_GARLIC, GNM_PROT_CPU_GPU_RW) != GNM_ERROR_OK) {
@@ -900,7 +900,7 @@ index 168c1f3..b6abbe0 100644
  
      (void)srcStageMask;
      (void)dstStageMask;
-@@ -2609,117 +2771,44 @@ VKAPI_ATTR void VKAPI_CALL
+@@ -2609,117 +2771,55 @@ VKAPI_ATTR void VKAPI_CALL
  vk_ps4_CmdClearColorImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout,
                            const VkClearColorValue *pColor, uint32_t rangeCount,
                            const VkImageSubresourceRange *pRanges) {
@@ -1034,7 +1034,7 @@ index 168c1f3..b6abbe0 100644
 +    GnmError err = img->is_render_target ?
 +        sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt) :
 +        sceGnmTexCalcByteSize(&size, &align, &img->gnm_texture);
-+    if (err != GNM_ERROR_OK || !size || size > UINT32_MAX || (size & 3) ||
++    if (err != GNM_ERROR_OK || !size || size > 16 * 1024 * 1024 || (size & 3) ||
 +        img->memory_offset > img->memory->size || size > img->memory->size - img->memory_offset) {
 +        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
 +    }
@@ -1046,11 +1046,230 @@ index 168c1f3..b6abbe0 100644
 +        if (value > 1) value = 1;
 +        packed |= (uint32_t)(value * 255.f + .5f) << (c * 8);
 +    }
-+    /* Constant RGBA8 is independent of pixel order. Include tile padding, but
-+     * only this image's allocation size, never neighboring bound resources. */
-+    if (!sceGnmDrawCmdFillMemory(&cmd->gnm_cmd,
-+            (uint64_t)img->memory->gnm_mem.mapped + img->memory_offset, (uint32_t)size, packed))
++    /* Stage the constant surface, then copy into the image. In shadPS4's
++     * buffer/image alias path a direct fill does not invalidate a cached image. */
++    if (cmd->readback_count == 16) {
++        cmd->resource_error = VK_ERROR_OUT_OF_DEVICE_MEMORY; return;
++    }
++    GnmDirectMemory *scratch = &cmd->readback_scratch[cmd->readback_count++];
++    if (scratch->allocated && scratch->size < size) sceGnmDirectMemoryRelease(scratch);
++    if (!scratch->allocated && sceGnmDirectMemoryAllocate(scratch, size, 65536,
++        GNM_DIRECT_MEMORY_TYPE_WC_GARLIC, GNM_PROT_CPU_GPU_RW) != GNM_ERROR_OK) {
++        cmd->resource_error = VK_ERROR_OUT_OF_DEVICE_MEMORY; return;
++    }
++    if (!sceGnmDrawCmdFillMemory(&cmd->gnm_cmd, (uint64_t)scratch->mapped, (uint32_t)size, packed) ||
++        !sceGnmDrawCmdCopyMemory(&cmd->gnm_cmd,
++            (uint64_t)img->memory->gnm_mem.mapped + img->memory_offset,
++            (uint64_t)scratch->mapped, (uint32_t)size))
 +        cmd->resource_error = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+ }
+ 
+ VKAPI_ATTR void VKAPI_CALL
+@@ -2773,122 +2873,101 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
+     (void)imageLayout;
+ }
+ 
++/* Color attachment meta-clear. Preserve unselected tiled pixels and draw state. */
+ VKAPI_ATTR void VKAPI_CALL
+ vk_ps4_CmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t attachmentCount,
+                            const VkClearAttachment *pAttachments, uint32_t rectCount,
+                            const VkClearRect *pRects) {
+-    if (!commandBuffer || !pAttachments) return;
++    if (!commandBuffer) return;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+-
+-    for (uint32_t a = 0; a < attachmentCount; a++) {
++    if (!attachmentCount || !rectCount) return;
++    if (!pAttachments || !pRects || !cmd->current_render_pass.pass ||
++        !cmd->current_render_pass.framebuffer) goto unsupported;
++    for (uint32_t a = 0; a < attachmentCount; ++a) {
+         const VkClearAttachment *att = &pAttachments[a];
+-
+-        if (att->aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
+-            /* Depth/stencil clear.
+-             * Set clear values + DB_RENDER_CONTROL, then do a fullscreen draw
+-             * to trigger the GCN lazy clear. The lazy clear itself is
+-             * fullscreen — sub-rect depth clears would need a shader-based
+-             * approach with depth write + scissor, but the lazy clear is
+-             * the standard PS4 approach and over-clearing is safe. */
+-            bool has_depth = (att->aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) != 0;
+-            bool has_stencil = (att->aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0;
+-
+-            if (has_depth) {
+-                sceGnmDrawCmdSetDepthClearValue(&cmd->gnm_cmd,
+-                    att->clearValue.depthStencil.depth);
+-            }
+-            if (has_stencil) {
+-                vk_ps4_emit_context_reg(&cmd->gnm_cmd,
+-                    R_028028_DB_STENCIL_CLEAR,
+-                    S_028028_CLEAR(att->clearValue.depthStencil.stencil));
+-            }
+-
+-            GnmDbRenderControl db_ctrl;
+-            memset(&db_ctrl, 0, sizeof(db_ctrl));
+-            db_ctrl.depthclearenable = has_depth ? 1 : 0;
+-            db_ctrl.stencilclearenable = has_stencil ? 1 : 0;
+-            sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+-
+-            /* Set scissor to the union of rects (or render area if no rects),
+-             * then draw to trigger the lazy clear. */
+-            if (rectCount > 0) {
+-                /* Use the first rect's scissor — the lazy clear is fullscreen
+-                 * anyway, but we set scissor for the draw. */
+-                const VkClearRect *rect = &pRects[0];
+-                sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd,
+-                    rect->rect.offset.x, rect->rect.offset.y,
+-                    rect->rect.offset.x + rect->rect.extent.width,
+-                    rect->rect.offset.y + rect->rect.extent.height);
+-            }
+-            vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
+-
+-            /* Restore scissor to render area */
+-            if (cmd->current_render_pass.pass) {
+-                sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd,
+-                    cmd->current_render_pass.render_area.offset.x,
+-                    cmd->current_render_pass.render_area.offset.y,
+-                    cmd->current_render_pass.render_area.offset.x +
+-                        cmd->current_render_pass.render_area.extent.width,
+-                    cmd->current_render_pass.render_area.offset.y +
+-                        cmd->current_render_pass.render_area.extent.height);
+-            }
+-
+-        } else {
+-            /* Color attachment clear.
+-             * att->colorAttachment is the RT slot index (0-7).
+-             * Look up the framebuffer attachment via the subpass description.
+-             * Uses FillMemory for all RTs (known limitation for tiled RTs). */
+-            uint32_t rt_slot = att->colorAttachment;
+-            uint32_t att_idx = vk_ps4_subpass_color_attachment(cmd, rt_slot);
+-            if (att_idx == VK_ATTACHMENT_UNUSED) continue;
+-            if (!cmd->current_render_pass.framebuffer ||
+-                att_idx >= cmd->current_render_pass.framebuffer->attachment_count)
+-                continue;
+-
+-            VkPs4ImageView *view = cmd->current_render_pass.framebuffer->attachments[att_idx];
+-            if (!view || !view->image || !view->image->is_render_target)
+-                continue;
+-            if (!view->image->memory || !view->image->memory->gnm_mem.mapped)
+-                continue;
+-
+-            const VkClearColorValue *cc = &att->clearValue.color;
+-            uint64_t rt_addr = (uint64_t)view->image->memory->gnm_mem.mapped +
+-                               view->image->memory_offset;
+-            uint32_t bpp = vk_format_to_bpp(view->image->create_info.format);
+-            uint32_t surface_w = view->image->create_info.extent.width;
+-            uint32_t surface_h = view->image->create_info.extent.height;
+-            uint32_t clear_val = vk_ps4_pack_clear_val_32(
+-                view->image->create_info.format, cc);
+-
+-            if (rectCount == 0) {
+-                uint32_t rt_size = surface_w * surface_h * bpp;
+-                rt_size = (rt_size + 3) & ~3u;
+-                sceGnmDrawCmdFillMemory(&cmd->gnm_cmd, rt_addr, rt_size, clear_val);
+-            } else {
+-                for (uint32_t ri = 0; ri < rectCount; ri++) {
+-                    const VkClearRect *rect = &pRects[ri];
+-                    uint32_t rx = rect->rect.offset.x;
+-                    uint32_t ry = rect->rect.offset.y;
+-                    uint32_t rw = rect->rect.extent.width;
+-                    uint32_t rh = rect->rect.extent.height;
+-                    for (uint32_t layer = 0; layer < rect->layerCount; layer++) {
+-                        uint64_t layer_addr = rt_addr +
+-                            (uint64_t)(rect->baseArrayLayer + layer) *
+-                            surface_w * surface_h * bpp;
+-                        vk_ps4_fill_rect_linear(&cmd->gnm_cmd,
+-                            layer_addr, bpp, rx, ry, rw, rh,
+-                            surface_w, surface_h, clear_val);
++        if (att->aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) goto unsupported;
++        uint32_t idx = vk_ps4_subpass_color_attachment(cmd, att->colorAttachment);
++        if (idx == VK_ATTACHMENT_UNUSED) continue;
++        VkPs4Framebuffer *fb = cmd->current_render_pass.framebuffer;
++        if (fb->imageless || !fb->attachments || idx >= fb->attachment_count) goto unsupported;
++        VkPs4ImageView *view = fb->attachments[idx];
++        if (!view || !view->image) goto unsupported;
++        VkPs4Image *img = view->image;
++        if (!img->is_render_target || !img->memory || !img->memory->gnm_mem.mapped ||
++            img->create_info.format != VK_FORMAT_R8G8B8A8_UNORM ||
++            img->create_info.imageType != VK_IMAGE_TYPE_2D ||
++            img->create_info.samples != VK_SAMPLE_COUNT_1_BIT ||
++            img->create_info.mipLevels != 1 || img->create_info.arrayLayers != 1 ||
++            img->memory_offset > img->memory->size) goto unsupported;
++        VkRect2D area = cmd->current_render_pass.render_area;
++        for (uint32_t r = 0; r < rectCount; ++r) {
++            const VkClearRect *rect = &pRects[r];
++            if (rect->baseArrayLayer || rect->layerCount != 1 ||
++                rect->rect.offset.x < 0 || rect->rect.offset.y < 0 ||
++                rect->rect.offset.x < area.offset.x || rect->rect.offset.y < area.offset.y ||
++                (uint64_t)rect->rect.offset.x + rect->rect.extent.width > (uint64_t)area.offset.x + area.extent.width ||
++                (uint64_t)rect->rect.offset.y + rect->rect.extent.height > (uint64_t)area.offset.y + area.extent.height ||
++                (uint64_t)rect->rect.offset.x + rect->rect.extent.width > img->create_info.extent.width ||
++                (uint64_t)rect->rect.offset.y + rect->rect.extent.height > img->create_info.extent.height)
++                goto unsupported;
++        }
++        uint64_t size = 0; uint32_t alignment = 0;
++        if (sceGnmRtCalcByteSize(&size, &alignment, &img->gnm_rt) != GNM_ERROR_OK ||
++            !size || size > 16 * 1024 * 1024 || (size & 3) ||
++            size > img->memory->size - img->memory_offset) goto unsupported;
++        GpaTextureInfo info = sceGnmRtBuildInfo(&img->gnm_rt);
++        GpaTilingParams tp = {0}; GpaSurfaceContext context = {0};
++        if (sceGpaTpInit(&tp, &info, 0, 0) != GPA_ERR_OK ||
++            sceGpaInitSurfaceContext(&context, size, &tp) != GPA_ERR_OK) goto unsupported;
++        if (cmd->readback_count == 16) goto exhausted;
++        GnmDirectMemory *scratch = &cmd->readback_scratch[cmd->readback_count++];
++        if (scratch->allocated && scratch->size < size) sceGnmDirectMemoryRelease(scratch);
++        if (!scratch->allocated && sceGnmDirectMemoryAllocate(scratch, size, 65536,
++                GNM_DIRECT_MEMORY_TYPE_WC_GARLIC, GNM_PROT_CPU_GPU_RW) != GNM_ERROR_OK) goto exhausted;
++        uint32_t packed = 0;
++        for (unsigned c = 0; c < 4; ++c) {
++            float v = att->clearValue.color.float32[c];
++            if (!(v > 0)) v = 0;
++            if (v > 1) v = 1;
++            packed |= (uint32_t)(v * 255.f + .5f) << (c * 8);
++        }
++        vk_ps4_CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
++            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0, NULL, 0, NULL);
++        if (cmd->resource_error != VK_SUCCESS) return;
++        uint64_t image_addr = (uint64_t)img->memory->gnm_mem.mapped + img->memory_offset;
++        uint64_t scratch_addr = (uint64_t)scratch->mapped;
++        if (!sceGnmDrawCmdCopyMemory(&cmd->gnm_cmd, scratch_addr, image_addr, (uint32_t)size)) goto exhausted;
++        for (uint32_t r = 0; r < rectCount; ++r) {
++            const VkRect2D *rect = &pRects[r].rect;
++            for (uint32_t y = 0; y < rect->extent.height; ++y) {
++                uint64_t start = 0; uint32_t bytes = 0;
++                for (uint32_t x = 0; x <= rect->extent.width; ++x) {
++                    uint64_t offset = 0, bit = 0;
++                    if (x < rect->extent.width &&
++                        (sceGpaComputeSurfaceCoord(&offset, &bit, &context,
++                            rect->offset.x + x, rect->offset.y + y, 0, 0) != GPA_ERR_OK ||
++                         bit || offset > size || size - offset < 4)) goto unsupported;
++                    if (bytes && (x == rect->extent.width || offset != start + bytes)) {
++                        if (!sceGnmDrawCmdFillMemory(&cmd->gnm_cmd, scratch_addr + start, bytes, packed)) goto exhausted;
++                        bytes = 0;
+                     }
++                    if (x < rect->extent.width) { if (!bytes) start = offset; bytes += 4; }
+                 }
+             }
+         }
+-    }
+-
+-    /* Re-emit the current pipeline's state to restore VS/PS shaders, blend
+-     * state, RT mask, and depth/stencil control that were clobbered by the
+-     * draw-based depth clear above. Per the Vulkan spec, CmdClearAttachments
+-     * is a meta-operation that must not disturb the bound pipeline state. */
+-    vk_ps4_rebind_pipeline_state(cmd);
++        if (!sceGnmDrawCmdCopyMemory(&cmd->gnm_cmd, image_addr, scratch_addr, (uint32_t)size)) goto exhausted;
++        vk_ps4_CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
++            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0, NULL, 0, NULL);
++        /* Invalidate color-target caches before subsequent draws. */
++        sceGnmDrawCmdWaitGraphicsWrite(&cmd->gnm_cmd, 0x3fc0);
++        if (cmd->resource_error != VK_SUCCESS) return;
++    }
++    return;
++unsupported:
++    cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT;
++    return;
++exhausted:
++    cmd->resource_error = VK_ERROR_OUT_OF_DEVICE_MEMORY;
  }
  
  VKAPI_ATTR void VKAPI_CALL

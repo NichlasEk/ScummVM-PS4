@@ -161,6 +161,16 @@ static void draw_offscreen(VkCommandBuffer cmd, unsigned frame,
   vkCmdDraw(cmd, 3, 1, 0, 0);
   vkCmdSetScissor(cmd, 0, 1, &left);
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines[1]);
+#ifdef RECTCLEAR_PROBE
+  VkClearAttachment clear = {.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
+    .colorAttachment=0, .clearValue.color.float32={.2f,.4f,.6f,.8f}};
+  VkClearRect rects[]={{{{6,8},{11,13}},0,1}, {{{49,37},{17,9}},0,1}};
+  /* Ignore bound blending/scissor during clear, restore them for the next draw. */
+  vkCmdClearAttachments(cmd,1,&clear,2,rects);
+  clear.clearValue.color=(VkClearColorValue){.float32={.7f,.1f,.3f,.9f}};
+  VkClearRect overlap={{{12,16},{13,9}},0,1};
+  vkCmdClearAttachments(cmd,1,&clear,1,&overlap);
+#endif
   vkCmdDraw(cmd, 3, 1, 0, 0);
   vkCmdSetScissor(cmd, 0, 1, &topright);
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines[2]);

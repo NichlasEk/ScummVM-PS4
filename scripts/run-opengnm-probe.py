@@ -18,10 +18,13 @@ selection.add_argument('--vulkan', action='store_true')
 variants = parser.add_mutually_exclusive_group()
 variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
+variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
+if args.rectclear:
+    args.readback = True
 if args.readback:
     args.composite = True
 if args.upload or args.sprites:
@@ -46,7 +49,7 @@ if mode != 'triangle':
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
     if args.composite:
-        reports /= 'readback' if args.readback else 'composite'
+        reports /= 'rectclear' if args.rectclear else 'readback' if args.readback else 'composite'
     elif args.resources:
         reports /= 'sprites' if args.sprites else 'upload' if args.upload else 'resources'
 reports.mkdir(parents=True, exist_ok=True)
@@ -114,7 +117,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
                 shutil.copy2(guest_log, reports / 'triangle-result.txt')
                 check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-vulkan-composite.py' if args.composite else 'tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
-                                        str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else []), *(['--upload'] if args.upload else [])],
+                                        str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else []), *(['--upload'] if args.upload else []), *(['--rectclear'] if args.rectclear else [])],
                                        capture_output=True, text=True)
                 (reports / 'pixel-test.log').write_text(check.stdout + check.stderr)
                 check.check_returncode()

@@ -3,8 +3,8 @@
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 case "${1:-}" in
- ""|--resources|--upload|--composite|--sprites|--readback) ;;
- *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback]' >&2; exit 2 ;;
+ ""|--resources|--upload|--composite|--sprites|--readback|--rectclear) ;;
+ *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear]' >&2; exit 2 ;;
 esac
 export OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
 "$root/scripts/build-opengnm-probe.sh"
@@ -16,7 +16,7 @@ cp "$root/tests/ps4/vulkan/resources.h" "$probe/resources.h"
 cp "$root/tests/ps4/vulkan/readback.h" "$probe/readback.h"
 cp "$root/tests/ps4/vulkan/sprites.h" "$probe/sprites.h"
 cp "$root/tests/ps4/vulkan/composite.h" "$probe/composite.h"
-if [[ "${1:-}" == --composite || "${1:-}" == --readback ]]; then
+if [[ "${1:-}" == --composite || "${1:-}" == --readback || "${1:-}" == --rectclear ]]; then
  sed -i '1i#define COMPOSITE_PROBE 1' "$probe/draw.c"
 fi
 if [[ "${1:-}" == --resources || "${1:-}" == --upload || "${1:-}" == --sprites ]]; then
@@ -28,8 +28,11 @@ fi
 if [[ "${1:-}" == --sprites ]]; then
  sed -i '1i#define SPRITES_PROBE 1' "$probe/draw.c"
 fi
-if [[ "${1:-}" == --readback ]]; then
+if [[ "${1:-}" == --readback || "${1:-}" == --rectclear ]]; then
  sed -i '1i#define READBACK_PROBE 1' "$probe/draw.c"
+fi
+if [[ "${1:-}" == --rectclear ]]; then
+ sed -i '1i#define RECTCLEAR_PROBE 1' "$probe/draw.c"
 fi
 python3 "$root/scripts/prepare-vulkan-shaders.py" "$probe" "$@"
 content=IV0000-SCVM00009_00-SCUMMVMVULKAN001
@@ -58,8 +61,11 @@ fi
 if [[ "${1:-}" == --sprites ]]; then
  package=ScummVM-PS4-Vulkan-Sprites.pkg
 fi
-if [[ "${1:-}" == --readback ]]; then
+if [[ "${1:-}" == --readback || "${1:-}" == --rectclear ]]; then
  package=ScummVM-PS4-Vulkan-Readback.pkg
+fi
+if [[ "${1:-}" == --rectclear ]]; then
+ package=ScummVM-PS4-Vulkan-RectClear.pkg
 fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"

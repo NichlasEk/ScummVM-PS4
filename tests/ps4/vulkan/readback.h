@@ -82,6 +82,16 @@ static int check_readback(unsigned frame) {
         rgba[0]=quantize(sx<40 ? .125f : .625f);
         rgba[1]=quantize(sy<30 ? .25f : .5f);
         rgba[2]=quantize(.375f); rgba[3]=quantize(.5f);
+#ifdef RECTCLEAR_PROBE
+        if ((sx>=6 && sx<17 && sy>=8 && sy<21) ||
+            (sx>=49 && sx<66 && sy>=37 && sy<46)) {
+          rgba[0]=51; rgba[1]=102; rgba[2]=153; rgba[3]=204;
+        }
+        if (sx>=12 && sx<25 && sy>=16 && sy<25) {
+          rgba[0]=quantize(.7f); rgba[1]=quantize(.1f);
+          rgba[2]=quantize(.3f); rgba[3]=quantize(.9f);
+        }
+#endif
         if(sx<40) {
           const float rgb[3]={.75f,.125f,.25f};
           for(unsigned c=0;c<3;c++) rgba[c]=quantize(rgb[c]*.25f+(rgba[c]/255.f)*.75f);
@@ -132,3 +142,27 @@ static int check_readback_rejections(VkCommandBuffer cmd) {
   CHECK(vkResetCommandBuffer(cmd,0));
   return 0;
 }
+
+#ifdef RECTCLEAR_PROBE
+static int check_rectclear_rejections(VkCommandBuffer cmd) {
+  VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+  for(unsigned test=0;test<4;test++) {
+    CHECK(vkBeginCommandBuffer(cmd,&begin));
+    VkRenderPassBeginInfo pass={.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+      .renderPass=off_pass,.framebuffer=off_fb,.renderArea={{3,4},{70,50}}};
+    vkCmdBeginRenderPass(cmd,&pass,VK_SUBPASS_CONTENTS_INLINE);
+    VkClearAttachment clear={.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,.colorAttachment=0,
+      .clearValue.color.float32={0,0,0,0}};
+    VkClearRect rect={{{3,4},{2,2}},0,1};
+    if(test==0) clear.aspectMask=VK_IMAGE_ASPECT_DEPTH_BIT;
+    if(test==1) rect.baseArrayLayer=1;
+    if(test==2) rect.rect.offset.x=2; /* Inside image, outside render area. */
+    if(test==3) rect.rect.extent.width=80;
+    vkCmdClearAttachments(cmd,1,&clear,1,&rect);
+    vkCmdEndRenderPass(cmd);
+    EXPECT_RESULT(vkEndCommandBuffer(cmd),VK_ERROR_FEATURE_NOT_PRESENT);
+    CHECK(vkResetCommandBuffer(cmd,0));
+  }
+  return 0;
+}
+#endif

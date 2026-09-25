@@ -19,6 +19,12 @@ for y in range(17, 710, 23):
         if abs(x - 640) < 20 or abs(y - 360) < 16:
             continue
         base = list(map(unorm, (.125 if x < 640 else .625, .25 if y < 360 else .5, .375, .5)))
+        if '--rectclear' in sys.argv:
+            sx, sy = x // 16, y // 12
+            if (6 <= sx < 17 and 8 <= sy < 21) or (49 <= sx < 66 and 37 <= sy < 46):
+                base = list(map(unorm, (.2,.4,.6,.8)))
+            if 12 <= sx < 25 and 16 <= sy < 25:
+                base = list(map(unorm, (.7,.1,.3,.9)))
         if x < 640:
             color = [unorm(src * .25 + dst * .75) for src, dst in zip((.75,.125,.25), base[:3])]
             alpha = unorm(.25 + base[3] * .75)

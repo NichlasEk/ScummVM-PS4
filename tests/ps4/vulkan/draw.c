@@ -286,6 +286,9 @@ int main(void) {
   CHECK(vkCreateFence(device, &fci, NULL, &fence));
 #ifdef READBACK_PROBE
   if (check_readback_rejections(cmd)) return 2;
+#ifdef RECTCLEAR_PROBE
+  if (check_rectclear_rejections(cmd)) return 2;
+#endif
 #endif
 #ifdef UPLOAD_PROBE
   if (check_upload_rejections(cmd))

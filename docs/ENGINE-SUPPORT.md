@@ -2,6 +2,14 @@
 
 Build: ScummVM 2.9.1. The 1.09 baseline below is extended by the 1.11 JPEG and 1.12 MP3 ports.
 
+## FreeType port (package 1.14, 2026-09-25)
+
+Static FreeType 2.14.3 adds BAGEL, Buried in Time, Red Comrades and Z-Vision
+(95 main engines). Host/PS4 glyph pixels and metrics matched in all 18 cases.
+See [PS4-FREETYPE.md](PS4-FREETYPE.md). Buried in Time reached its menu, intro and game interface in shadPS4;
+full-game and physical PS4 testing remain pending. The exclusion table below is historical; FreeType is now
+available, but dependencies such as PNG and Vorbis remain missing.
+
 ## Myst III runtime fix (package 1.13, 2026-09-25)
 
 PS4 mouse locking now uses the existing virtual-mouse relative deltas instead

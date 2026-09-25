@@ -1,6 +1,22 @@
 # PS4 engine support and remaining ports
 
-Build: ScummVM 2.9.1, PS4 package 1.09 (2026-09-20).
+Build: ScummVM 2.9.1. The 1.09 baseline below is extended by the 1.11 JPEG port.
+
+## JPEG port (package 1.11, 2026-09-25)
+
+`libjpeg-turbo` 3.2.0 is cross-compiled from its pinned official source tarball
+with the OpenOrbis sysroot, statically linked, and uses the portable C decoder
+(SIMD disabled). See [PS4-JPEG.md](PS4-JPEG.md) for build and test details.
+
+This adds Myst III as a top-level engine (89 total), plus the Myst Masterpiece
+and Groovie 2 subengines. Myst III uses the existing TinyGL software renderer;
+no OpenGL backend is needed. These entries are no longer excluded. Other JPEG
+users still require their remaining dependencies (e.g. Starship Titanic: MAD;
+Wintermute: PNG). Myst III reached its original main menu in shadPS4 using the supplied CD 1.2
+disc 1. New Game requires `TOHOnodes.m3a` from additional disc data; MP3 music
+also awaits MAD. Gameplay and physical hardware remain unverified.
+
+## Baseline: package 1.09 (2026-09-20)
 
 This records **compiled availability**, not a promise that every game works.
 The build requests all upstream engines except the TestBed and Playground3D
@@ -114,7 +130,8 @@ keyboard pack into `/app0/data`. It does not package the user's game directories
 
 ## Excluded: exact configure dependencies
 
-These engines cannot be launched in this build. The table lists missing
+The following table records the 1.09 exclusions. Apply the 1.11 changes above.
+It lists missing
 mandatory dependencies from `artifacts/scummvm/configure.log`, not a complete
 list of optional codecs a particular edition might use.
 
@@ -164,7 +181,7 @@ list of optional codecs a particular edition might use.
    in shadPS4 and on physical PS4. Configure success does not prove gameplay,
    saving/loading, input, rendering, audio or end-to-end completion.
 
-All these dependency ports are still pending; no host libraries were substituted.
+Except for JPEG in 1.11, these dependency ports are still pending; no host libraries were substituted.
 `SCUMMVM_ENGINES=scumm,scumm_7_8,he scripts/build-scummvm.sh` can select a narrower
 build. Unsetting `SCUMMVM_ENGINES` restores the broad default. The configuration
 fingerprint includes that override to avoid silently reusing the wrong selection.

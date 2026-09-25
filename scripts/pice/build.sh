@@ -28,6 +28,7 @@ PYUNBOOT
 "$root/scripts/prepare-scummvm.sh"
 "$root/scripts/build-ps4-storage.sh"
 "$root/scripts/build-ps4-input.sh"
+"$root/scripts/build-ps4-jpeg.sh"
 mkdir -p "$SCUMMVM_SOURCE_DIR/engines/pice"
 python3 - "$root/engines/pice" "$SCUMMVM_SOURCE_DIR/engines/pice" <<'COPY'
 import filecmp, pathlib, shutil, sys
@@ -53,14 +54,14 @@ else:
  s=s.replace('int res = scummvm_main(argc, argv);',block)
 if p.read_text()!=s: p.write_text(s)
 PYBOOT
-fingerprint=$( { sha256sum "$root/scripts/configure-scummvm.sh" "$root/engines/pice/configure.engine"; printf '%s\n' "$SCUMMVM_ENGINES" "$SCUMMVM_EXTRA_CXXFLAGS"; } | sha256sum | cut -d ' ' -f 1)
+fingerprint=$( { sha256sum "$root/scripts/configure-scummvm.sh" "$root/engines/pice/configure.engine" "$root/build/ps4-jpeg/.build-id"; printf '%s\n' "$SCUMMVM_ENGINES" "$SCUMMVM_EXTRA_CXXFLAGS"; } | sha256sum | cut -d ' ' -f 1)
 if [[ ! -f "$SCUMMVM_BUILD_DIR/config.h" || ! -f "$SCUMMVM_BUILD_DIR/.pice-config-id" ]] || [[ $(cat "$SCUMMVM_BUILD_DIR/.pice-config-id") != "$fingerprint" ]]; then
  "$root/scripts/configure-scummvm.sh" > "$root/artifacts/pice/configure.log" 2>&1
  touch "$SCUMMVM_BUILD_DIR/config.h"
  printf '%s\n' "$fingerprint" > "$SCUMMVM_BUILD_DIR/.pice-config-id"
 fi
 # Static dependency changes must relink even when no ScummVM source changed.
-if [[ -f "$SCUMMVM_BUILD_DIR/scummvm" ]] && { [[ "$root/build/ps4-input/libSDL2.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-storage/libscummvm-jbc.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]]; }; then
+if [[ -f "$SCUMMVM_BUILD_DIR/scummvm" ]] && { [[ "$root/build/ps4-input/libSDL2.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-storage/libscummvm-jbc.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-jpeg/install/lib/libjpeg.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]]; }; then
  rm -- "$SCUMMVM_BUILD_DIR/scummvm"
 fi
 make -C "$SCUMMVM_BUILD_DIR" -j"${BUILD_JOBS:-12}" > "$root/artifacts/pice/build.log" 2>&1

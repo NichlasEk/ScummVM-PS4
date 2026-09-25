@@ -7,6 +7,7 @@ build_dir=${SCUMMVM_BUILD_DIR:-"$root/build/scummvm"}
 source_dir=${SCUMMVM_SOURCE_DIR:-"$root/.tools/scummvm-src"}
 "$root/scripts/build-ps4-storage.sh"
 "$root/scripts/build-ps4-input.sh"
+"$root/scripts/build-ps4-jpeg.sh"
 mkdir -p "$build_dir"
 cd "$build_dir"
 export CXX=clang++ CC=clang AR=llvm-ar RANLIB=llvm-ranlib
@@ -27,6 +28,6 @@ fi
  --disable-timidity --disable-alsa --disable-seq-midi --disable-mt32emu --disable-cloud --disable-sdlnet --disable-enet \
  --disable-libcurl --disable-discord --disable-taskbar --disable-system-dialogs --disable-libunity --disable-gtk \
  --disable-tts --disable-sparkle --disable-ogg --disable-vorbis --disable-tremor --disable-mad --disable-flac \
- --disable-fribidi --disable-zlib --disable-jpeg --disable-png --disable-gif --disable-theoradec --disable-vpx \
+ --disable-fribidi --disable-zlib --with-jpeg-prefix="$root/build/ps4-jpeg/install" --disable-png --disable-gif --disable-theoradec --disable-vpx \
  --disable-faad --disable-fluidsynth --disable-fluidlite --disable-sonivox --disable-freetype2 \
  --disable-mikmod --disable-mpeg2 --disable-a52 --disable-openmpt --disable-mpcdec --disable-nasm --disable-readline --disable-sndio --enable-lua --disable-translation

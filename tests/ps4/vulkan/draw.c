@@ -23,6 +23,9 @@ static FILE *report;
 #ifdef RESOURCE_PROBE
 #include "resources.h"
 #endif
+#ifdef COMPOSITE_PROBE
+#include "composite.h"
+#endif
 int main(void) {
   report = fopen("/data/scummvm-vulkan-probe.log", "w");
   if (!report)
@@ -108,11 +111,23 @@ int main(void) {
         .layers = 1};
     CHECK(vkCreateFramebuffer(device, &fci, NULL, &fb[i]));
   }
+#ifdef COMPOSITE_PROBE
+  if (create_offscreen(device, physical))
+    return 2;
+#endif
   VkShaderModule modules[4];
+#ifdef COMPOSITE_PROBE
+  const uint32_t *codes[] = {background_vert, composite_base_frag,
+                             composite_overlay_frag, composite_sample_frag};
+  const size_t sizes[] = {sizeof(background_vert), sizeof(composite_base_frag),
+                          sizeof(composite_overlay_frag),
+                          sizeof(composite_sample_frag)};
+#else
   const uint32_t *codes[] = {background_vert, background_frag, triangle_vert,
                              triangle_frag};
   const size_t sizes[] = {sizeof(background_vert), sizeof(background_frag),
                           sizeof(triangle_vert), sizeof(triangle_frag)};
+#endif
   for (unsigned i = 0; i < 4; i++) {
     VkShaderModuleCreateInfo mci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -131,17 +146,31 @@ int main(void) {
   lci.setLayoutCount = 1;
   lci.pSetLayouts = &resource_layout;
 #endif
+#ifdef COMPOSITE_PROBE
+  lci.setLayoutCount = 1;
+  lci.pSetLayouts = &off_set_layout;
+#endif
   CHECK(vkCreatePipelineLayout(device, &lci, NULL, &layout));
-  VkPipeline pipelines[2];
-  for (unsigned i = 0; i < 2; i++) {
+#ifdef COMPOSITE_PROBE
+  const unsigned pipeline_count = 4;
+#else
+  const unsigned pipeline_count = 2;
+#endif
+  VkPipeline pipelines[4];
+  for (unsigned i = 0; i < pipeline_count; i++) {
+#ifdef COMPOSITE_PROBE
+    unsigned vs_index = 0, fs_index = i == 0 ? 1 : (i < 3 ? 2 : 3);
+#else
+    unsigned vs_index = i * 2, fs_index = i * 2 + 1;
+#endif
     VkPipelineShaderStageCreateInfo stages[2] = {
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
          .stage = VK_SHADER_STAGE_VERTEX_BIT,
-         .module = modules[i * 2],
+         .module = modules[vs_index],
          .pName = "main"},
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
          .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-         .module = modules[i * 2 + 1],
+         .module = modules[fs_index],
          .pName = "main"}};
     VkPipelineVertexInputStateCreateInfo vi = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
@@ -162,6 +191,20 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
     VkPipelineColorBlendAttachmentState blend = {.colorWriteMask = 15};
+#ifdef COMPOSITE_PROBE
+    if (i == 1 || i == 2) {
+      blend.blendEnable = VK_TRUE;
+      blend.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+      blend.dstColorBlendFactor =
+          i == 1 ? VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA : VK_BLEND_FACTOR_ONE;
+      blend.colorBlendOp = VK_BLEND_OP_ADD;
+      blend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      blend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      blend.alphaBlendOp = VK_BLEND_OP_ADD;
+      if (i == 2)
+        blend.colorWriteMask = VK_COLOR_COMPONENT_R_BIT;
+    }
+#endif
     VkPipelineColorBlendStateCreateInfo bs = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .attachmentCount = 1,
@@ -201,6 +244,9 @@ int main(void) {
       vkDestroyPipelineLayout(device, empty_layout, NULL);
       pci.layout = layout;
     }
+#endif
+#ifdef COMPOSITE_PROBE
+    pci.renderPass = i < 3 ? off_pass : pass;
 #endif
     CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pci, NULL,
                                     &pipelines[i]));
@@ -242,6 +288,11 @@ int main(void) {
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
                             &resource_sets[1], 0, NULL);
 #endif
+#ifdef COMPOSITE_PROBE
+    draw_offscreen(cmd, frame, pipelines);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
+                            &off_set, 0, NULL);
+#endif
     VkRenderPassBeginInfo rpbegin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = pass,
@@ -252,7 +303,11 @@ int main(void) {
     VkRect2D scissor = {{0, 0}, {1280, 720}};
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
+#ifdef COMPOSITE_PROBE
+    for (unsigned i = 3; i < 4; i++) {
+#else
     for (unsigned i = 0; i < 2; i++) {
+#endif
       vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines[i]);
       vkCmdDraw(cmd, 3, 1, 0, 0);
     }
@@ -290,10 +345,12 @@ int main(void) {
   vkDestroyFence(device, fence, NULL);
   vkDestroyCommandPool(device, pool, NULL);
   for (unsigned i = 0; i < 2; i++) {
-    vkDestroyPipeline(device, pipelines[i], NULL);
+
     vkDestroyFramebuffer(device, fb[i], NULL);
     vkDestroyImageView(device, views[i], NULL);
   }
+  for (unsigned i = 0; i < pipeline_count; ++i)
+    vkDestroyPipeline(device, pipelines[i], NULL);
   for (unsigned i = 0; i < 4; i++)
     vkDestroyShaderModule(device, modules[i], NULL);
   vkDestroyPipelineLayout(device, layout, NULL);
@@ -302,6 +359,9 @@ int main(void) {
 #ifdef RESOURCE_PROBE
   if (destroy_resources(device))
     return 2;
+#endif
+#ifdef COMPOSITE_PROBE
+  destroy_offscreen(device);
 #endif
   vkDestroyDevice(device, NULL);
   vkDestroyInstance(instance, NULL);

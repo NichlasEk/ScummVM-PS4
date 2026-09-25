@@ -2,6 +2,10 @@
 # Independent native Vulkan probe; never replaces the stable ScummVM package.
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+case "${1:-}" in
+ ""|--resources|--upload|--composite) ;;
+ *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite]' >&2; exit 2 ;;
+esac
 export OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
 "$root/scripts/build-opengnm-probe.sh"
 probe="$root/build/vulkan-probe"
@@ -9,6 +13,10 @@ reports="$root/artifacts/vulkan"
 mkdir -p "$probe" "$reports"
 cp "$root/tests/ps4/vulkan/draw.c" "$probe/draw.c"
 cp "$root/tests/ps4/vulkan/resources.h" "$probe/resources.h"
+cp "$root/tests/ps4/vulkan/composite.h" "$probe/composite.h"
+if [[ "${1:-}" == --composite ]]; then
+ sed -i '1i#define COMPOSITE_PROBE 1' "$probe/draw.c"
+fi
 if [[ "${1:-}" == --resources || "${1:-}" == --upload ]]; then
  sed -i '1i#define RESOURCE_PROBE 1' "$probe/draw.c"
 fi
@@ -35,6 +43,9 @@ if [[ "${1:-}" == --resources ]]; then
 fi
 if [[ "${1:-}" == --upload ]]; then
  package=ScummVM-PS4-Vulkan-Upload.pkg
+fi
+if [[ "${1:-}" == --composite ]]; then
+ package=ScummVM-PS4-Vulkan-Composite.pkg
 fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"

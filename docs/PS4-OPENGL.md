@@ -4,8 +4,9 @@ Source audit and isolated capability probe after package 1.17 (2026-09-25).
 The probe is implemented; a working PS4 graphics port is not yet validated.
 
 **Active direction:** the user selected the open GPU stack instead of Softpipe
-or Piglet. The first native rendering result and reproducible build are in
-[PS4-OPENGNM.md](PS4-OPENGNM.md). The alternatives below preserve the earlier
+or Piglet. The native GNM baseline is in [PS4-OPENGNM.md](PS4-OPENGNM.md); validated Vulkan
+texture uploads, offscreen composition and selected blend modes are now in
+[PS4-VULKAN.md](PS4-VULKAN.md), including the next TWP vertex/index-buffer gate. The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 
 ## Capability probe checkpoint

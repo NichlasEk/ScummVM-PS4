@@ -51,7 +51,7 @@ the driver's direct PS4 swapchain convention (null surface), one viewport,
 resource-free vertex/fragment shaders, procedural vertices, and serial GPU
 submission. It draws the background rather than testing render-pass clears.
 
-Beyond the resource checkpoint below, vertex buffers, compute, blending, depth,
+Beyond the checkpoints below, vertex buffers, compute, depth,
 asynchronous semaphore submissions and error recovery are not validated here.
 The upstream feature advertisement is not evidence of implementation. The
 resource checkpoint below adds Vulkan coverage beyond the earlier native GNM tests.
@@ -109,8 +109,9 @@ synchronization and object-lifetime requirements still apply; updating descripto
 referenced by recorded/pending commands is not an update-after-bind feature.
 
 This supersedes the earlier statement that Vulkan textures/UBOs were unvalidated.
-It does not establish support for arbitrary Vulkan resources, optimal-image
-uploads, render-to-texture, blending/depth or overlapping submissions. Physical
+It does not establish support for arbitrary Vulkan resources, arbitrary optimal-image
+uploads, depth or overlapping submissions. Later checkpoints below cover bounded
+uploads and selected render-to-texture/blending cases. Physical
 PS4 remains untested. The upload checkpoint below adds GPU buffer-to-image transfer and conservative
 barriers. Next: blending/render-target sampling and a feature audit against the
 OpenGL translator before wiring it into ScummVM.
@@ -165,3 +166,69 @@ checks, command-buffer resubmission and lifecycle cleanup in shadPS4. The basic
 Vulkan triangle (154 pixel checks) and original resource mode (582) also passed
 with the new barrier implementation. The upload executable was restored after
 these regression runs. The stable ScummVM package hash remains unchanged.
+
+## Offscreen composition and blending checkpoint
+
+```sh
+scripts/build-vulkan-probe.sh --composite
+xvfb-run -a -s '-screen 0 1280x720x24' python3 scripts/run-opengnm-probe.py --vulkan --composite
+```
+
+This exercises the existing driver implementation with a new independent pixel
+oracle. An 80×60 RGBA8 UNORM color attachment is drawn in one pass, transitioned
+from color-write to shader-read, then sampled in a second 1280×720 sRGB pass.
+No CPU readback or CPU-created replacement pixels are involved. The source image
+contains four spatially distinct regions, testing:
+
+- SRC_ALPHA / ONE_MINUS_SRC_ALPHA color blending.
+- ONE / ONE_MINUS_SRC_ALPHA separate alpha blending.
+- Additive color with a red-only write mask; other channels must survive.
+- Unblended data preservation and full RGBA write-mask restoration afterward.
+- Scissor/viewport changes between unequal framebuffer sizes.
+- Sampled attachment alpha influencing the final RGB output.
+
+The oracle accounts for quantization into the intermediate UNORM attachment,
+blend equations and final sRGB conversion. It checks 1,230 interior pixels
+across all four regions. Eight render/sample iterations and complete resource
+cleanup also pass in shadPS4. This validates these blend cases and render-target
+sampling; it is not coverage of every blend factor, format, MRT, depth mode or
+implicit render-pass dependency. Explicit barriers separate the passes.
+
+Package: `dist/ScummVM-PS4-Vulkan-Composite.pkg` with SHA-256 sidecar. Reports:
+`artifacts/vulkan/composite/`. This remains a separate SCVM00009 diagnostic.
+
+## TWP source requirements and the next integration gate
+
+`python3 scripts/audit-twp-gl.py` inventories the current local renderer and
+shared shader wrapper, recording source hashes and call locations in
+`artifacts/vulkan/twp-gl-inventory.json`. It finds 59 distinct GL call names in
+three source files; conditional paths are included, so this is not a runtime
+trace. Relevant current source:
+
+- `engines/twp/gfx.cpp`: texture upload/FBO/readback at lines 71–131; GLSL 110
+  shader setup and vertex attributes at 140–147; dynamic VBO/EBO uploads and
+  array/indexed drawing at 247–317; target/viewport switches at 387–393.
+- `engines/twp/shaders.cpp`: transform matrix, position/color/UV attributes,
+  varying interpolation, one/two samplers, scalar/vector uniforms, and the
+  `RandomValue[5]` uniform array used by effects.
+- `graphics/opengl/shader.cpp` and `.h`: compile/link/reflection, uniforms,
+  vertex-attribute setup and program lifetime.
+
+The standard TWP blend function matches the new straight-alpha test exactly.
+Texture sampling, explicit synchronization and render-target composition now
+have bounded native Vulkan evidence. However, TWP also needs streamed vertex
+and uint32 index buffers, matrix transforms, clears, readback and legacy GLSL
+translation/reflection. The current probes use procedural vertices and prebuilt
+SPIR-V; they do not provide any of those GL-facing facilities.
+
+The next gate is a native indexed sprite test using TWP's position/color/UV
+vertex layout and a matrix UBO. Then verify clears/readback and the actual
+translated shader effects before enabling an OpenGL context in ScummVM.
+No general OpenGL translator has been integrated by these probes, and no TWP
+startup on this open stack is claimed. Physical PS4 verification remains open.
+
+Composite regression: the basic triangle (154 samples) and optimal-upload mode
+(582 samples, negative checks and resubmission) pass with the shared probe changes.
+The runnable composite executable is restored afterward. Stable ScummVM package
+SHA-256 is unchanged; this milestone adds verified coverage of existing driver
+paths rather than enabling a new game backend.

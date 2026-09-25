@@ -9,10 +9,17 @@ source = Path(__file__).resolve().parent.parent / 'tests/ps4/vulkan'
 target = Path(sys.argv[1])
 target.mkdir(parents=True, exist_ok=True)
 arrays = ['/* Generated SPIR-V, not precompiled GCN. */\n#include <stdint.h>\n']
-for name in ('background_vert', 'background_frag', 'triangle_vert', 'triangle_frag'):
+if '--composite' in sys.argv:
+    names = ('background_vert', 'composite_base_frag', 'composite_overlay_frag', 'composite_sample_frag')
+else:
+    names = ('background_vert', 'background_frag', 'triangle_vert', 'triangle_frag')
+for name in names:
     binary = target / (name + '.spv')
     stage = 'vertex' if name.endswith('_vert') else 'fragment'
-    subprocess.run(['glslc', '-fshader-stage=' + stage, str(source / ((name.replace('triangle', 'resources') if ('--resources' in sys.argv or '--upload' in sys.argv) and name.startswith('triangle') else name) + '.glsl')),
+    filename = name
+    if name.startswith('triangle') and ('--resources' in sys.argv or '--upload' in sys.argv):
+        filename = name.replace('triangle', 'resources')
+    subprocess.run(['glslc', '-fshader-stage=' + stage, str(source / (filename + '.glsl')),
                     '-o', str(binary)], check=True)
     subprocess.run(['spirv-val', str(binary)], check=True)
     data = binary.read_bytes()

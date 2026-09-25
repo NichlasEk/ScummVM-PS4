@@ -2,6 +2,13 @@
 
 Build: ScummVM 2.9.1. The 1.09 baseline below is extended by the 1.11 JPEG and 1.12 MP3 ports.
 
+## Myst III runtime fix (package 1.13, 2026-09-25)
+
+PS4 mouse locking now uses the existing virtual-mouse relative deltas instead
+of SDL's unsupported desktop pointer-capture fallback. The visible shadPS4 run
+passed the intro and reached the panorama; the user confirmed working play.
+See [PS4-MYST3-RUNTIME.md](PS4-MYST3-RUNTIME.md) for evidence and limits.
+
 ## MP3 port (package 1.12, 2026-09-25)
 
 A static OpenOrbis build of libmad now provides MP3 decoding. This enables

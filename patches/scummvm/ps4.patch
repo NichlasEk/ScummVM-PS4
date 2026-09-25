@@ -108,7 +108,21 @@
  	// On POSIX systems we follow the XDG Base Directory Specification for
 --- a/backends/platform/sdl/sdl-window.cpp
 +++ b/backends/platform/sdl/sdl-window.cpp
-@@ -347,6 +347,17 @@
+@@ -187,7 +187,12 @@
+ }
+ 
+ bool SdlWindow::lockMouse(bool lock) {
+-#if SDL_VERSION_ATLEAST(2, 0, 0)
++#if defined(__PS4__)
++	// PS4 has no OS pointer to capture. Our virtual mouse supplies relMouse
++	// deltas independently of the clipped absolute position. SDL's desktop
++	// relative-mode fallback requires WarpMouse, absent in its PS4 driver.
++	_inputLockState = lock;
++#elif SDL_VERSION_ATLEAST(2, 0, 0)
+ 	SDL_SetRelativeMouseMode(lock ? SDL_TRUE : SDL_FALSE);
+ 	_inputLockState = lock;
+ #else
+@@ -347,6 +352,17 @@
  }
  
  bool SdlWindow::createOrUpdateWindow(int width, int height, uint32 flags) {

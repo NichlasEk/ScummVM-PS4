@@ -8,7 +8,11 @@ probe="$root/build/vulkan-probe"
 reports="$root/artifacts/vulkan"
 mkdir -p "$probe" "$reports"
 cp "$root/tests/ps4/vulkan/draw.c" "$probe/draw.c"
-python3 "$root/scripts/prepare-vulkan-shaders.py" "$probe"
+cp "$root/tests/ps4/vulkan/resources.h" "$probe/resources.h"
+if [[ "${1:-}" == --resources ]]; then
+ sed -i '1i#define RESOURCE_PROBE 1' "$probe/draw.c"
+fi
+python3 "$root/scripts/prepare-vulkan-shaders.py" "$probe" "$@"
 content=IV0000-SCVM00009_00-SCUMMVMVULKAN001
 driver="$root/.tools/opengnm-stack/vulkan-ps4"
 if [[ -f "$driver/sce_sys/param.sfo" ]]; then
@@ -22,7 +26,11 @@ readelf -d "$driver/test_triangle_ps4.elf" > "$reports/imports.txt"
 if rg 'NEEDED.*(Piglet|Shacc)' "$reports/imports.txt"; then
  echo 'Unexpected proprietary graphics dependency' >&2; exit 1
 fi
-cp "$driver/$content.pkg" "$root/dist/ScummVM-PS4-Vulkan-Probe.pkg"
+package=ScummVM-PS4-Vulkan-Probe.pkg
+if [[ "${1:-}" == --resources ]]; then
+ package=ScummVM-PS4-Vulkan-Resources.pkg
+fi
+cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"
-sha256sum ScummVM-PS4-Vulkan-Probe.pkg > ScummVM-PS4-Vulkan-Probe.pkg.sha256
-cat ScummVM-PS4-Vulkan-Probe.pkg.sha256
+sha256sum "$package" > "$package.sha256"
+cat "$package.sha256"

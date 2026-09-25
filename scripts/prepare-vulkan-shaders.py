@@ -12,7 +12,7 @@ arrays = ['/* Generated SPIR-V, not precompiled GCN. */\n#include <stdint.h>\n']
 for name in ('background_vert', 'background_frag', 'triangle_vert', 'triangle_frag'):
     binary = target / (name + '.spv')
     stage = 'vertex' if name.endswith('_vert') else 'fragment'
-    subprocess.run(['glslc', '-fshader-stage=' + stage, str(source / (name + '.glsl')),
+    subprocess.run(['glslc', '-fshader-stage=' + stage, str(source / ((name.replace('triangle', 'resources') if '--resources' in sys.argv and name.startswith('triangle') else name) + '.glsl')),
                     '-o', str(binary)], check=True)
     subprocess.run(['spirv-val', str(binary)], check=True)
     data = binary.read_bytes()

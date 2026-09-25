@@ -14,7 +14,10 @@ selection = parser.add_mutually_exclusive_group()
 selection.add_argument('--uniforms', action='store_true')
 selection.add_argument('--textures', action='store_true')
 selection.add_argument('--vulkan', action='store_true')
+parser.add_argument('--resources', action='store_true')
 args = parser.parse_args()
+if args.resources and not args.vulkan:
+    parser.error('--resources requires --vulkan')
 mode = 'vulkan' if args.vulkan else 'textures' if args.textures else 'uniforms' if args.uniforms else 'triangle'
 title_id = 'SCVM00009' if args.vulkan else 'SCVM00008' if args.textures else 'SCVM00007' if args.uniforms else 'SCVM00006'
 root = Path(__file__).resolve().parent.parent
@@ -25,6 +28,8 @@ if mode != 'triangle':
     reports /= mode
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
+    if args.resources:
+        reports /= 'resources'
 reports.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, XDG_DATA_HOME=str(profile), SDL_VIDEODRIVER='x11')
 emulator = root / '.tools/shadps4/Shadps4-sdl.AppImage'
@@ -89,7 +94,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 screenshot = max(candidates, key=lambda f: f.stat().st_mtime)
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
                 shutil.copy2(guest_log, reports / 'triangle-result.txt')
-                check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-opengnm-textures.py' if args.textures else 'tests/ps4/check-opengnm-triangle.py')),
+                check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
                                         str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else [])],
                                        capture_output=True, text=True)
                 (reports / 'pixel-test.log').write_text(check.stdout + check.stderr)

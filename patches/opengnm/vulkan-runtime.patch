@@ -47,10 +47,19 @@ index e104443..d31c329 100644
  	      sce_module/libc.prx sce_module/libSceFios2.prx $(PKG_CONTENT_ID).pkg
  	@rm -rf sce_sys sce_module
 diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
-index 7634d6b..616ac47 100644
+index 7634d6b..86e9579 100644
 --- a/include/vk_ps4_internal.h
 +++ b/include/vk_ps4_internal.h
-@@ -457,6 +457,10 @@ struct VkPs4Pipeline {
+@@ -246,6 +246,8 @@ struct VkPs4CommandBuffer {
+     } current_render_pass;
+     /* Current pipeline */
+     VkPs4Pipeline *current_pipeline;
++    VkPs4DescriptorSet *graphics_set0;
++    VkResult resource_error;
+     /* Bound vertex buffers */
+     struct {
+         VkBuffer buffer;
+@@ -457,6 +459,10 @@ struct VkPs4Pipeline {
      /* Compiled GCN shader binaries — kept alive for the pipeline's lifetime
       * because the stage registers contain GPU addresses that point into
       * these buffers.  Freed in DestroyPipeline. */
@@ -61,8 +70,34 @@ index 7634d6b..616ac47 100644
      void *vs_binary;
      void *ps_binary;
      void *gs_binary;
+@@ -572,6 +578,7 @@ struct VkPs4DescriptorPool {
+      * freed sets are kept in the free list for reuse instead of being
+      * returned to the allocator.  This reduces allocation overhead for
+      * apps that frequently allocate/free descriptor sets. */
++    VkPs4DescriptorSet *live_sets;
+     uint32_t sets_allocated;
+     uint32_t sets_freed;
+ #define VK_PS4_MAX_POOLED_SETS 256
+@@ -583,6 +590,8 @@ struct VkPs4DescriptorSet {
+     VkPs4ObjectType type;
+     VkPs4Device *device;
+     VkPs4DescriptorPool *pool;
++    VkPs4DescriptorSet *next;
++    GnmDirectMemory resource_table;
+     VkPs4DescriptorSetLayout *layout;
+     VkPs4DescriptorBinding bindings[VK_PS4_MAX_DESCRIPTOR_BINDINGS];
+     uint32_t binding_count;
+@@ -676,6 +685,8 @@ struct VkPs4Swapchain {
+ #define VK_PS4_CHECK_OBJ(handle, expected_type) \
+     (VK_PS4_TO_OBJ(handle) && *(VK_PS4_TO_OBJ(handle)) == (expected_type))
+ 
++bool vk_ps4_descriptor_layout_supported(const VkDescriptorSetLayoutCreateInfo *info);
++bool vk_ps4_emit_resource_table(VkPs4CommandBuffer *cmd);
+ /* === Allocator helpers === */
+ void *vk_ps4_alloc(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
+ void *vk_ps4_alloc_zero(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
 diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
-index 168c1f3..701a767 100644
+index 168c1f3..e607f05 100644
 --- a/src/vk_ps4_command.c
 +++ b/src/vk_ps4_command.c
 @@ -586,6 +586,8 @@ static void vk_ps4_rebind_pipeline_state(VkPs4CommandBuffer *cmd) {
@@ -74,7 +109,43 @@ index 168c1f3..701a767 100644
      }
  
      /* Re-emit fetch shader */
-@@ -1098,6 +1100,8 @@ vk_ps4_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeli
+@@ -823,6 +825,8 @@ vk_ps4_AllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo
+         cmd->is_recording = false;
+         cmd->is_begin = false;
+         cmd->current_pipeline = NULL;
++    cmd->graphics_set0 = NULL;
++    cmd->resource_error = VK_SUCCESS;
+         cmd->vertex_binding_count = 0;
+ 
+         /* Allocate PM4 buffer if not reused */
+@@ -939,6 +943,8 @@ vk_ps4_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBe
+     cmd->pm4_used = (uint32_t)(cmd->gnm_cmd.cmdptr - cmd->gnm_cmd.beginptr);
+     /* Reset all tracking state */
+     cmd->current_pipeline = NULL;
++    cmd->graphics_set0 = NULL;
++    cmd->resource_error = VK_SUCCESS;
+     cmd->vertex_binding_count = 0;
+     cmd->vertex_buffers_dirty = false;
+     memset(&cmd->index_buffer, 0, sizeof(cmd->index_buffer));
+@@ -959,7 +965,7 @@ vk_ps4_EndCommandBuffer(VkCommandBuffer commandBuffer) {
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+     cmd->is_recording = false;
+     cmd->pm4_used = (uint32_t)(cmd->gnm_cmd.cmdptr - cmd->gnm_cmd.beginptr);
+-    return VK_SUCCESS;
++    return cmd->resource_error;
+ }
+ 
+ VKAPI_ATTR VkResult VKAPI_CALL
+@@ -974,6 +980,8 @@ vk_ps4_ResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFla
+     cmd->is_recording = false;
+     /* Reset all tracking state */
+     cmd->current_pipeline = NULL;
++    cmd->graphics_set0 = NULL;
++    cmd->resource_error = VK_SUCCESS;
+     cmd->vertex_binding_count = 0;
+     cmd->vertex_buffers_dirty = false;
+     memset(&cmd->index_buffer, 0, sizeof(cmd->index_buffer));
+@@ -1098,6 +1106,8 @@ vk_ps4_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeli
          /* Set pixel shader only if the pipeline has one */
          if (pipe->has_ps) {
              sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &pipe->ps_regs);
@@ -83,7 +154,7 @@ index 168c1f3..701a767 100644
          }
  
          /* Bind fetch shader if the pipeline has one */
-@@ -1208,10 +1212,10 @@ vk_ps4_CmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uin
+@@ -1208,10 +1218,10 @@ vk_ps4_CmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uin
           * GNM viewport: scale = half-dimension, offset = center */
          vp_info.scale[0] = vp->width * 0.5f;
          vp_info.scale[1] = vp->height * 0.5f;
@@ -96,7 +167,7 @@ index 168c1f3..701a767 100644
          sceGnmDrawCmdSetViewport(&cmd->gnm_cmd, firstViewport + i, &vp_info);
      }
  }
-@@ -1223,6 +1227,13 @@ vk_ps4_CmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint3
+@@ -1223,6 +1233,13 @@ vk_ps4_CmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint3
  
      for (uint32_t i = 0; i < scissorCount; i++) {
          const VkRect2D *sc = &pScissors[i];
@@ -110,6 +181,408 @@ index 168c1f3..701a767 100644
          sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd,
              sc->offset.x, sc->offset.y,
              sc->offset.x + sc->extent.width,
+@@ -1453,6 +1470,7 @@ vk_ps4_CmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t ins
+                uint32_t firstVertex, uint32_t firstInstance) {
+     if (!commandBuffer) return;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
++    if (!vk_ps4_emit_resource_table(cmd)) return;
+ 
+     /* Emit vertex buffer table if dirty and pipeline has a VB table slot */
+     if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+@@ -1527,6 +1545,7 @@ vk_ps4_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32
+                       uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+     if (!commandBuffer) return;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
++    if (!vk_ps4_emit_resource_table(cmd)) return;
+ 
+     /* Emit vertex buffer table if dirty and pipeline has a VB table slot */
+     if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
+diff --git a/src/vk_ps4_descriptor.c b/src/vk_ps4_descriptor.c
+index c9d6e1c..f0b4367 100644
+--- a/src/vk_ps4_descriptor.c
++++ b/src/vk_ps4_descriptor.c
+@@ -20,6 +20,8 @@
+ #include "vk_ps4_internal.h"
+ #include <string.h>
+ #include <stdio.h>
++#include "psbc_compile.h"
++static void publish_table(VkPs4DescriptorSet *set);
+ 
+ /* === Descriptor set layout === */
+ /* (Already implemented in vk_ps4_pipeline.c) */
+@@ -414,331 +416,54 @@ vk_ps4_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
+                    count * sizeof(GnmSampler));
+         }
+     }
++    for (uint32_t i = 0; i < descriptorWriteCount; ++i)
++        publish_table((VkPs4DescriptorSet *)pDescriptorWrites[i].dstSet);
++    for (uint32_t i = 0; i < descriptorCopyCount; ++i)
++        publish_table((VkPs4DescriptorSet *)pDescriptorCopies[i].dstSet);
++
+ }
+ 
+-/* === vkCmdBindDescriptorSets === */
++/* Set-0 ABI is validated against the pipeline layout by psbc. The table
++ * belongs to the descriptor set and lives until free/reset/pool destruction.
++ * Vulkan requires clients to synchronize updates/free with pending GPU use. */
++static void publish_table(VkPs4DescriptorSet *set) {
++    if (!set) return;
++    uint8_t *table = set->resource_table.mapped;
++    for (uint32_t i = 0; i < set->binding_count; ++i) {
++        VkPs4DescriptorBinding *b = &set->bindings[i];
++        if (b->buffers) memcpy(table + b->binding_number * 16, b->buffers, sizeof(GnmBuffer));
++        if (b->textures) memcpy(table + PSBC_TEXTURE_TABLE_OFFSET + b->binding_number * PSBC_TEXTURE_BINDING_STRIDE,
++                               b->textures, sizeof(GnmTexture));
++        if (b->samplers) memcpy(table + PSBC_TEXTURE_TABLE_OFFSET + b->binding_number * PSBC_TEXTURE_BINDING_STRIDE + PSBC_COMBINED_SAMPLER_OFFSET,
++                               b->samplers, sizeof(GnmSampler));
++    }
++}
+ VKAPI_ATTR void VKAPI_CALL
+-vk_ps4_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
+-                              VkPipelineLayout layout, uint32_t firstSet, uint32_t setCount,
+-                              const VkDescriptorSet *pDescriptorSets, uint32_t dynamicOffsetCount,
+-                              const uint32_t *pDynamicOffsets) {
+-    if (!commandBuffer || !pDescriptorSets) return;
++vk_ps4_CmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelineBindPoint point,
++    VkPipelineLayout layout, uint32_t firstSet, uint32_t count, const VkDescriptorSet *sets,
++    uint32_t dynamicCount, const uint32_t *offsets) {
++    (void)layout; (void)offsets;
+     VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
+-    VkPs4PipelineLayout *pl = (VkPs4PipelineLayout *)layout;
+-    if (!pl) return;
+-
+-    GnmShaderStage stage = vk_bind_point_to_gnm_stage(pipelineBindPoint);
+-
+-    /* Get the current pipeline to access input usage slot tables */
+-    VkPs4Pipeline *pipe = cmd->current_pipeline;
+-    if (!pipe) return;
+-
+-    /* Get the appropriate input usage slot table */
+-    const GnmInputUsageSlot *slots = NULL;
+-    uint32_t slot_count = 0;
+-
+-    /* Pre-compute dynamic offsets per (set_idx, binding_number, array_element).
+-     * Vulkan spec: offsets are consumed set-major, binding-number-ascending,
+-     * with one offset per dynamic descriptor (not per binding).
+-     * For a binding with descriptorCount=N of DYNAMIC type, N offsets are consumed.
+-     * We build a lookup table before the stage loop to avoid double-consuming
+-     * offsets for bindings shared between VS and PS. */
+-    uint32_t dyn_map_cap = dynamicOffsetCount;
+-    if (dyn_map_cap > 256) dyn_map_cap = 256;
+-    struct dyn_offset_map {
+-        uint32_t set_idx;
+-        uint32_t binding;
+-        uint32_t array_elem;
+-        uint32_t offset;
+-    };
+-    struct dyn_offset_map dyn_map[256];
+-    uint32_t dyn_map_count = 0;
+-    uint32_t dyn_off_consumed = 0;
+-
+-    for (uint32_t si = 0; si < setCount && dyn_off_consumed < dynamicOffsetCount; si++) {
+-        VkPs4DescriptorSet *set = (VkPs4DescriptorSet *)pDescriptorSets[si];
+-        if (!set) continue;
+-        /* Bindings are stored in layout order (ascending binding number). */
+-        for (uint32_t bi = 0; bi < set->binding_count; bi++) {
+-            VkPs4DescriptorBinding *b = &set->bindings[bi];
+-            if (b->count == 0) continue;
+-            bool is_dynamic = (b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+-                               b->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+-            if (!is_dynamic) continue;
+-            /* Consume one offset per array element */
+-            for (uint32_t e = 0; e < b->count && dyn_off_consumed < dynamicOffsetCount; e++) {
+-                if (dyn_map_count < dyn_map_cap) {
+-                    dyn_map[dyn_map_count].set_idx = firstSet + si;
+-                    dyn_map[dyn_map_count].binding = b->binding_number;
+-                    dyn_map[dyn_map_count].array_elem = e;
+-                    dyn_map[dyn_map_count].offset = pDynamicOffsets[dyn_off_consumed];
+-                    dyn_map_count++;
+-                }
+-                dyn_off_consumed++;
+-            }
+-        }
++    if (point != VK_PIPELINE_BIND_POINT_GRAPHICS || firstSet || count > 1 || dynamicCount) {
++        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
+     }
+-
+-    /* Helper to look up a dynamic offset for a given (set_idx, binding) */
+-    /* (defined as a lambda-like macro for brevity) */
+-
+-    if (pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+-        /* Emit for both VS and PS stages */
+-        for (int s = 0; s < 2; s++) {
+-            if (s == 0) {
+-                slots = pipe->vs_input_usage_slots;
+-                slot_count = pipe->vs_input_usage_slot_count;
+-                stage = GNM_STAGE_VS;
+-            } else {
+-                slots = pipe->ps_input_usage_slots;
+-                slot_count = pipe->ps_input_usage_slot_count;
+-                stage = GNM_STAGE_PS;
+-            }
+-
+-            for (uint32_t i = 0; i < slot_count; i++) {
+-                const GnmInputUsageSlot *slot = &slots[i];
+-                uint32_t apislot = slot->apislot;
+-
+-                /* Find the binding across all bound sets.
+-                 * Track which set it was found in for dynamic offset lookup.
+-                 * The actual Vulkan set index is firstSet + si. */
+-                VkPs4DescriptorBinding *b = NULL;
+-                uint32_t found_set_idx = 0;
+-                for (uint32_t si = 0; si < setCount; si++) {
+-                    VkPs4DescriptorSet *set = (VkPs4DescriptorSet *)pDescriptorSets[si];
+-                    if (set) {
+-                        b = find_binding(set, apislot);
+-                        if (b) {
+-                            found_set_idx = firstSet + si;
+-                            break;
+-                        }
+-                    }
+-                }
+-                if (!b || b->count == 0) continue;
+-
+-                /* Check if this is a dynamic binding */
+-                bool is_dynamic = (b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+-                                   b->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+-
+-                /* Emit the appropriate Set*UserData command based on usage type.
+-                 * For IMM_* types with array bindings (count > 1), emit each
+-                 * element at consecutive user-data registers.
+-                 * Vsharp = 4 regs, Tsharp = 8 regs, Ssharp = 4 regs. */
+-                switch (slot->usagetype) {
+-                case GNM_SHINPUTUSAGE_IMM_CONSTBUFFER:
+-                case GNM_SHINPUTUSAGE_IMM_VERTEXBUFFER:
+-                    /* Buffer resource → Vsharp (4 regs each) */
+-                    if (b->buffers) {
+-                        for (uint32_t e = 0; e < b->count; e++) {
+-                            /* Look up per-element dynamic offset */
+-                            uint32_t dyn_offset = 0;
+-                            bool has_dyn_offset = false;
+-                            if (is_dynamic) {
+-                                for (uint32_t dm = 0; dm < dyn_map_count; dm++) {
+-                                    if (dyn_map[dm].set_idx == found_set_idx &&
+-                                        dyn_map[dm].binding == apislot &&
+-                                        dyn_map[dm].array_elem == e) {
+-                                        dyn_offset = dyn_map[dm].offset;
+-                                        has_dyn_offset = true;
+-                                        break;
+-                                    }
+-                                }
+-                            }
+-                            if (is_dynamic && has_dyn_offset) {
+-                                /* Rebuild buffer descriptor with dynamic offset */
+-                                GnmBuffer adjusted = b->buffers[e];
+-                                char *base = (char *)sceGnmBufGetBaseAddress(&adjusted);
+-                                sceGnmBufSetBaseAddress(&adjusted, base + dyn_offset);
+-                                sceGnmDrawCmdSetVsharpUserData(
+-                                    &cmd->gnm_cmd, stage,
+-                                    slot->startregister + e * 4,
+-                                    &adjusted
+-                                );
+-                            } else {
+-                                sceGnmDrawCmdSetVsharpUserData(
+-                                    &cmd->gnm_cmd, stage,
+-                                    slot->startregister + e * 4,
+-                                    &b->buffers[e]
+-                                );
+-                            }
+-                        }
+-                    }
+-                    break;
+-                case GNM_SHINPUTUSAGE_IMM_RESOURCE:
+-                case GNM_SHINPUTUSAGE_IMM_RWRESOURCE:
+-                    /* Texture resource → Tsharp (8 regs each) */
+-                    if (b->textures) {
+-                        for (uint32_t e = 0; e < b->count; e++) {
+-                            sceGnmDrawCmdSetTsharpUserData(
+-                                &cmd->gnm_cmd, stage,
+-                                slot->startregister + e * 8,
+-                                &b->textures[e]
+-                            );
+-                        }
+-                    }
+-                    break;
+-                case GNM_SHINPUTUSAGE_IMM_SAMPLER:
+-                    /* Sampler resource → Ssharp (4 regs each) */
+-                    if (b->samplers) {
+-                        for (uint32_t e = 0; e < b->count; e++) {
+-                            sceGnmDrawCmdSetSsharpUserData(
+-                                &cmd->gnm_cmd, stage,
+-                                slot->startregister + e * 4,
+-                                &b->samplers[e]
+-                            );
+-                        }
+-                    }
+-                    break;
+-                case GNM_SHINPUTUSAGE_PTR_CONSTBUFFERTABLE:
+-                case GNM_SHINPUTUSAGE_PTR_RESOURCETABLE:
+-                case GNM_SHINPUTUSAGE_PTR_SAMPLERTABLE:
+-                case GNM_SHINPUTUSAGE_PTR_RWRESOURCETABLE:
+-                case GNM_SHINPUTUSAGE_PTR_VERTEXBUFFERTABLE:
+-                    /* Pointer-based resource table — set a pointer to
+-                     * the descriptor array in GPU memory.
+-                     * For MVP, we set the pointer to the first resource
+-                     * in the binding's array. */
+-                    if (b->buffers) {
+-                        sceGnmDrawCmdSetPointerUserData(
+-                            &cmd->gnm_cmd, stage, slot->startregister,
+-                            b->buffers
+-                        );
+-                    } else if (b->textures) {
+-                        sceGnmDrawCmdSetPointerUserData(
+-                            &cmd->gnm_cmd, stage, slot->startregister,
+-                            b->textures
+-                        );
+-                    } else if (b->samplers) {
+-                        sceGnmDrawCmdSetPointerUserData(
+-                            &cmd->gnm_cmd, stage, slot->startregister,
+-                            b->samplers
+-                        );
+-                    }
+-                    break;
+-                default:
+-                    /* Other usage types not handled in MVP */
+-                    break;
+-                }
+-            }
+-        }
+-    } else if (pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE) {
+-        /* Compute pipeline — CS input usage slots stored in
+-         * pipe->vs_input_usage_slots (reused for CS). */
+-        slots = pipe->vs_input_usage_slots;
+-        slot_count = pipe->vs_input_usage_slot_count;
+-        stage = GNM_STAGE_CS;
+-
+-        for (uint32_t i = 0; i < slot_count; i++) {
+-            const GnmInputUsageSlot *slot = &slots[i];
+-            uint32_t apislot = slot->apislot;
+-
+-            VkPs4DescriptorBinding *b = NULL;
+-            uint32_t found_set_idx = 0;
+-            for (uint32_t si = 0; si < setCount; si++) {
+-                VkPs4DescriptorSet *set = (VkPs4DescriptorSet *)pDescriptorSets[si];
+-                if (set) {
+-                    b = find_binding(set, apislot);
+-                    if (b) {
+-                        found_set_idx = firstSet + si;
+-                        break;
+-                    }
+-                }
+-            }
+-            if (!b || b->count == 0) continue;
+-
+-            /* Check if this is a dynamic binding */
+-            bool is_dynamic = (b->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+-                               b->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+-
+-            switch (slot->usagetype) {
+-            case GNM_SHINPUTUSAGE_IMM_CONSTBUFFER:
+-            case GNM_SHINPUTUSAGE_IMM_VERTEXBUFFER:
+-                if (b->buffers) {
+-                    for (uint32_t e = 0; e < b->count; e++) {
+-                        /* Look up per-element dynamic offset */
+-                        uint32_t dyn_offset = 0;
+-                        bool has_dyn_offset = false;
+-                        if (is_dynamic) {
+-                            for (uint32_t dm = 0; dm < dyn_map_count; dm++) {
+-                                if (dyn_map[dm].set_idx == found_set_idx &&
+-                                    dyn_map[dm].binding == apislot &&
+-                                    dyn_map[dm].array_elem == e) {
+-                                    dyn_offset = dyn_map[dm].offset;
+-                                    has_dyn_offset = true;
+-                                    break;
+-                                }
+-                            }
+-                        }
+-                        if (is_dynamic && has_dyn_offset) {
+-                            GnmBuffer adjusted = b->buffers[e];
+-                            char *base = (char *)sceGnmBufGetBaseAddress(&adjusted);
+-                            sceGnmBufSetBaseAddress(&adjusted, base + dyn_offset);
+-                            sceGnmDrawCmdSetVsharpUserData(
+-                                &cmd->gnm_cmd, stage,
+-                                slot->startregister + e * 4,
+-                                &adjusted
+-                            );
+-                        } else {
+-                            sceGnmDrawCmdSetVsharpUserData(
+-                                &cmd->gnm_cmd, stage,
+-                                slot->startregister + e * 4,
+-                                &b->buffers[e]
+-                            );
+-                        }
+-                    }
+-                }
+-                break;
+-            case GNM_SHINPUTUSAGE_IMM_RESOURCE:
+-            case GNM_SHINPUTUSAGE_IMM_RWRESOURCE:
+-                if (b->textures) {
+-                    for (uint32_t e = 0; e < b->count; e++) {
+-                        sceGnmDrawCmdSetTsharpUserData(
+-                            &cmd->gnm_cmd, stage,
+-                            slot->startregister + e * 8,
+-                            &b->textures[e]
+-                        );
+-                    }
+-                }
+-                break;
+-            case GNM_SHINPUTUSAGE_IMM_SAMPLER:
+-                if (b->samplers) {
+-                    for (uint32_t e = 0; e < b->count; e++) {
+-                        sceGnmDrawCmdSetSsharpUserData(
+-                            &cmd->gnm_cmd, stage,
+-                            slot->startregister + e * 4,
+-                            &b->samplers[e]
+-                        );
+-                    }
+-                }
+-                break;
+-            case GNM_SHINPUTUSAGE_PTR_CONSTBUFFERTABLE:
+-            case GNM_SHINPUTUSAGE_PTR_RESOURCETABLE:
+-            case GNM_SHINPUTUSAGE_PTR_SAMPLERTABLE:
+-            case GNM_SHINPUTUSAGE_PTR_RWRESOURCETABLE:
+-                if (b->buffers) {
+-                    sceGnmDrawCmdSetPointerUserData(
+-                        &cmd->gnm_cmd, stage, slot->startregister,
+-                        b->buffers
+-                    );
+-                } else if (b->textures) {
+-                    sceGnmDrawCmdSetPointerUserData(
+-                        &cmd->gnm_cmd, stage, slot->startregister,
+-                        b->textures
+-                    );
+-                } else if (b->samplers) {
+-                    sceGnmDrawCmdSetPointerUserData(
+-                        &cmd->gnm_cmd, stage, slot->startregister,
+-                        b->samplers
+-                    );
+-                }
+-                break;
+-            default:
+-                break;
+-            }
++    if (count) cmd->graphics_set0 = (VkPs4DescriptorSet *)sets[0];
++}
++bool vk_ps4_emit_resource_table(VkPs4CommandBuffer *cmd) {
++    if (cmd->resource_error != VK_SUCCESS) return false;
++    VkPs4Pipeline *p = cmd->current_pipeline;
++    if (!p) return false;
++    for (unsigned stage = 0; stage < 2; ++stage) {
++        const GnmInputUsageSlot *slots = stage ? p->ps_input_usage_slots : p->vs_input_usage_slots;
++        uint32_t count = stage ? p->ps_input_usage_slot_count : p->vs_input_usage_slot_count;
++        for (uint32_t i = 0; i < count; ++i) {
++            if (slots[i].usagetype != GNM_SHINPUTUSAGE_PTR_INDIRECTRESOURCETABLE) continue;
++            if (!cmd->graphics_set0) { cmd->resource_error = VK_ERROR_INITIALIZATION_FAILED; return false; }
++            sceGnmDrawCmdSetPointerUserData(&cmd->gnm_cmd, stage ? GNM_STAGE_PS : GNM_STAGE_VS,
++                slots[i].startregister, cmd->graphics_set0->resource_table.mapped);
+         }
+     }
+-
+-    (void)pl;
++    return true;
+ }
+ 
+ /* === Sampler === */
 diff --git a/src/vk_ps4_device.c b/src/vk_ps4_device.c
 index 9d8a83f..73048f3 100644
 --- a/src/vk_ps4_device.c
@@ -135,11 +608,87 @@ index 9d8a83f..73048f3 100644
  
      /* Allocate the epilogue command buffer used by QueueSubmit for EOP
           * fence/semaphore signal writes.  Small and reused across submits. */
+diff --git a/src/vk_ps4_image.c b/src/vk_ps4_image.c
+index 6545469..d50b826 100644
+--- a/src/vk_ps4_image.c
++++ b/src/vk_ps4_image.c
+@@ -38,6 +38,14 @@ vk_ps4_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
+     VkPs4Device *dev = (VkPs4Device *)device;
+     const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
+ 
++    /* The current host-linear layout implementation covers a single RGBA8
++     * surface. Reject other shapes instead of reporting a fabricated pitch. */
++    if (pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR &&
++        (pCreateInfo->imageType != VK_IMAGE_TYPE_2D || pCreateInfo->mipLevels != 1 ||
++         pCreateInfo->arrayLayers != 1 || pCreateInfo->samples != VK_SAMPLE_COUNT_1_BIT ||
++         pCreateInfo->usage != VK_IMAGE_USAGE_SAMPLED_BIT ||
++         (pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM && pCreateInfo->format != VK_FORMAT_R8G8B8A8_SRGB)))
++        return VK_ERROR_FEATURE_NOT_PRESENT;
+     VkPs4Image *img = vk_ps4_alloc_zero(alloc, sizeof(*img), 16);
+     if (!img) return VK_ERROR_OUT_OF_HOST_MEMORY;
+     img->type = VK_PS4_OBJ_IMAGE;
+@@ -131,7 +139,7 @@ vk_ps4_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
+         tex_ci.nummiplevels = mip_levels;
+         tex_ci.numslices = pCreateInfo->arrayLayers;
+         tex_ci.numfragments = 1;
+-        tex_ci.tilemodehint = GNM_TM_DISPLAY_2D_THIN;
++        tex_ci.tilemodehint = pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR ? GNM_TM_DISPLAY_LINEAR_ALIGNED : GNM_TM_DISPLAY_2D_THIN;
+         tex_ci.mingpumode = gpu_mode;
+         sceGnmCreateTexture(&img->gnm_texture, &tex_ci);
+     } else {
+@@ -146,7 +154,7 @@ vk_ps4_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
+         tex_ci.nummiplevels = mip_levels;
+         tex_ci.numslices = pCreateInfo->arrayLayers;
+         tex_ci.numfragments = 1;
+-        tex_ci.tilemodehint = GNM_TM_DISPLAY_2D_THIN;
++        tex_ci.tilemodehint = pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR ? GNM_TM_DISPLAY_LINEAR_ALIGNED : GNM_TM_DISPLAY_2D_THIN;
+         tex_ci.mingpumode = gpu_mode;
+ 
+         GnmError err = sceGnmCreateTexture(&img->gnm_texture, &tex_ci);
+@@ -314,7 +322,8 @@ vk_ps4_GetImageSubresourceLayout(VkDevice device, VkImage image,
+     /* For linear textures, row pitch = width * bytes_per_pixel */
+     uint32_t bpp = 4;
+     pLayout->offset = 0;
+-    pLayout->rowPitch = img->create_info.extent.width * bpp;
++    pLayout->rowPitch = sceGnmTexGetPitch(&img->gnm_texture) * bpp;
+     pLayout->depthPitch = pLayout->rowPitch * img->create_info.extent.height;
++    pLayout->arrayPitch = pLayout->depthPitch * img->create_info.extent.depth;
+     pLayout->size = pLayout->depthPitch * img->create_info.extent.depth;
+ }
 diff --git a/src/vk_ps4_pipeline.c b/src/vk_ps4_pipeline.c
-index b621e66..0bbbb32 100644
+index b621e66..267f7bc 100644
 --- a/src/vk_ps4_pipeline.c
 +++ b/src/vk_ps4_pipeline.c
-@@ -342,6 +342,23 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+@@ -19,7 +19,7 @@
+ VkResult vk_ps4_compile_shader_module(VkPs4ShaderModule *mod, VkShaderStageFlagBits stage,
+                                       const VkAllocationCallbacks *alloc,
+                                       void **out_binary, size_t *out_binary_size,
+-                                      GnmShaderMetadata *out_metadata);
++                                      GnmShaderMetadata *out_metadata, VkPs4PipelineLayout *layout);
+ 
+ /* Forward declaration from vk_ps4_command.c */
+ extern uint32_t vk_stencil_op_to_pm4(VkStencilOp op);
+@@ -101,6 +101,10 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+                                 const VkGraphicsPipelineCreateInfo *pCreateInfos,
+                                 const VkAllocationCallbacks *pAllocator,
+                                 VkPipeline *pPipelines) {
++    /* Existing cache keys omit resource layout/type/stage visibility. Always
++     * validate through psbc until these inputs are part of the cache key. */
++    pipelineCache = VK_NULL_HANDLE;
++
+     VK_PS4_LOG_ENTRY();
+     vk_ps4_log("CreateGraphicsPipelines: count=%u", createInfoCount);
+ 
+@@ -324,7 +328,7 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+             } else {
+                 /* Cache miss — compile the shader */
+                 VkResult vr = vk_ps4_compile_shader_module(
+-                    mod, stage->stage, alloc, &binary, &binary_size, &metadata
++                    mod, stage->stage, alloc, &binary, &binary_size, &metadata, (VkPs4PipelineLayout *)ci->layout
+                 );
+                 if (vr != VK_SUCCESS) {
+                     if (binary && binary != mod->binary) {
+@@ -342,6 +346,23 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                  }
              }
  
@@ -163,7 +712,7 @@ index b621e66..0bbbb32 100644
              /* Extract stage registers and input usage slots from the compiled shader binary */
              if (metadata.fileheader && metadata.stage) {
                  /* Extract input usage slots (shared across all stages in the binary) */
-@@ -387,6 +404,10 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+@@ -387,6 +408,10 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                          /* Standard VS: GnmVsShader (common + regs + semantics) */
                          const GnmVsShader *vs = (const GnmVsShader *)metadata.stage;
                          pipe->vs_regs = vs->registers;
@@ -174,7 +723,7 @@ index b621e66..0bbbb32 100644
                          if (metadata.shadercode) {
                              sceGnmVsRegsSetAddress(&pipe->vs_regs,
                                  (void *)metadata.shadercode);
-@@ -411,6 +432,10 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+@@ -411,6 +436,10 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                  case VK_SHADER_STAGE_FRAGMENT_BIT: {
                      const GnmPsShader *ps = (const GnmPsShader *)metadata.stage;
                      pipe->ps_regs = ps->registers;
@@ -185,7 +734,7 @@ index b621e66..0bbbb32 100644
                      if (metadata.shadercode) {
                          sceGnmPsRegsSetAddress(&pipe->ps_regs,
                              (void *)metadata.shadercode);
-@@ -484,6 +509,10 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+@@ -484,6 +513,10 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                           * Extract VS registers so CmdBindPipeline can use them. */
                          const GnmVsShader *vs = (const GnmVsShader *)metadata.stage;
                          pipe->vs_regs = vs->registers;
@@ -196,7 +745,7 @@ index b621e66..0bbbb32 100644
                          pipe->has_ds_vs = true;
                          if (metadata.shadercode) {
                              sceGnmVsRegsSetAddress(&pipe->vs_regs,
-@@ -517,6 +546,8 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
+@@ -517,6 +550,8 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
  
          /* A graphics pipeline must have at least VS with valid registers */
          if (!compile_ok || !vs_found) {
@@ -205,7 +754,27 @@ index b621e66..0bbbb32 100644
              vk_ps4_free(alloc, pipe->vertex_bindings);
              vk_ps4_free(alloc, pipe->vertex_attributes);
              vk_ps4_free(alloc, pipe->blend_attachments);
-@@ -843,6 +874,8 @@ vk_ps4_DestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationC
+@@ -667,6 +702,10 @@ vk_ps4_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
+                                const VkComputePipelineCreateInfo *pCreateInfos,
+                                const VkAllocationCallbacks *pAllocator,
+                                VkPipeline *pPipelines) {
++    /* Existing cache keys omit resource layout/type/stage visibility. Always
++     * validate through psbc until these inputs are part of the cache key. */
++    pipelineCache = VK_NULL_HANDLE;
++
+ 
+     if (!device || !pCreateInfos || !pPipelines) {
+         return VK_ERROR_INITIALIZATION_FAILED;
+@@ -715,7 +754,7 @@ vk_ps4_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
+             }
+         } else {
+             VkResult vr = vk_ps4_compile_shader_module(
+-                mod, ci->stage.stage, alloc, &binary, &binary_size, &metadata
++                mod, ci->stage.stage, alloc, &binary, &binary_size, &metadata, (VkPs4PipelineLayout *)ci->layout
+             );
+             if (vr != VK_SUCCESS) {
+                 if (binary && binary != mod->binary) {
+@@ -843,6 +882,8 @@ vk_ps4_DestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationC
      if (pipe->blend_attachments) {
          vk_ps4_free(alloc, pipe->blend_attachments);
      }
@@ -214,6 +783,271 @@ index b621e66..0bbbb32 100644
      /* Free compiled GCN shader binaries (kept alive because stage
       * registers contain GPU addresses pointing into them) */
      if (pipe->vs_binary)  vk_ps4_free(alloc, pipe->vs_binary);
+@@ -864,6 +905,8 @@ vk_ps4_CreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *p
+     VkPs4Device *dev = (VkPs4Device *)device;
+     const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
+ 
++    if (pCreateInfo->setLayoutCount > 1 || pCreateInfo->pushConstantRangeCount)
++        return VK_ERROR_FEATURE_NOT_PRESENT;
+     VkPs4PipelineLayout *layout = vk_ps4_alloc_zero(alloc, sizeof(*layout), 16);
+     if (!layout) return VK_ERROR_OUT_OF_HOST_MEMORY;
+     layout->type = VK_PS4_OBJ_PIPELINE_LAYOUT;
+@@ -915,6 +958,24 @@ vk_ps4_DestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout, c
+ 
+ /* === Descriptor set layout === */
+ 
++bool vk_ps4_descriptor_layout_supported(const VkDescriptorSetLayoutCreateInfo *pCreateInfo) {
++    if (!pCreateInfo) return false;
++    if (pCreateInfo->flags || pCreateInfo->pNext || pCreateInfo->bindingCount > 16)
++        return false;
++    uint32_t seen = 0;
++    for (uint32_t i = 0; i < pCreateInfo->bindingCount; ++i) {
++        const VkDescriptorSetLayoutBinding *b = &pCreateInfo->pBindings[i];
++        if (b->binding >= 16 || b->descriptorCount != 1 || b->pImmutableSamplers ||
++            (b->stageFlags & ~(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)) ||
++            (b->descriptorType != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
++             b->descriptorType != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER))
++            return false;
++        if (seen & (1u << b->binding)) return false;
++        seen |= 1u << b->binding;
++    }
++    return true;
++}
++
+ VKAPI_ATTR VkResult VKAPI_CALL
+ vk_ps4_CreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
+                                  const VkAllocationCallbacks *pAllocator, VkDescriptorSetLayout *pSetLayout) {
+@@ -925,6 +986,7 @@ vk_ps4_CreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCre
+     VkPs4Device *dev = (VkPs4Device *)device;
+     const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
+ 
++    if (!vk_ps4_descriptor_layout_supported(pCreateInfo)) return VK_ERROR_FEATURE_NOT_PRESENT;
+     VkPs4DescriptorSetLayout *layout = vk_ps4_alloc_zero(alloc, sizeof(*layout), 16);
+     if (!layout) return VK_ERROR_OUT_OF_HOST_MEMORY;
+     layout->type = VK_PS4_OBJ_DESCRIPTOR_SET_LAYOUT;
+@@ -1018,151 +1080,95 @@ vk_ps4_CreateDescriptorPool(VkDevice device, const VkDescriptorPoolCreateInfo *p
+     return VK_SUCCESS;
+ }
+ 
+-VKAPI_ATTR void VKAPI_CALL
+-vk_ps4_DestroyDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool, const VkAllocationCallbacks *pAllocator) {
+-    if (!device || !descriptorPool) return;
+-    VkPs4Device *dev = (VkPs4Device *)device;
+-    VkPs4DescriptorPool *pool = (VkPs4DescriptorPool *)descriptorPool;
+-    const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
+-    /* Free all descriptor sets in the free list */
+-    for (uint32_t i = 0; i < pool->free_count; i++) {
+-        if (pool->free_list[i]) vk_ps4_free(alloc, pool->free_list[i]);
++static void release_set(VkPs4DescriptorSet *set) {
++    const VkAllocationCallbacks *alloc = &set->device->allocator;
++    for (uint32_t b = 0; b < set->binding_count; ++b) {
++        vk_ps4_free(alloc, set->bindings[b].buffers);
++        vk_ps4_free(alloc, set->bindings[b].textures);
++        vk_ps4_free(alloc, set->bindings[b].samplers);
+     }
+-    pool->free_count = 0;
+-    vk_ps4_free(alloc, pool);
++    if (set->resource_table.allocated) sceGnmDirectMemoryRelease(&set->resource_table);
++    vk_ps4_free(alloc, set);
+ }
+-
+ VKAPI_ATTR VkResult VKAPI_CALL
+-vk_ps4_AllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo *pAllocateInfo,
+-                              VkDescriptorSet *pDescriptorSets) {
+-    if (!device || !pAllocateInfo || !pDescriptorSets) {
+-        return VK_ERROR_INITIALIZATION_FAILED;
+-    }
+-    VkPs4Device *dev = (VkPs4Device *)device;
+-    const VkAllocationCallbacks *alloc = &dev->allocator;
+-    VkPs4DescriptorPool *pool = (VkPs4DescriptorPool *)pAllocateInfo->descriptorPool;
+-
+-    /* VK_EXT_descriptor_indexing: extract variable descriptor counts from pNext */
+-    const uint32_t *var_counts = NULL;
+-    uint32_t var_count_n = 0;
+-    VkBaseInStructure *chain = (VkBaseInStructure *)pAllocateInfo->pNext;
+-    while (chain) {
+-        if (chain->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT) {
+-            VkDescriptorSetVariableDescriptorCountAllocateInfo *vc =
+-                (VkDescriptorSetVariableDescriptorCountAllocateInfo *)chain;
+-            var_counts = vc->pDescriptorCounts;
+-            var_count_n = vc->descriptorSetCount;
+-            break;
+-        }
+-        chain = (VkBaseInStructure *)chain->pNext;
+-    }
+-
+-    for (uint32_t i = 0; i < pAllocateInfo->descriptorSetCount; i++) {
+-        VkPs4DescriptorSet *set = NULL;
+-
+-        /* Try to reuse from the pool's free list first */
+-        if (pool && pool->free_count > 0) {
+-            set = pool->free_list[--pool->free_count];
+-            pool->free_list[pool->free_count] = NULL;
+-            /* Clear the set for reuse */
+-            memset(set, 0, sizeof(*set));
+-        }
+-
+-        if (!set) {
+-            set = vk_ps4_alloc_zero(alloc, sizeof(*set), 16);
+-            if (!set) {
+-                for (uint32_t j = 0; j < i; j++) {
+-                    vk_ps4_free(alloc, (void *)pDescriptorSets[j]);
+-                    pDescriptorSets[j] = VK_NULL_HANDLE;
+-                }
+-                return VK_ERROR_OUT_OF_HOST_MEMORY;
+-            }
+-        }
+-
+-        set->type = VK_PS4_OBJ_DESCRIPTOR_SET;
+-        set->device = dev;
+-        set->pool = pool;
+-        set->layout = (VkPs4DescriptorSetLayout *)pAllocateInfo->pSetLayouts[i];
+-        set->variable_descriptor_count = 0;
+-
+-        /* Initialize bindings from the layout */
+-        if (set->layout && set->layout->binding_count <= VK_PS4_MAX_DESCRIPTOR_BINDINGS) {
+-            set->binding_count = set->layout->binding_count;
+-            for (uint32_t b = 0; b < set->binding_count; b++) {
+-                set->bindings[b].type = set->layout->bindings[b].descriptorType;
+-                set->bindings[b].count = set->layout->bindings[b].descriptorCount;
+-                set->bindings[b].binding_number = set->layout->bindings[b].binding;
+-                set->bindings[b].resources_allocated = false;
+-                set->bindings[b].buffers = NULL;
+-                set->bindings[b].textures = NULL;
+-                set->bindings[b].samplers = NULL;
+-                /* Resource arrays are allocated lazily in UpdateDescriptorSets */
+-            }
+-
+-            /* VK_EXT_descriptor_indexing: override the variable-count binding's
+-             * descriptor count if provided in the allocate info pNext chain. */
+-            if (set->layout->variable_descriptor_binding != UINT32_MAX &&
+-                var_counts && i < var_count_n) {
+-                uint32_t vb = set->layout->variable_descriptor_binding;
+-                set->bindings[vb].count = var_counts[i];
+-                set->variable_descriptor_count = var_counts[i];
+-            }
+-        }
+-
+-        if (pool) pool->sets_allocated++;
+-        pDescriptorSets[i] = (VkDescriptorSet)set;
++vk_ps4_ResetDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorPoolResetFlags flags) {
++    (void)device; (void)flags;
++    VkPs4DescriptorPool *pool = (VkPs4DescriptorPool *)descriptorPool;
++    if (!pool) return VK_ERROR_INITIALIZATION_FAILED;
++    while (pool->live_sets) {
++        VkPs4DescriptorSet *set = pool->live_sets;
++        pool->live_sets = set->next;
++        release_set(set);
+     }
++    pool->sets_allocated = 0;
+     return VK_SUCCESS;
+ }
+-
++VKAPI_ATTR void VKAPI_CALL
++vk_ps4_DestroyDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool, const VkAllocationCallbacks *pAllocator) {
++    if (!device || !descriptorPool) return;
++    VkPs4Device *dev = (VkPs4Device *)device;
++    vk_ps4_ResetDescriptorPool(device, descriptorPool, 0);
++    vk_ps4_free(pAllocator ? pAllocator : &dev->allocator, (void *)descriptorPool);
++}
+ VKAPI_ATTR VkResult VKAPI_CALL
+ vk_ps4_FreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
+-                          uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets) {
+-    if (!device || !pDescriptorSets) return VK_SUCCESS;
+-    VkPs4Device *dev = (VkPs4Device *)device;
+-    const VkAllocationCallbacks *alloc = &dev->allocator;
++                         uint32_t count, const VkDescriptorSet *sets) {
++    (void)device;
+     VkPs4DescriptorPool *pool = (VkPs4DescriptorPool *)descriptorPool;
+-    for (uint32_t i = 0; i < descriptorSetCount; i++) {
+-        if (!pDescriptorSets[i]) continue;
+-        VkPs4DescriptorSet *set = (VkPs4DescriptorSet *)pDescriptorSets[i];
+-        /* Free binding resource arrays */
+-        for (uint32_t b = 0; b < set->binding_count; b++) {
+-            if (set->bindings[b].buffers) vk_ps4_free(alloc, set->bindings[b].buffers);
+-            if (set->bindings[b].textures) vk_ps4_free(alloc, set->bindings[b].textures);
+-            if (set->bindings[b].samplers) vk_ps4_free(alloc, set->bindings[b].samplers);
++    for (uint32_t i = 0; i < count; ++i) {
++        VkPs4DescriptorSet **link = &pool->live_sets;
++        while (*link && *link != (VkPs4DescriptorSet *)sets[i]) link = &(*link)->next;
++        if (*link) {
++            VkPs4DescriptorSet *set = *link;
++            *link = set->next;
++            release_set(set);
++            --pool->sets_allocated;
+         }
+-        /* Add to the pool's free list for reuse, or free if pool is full */
+-        if (pool && pool->free_count < VK_PS4_MAX_POOLED_SETS) {
+-            pool->free_list[pool->free_count++] = set;
+-        } else {
+-            vk_ps4_free(alloc, set);
+-        }
+-        if (pool) pool->sets_freed++;
+     }
+     return VK_SUCCESS;
+ }
+-
+-/* UpdateDescriptorSets moved to vk_ps4_descriptor.c */
+-
+ VKAPI_ATTR VkResult VKAPI_CALL
+-vk_ps4_ResetDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorPoolResetFlags flags) {
+-    (void)flags;
+-    if (!device || !descriptorPool) return VK_ERROR_INITIALIZATION_FAILED;
++vk_ps4_AllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo *info, VkDescriptorSet *out) {
++    if (!device || !info || !out || info->pNext) return VK_ERROR_INITIALIZATION_FAILED;
+     VkPs4Device *dev = (VkPs4Device *)device;
+-    const VkAllocationCallbacks *alloc = &dev->allocator;
+-    VkPs4DescriptorPool *pool = (VkPs4DescriptorPool *)descriptorPool;
+-
+-    /* Free all descriptor sets in the free list */
+-    for (uint32_t i = 0; i < pool->free_count; i++) {
+-        if (pool->free_list[i]) {
+-            vk_ps4_free(alloc, pool->free_list[i]);
+-            pool->free_list[i] = NULL;
++    VkPs4DescriptorPool *pool = (VkPs4DescriptorPool *)info->descriptorPool;
++    memset(out, 0, info->descriptorSetCount * sizeof(*out));
++    if (!pool || info->descriptorSetCount > pool->create_info.maxSets - pool->sets_allocated)
++        return VK_ERROR_OUT_OF_POOL_MEMORY;
++    VkResult result = VK_ERROR_OUT_OF_HOST_MEMORY;
++    for (uint32_t i = 0; i < info->descriptorSetCount; ++i) {
++        VkPs4DescriptorSet *set = vk_ps4_alloc_zero(&dev->allocator, sizeof(*set), 16);
++        if (!set) goto fail;
++        set->type = VK_PS4_OBJ_DESCRIPTOR_SET; set->device = dev; set->pool = pool;
++        set->layout = (VkPs4DescriptorSetLayout *)info->pSetLayouts[i];
++        set->binding_count = set->layout->binding_count;
++        if (sceGnmDirectMemoryAllocate(&set->resource_table, 1280, 65536,
++                GNM_DIRECT_MEMORY_TYPE_WC_GARLIC, GNM_PROT_CPU_GPU_RW) != GNM_ERROR_OK) {
++            release_set(set); result = VK_ERROR_OUT_OF_DEVICE_MEMORY; goto fail;
+         }
++        memset(set->resource_table.mapped, 0, 1280);
++        for (uint32_t b = 0; b < set->binding_count; ++b) {
++            VkPs4DescriptorBinding *dst = &set->bindings[b];
++            dst->binding_number = set->layout->bindings[b].binding;
++            dst->type = set->layout->bindings[b].descriptorType; dst->count = 1;
++            if (dst->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
++                dst->buffers = vk_ps4_alloc_zero(&dev->allocator, sizeof(GnmBuffer), 16);
++                if (!dst->buffers) { release_set(set); goto fail; }
++            } else {
++                dst->textures = vk_ps4_alloc_zero(&dev->allocator, sizeof(GnmTexture), 16);
++                dst->samplers = vk_ps4_alloc_zero(&dev->allocator, sizeof(GnmSampler), 16);
++                if (!dst->textures || !dst->samplers) { release_set(set); goto fail; }
++            }
++            dst->resources_allocated = true;
++        }
++        set->next = pool->live_sets; pool->live_sets = set; ++pool->sets_allocated;
++        out[i] = (VkDescriptorSet)set;
+     }
+-    pool->free_count = 0;
+-    pool->sets_allocated = 0;
+-    pool->sets_freed = 0;
+     return VK_SUCCESS;
++fail:
++    vk_ps4_FreeDescriptorSets(device, info->descriptorPool, info->descriptorSetCount, out);
++    memset(out, 0, info->descriptorSetCount * sizeof(*out));
++    return result;
+ }
+ 
+ /* === Sampler === */
 diff --git a/src/vk_ps4_queue.c b/src/vk_ps4_queue.c
 index 683667b..65f41d5 100644
 --- a/src/vk_ps4_queue.c
@@ -236,3 +1070,62 @@ index 683667b..65f41d5 100644
          if (result == 0) {
              /* Poll until the GPU writes the label. */
              while (*idle_label != 1) {
+diff --git a/src/vk_ps4_shader.c b/src/vk_ps4_shader.c
+index 151a536..db15691 100644
+--- a/src/vk_ps4_shader.c
++++ b/src/vk_ps4_shader.c
+@@ -150,7 +150,7 @@ vk_ps4_DestroyShaderModule(VkDevice device, VkShaderModule shaderModule, const V
+ VkResult vk_ps4_compile_shader_module(VkPs4ShaderModule *mod, VkShaderStageFlagBits stage,
+                                       const VkAllocationCallbacks *alloc,
+                                       void **out_binary, size_t *out_binary_size,
+-                                      GnmShaderMetadata *out_metadata) {
++                                      GnmShaderMetadata *out_metadata, VkPs4PipelineLayout *layout) {
+     if (!mod || !mod->binary || mod->binary_size == 0) {
+         return VK_ERROR_INITIALIZATION_FAILED;
+     }
+@@ -165,6 +165,18 @@ VkResult vk_ps4_compile_shader_module(VkPs4ShaderModule *mod, VkShaderStageFlagB
+     opts.target = PSBC_TARGET_PS4_BASE;
+     opts.entrypoint = "main";
+     opts.optimise = true;
++    opts.validate_resource_layout = true;
++    if (layout && layout->set_layout_count) {
++        VkPs4DescriptorSetLayout *set = layout->set_layouts[0];
++        for (uint32_t i = 0; i < set->binding_count; ++i) {
++            const VkDescriptorSetLayoutBinding *b = &set->bindings[i];
++            if (!(b->stageFlags & stage)) continue;
++            if (b->descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
++                opts.uniform_binding_mask |= 1u << b->binding;
++            else if (b->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
++                opts.texture_binding_mask |= 1u << b->binding;
++        }
++    }
+ 
+     /* Determine stage */
+     const char *stage_name = "unknown";
+diff --git a/src/vk_ps4_vulkan11.c b/src/vk_ps4_vulkan11.c
+index 719e9a3..45d845d 100644
+--- a/src/vk_ps4_vulkan11.c
++++ b/src/vk_ps4_vulkan11.c
+@@ -633,18 +633,16 @@ vk_ps4_GetDescriptorSetLayoutSupport(
+ ) {
+     (void)device;
+     if (!pCreateInfo || !pSupport) return;
+-    /* We support any descriptor set layout that fits within our limits.
+-     * The validation layer checks limits, so we just report supported. */
+-    pSupport->supported = VK_TRUE;
++    /* Match creation-time validation of the bounded resource ABI. */
++    pSupport->supported = vk_ps4_descriptor_layout_supported(pCreateInfo);
+     /* Walk pNext for VkDescriptorSetVariableDescriptorCountLayoutSupport. */
+     VkBaseOutStructure *chain = (VkBaseOutStructure *)pSupport->pNext;
+     while (chain) {
+         if (chain->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT) {
+             VkDescriptorSetVariableDescriptorCountLayoutSupport *vs =
+                 (VkDescriptorSetVariableDescriptorCountLayoutSupport *)chain;
+-            /* Report a generous max — GNM supports bindless natively.
+-             * Limited by VK_PS4_MAX_DESCRIPTOR_BINDINGS per binding. */
+-            vs->maxVariableDescriptorCount = 1000000;
++            /* Descriptor indexing is not implemented by this ABI. */
++            vs->maxVariableDescriptorCount = 0;
+         }
+         chain = chain->pNext;
+     }

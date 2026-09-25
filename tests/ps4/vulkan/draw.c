@@ -12,6 +12,17 @@ static FILE *report;
     if (r != VK_SUCCESS)                                                       \
       return 2;                                                                \
   } while (0)
+#define EXPECT_RESULT(expr, expected)                                          \
+  do {                                                                         \
+    VkResult r = (expr);                                                       \
+    fprintf(report, "EXPECT %s = %d (wanted %d)\n", #expr, r,                  \
+            (int)(expected));                                                  \
+    if (r != (expected))                                                       \
+      return 2;                                                                \
+  } while (0)
+#ifdef RESOURCE_PROBE
+#include "resources.h"
+#endif
 int main(void) {
   report = fopen("/data/scummvm-vulkan-probe.log", "w");
   if (!report)
@@ -109,9 +120,17 @@ int main(void) {
         .pCode = codes[i]};
     CHECK(vkCreateShaderModule(device, &mci, NULL, &modules[i]));
   }
+#ifdef RESOURCE_PROBE
+  if (create_resources(device, physical))
+    return 2;
+#endif
   VkPipelineLayout layout;
   VkPipelineLayoutCreateInfo lci = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+#ifdef RESOURCE_PROBE
+  lci.setLayoutCount = 1;
+  lci.pSetLayouts = &resource_layout;
+#endif
   CHECK(vkCreatePipelineLayout(device, &lci, NULL, &layout));
   VkPipeline pipelines[2];
   for (unsigned i = 0; i < 2; i++) {
@@ -166,6 +185,23 @@ int main(void) {
         .pDynamicState = &ds,
         .layout = layout,
         .renderPass = pass};
+#ifdef RESOURCE_PROBE
+    if (i == 1) {
+      VkPipelineLayout empty_layout;
+      VkPipelineLayoutCreateInfo empty = {
+          .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+      CHECK(vkCreatePipelineLayout(device, &empty, NULL, &empty_layout));
+      pci.layout = empty_layout;
+      VkPipeline rejected = VK_NULL_HANDLE;
+      EXPECT_RESULT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pci,
+                                              NULL, &rejected),
+                    VK_ERROR_FEATURE_NOT_PRESENT);
+      if (rejected != VK_NULL_HANDLE)
+        return 2;
+      vkDestroyPipelineLayout(device, empty_layout, NULL);
+      pci.layout = layout;
+    }
+#endif
     CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pci, NULL,
                                     &pipelines[i]));
   }
@@ -194,6 +230,11 @@ int main(void) {
     VkCommandBufferBeginInfo begin = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     CHECK(vkBeginCommandBuffer(cmd, &begin));
+#ifdef RESOURCE_PROBE
+    resource_barrier(cmd, frame);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
+                            &resource_sets[1], 0, NULL);
+#endif
     VkRenderPassBeginInfo rpbegin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = pass,
@@ -239,6 +280,10 @@ int main(void) {
   vkDestroyPipelineLayout(device, layout, NULL);
   vkDestroyRenderPass(device, pass, NULL);
   vkDestroySwapchainKHR(device, swap, NULL);
+#ifdef RESOURCE_PROBE
+  if (destroy_resources(device))
+    return 2;
+#endif
   vkDestroyDevice(device, NULL);
   vkDestroyInstance(instance, NULL);
   fprintf(report, "PASS Vulkan lifecycle\n");

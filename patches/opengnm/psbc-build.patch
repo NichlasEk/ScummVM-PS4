@@ -1,5 +1,5 @@
 diff --git a/Makefile b/Makefile
-index 21c97d3..ed6b0cf 100644
+index 21c97d3..af67963 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -229,8 +229,7 @@ UTIL_FORMAT_SRCS = $(wildcard src/util/format/*.c)
@@ -12,8 +12,14 @@ index 21c97d3..ed6b0cf 100644
  
  # C11 threads compat (POSIX implementation)
  C11_THREADS_SRCS = src/c11/impl/threads_posix.c src/c11/impl/time.c
+@@ -313,3 +312,5 @@ install: all
+ 	install -d $(DESTDIR)$(BINDIR)
+ 	install -m 755 $(PSBC) $(DESTDIR)$(BINDIR)/
+ endif
++
++libpsbc/psbc_compile.o cmd/psbc/main.o: libpsbc/psbc_compile.h
 diff --git a/Makefile.orbis b/Makefile.orbis
-index 8c44223..d55f137 100644
+index 8c44223..0d1d405 100644
 --- a/Makefile.orbis
 +++ b/Makefile.orbis
 @@ -36,12 +36,11 @@ AMD_COMMON_NIR_OBJS := $(AMD_COMMON_NIR_SRCS:.c=.orbis.o)
@@ -30,7 +36,7 @@ index 8c44223..d55f137 100644
  UTIL_FORMAT_OBJS := $(UTIL_FORMAT_SRCS:.c=.orbis.o)
  COMPILER_COMMON_OBJS := $(COMPILER_COMMON_SRCS:.c=.orbis.o)
  BLAKE3_SRCS := $(filter-out src/util/blake3/blake3_neon.c,$(BLAKE3_SRCS))
-@@ -90,3 +89,7 @@ clean:
+@@ -90,3 +89,9 @@ clean:
  	find . -name '*.orbis.o' -delete
  	find . -name '*.orbis.cpp.o' -delete
  	rm -f $(LIBPSBC)
@@ -38,11 +44,13 @@ index 8c44223..d55f137 100644
 +# This build includes the portable BLAKE3 implementation, not SIMD objects.
 +src/util/blake3/blake3_dispatch.orbis.o: CFLAGS += -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_USE_NEON=0
 +src/util/blake3/blake3_dispatch.orbis.o: Makefile.orbis
++
++libpsbc/psbc_compile.orbis.o: libpsbc/psbc_compile.h
 diff --git a/libpsbc/psbc_compile.c b/libpsbc/psbc_compile.c
-index bacbc6a..5b7ee20 100644
+index bacbc6a..da5bfd5 100644
 --- a/libpsbc/psbc_compile.c
 +++ b/libpsbc/psbc_compile.c
-@@ -930,6 +930,82 @@ static void setup_target(PsbcTarget target,
+@@ -930,6 +930,89 @@ static void setup_target(PsbcTarget target,
  
  /* === Main compilation function === */
  
@@ -50,7 +58,8 @@ index bacbc6a..5b7ee20 100644
 + * Descriptor arrays, other image types and unsupported operations must fail
 + * instead of accepting the upstream null-descriptor fallback as a shader.
 + */
-+static bool psbc_supported_resources(nir_shader *nir, PsbcTarget target) {
++static bool psbc_supported_resources(nir_shader *nir, const PsbcCompileOptions *opts) {
++    PsbcTarget target = opts->target;
 +    nir_foreach_variable_with_modes(var, nir, nir_var_mem_ssbo | nir_var_image | nir_var_mem_push_const)
 +        return false;
 +    nir_foreach_function_impl(impl, nir) {
@@ -76,6 +85,9 @@ index bacbc6a..5b7ee20 100644
 +                        if (!var || var->data.descriptor_set != 0 || var->data.binding >= 16 ||
 +                            !glsl_type_is_sampler(var->type))
 +                            return false;
++                        if (opts->validate_resource_layout &&
++                            !(opts->texture_binding_mask & (1u << var->data.binding)))
++                            return false;
 +                        ++descriptors;
 +                    }
 +                    if (descriptors != 2)
@@ -91,6 +103,9 @@ index bacbc6a..5b7ee20 100644
 +                        nir_intrinsic_desc_type(intr) != nir_descriptor_type_uniform_buffer ||
 +                        nir_intrinsic_desc_set(intr) != 0 || nir_intrinsic_binding(intr) >= 16 ||
 +                        !nir_src_is_const(intr->src[0]) || nir_src_as_uint(intr->src[0]) != 0)
++                        return false;
++                    if (opts->validate_resource_layout &&
++                        !(opts->uniform_binding_mask & (1u << nir_intrinsic_binding(intr))))
 +                        return false;
 +                    break;
 +                case nir_intrinsic_load_vulkan_descriptor:
@@ -125,11 +140,11 @@ index bacbc6a..5b7ee20 100644
  PsbcResult psbc_compile_shader(
      const uint32_t*       spirv,
      size_t                spirv_size,
-@@ -1019,6 +1095,12 @@ PsbcResult psbc_compile_shader(
+@@ -1019,6 +1102,12 @@ PsbcResult psbc_compile_shader(
      nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
      radv_nir_lower_io(nir);
  
-+    if (!psbc_supported_resources(nir, opts->target)) {
++    if (!psbc_supported_resources(nir, opts)) {
 +        ralloc_free(nir);
 +        psbc_shutdown();
 +        return PSBC_RESULT_UNSUPPORTED_RESOURCE;
@@ -138,7 +153,7 @@ index bacbc6a..5b7ee20 100644
      /* Shader info + args + postprocess */
      radv_nir_shader_info_init(stage.stage, stage.next_stage, &stage.info);
  
-@@ -1033,6 +1115,18 @@ PsbcResult psbc_compile_shader(
+@@ -1033,6 +1122,18 @@ PsbcResult psbc_compile_shader(
          RADV_PIPELINE_GRAPHICS, false, &stage.info
      );
  
@@ -157,7 +172,7 @@ index bacbc6a..5b7ee20 100644
      /* Determine previous stage for shader args declaration.
       * HS/GS need previous_stage=VERTEX so that the merged-pipeline args
       * (prolog_inputs, vertex_buffers, etc.) are declared for the NIR
-@@ -1144,6 +1238,7 @@ const char* psbc_result_string(PsbcResult result) {
+@@ -1144,6 +1245,7 @@ const char* psbc_result_string(PsbcResult result) {
      switch (result) {
      case PSBC_RESULT_OK:               return "success";
      case PSBC_RESULT_INVALID_SPIRV:    return "invalid SPIR-V bytecode";
@@ -166,7 +181,7 @@ index bacbc6a..5b7ee20 100644
      case PSBC_RESULT_COMPILE_NIR:      return "SPIR-V to NIR compilation failed";
      case PSBC_RESULT_COMPILE_ACO:      return "ACO shader compilation failed";
 diff --git a/libpsbc/psbc_compile.h b/libpsbc/psbc_compile.h
-index 000e7e1..62739d1 100644
+index 000e7e1..4a378a9 100644
 --- a/libpsbc/psbc_compile.h
 +++ b/libpsbc/psbc_compile.h
 @@ -49,6 +49,7 @@ typedef enum {
@@ -177,8 +192,15 @@ index 000e7e1..62739d1 100644
  } PsbcResult;
  
  typedef struct {
-@@ -63,6 +64,16 @@ typedef struct {
+@@ -61,8 +62,23 @@ typedef struct {
+     PsbcStage   stage;
+     const char* entrypoint;  /* Default: "main" */
      bool        optimise;    /* Default: true */
++    /* Optional bounded Vulkan set-0 layout, filtered for this shader stage.
++     * Zero-init callers retain the standalone ABI. No descriptor arrays. */
++    bool validate_resource_layout;
++    uint32_t uniform_binding_mask;
++    uint32_t texture_binding_mask;
  } PsbcCompileOptions;
  
 +/* Standalone set-0 descriptor table (not a Vulkan descriptor layout).

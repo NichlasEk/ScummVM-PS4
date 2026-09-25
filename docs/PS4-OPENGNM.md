@@ -189,15 +189,15 @@ No emulator source or proprietary graphics module was patched or introduced.
 
 ## Next gates
 
-1. Add explicit Vulkan descriptor-layout input to the compiler, translating
-   offsets/types from the driver instead of assuming this standalone table ABI.
-   Keep unsupported-resource guards for paths without working implementations.
+1. The bounded Vulkan set-0 resource bridge now validates per-stage layout
+   bindings and passes texture/UBO pixel tests; see [PS4-VULKAN.md](PS4-VULKAN.md).
+   Extend upload/transition support before broadening the descriptor ABI.
 2. Run the native probe on physical PS4; retain the emulator checks as a
    separate regression gate.
 3. The first native Vulkan draw/presentation/lifecycle gate now passes in
    shadPS4, with real portable compiler dependencies. See
    [PS4-VULKAN.md](PS4-VULKAN.md) for reproduction and the still-unvalidated
-   resource binding and overlapping submission paths.
+   optimal-image uploads and overlapping submission paths.
 4. Compare those features with the chosen OpenGL translator's requirements;
    integrate only after real Vulkan tests pass. Then audit ScummVM launcher,
    TWP shaders/effects, input, audio, transitions and save/load.

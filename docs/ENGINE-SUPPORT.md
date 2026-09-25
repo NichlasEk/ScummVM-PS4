@@ -2,13 +2,21 @@
 
 Build: ScummVM 2.9.1. The 1.09 baseline below is extended by the 1.11 JPEG and 1.12 MP3 ports.
 
+## Ogg/Vorbis port (package 1.15, 2026-09-25)
+
+Static libogg 1.3.6 and libvorbis/libvorbisfile 1.3.7 enable The Longest Journey
+and Nancy Drew (97 main engines). Target/host PCM and seeking tests pass;
+see [PS4-VORBIS.md](PS4-VORBIS.md). The Longest Journey reached its menu
+and 3D prologue with subtitles in shadPS4; full playthrough/save-load and
+physical PS4 testing remain open.
+The remaining-exclusions table below reflects the current dependencies.
+
 ## FreeType port (package 1.14, 2026-09-25)
 
 Static FreeType 2.14.3 adds BAGEL, Buried in Time, Red Comrades and Z-Vision
 (95 main engines). Host/PS4 glyph pixels and metrics matched in all 18 cases.
 See [PS4-FREETYPE.md](PS4-FREETYPE.md). Buried in Time reached its menu, intro and game interface in shadPS4;
-full-game and physical PS4 testing remain pending. The exclusion table below is historical; FreeType is now
-available, but dependencies such as PNG and Vorbis remain missing.
+full-game and physical PS4 testing remain pending. The remaining-exclusions table below reflects subsequent ports too.
 
 ## Myst III runtime fix (package 1.13, 2026-09-25)
 
@@ -23,7 +31,7 @@ A static OpenOrbis build of libmad now provides MP3 decoding. This enables
 Adventure Game Studio and Starship Titanic, bringing the top-level engine count
 to 91. MP3 audio also becomes available to previously compiled engines such as
 Myst III. See [PS4-MP3.md](PS4-MP3.md) for source pins and target/host PCM tests.
-The original table below still records 1.09, before JPEG and MAD were available.
+The engine list below records the historical 1.09 baseline.
 Myst III menu MP3 output was verified in shadPS4. With all four discs,
 New Game reaches its intro movie but then hits a heap-integrity failure;
 see PS4-MP3.md. AGS and Starship Titanic gameplay have not yet been tested.
@@ -153,60 +161,41 @@ The package copies upstream's configured engine-data manifests, including
 required `.dat`/table files, script patches, core support data and the virtual
 keyboard pack into `/app0/data`. It does not package the user's game directories.
 
-## Excluded: exact configure dependencies
+## Remaining exclusions: package 1.15
 
-The following table records the 1.09 exclusions. Apply the 1.11 and 1.12 changes above.
-It lists missing
-mandatory dependencies from `artifacts/scummvm/configure.log`, not a complete
-list of optional codecs a particular edition might use.
+This table reflects current configure results, not the historical 1.09 list.
+TestBed and Playground3D are deliberately disabled test engines and omitted.
 
-| Engine / game family | Missing dependencies to port and enable |
+| Engine / game family | Mandatory dependencies still missing |
 | --- | --- |
-| Adventure Game Studio | MAD |
-| BAGEL | FreeType2 |
-| The Journeyman Project 2: Buried in Time | FreeType2 |
-| CRAB | PNG FreeType2 Vorbis file support |
-| Glk Interactive Fiction games | FreeType2 JPEG PNG |
-| Groovie 2 games | JPEG |
-| Hpl1 | JPEG GIF PNG OpenGL with shaders |
-| Myst ME | JPEG |
-| Myst 3 | JPEG |
-| Nancy Drew | Vorbis file support |
-| Red Comrades | FreeType2 |
-| QD Engine | Vorbis file support mpeg2 |
+| CRAB | PNG |
+| Glk Interactive Fiction games | PNG |
+| Hpl1 | GIF, PNG, OpenGL with shaders |
+| QD Engine | MPEG-2 |
 | Sludge | PNG |
-| The Longest Journey | FreeType2 Vorbis file support |
-| Broken Sword 2.5 | PNG libtheoradec |
-| Tetraedge | FreeType2 Vorbis file support PNG JPEG libtheoradec |
-| Starship Titanic | JPEG MAD |
-| Thimbleweed Park | Vorbis file support PNG OpenGL with shaders |
-| The Watchmaker | OpenGL (classic) |
-| Wintermute | JPEG PNG |
-| Z-Vision | FreeType2 |
+| Broken Sword 2.5 | PNG, Theora decoder |
+| Tetraedge | PNG, Theora decoder |
+| Thimbleweed Park | PNG, OpenGL with shaders |
+| The Watchmaker | Classic OpenGL |
+| Wintermute | PNG |
 
-## Work needed to enable the excluded engines
+## Work still needed
 
-1. **Image and font libraries:** cross-compile zlib/libpng, a compatible JPEG
-   library and FreeType2 for OpenOrbis. Add GIF support for HPL1. Integrate their
-   target include/library paths in `scripts/configure-scummvm.sh`, remove the
-   corresponding disable flags, and ensure no Linux host libraries are linked.
-2. **Audio:** cross-compile libmad (MAD) and libogg/libvorbis, including
-   vorbisfile. This opens AGS, Nancy Drew and several other engines. MAD and
-   JPEG together are required for Starship Titanic. Optional FLAC and other
-   audio decoders are also currently disabled; compressed game editions may
-   therefore fail even when their engine is compiled.
-3. **Video:** port libtheora's decoder and libmpeg2 for the engines listed
-   above. Test cutscenes and audio/video timing on PS4, not just configuration.
-4. **Graphics backend:** HPL1 and Thimbleweed Park need an OpenGL shader path;
-   The Watchmaker needs classic OpenGL. Our current SDL software-output backend
-   exposes neither. These require a working PS4 rendering backend/GL integration
-   or an engine-supported alternative, not merely another configure flag.
-5. **Verification:** rebuild, check PS4 imports, package any newly selected
-   upstream engine data, then exercise representative legally owned game data
-   in shadPS4 and on physical PS4. Configure success does not prove gameplay,
-   saving/loading, input, rendering, audio or end-to-end completion.
+1. **Images:** port zlib/libpng, then GIF for HPL1. PNG alone removes the
+   remaining configure blockers for CRAB, Glk, Sludge and Wintermute.
+2. **Video:** port libtheora's decoder and libmpeg2. Verify cutscenes and
+   audio/video timing; compilation is insufficient.
+3. **Graphics backend:** HPL1 and Thimbleweed Park require OpenGL shaders;
+   The Watchmaker requires classic OpenGL. The SDL software-output backend
+   provides neither. These need a PS4 graphics backend or an engine-supported
+   alternative rather than another configure flag.
+4. **Optional audio:** FLAC and other disabled codecs may be required by
+   particular compressed editions, even when their engine is available.
+5. **Gameplay verification:** test startup, input, rendering, audio, save/load
+   and progression using owned game data in shadPS4 and on physical PS4.
 
-Except for JPEG in 1.11 and MAD in 1.12, these dependency ports are still pending; no host libraries were substituted.
+JPEG (1.11), MAD (1.12), FreeType (1.14), and Ogg/Vorbis (1.15) are now ported.
+No host libraries were substituted. Newly enabled games still need testing.
 `SCUMMVM_ENGINES=scumm,scumm_7_8,he scripts/build-scummvm.sh` can select a narrower
 build. Unsetting `SCUMMVM_ENGINES` restores the broad default. The configuration
 fingerprint includes that override to avoid silently reusing the wrong selection.

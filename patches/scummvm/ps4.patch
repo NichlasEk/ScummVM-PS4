@@ -913,3 +913,18 @@
  "<dialog name='GlobalConfig_Audio' overlays='Dialog.GlobalConfig.TabWidget'>"
  "<layout type='vertical' padding='8,8,8,8'>"
  "<layout type='horizontal' padding='0,0,0,0' spacing='6' align='center'>"
+--- a/engines/stark/metaengine.cpp
++++ b/engines/stark/metaengine.cpp
+@@ -41,7 +41,12 @@
+ 			_s("Load modded assets"),
+ 			_s("Enable loading of external replacement assets."),
+ 			"enable_assets_mod",
++#if defined(__PS4__)
++			// The PS4 port uses TinyGL, which cannot load replacement assets.
++			false,
++#else
+ 			true,
++#endif
+ 			0,
+ 			0
+ 		}

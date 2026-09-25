@@ -1,5 +1,15 @@
 # Status
 
+## 2026-09-25: codec and font ports, package 1.15
+
+The PS4 build now includes JPEG, MP3, FreeType and Ogg/Vorbis support and
+97 main engines. Buried in Time reached gameplay and passed save/load in
+shadPS4; Myst III passed its intro/panorama transition after the mouse-lock fix.
+The Longest Journey now reaches its original menu and 3D prologue using TinyGL. These are
+emulator milestones, not new physical PS4 compatibility claims. See
+[engine support](ENGINE-SUPPORT.md), [FreeType](PS4-FREETYPE.md) and
+[Vorbis](PS4-VORBIS.md) for evidence and remaining work.
+
 ## 2026-09-19: physical PS4 confirmed; standalone revision
 
 The user confirms that the DOTT bundle runs on their real PS4. Their feedback

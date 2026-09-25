@@ -58,7 +58,13 @@ Package SHA-256:
 The package import allowlist passed and `myst3.dat` was included automatically.
 No game data was included in the package.
 
-## Next: game validation
+## Follow-up in package 1.12
+
+All four discs are now extracted at `artifacts/myst3/extracted`. MP3 menu
+music works, and New Game reaches the intro movie before a heap-integrity
+crash. See [PS4-MP3.md](PS4-MP3.md) for the updated evidence and next step.
+
+## Original game-validation plan
 
 Place the user's Myst III disc images under `artifacts/myst3/iso/` and extract
 the game data into a separate directory. Preserve the source images. Verify

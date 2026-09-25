@@ -40,6 +40,8 @@ cp "$sdk/samples/piglet/sce_sys/about/right.sprx" "$stage/sce_sys/about/"
 cp "$root/assets/icon0.png" "$stage/sce_sys/"
 cp "$root/build/ps4-jpeg/install/share/licenses/libjpeg-turbo/LICENSE.md" "$stage/data/libjpeg-turbo-LICENSE.md"
 cp "$root/build/ps4-jpeg/install/share/licenses/libjpeg-turbo/README.ijg" "$stage/data/libjpeg-turbo-README.ijg"
+cp "$root/build/ps4-mad/install/share/licenses/libmad/COPYING" "$stage/data/libmad-COPYING"
+cp "$root/build/ps4-mad/install/share/licenses/libmad/COPYRIGHT" "$stage/data/libmad-COPYRIGHT"
 cp "$source_dir/COPYING" "$stage/data/COPYING"
 cp "$source_dir/COPYRIGHT" "$stage/data/COPYRIGHT"
 cp "$source_dir/common/lua/COPYRIGHT" "$stage/data/lua-COPYRIGHT"
@@ -56,15 +58,15 @@ if [[ -e "$sfo" ]]; then mv "$sfo" "$sfo.previous"; fi
 for pair in APP_TYPE:1 ATTRIBUTE:0 DOWNLOAD_DATA_SIZE:0 SYSTEM_VER:0; do
  "${pkgtool}" sfo_setentry "$sfo" "${pair%%:*}" --type Integer --maxsize 4 --value "${pair#*:}"
 done
-"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.11
-"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.11
+"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.12
+"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.12
 "$pkgtool" sfo_setentry "$sfo" CATEGORY --type Utf8 --maxsize 4 --value gd
 "$pkgtool" sfo_setentry "$sfo" CONTENT_ID --type Utf8 --maxsize 48 --value "$content_id"
 "$pkgtool" sfo_setentry "$sfo" TITLE_ID --type Utf8 --maxsize 12 --value "$title_id"
 "$pkgtool" sfo_setentry "$sfo" TITLE --type Utf8 --maxsize 128 --value "$app_title"
 package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right.sprx
     sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING data/COPYRIGHT
-    data/libjpeg-turbo-LICENSE.md data/libjpeg-turbo-README.ijg
+    data/libjpeg-turbo-LICENSE.md data/libjpeg-turbo-README.ijg data/libmad-COPYING data/libmad-COPYRIGHT
     data/lua-COPYRIGHT data/vkeybd_default.zip data/scummremastered.zip games/README.txt)
 # Use upstream's conditional data manifest for the engines actually compiled.
 # Only these support files are packaged, never arbitrary staged game folders.

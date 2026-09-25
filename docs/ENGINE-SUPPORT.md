@@ -1,6 +1,17 @@
 # PS4 engine support and remaining ports
 
-Build: ScummVM 2.9.1. The 1.09 baseline below is extended by the 1.11 JPEG port.
+Build: ScummVM 2.9.1. The 1.09 baseline below is extended by the 1.11 JPEG and 1.12 MP3 ports.
+
+## MP3 port (package 1.12, 2026-09-25)
+
+A static OpenOrbis build of libmad now provides MP3 decoding. This enables
+Adventure Game Studio and Starship Titanic, bringing the top-level engine count
+to 91. MP3 audio also becomes available to previously compiled engines such as
+Myst III. See [PS4-MP3.md](PS4-MP3.md) for source pins and target/host PCM tests.
+The original table below still records 1.09, before JPEG and MAD were available.
+Myst III menu MP3 output was verified in shadPS4. With all four discs,
+New Game reaches its intro movie but then hits a heap-integrity failure;
+see PS4-MP3.md. AGS and Starship Titanic gameplay have not yet been tested.
 
 ## JPEG port (package 1.11, 2026-09-25)
 
@@ -13,8 +24,7 @@ and Groovie 2 subengines. Myst III uses the existing TinyGL software renderer;
 no OpenGL backend is needed. These entries are no longer excluded. Other JPEG
 users still require their remaining dependencies (e.g. Starship Titanic: MAD;
 Wintermute: PNG). Myst III reached its original main menu in shadPS4 using the supplied CD 1.2
-disc 1. New Game requires `TOHOnodes.m3a` from additional disc data; MP3 music
-also awaits MAD. Gameplay and physical hardware remain unverified.
+disc 1. New Game requires `TOHOnodes.m3a` from additional disc data; MP3 music was unavailable in 1.11; 1.12 adds MAD. Gameplay and physical hardware remain unverified.
 
 ## Baseline: package 1.09 (2026-09-20)
 
@@ -130,7 +140,7 @@ keyboard pack into `/app0/data`. It does not package the user's game directories
 
 ## Excluded: exact configure dependencies
 
-The following table records the 1.09 exclusions. Apply the 1.11 changes above.
+The following table records the 1.09 exclusions. Apply the 1.11 and 1.12 changes above.
 It lists missing
 mandatory dependencies from `artifacts/scummvm/configure.log`, not a complete
 list of optional codecs a particular edition might use.
@@ -181,7 +191,7 @@ list of optional codecs a particular edition might use.
    in shadPS4 and on physical PS4. Configure success does not prove gameplay,
    saving/loading, input, rendering, audio or end-to-end completion.
 
-Except for JPEG in 1.11, these dependency ports are still pending; no host libraries were substituted.
+Except for JPEG in 1.11 and MAD in 1.12, these dependency ports are still pending; no host libraries were substituted.
 `SCUMMVM_ENGINES=scumm,scumm_7_8,he scripts/build-scummvm.sh` can select a narrower
 build. Unsetting `SCUMMVM_ENGINES` restores the broad default. The configuration
 fingerprint includes that override to avoid silently reusing the wrong selection.

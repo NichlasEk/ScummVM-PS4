@@ -1,4 +1,4 @@
-# Open GPU stack: first rendering milestone
+# Open GPU stack: triangle and uniform-buffer milestones
 
 2026-09-25. The selected direction is OpenGNM -> Vulkan -> an OpenGL
 translation layer -> ScummVM. The standard ScummVM 1.17 package is unchanged.
@@ -7,8 +7,11 @@ This is an independent experimental package, not enabled game support.
 ## Proven locally
 
 - OpenGNM builds for Linux and OpenOrbis. Its host CTest suite passes.
-- The open `opengnm-psbc` host compiler builds. Its eight upstream shader-stage
-  structural tests pass (these are binary format/CRC checks, not GPU execution).
+- The open `opengnm-psbc` host compiler builds. The PS4 compiler regression suite
+  checks vertex, fragment and two-UBO binary structures/CRCs, plus six rejected
+  resource layouts. The earlier eight-stage upstream suite accepted a compute
+  SSBO shader using null descriptors; that case now correctly fails compilation.
+  Structural checks alone are not GPU execution.
 - A PS4-targeted shader compiler archive and Vulkan driver archives build.
   Building a shared library is not proof that all runtime imports resolve.
 - GFX7 vertex and fragment shaders compiled by our patched compiler render an
@@ -19,9 +22,13 @@ This is an independent experimental package, not enabled game support.
   conversion, and five exterior pixels match the CPU-prefilled gray background.
   The same oracle rejects the earlier broken-compiler black triangle.
 
-The background is deliberately CPU-prefilled: it isolates drawing from the
-separate uniform-buffer/clear-shader path, which rendered black in the earlier
-test. No texture sampling, GPU clear, full Vulkan rendering, OpenGL context,
+- A separate GFX7 test reads two uniform buffers, including a nonzero member
+  offset, using full 64-bit descriptor-table pointers. All 149 interior samples
+  match `inputColor * tint + bias`, with sRGB conversion. It also completes 120
+  submission/fence/flip iterations.
+
+The background remains deliberately CPU-prefilled to isolate drawing.
+No texture sampling, GPU clear, full Vulkan rendering, OpenGL context,
 Thimbleweed execution, or physical console result is claimed yet.
 
 ## Reproduce
@@ -47,7 +54,9 @@ Its SHA-256 sidecar accompanies it. The original upstream FGNM00000 identity
 was used only during initial debugging. Physical PS4 execution is still needed;
 this probe targets base GFX7, not a validated Pro/NEO mode.
 
-Validated package SHA-256:
+Current baseline package SHA-256:
+`6d654861f1091f18ff394c4a48ea7c0ae16330226d2f8648cfa5fbf304829728`.
+The original triangle checkpoint at `8717b12` had SHA-256
 `38826e4c8928052bf476165c70772a510dcc818dc3fdc8f06df4a75b7d47bc48`.
 
 Evidence under `artifacts/opengnm/`: `triangle-gpu.png`, `pixel-test.log`,
@@ -91,10 +100,50 @@ is not modified. Sources/licenses remain available in the pinned checkouts:
 [Vulkan driver](https://github.com/PS4-OpenGNM/vulkan-ps4),
 [examples](https://github.com/PS4-OpenGNM/freegnm-examples).
 
+## Uniform-buffer checkpoint
+
+```sh
+scripts/build-opengnm-uniforms.sh
+xvfb-run -a -s '-screen 0 1280x720x24' python3 scripts/run-opengnm-probe.py --uniforms
+```
+
+The script also builds/checks the baseline stack. Package:
+`dist/ScummVM-PS4-OpenGNM-Uniforms.pkg`, title ID `SCVM00007`, SHA-256
+`2c05b94aa279b4482fc61a4854143d1f2cf3bfc8bcf6fac7776f0f541fd7a2df`.
+Evidence is in `artifacts/opengnm/uniforms/` (image, target/emulator logs,
+pixel result, shaders, package log and imports). Host compiler fixtures are in
+`artifacts/opengnm/compiler-tests/`.
+
+Three problems were independently resolved:
+
+1. Upstream standalone lowering returned zero descriptors when no Vulkan layout
+   was provided. The buffer path now loads the actual `GnmBuffer` descriptor.
+2. RADV normally takes a 32-bit descriptor pointer plus a fixed high word.
+   OpenGNM supplies a 64-bit pointer. Both SGPR declaration/accounting and the
+   descriptor load now use two words; no address high word is hardcoded.
+   The test table was at `0x2007d0230`, beyond the 32-bit address range.
+3. The fragment shader's descriptor pointer begins at user register 2 in this
+   compilation. The test reads `PTR_INDIRECTRESOURCETABLE` metadata instead of
+   assuming register 0. The earlier clear helper still assumes register 0 and
+   is not enabled or claimed fixed by this milestone.
+
+The explicit standalone contract is set 0, bindings 0–15, each binding at
+`binding * 16` in a table of `GnmBuffer` descriptors. Only ordinary UBO access
+in PS4 vertex/fragment stages is enabled. Descriptor arrays/nonuniform access,
+other descriptor sets, textures, storage buffers and push constants are rejected
+with `PSBC_RESULT_UNSUPPORTED_RESOURCE`. The tests exercise those rejections;
+resource-free stages remain structurally compilable, not GPU-validated.
+This is a deliberately bounded ABI, **not Vulkan descriptor-layout support**.
+Before integrating the Vulkan driver, its layout information must become an
+explicit compiler input; do not feed arbitrary Vulkan descriptor tables into
+this buffer-only path. The 64-bit ABI and the validation apply to the dedicated
+patched compiler, including its target archive; the stable ScummVM is unaffected.
+
 ## Next gates
 
-1. Verify descriptor/user-SGPR layout with a uniform color, then a known RGBA
-   texture and sampler. Require pixel checks for both before adding effects.
+1. Add explicit mixed-resource layout information for buffers/images/samplers,
+   then sample a known RGBA texture and check its pixels. Do not remove the
+   unsupported-resource guards until those resource paths work.
 2. Run the native probe on physical PS4; retain the emulator checks as a
    separate regression gate.
 3. Link a real Vulkan probe against the target archives, resolve runtime

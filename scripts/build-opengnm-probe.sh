@@ -32,7 +32,7 @@ patch_once "$stack/opengnm" "$root/patches/opengnm/gnm-init.patch"
 patch_once "$stack/freegnm-examples" "$root/patches/opengnm/triangle-probe.patch"
 python3 "$root/scripts/prepare-opengnm-psbc.py" "$stack/opengnm-psbc"
 make -C "$stack/opengnm-psbc" -j"$jobs" > "$root/artifacts/opengnm/psbc-host-build.log" 2>&1
-python3 "$stack/opengnm-psbc/tests/verify_sb.py" > "$root/artifacts/opengnm/psbc-verify.log" 2>&1
+python3 "$root/tests/ps4/check-opengnm-compiler.py" > "$root/artifacts/opengnm/psbc-verify.log" 2>&1
 cmake -S "$stack/opengnm" -B "$root/build/opengnm-host" \
  -DOPENGNM_PLATFORM=generic -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_STANDARD_LIBRARIES=-lm \
  > "$root/artifacts/opengnm/gnm-host-build.log" 2>&1

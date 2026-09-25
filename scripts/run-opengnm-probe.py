@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run under xvfb-run; capture the GPU framebuffer, then verify real pixels."""
+import argparse
 import ctypes as c
 import os
 from pathlib import Path
@@ -8,19 +9,26 @@ import subprocess
 import sys
 import time
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--uniforms', action='store_true')
+args = parser.parse_args()
+mode = 'uniforms' if args.uniforms else 'triangle'
+title_id = 'SCVM00007' if args.uniforms else 'SCVM00006'
 root = Path(__file__).resolve().parent.parent
 os.chdir(root)
 profile = root / '.tools/xdg-opengnm'
 reports = root / 'artifacts/opengnm'
+if args.uniforms:
+    reports /= 'uniforms'
 reports.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, XDG_DATA_HOME=str(profile), SDL_VIDEODRIVER='x11')
 emulator = root / '.tools/shadps4/Shadps4-sdl.AppImage'
-guest = root / '.tools/opengnm-stack/freegnm-examples/triangle/eboot.bin'
-guest_log = profile / 'shadPS4/data/scummvm-opengnm-triangle.log'
+guest = root / f'.tools/opengnm-stack/freegnm-examples/{mode}/eboot.bin'
+guest_log = profile / f'shadPS4/data/scummvm-opengnm-{mode}.log'
 if guest_log.exists():
     guest_log.unlink()  # This probe's own previous report, never a game save.
 screens = profile / 'shadPS4/screenshots'
-before = set(screens.glob('SCVM00006*.png'))
+before = set(screens.glob(title_id + '*.png'))
 x = c.CDLL('libX11.so.6')
 t = c.CDLL('libXtst.so.6')
 x.XOpenDisplay.restype = c.c_void_p
@@ -66,14 +74,18 @@ with (reports / 'triangle-emulator.log').open('w') as log:
         x.XFlush(d)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            candidates = set(screens.glob('SCVM00006*.png')) - before
+            candidates = set(screens.glob(title_id + '*.png')) - before
             if candidates and 'PASS submission/flip loop' in guest_log.read_text():
                 time.sleep(.3)  # Let the capture writer finish.
                 screenshot = max(candidates, key=lambda f: f.stat().st_mtime)
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
                 shutil.copy2(guest_log, reports / 'triangle-result.txt')
-                subprocess.run([sys.executable, str(root / 'tests/ps4/check-opengnm-triangle.py'),
-                                str(reports / 'triangle-gpu.png')], check=True)
+                check = subprocess.run([sys.executable, str(root / 'tests/ps4/check-opengnm-triangle.py'),
+                                        str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else [])],
+                                       capture_output=True, text=True)
+                (reports / 'pixel-test.log').write_text(check.stdout + check.stderr)
+                check.check_returncode()
+                print(check.stdout, end='')
                 break
             time.sleep(.25)
         else:

@@ -8,6 +8,7 @@ import math
 import sys
 from PIL import Image
 
+uniforms = '--uniforms' in sys.argv[2:]
 im = Image.open(sys.argv[1]).convert('RGBA')
 assert im.size == (1280, 720), im.size
 
@@ -27,6 +28,8 @@ for y in range(230, 480, 25):
     half_width = (y + .5 - 144) * 320 / 360
     for x in range(math.ceil(640 - half_width + 12), int(640 + half_width - 12), 23):
         green = .1 + .8 * (x + .5 - 320) / 640
-        check(x, y, (255, srgb(green), 0, 255))
+        expected = (srgb(.5), srgb(green * .5 + .1), srgb(.25), 255) if uniforms else (255, srgb(green), 0, 255)
+        check(x, y, expected)
         count += 1
-print(f'PASS: {count} GPU-interpolated color samples and 5 background samples')
+kind = 'GPU uniform-buffer' if uniforms else 'GPU-interpolated'
+print(f'PASS: {count} {kind} color samples and 5 background samples')

@@ -1,4 +1,4 @@
-# Open GPU stack: triangle and uniform-buffer milestones
+# Open GPU stack: triangle, uniform-buffer and texture milestones
 
 2026-09-25. The selected direction is OpenGNM -> Vulkan -> an OpenGL
 translation layer -> ScummVM. The standard ScummVM 1.17 package is unchanged.
@@ -8,8 +8,8 @@ This is an independent experimental package, not enabled game support.
 
 - OpenGNM builds for Linux and OpenOrbis. Its host CTest suite passes.
 - The open `opengnm-psbc` host compiler builds. The PS4 compiler regression suite
-  checks vertex, fragment and two-UBO binary structures/CRCs, plus six rejected
-  resource layouts. The earlier eight-stage upstream suite accepted a compute
+  checks vertex, fragment, two-UBO and texture binary structures/CRCs, plus
+  rejected resource layouts. The earlier eight-stage upstream suite accepted a compute
   SSBO shader using null descriptors; that case now correctly fails compilation.
   Structural checks alone are not GPU execution.
 - A PS4-targeted shader compiler archive and Vulkan driver archives build.
@@ -28,7 +28,7 @@ This is an independent experimental package, not enabled game support.
   submission/fence/flip iterations.
 
 The background remains deliberately CPU-prefilled to isolate drawing.
-No texture sampling, GPU clear, full Vulkan rendering, OpenGL context,
+No GPU clear, full Vulkan rendering, OpenGL context,
 Thimbleweed execution, or physical console result is claimed yet.
 
 ## Reproduce
@@ -55,7 +55,7 @@ was used only during initial debugging. Physical PS4 execution is still needed;
 this probe targets base GFX7, not a validated Pro/NEO mode.
 
 Current baseline package SHA-256:
-`6d654861f1091f18ff394c4a48ea7c0ae16330226d2f8648cfa5fbf304829728`.
+`c905f0ec94dbc4a5f2cd99ba5745a64dd8b19918c1f2d1c337e7b7a8fedaef92`.
 The original triangle checkpoint at `8717b12` had SHA-256
 `38826e4c8928052bf476165c70772a510dcc818dc3fdc8f06df4a75b7d47bc48`.
 
@@ -109,7 +109,7 @@ xvfb-run -a -s '-screen 0 1280x720x24' python3 scripts/run-opengnm-probe.py --un
 
 The script also builds/checks the baseline stack. Package:
 `dist/ScummVM-PS4-OpenGNM-Uniforms.pkg`, title ID `SCVM00007`, SHA-256
-`2c05b94aa279b4482fc61a4854143d1f2cf3bfc8bcf6fac7776f0f541fd7a2df`.
+`1e64358a81ef3ec17d72aafbf890d1c13050071b77cf1b1d04a3c0454046f95e`.
 Evidence is in `artifacts/opengnm/uniforms/` (image, target/emulator logs,
 pixel result, shaders, package log and imports). Host compiler fixtures are in
 `artifacts/opengnm/compiler-tests/`.
@@ -128,22 +128,70 @@ Three problems were independently resolved:
    is not enabled or claimed fixed by this milestone.
 
 The explicit standalone contract is set 0, bindings 0–15, each binding at
-`binding * 16` in a table of `GnmBuffer` descriptors. Only ordinary UBO access
-in PS4 vertex/fragment stages is enabled. Descriptor arrays/nonuniform access,
-other descriptor sets, textures, storage buffers and push constants are rejected
+`binding * 16` in a table of `GnmBuffer` descriptors. Ordinary UBO access is supported in PS4 vertex/fragment stages; the later
+texture checkpoint adds combined sampler2D access in fragment stages. Descriptor arrays/nonuniform access,
+other descriptor sets, storage buffers and push constants are rejected
 with `PSBC_RESULT_UNSUPPORTED_RESOURCE`. The tests exercise those rejections;
 resource-free stages remain structurally compilable, not GPU-validated.
+The texture checkpoint below extends this ABI with a separate texture bank.
 This is a deliberately bounded ABI, **not Vulkan descriptor-layout support**.
 Before integrating the Vulkan driver, its layout information must become an
 explicit compiler input; do not feed arbitrary Vulkan descriptor tables into
-this buffer-only path. The 64-bit ABI and the validation apply to the dedicated
+this standalone path. The 64-bit ABI and the validation apply to the dedicated
 patched compiler, including its target archive; the stable ScummVM is unaffected.
+
+## Texture/sampler checkpoint
+
+```sh
+scripts/build-opengnm-textures.sh
+xvfb-run -a -s '-screen 0 1280x720x24' python3 scripts/run-opengnm-probe.py --textures
+```
+
+Independent package `dist/ScummVM-PS4-OpenGNM-Textures.pkg`, title `SCVM00008`.
+SHA-256: `92a79e1f3b9d7fdd9baa567bffa23903c80c7b09489460593b9bf540b1edaf33`.
+Evidence is in `artifacts/opengnm/textures/`.
+
+A generated 2x2 RGBA8 UNORM image is sampled with nearest filtering above the
+middle of the framebuffer and bilinear filtering below. Both samplers clamp to
+edge; UVs deliberately cross the [0,1] bounds. Two UBOs supply tint and bias.
+Sampled alpha multiplies RGB before output, making all four sampled channels
+observable even through an opaque presentation capture. The CPU oracle computes
+sampling, UBO arithmetic, alpha modulation and sRGB conversion independently.
+It checks 208 nearest + 369 bilinear pixels (including 333 outside-UV samples),
+plus five CPU-prefilled background pixels. This does not test framebuffer alpha
+preservation or alpha blending.
+
+The standalone ABI retains UBOs at `binding * 16`. Combined image/sampler slots
+are in a separate bank at `256 + binding * 64`: a 32-byte `GnmTexture` followed
+by a 16-byte `GnmSampler`. Full 64-bit table pointers and shader metadata select
+the SGPRs. Public constants are in the patched `psbc_compile.h`. The GPU test
+uses bindings 3 and 7, exercising actual slot offsets and differing samplers.
+Texture support is bounded to non-array floating sampler2D in set 0 (bindings
+0–15), fragment stages, ordinary sampling or explicit LOD. Cube/array/integer/
+shadow textures, queries, storage images and other unsupported resources retain
+explicit compilation failures. The GPU test exercises explicit LOD 0 and one
+mip; implicit sampling has a host compile check, not its own pixel test.
+
+OpenGNM texture fixes captured by host regression:
+
+- `numfragments` is a count; shifting it again produced a two-sample allocation
+  for a single-sample texture. This changed the computed row pitch and lost the
+  second texel row in the GPU test.
+- `lastarray` is inclusive and must be `numslices - 1`.
+- Byte-size calculation initializes its outputs and counts array layers once,
+  separately from 3D volume depth. Repeated calls and a three-layer descriptor
+  are checked on the host; texture-array sampling is still not enabled.
+
+The probe uses `DISPLAY_LINEAR_ALIGNED`, with the row pitch and allocation size
+returned by OpenGNM. shadPS4 does not handle `ArrayLinearGeneral` in its
+[image-size path](https://github.com/shadps4-emu/shadPS4/blob/main/src/video_core/texture_cache/image_info.cpp).
+No emulator source or proprietary graphics module was patched or introduced.
 
 ## Next gates
 
-1. Add explicit mixed-resource layout information for buffers/images/samplers,
-   then sample a known RGBA texture and check its pixels. Do not remove the
-   unsupported-resource guards until those resource paths work.
+1. Add explicit Vulkan descriptor-layout input to the compiler, translating
+   offsets/types from the driver instead of assuming this standalone table ABI.
+   Keep unsupported-resource guards for paths without working implementations.
 2. Run the native probe on physical PS4; retain the emulator checks as a
    separate regression gate.
 3. Link a real Vulkan probe against the target archives, resolve runtime

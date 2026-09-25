@@ -11,3 +11,45 @@ index 709bb38..524cbce 100644
  	res.beginptr = buffer;
  	res.endptr = endptr;
  	res.cmdptr = buffer;
+diff --git a/src/texture.c b/src/texture.c
+index 24c33e4..6299ba8 100644
+--- a/src/texture.c
++++ b/src/texture.c
+@@ -150,7 +150,7 @@ GnmError sceGnmCreateTexture(GnmTexture* tex, const GnmTextureCreateInfo* ci) {
+ 	    .linearwidth = ci->width,
+ 	    .linearheight = ci->height,
+ 	    .lineardepth = ci->depth,
+-	    .numfragsperpixel = 1 << ci->numfragments,
++	    .numfragsperpixel = ci->numfragments,
+ 	    .basetiledpitch = ci->pitch,
+ 
+ 	    .miplevel = 0,
+@@ -191,7 +191,7 @@ GnmError sceGnmCreateTexture(GnmTexture* tex, const GnmTextureCreateInfo* ci) {
+ 				       ? ci->numslices * 6
+ 				       : ci->numslices;
+ 	tex->basearray = 0;
+-	tex->lastarray = numslices;
++	tex->lastarray = numslices - 1;
+ 
+ 	// setMipLevelRange
+ 	tex->baselevel = 0;
+@@ -220,6 +220,9 @@ GnmError sceGnmTexCalcByteSize(
+ 		return GNM_ERROR_INVALID_ARGS;
+ 	}
+ 
++	if (outsize) *outsize = 0;
++	if (outalignment) *outalignment = 0;
++
+ 	const GpaTextureInfo texinfo = {
+ 	    .type = tex->type,
+ 	    .fmt = sceGnmTexGetFormat(tex),
+@@ -249,7 +252,8 @@ GnmError sceGnmTexCalcByteSize(
+ 	for (uint32_t i = 0; i < texinfo.nummips; i += 1) {
+ 		tp.linearwidth = umax(texinfo.width >> i, 1);
+ 		tp.linearheight = umax(texinfo.height >> i, 1);
+-		tp.lineardepth = umax(texinfo.depth >> i, 1);
++		// Array layers are accounted for by numslices below, not volume depth.
++		tp.lineardepth = texinfo.type == GNM_TEXTURE_3D ? umax(texinfo.depth >> i, 1) : 1;
+ 		tp.miplevel = i;
+ 
+ 		err = sceGpaComputeSurfaceInfo(&surfinfo, &tp);

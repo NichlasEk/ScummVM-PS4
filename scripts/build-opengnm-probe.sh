@@ -38,6 +38,9 @@ cmake -S "$stack/opengnm" -B "$root/build/opengnm-host" \
  > "$root/artifacts/opengnm/gnm-host-build.log" 2>&1
 cmake --build "$root/build/opengnm-host" -j"$jobs" >> "$root/artifacts/opengnm/gnm-host-build.log" 2>&1
 ctest --test-dir "$root/build/opengnm-host" --output-on-failure > "$root/artifacts/opengnm/gnm-host-tests.log" 2>&1
+cc -std=c11 -I"$stack/opengnm/include" "$root/tests/ps4/check-opengnm-texture-layout.c" \
+ "$root/build/opengnm-host/libopengnm.a" -lm -o "$root/build/opengnm-host/check-texture-layout"
+"$root/build/opengnm-host/check-texture-layout" >> "$root/artifacts/opengnm/gnm-host-tests.log"
 cp "$stack/opengnm/config.orbis.mak" "$stack/opengnm/config.mak"
 make -C "$stack/opengnm" CC=clang AR=llvm-ar > "$root/artifacts/opengnm/gnm-orbis-build.log" 2>&1
 make -C "$stack/opengnm-psbc" -f Makefile.orbis -j"$jobs" > "$root/artifacts/opengnm/psbc-orbis-build.log" 2>&1

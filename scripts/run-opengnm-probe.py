@@ -10,16 +10,18 @@ import sys
 import time
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--uniforms', action='store_true')
+selection = parser.add_mutually_exclusive_group()
+selection.add_argument('--uniforms', action='store_true')
+selection.add_argument('--textures', action='store_true')
 args = parser.parse_args()
-mode = 'uniforms' if args.uniforms else 'triangle'
-title_id = 'SCVM00007' if args.uniforms else 'SCVM00006'
+mode = 'textures' if args.textures else 'uniforms' if args.uniforms else 'triangle'
+title_id = 'SCVM00008' if args.textures else 'SCVM00007' if args.uniforms else 'SCVM00006'
 root = Path(__file__).resolve().parent.parent
 os.chdir(root)
 profile = root / '.tools/xdg-opengnm'
 reports = root / 'artifacts/opengnm'
-if args.uniforms:
-    reports /= 'uniforms'
+if mode != 'triangle':
+    reports /= mode
 reports.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, XDG_DATA_HOME=str(profile), SDL_VIDEODRIVER='x11')
 emulator = root / '.tools/shadps4/Shadps4-sdl.AppImage'
@@ -80,7 +82,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 screenshot = max(candidates, key=lambda f: f.stat().st_mtime)
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
                 shutil.copy2(guest_log, reports / 'triangle-result.txt')
-                check = subprocess.run([sys.executable, str(root / 'tests/ps4/check-opengnm-triangle.py'),
+                check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-opengnm-textures.py' if args.textures else 'tests/ps4/check-opengnm-triangle.py')),
                                         str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else [])],
                                        capture_output=True, text=True)
                 (reports / 'pixel-test.log').write_text(check.stdout + check.stderr)

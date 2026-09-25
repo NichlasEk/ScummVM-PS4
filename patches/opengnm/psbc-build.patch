@@ -13,16 +13,16 @@ index 21c97d3..ed6b0cf 100644
  # C11 threads compat (POSIX implementation)
  C11_THREADS_SRCS = src/c11/impl/threads_posix.c src/c11/impl/time.c
 diff --git a/libpsbc/psbc_compile.c b/libpsbc/psbc_compile.c
-index bacbc6a..ed3c7c6 100644
+index bacbc6a..5b7ee20 100644
 --- a/libpsbc/psbc_compile.c
 +++ b/libpsbc/psbc_compile.c
-@@ -930,6 +930,59 @@ static void setup_target(PsbcTarget target,
+@@ -930,6 +930,82 @@ static void setup_target(PsbcTarget target,
  
  /* === Main compilation function === */
  
-+/* The standalone buffer-table ABI currently supports plain UBO bindings in
-+ * set 0, without descriptor arrays. Reject other resources explicitly instead
-+ * of accepting the upstream null-descriptor fallback as a working shader.
++/* Standalone set-0 ABI: plain UBOs plus combined fragment sampler2D.
++ * Descriptor arrays, other image types and unsupported operations must fail
++ * instead of accepting the upstream null-descriptor fallback as a shader.
 + */
 +static bool psbc_supported_resources(nir_shader *nir, PsbcTarget target) {
 +    nir_foreach_variable_with_modes(var, nir, nir_var_mem_ssbo | nir_var_image | nir_var_mem_push_const)
@@ -30,8 +30,31 @@ index bacbc6a..ed3c7c6 100644
 +    nir_foreach_function_impl(impl, nir) {
 +        nir_foreach_block(block, impl) {
 +            nir_foreach_instr(instr, block) {
-+                if (instr->type == nir_instr_type_tex)
-+                    return false;
++                if (instr->type == nir_instr_type_tex) {
++                    nir_tex_instr *tex = nir_instr_as_tex(instr);
++                    if (target == PSBC_TARGET_PS5 || nir->info.stage != MESA_SHADER_FRAGMENT ||
++                        tex->sampler_dim != GLSL_SAMPLER_DIM_2D || tex->is_array || tex->is_shadow ||
++                        tex->texture_non_uniform || tex->sampler_non_uniform ||
++                        tex->dest_type != nir_type_float32 ||
++                        (tex->op != nir_texop_tex && tex->op != nir_texop_txl))
++                        return false;
++                    unsigned descriptors = 0;
++                    for (unsigned i = 0; i < tex->num_srcs; ++i) {
++                        if (tex->src[i].src_type != nir_tex_src_texture_deref &&
++                            tex->src[i].src_type != nir_tex_src_sampler_deref)
++                            continue;
++                        nir_deref_instr *deref = nir_src_as_deref(tex->src[i].src);
++                        if (!deref || deref->deref_type != nir_deref_type_var)
++                            return false;
++                        nir_variable *var = nir_deref_instr_get_variable(deref);
++                        if (!var || var->data.descriptor_set != 0 || var->data.binding >= 16 ||
++                            !glsl_type_is_sampler(var->type))
++                            return false;
++                        ++descriptors;
++                    }
++                    if (descriptors != 2)
++                        return false;
++                }
 +                if (instr->type != nir_instr_type_intrinsic)
 +                    continue;
 +                nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
@@ -76,7 +99,7 @@ index bacbc6a..ed3c7c6 100644
  PsbcResult psbc_compile_shader(
      const uint32_t*       spirv,
      size_t                spirv_size,
-@@ -1019,6 +1072,12 @@ PsbcResult psbc_compile_shader(
+@@ -1019,6 +1095,12 @@ PsbcResult psbc_compile_shader(
      nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
      radv_nir_lower_io(nir);
  
@@ -89,7 +112,7 @@ index bacbc6a..ed3c7c6 100644
      /* Shader info + args + postprocess */
      radv_nir_shader_info_init(stage.stage, stage.next_stage, &stage.info);
  
-@@ -1033,6 +1092,18 @@ PsbcResult psbc_compile_shader(
+@@ -1033,6 +1115,18 @@ PsbcResult psbc_compile_shader(
          RADV_PIPELINE_GRAPHICS, false, &stage.info
      );
  
@@ -108,16 +131,16 @@ index bacbc6a..ed3c7c6 100644
      /* Determine previous stage for shader args declaration.
       * HS/GS need previous_stage=VERTEX so that the merged-pipeline args
       * (prolog_inputs, vertex_buffers, etc.) are declared for the NIR
-@@ -1144,6 +1215,7 @@ const char* psbc_result_string(PsbcResult result) {
+@@ -1144,6 +1238,7 @@ const char* psbc_result_string(PsbcResult result) {
      switch (result) {
      case PSBC_RESULT_OK:               return "success";
      case PSBC_RESULT_INVALID_SPIRV:    return "invalid SPIR-V bytecode";
-+    case PSBC_RESULT_UNSUPPORTED_RESOURCE: return "unsupported resource layout (PS4 standalone ABI supports non-array UBOs in set 0, bindings 0-15)";
++    case PSBC_RESULT_UNSUPPORTED_RESOURCE: return "unsupported resource layout (PS4 standalone ABI supports non-array UBOs and fragment sampler2D in set 0, bindings 0-15)";
      case PSBC_RESULT_UNSUPPORTED_STAGE: return "unsupported shader stage";
      case PSBC_RESULT_COMPILE_NIR:      return "SPIR-V to NIR compilation failed";
      case PSBC_RESULT_COMPILE_ACO:      return "ACO shader compilation failed";
 diff --git a/libpsbc/psbc_compile.h b/libpsbc/psbc_compile.h
-index 000e7e1..60db9d3 100644
+index 000e7e1..62739d1 100644
 --- a/libpsbc/psbc_compile.h
 +++ b/libpsbc/psbc_compile.h
 @@ -49,6 +49,7 @@ typedef enum {
@@ -128,11 +151,34 @@ index 000e7e1..60db9d3 100644
  } PsbcResult;
  
  typedef struct {
+@@ -63,6 +64,16 @@ typedef struct {
+     bool        optimise;    /* Default: true */
+ } PsbcCompileOptions;
+ 
++/* Standalone set-0 descriptor table (not a Vulkan descriptor layout).
++ * Bindings 0..15: GnmBuffer at binding*16; GnmTexture at
++ * 256+binding*64, with its combined GnmSampler at +32. Texture slots
++ * are a separate bank so existing buffer-only tables remain compatible.
++ * Runtime must allocate/populate the bank used by each compiled shader.
++ */
++#define PSBC_TEXTURE_TABLE_OFFSET 256
++#define PSBC_TEXTURE_BINDING_STRIDE 64
++#define PSBC_COMBINED_SAMPLER_OFFSET 32
++
+ /* === API === */
+ 
+ /*
 diff --git a/src/amd/vulkan/nir/radv_nir_lower_descriptors.c b/src/amd/vulkan/nir/radv_nir_lower_descriptors.c
-index 2412880..5d9b6a1 100644
+index 2412880..863ea10 100644
 --- a/src/amd/vulkan/nir/radv_nir_lower_descriptors.c
 +++ b/src/amd/vulkan/nir/radv_nir_lower_descriptors.c
-@@ -222,14 +222,21 @@ load_buffer_descriptor(nir_builder *b, lower_descriptors_state *state, nir_def *
+@@ -1,4 +1,5 @@
+ #include "amdgfxregs.h"
++#include "psbc_compile.h"
+ /*
+  * Copyright © 2020 Valve Corporation
+  *
+@@ -222,14 +223,21 @@ load_buffer_descriptor(nir_builder *b, lower_descriptors_state *state, nir_def *
      */
     if (binding.success) {
        struct radv_descriptor_set_layout *layout = state->layout->set[binding.desc_set].layout;
@@ -161,6 +207,29 @@ index 2412880..5d9b6a1 100644
  
        if (layout->binding[binding.binding].type == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
           rsrc = nir_iadd(b, nir_channel(b, rsrc, 0), nir_channel(b, rsrc, 1));
+@@ -280,9 +288,19 @@ get_sampler_desc(nir_builder *b, lower_descriptors_state *state, nir_deref_instr
+       indirect = nir_deref_instr_has_indirect(deref);
+ 
+       struct radv_descriptor_set_layout *layout = state->layout->set[desc_set].layout;
+-      /* Standalone compiler has no descriptor set layout — return a zero descriptor */
+-      if (!layout)
+-         return nir_imm_ivec4(b, 0, 0, 0, 0);
++      /* Validated standalone sampler2D: texture and sampler share a 64-byte
++       * slot in the texture bank. Preserve both words of the user pointer. */
++      if (!layout) {
++         assert(!non_uniform && !indirect && deref->deref_type == nir_deref_type_var);
++         assert(desc_type == AC_DESC_IMAGE || desc_type == AC_DESC_SAMPLER);
++         unsigned words = desc_type == AC_DESC_SAMPLER ? 4 : 8;
++         unsigned byte_offset = PSBC_TEXTURE_TABLE_OFFSET + binding_index * PSBC_TEXTURE_BINDING_STRIDE;
++         if (desc_type == AC_DESC_SAMPLER)
++            byte_offset += PSBC_COMBINED_SAMPLER_OFFSET;
++         nir_def *ptr = get_scalar_arg(b, 2, state->args->descriptors[desc_set]);
++         return ac_nir_load_smem(b, words, nir_pack_64_2x32(b, ptr),
++                                nir_imm_int(b, byte_offset), 16, 0);
++      }
+       struct radv_descriptor_set_binding_layout *binding = &layout->binding[binding_index];
+ 
+       if (desc_type == AC_DESC_SAMPLER) {
 diff --git a/src/amd/vulkan/radv_shader.c b/src/amd/vulkan/radv_shader.c
 index 61fe2b4..7dc552b 100644
 --- a/src/amd/vulkan/radv_shader.c

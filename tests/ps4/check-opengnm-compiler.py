@@ -42,6 +42,32 @@ compile_shader('texture', 'fragment', '''#version 450
 layout(binding=0) uniform sampler2D tex;
 layout(location=0) out vec4 color;
 void main() { color=texture(tex, vec2(.5)); }
+''')
+compile_shader('mixed-textures-ubos', 'fragment', (root / 'tests/ps4/opengnm-textures.frag').read_text())
+compile_shader('texture-wrong-set', 'fragment', '''#version 450
+layout(set=1,binding=0) uniform sampler2D tex;
+layout(location=0) out vec4 color;
+void main() { color=texture(tex, vec2(.5)); }
+''', False)
+compile_shader('texture-binding-overflow', 'fragment', '''#version 450
+layout(binding=16) uniform sampler2D tex;
+layout(location=0) out vec4 color;
+void main() { color=texture(tex, vec2(.5)); }
+''', False)
+compile_shader('texture-cube', 'fragment', '''#version 450
+layout(binding=0) uniform samplerCube tex;
+layout(location=0) out vec4 color;
+void main() { color=texture(tex, vec3(1,0,0)); }
+''', False)
+compile_shader('texture-array', 'fragment', '''#version 450
+layout(binding=0) uniform sampler2D tex[2];
+layout(location=0) out vec4 color;
+void main() { color=texture(tex[1], vec2(.5)); }
+''', False)
+compile_shader('texture-query', 'fragment', '''#version 450
+layout(binding=0) uniform sampler2D tex;
+layout(location=0) out vec4 color;
+void main() { color=vec4(textureSize(tex, 0), 0, 1); }
 ''', False)
 compile_shader('descriptor-array', 'fragment', '''#version 450
 layout(binding=0) uniform Params { vec4 color; } p[2];

@@ -1,0 +1,13 @@
+diff --git a/src/commandbuffer.c b/src/commandbuffer.c
+index 709bb38..524cbce 100644
+--- a/src/commandbuffer.c
++++ b/src/commandbuffer.c
+@@ -23,7 +23,7 @@ GnmCommandBuffer sceGnmCmdInit(
+ 	const uint32_t numdwords = bytesize / sizeof(uint32_t);
+ 	void* endptr = (uint8_t*)buffer + (numdwords * sizeof(uint32_t));
+ 
+-	GnmCommandBuffer res;
++	GnmCommandBuffer res = {0};
+ 	res.beginptr = buffer;
+ 	res.endptr = endptr;
+ 	res.cmdptr = buffer;

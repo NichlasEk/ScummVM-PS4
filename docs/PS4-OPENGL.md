@@ -1,9 +1,127 @@
 # OpenGL next milestone: backend and shader capability
 
-Source audit after package 1.17 (2026-09-25). This is a plan grounded in the
-current local SDK/source, not an implemented or validated graphics port.
+Source audit and isolated capability probe after package 1.17 (2026-09-25).
+The probe is implemented; a working PS4 graphics port is not yet validated.
+
+**Active direction:** the user selected the open GPU stack instead of Softpipe
+or Piglet. The first native rendering result and reproducible build are in
+[PS4-OPENGNM.md](PS4-OPENGNM.md). The alternatives below preserve the earlier
+investigation; they are not the current implementation priority.
+
+## Capability probe checkpoint
+
+Run `scripts/build-ps4-opengl-probe.sh` to build the standalone
+`dist/ScummVM-PS4-OpenGL-Probe.pkg` (SCVM00005). It imports only libkernel;
+Piglet is resolved dynamically so a missing runtime can be reported instead
+of preventing boot. The target writes `/data/scummvm-opengl-probe.log`:
+exit 0 means all tests passed, exit 2 means not ready. It has no software
+fallback and does not modify the main ScummVM package.
+
+The host EGL oracle passed source shader compilation/linking, textured VBO
+rendering, FBO render-to-texture sampling, alpha blending, depth rejection,
+pixel comparisons, and rejection of invalid GLSL. The actual host driver was
+NVIDIA, not a PS4 driver; these results only validate the test itself.
+
+The target SELF booted in an isolated shadPS4 profile and reported Piglet
+absent at all four checked filesystem paths. **No target GL context or shader
+test ran.** This preflight uses `stat` before module loading; it does not prove
+that every firmware-specific loader route is unavailable. The guest exited 2;
+the emulator wrapper needed the timeout to close. Evidence is in
+`artifacts/opengl/host-oracle.log`, `ps4-probe-result.txt`, and
+`ps4-probe-emulator.log`. Physical console execution remains untested.
+
+Next gate: use an owned decrypted Piglet dump with its firmware provenance,
+verify actual module loading/exports, then context and GLSL availability.
+There is no established firmware requirement for this probe yet. Do not
+assume a normal retail dump includes `libSceShaccVSH.sprx`: the
+[ioQuake3 PS4 port](https://github.com/Mayo1970/Ioquake3-PS4) describes it as
+devkit-only and uses precompiled shaders instead. We have not implemented
+that shader route for ScummVM. SDL integration remains pending this gate.
+
+Owned Thimbleweed Park installer data was unpacked without execution into
+`artifacts/thimbelweedpark/extracted`. `ThimbleweedPark.ggpack1` matches the
+local detector's GOG 1.0.958 entry: size 502661439 and first-5000-byte MD5
+`6180145221d18e9e9caac6459e840579`. This confirms detection compatibility,
+not game startup. The optional DLC installer has not been applied.
+
+### Avoiding Shacc at runtime
+
+The ioQuake3 reference was inspected at commit
+`d4c7912af73c3b0eaa57195391ad76f21e79a910`. Its
+`code/ps4/ps4_shaderbin.c` loads per-stage Piglet blobs with `glShaderBinary`;
+its debug capture path calls `glPigletGetShaderBinarySCE` **after a successful
+source compilation**. It therefore removes the compiler dependency for players,
+but does not supply an independent offline compiler for new ScummVM shaders.
+Its Quake shader blobs cannot substitute for TWP's shaders. No reference blobs
+or runtime modules have been included in our package.
+
+`python3 scripts/audit-twp-gles-shaders.py` exports the eight TWP shader pairs
+(default, monochrome, ghost, sepia, fade, HUD, lighting and debug lighting)
+with the actual local ScummVM GLES2 compatibility preambles. All eight pass
+glslangValidator's GLSL ES 1.00 compilation/link validation. Sources, SHA-256
+identities, validator version and results are recorded in
+`artifacts/opengl/twp-shaders/manifest.json`. This is source-language validation,
+not GPU resource-limit validation, a Piglet binary build, or rendering proof.
+The launcher/common backend shaders are outside this inventory.
+
+To ship without Shacc, the remaining work is to produce matching native shader
+blobs (one-time compiler/capture access, or a separately verified open compiler
+and Piglet-container route), load and link them on Piglet, and test pixels and
+effects. Cache identity must cover stage and exact source/preamble, and missing
+or rejected binaries must fail explicitly. Host GL program binaries and SPIR-V
+must not be relabeled as Piglet shader binaries. A dump of Piglet is still
+needed for emulator validation of this native path.
 
 ## Current boundary
+
+### Alternatives that avoid Piglet as well (2026-09-25)
+
+Recommended first experiment: port Mesa's **Softpipe** software GL path to
+OpenOrbis, initially without LLVM/JIT, rendering into a CPU buffer presented
+by the existing VideoOut/SDL route. Unlike TinyGL, this is a shader-capable
+implementation. A headless EGL or an offscreen frontend must be selected for
+the pinned Mesa version; do not assume an old OSMesa build recipe still works.
+Target work includes the C/C++ runtime, threading/TLS, allocation and platform
+glue, context/proc lookup and buffer presentation. Rendering cost, especially
+TWP lighting/full-screen effects, is an explicit acceptance gate. No claim of
+playable PS4 performance follows from a Linux pass.
+
+A first **host-only** Softpipe test passed the existing probe's shaders,
+VBO/textures, FBO sampling, alpha, depth and exact/toleranced pixel comparisons.
+The report identifies `GL_RENDERER=softpipe`, Mesa 26.2.3-arch1.1, GLES 3.1.
+Reproduce after building the host probe:
+
+```sh
+env __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json \
+    EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=softpipe \
+    build/ps4-opengl-probe/host-probe > artifacts/opengl/host-softpipe.log 2>&1
+```
+
+This explicitly selects Mesa: `LIBGL_ALWAYS_SOFTWARE` alone previously let
+GLVND choose NVIDIA. LLVMpipe is a possible later performance route, but adds
+LLVM and runtime code generation to the port. Sources:
+[Mesa software drivers](https://docs.mesa3d.org/systems.html),
+[LLVMpipe](https://docs.mesa3d.org/drivers/llvmpipe.html).
+
+Longer-term GPU route: OpenGL -> Mesa Zink (or a separately audited GLES
+translator) -> vulkan-ps4 -> OpenGNM, using opengnm-psbc for shaders. This
+avoids Piglet/Shacc but still uses normal PS4 GNM/VideoOut firmware services.
+The [OpenGNM architecture](https://github.com/PS4-OpenGNM/opengnm-stack/blob/main/docs/architecture.md)
+describes the layers and compiler. It is not already an OpenGL implementation.
+Local source inspection of vulkan-ps4 commit
+`f4d940b723771b3fe637e8ac0704bb5d6ab19622` confirms a static OpenOrbis build
+path, but also unsupported entrypoints and a nonfunctional-on-GPU shader stub
+when libpsbc is missing. Do not use the README's broad API claims as proof of
+Zink compatibility. [Current Zink requirements](https://docs.mesa3d.org/drivers/zink.html)
+include many extensions beyond a nominal Vulkan 1.0 implementation; check the
+exact selected Zink release's profile against the driver before integration.
+No local OpenGNM build or physical GPU test has been performed yet.
+
+A dedicated TWP software renderer is another option, but rewrites its effects
+and benefits one engine. For the user's broader ScummVM goal, a reusable Mesa
+backend is the stronger initial experiment. First target milestone should be
+the existing pixel probe in a separate PS4 package without Piglet imports,
+then TWP rendering/performance, and only then standard-package integration.
 
 - ScummVM deliberately configures `--opengl-mode=none` and disables both game
   OpenGL variants. Its PS4 output is SDL's software framebuffer. TinyGL already

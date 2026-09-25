@@ -1,0 +1,109 @@
+diff --git a/triangle/src/main.c b/triangle/src/main.c
+index 26113ff..9471cfe 100644
+--- a/triangle/src/main.c
++++ b/triangle/src/main.c
+@@ -14,7 +14,15 @@
+ #include "displayctx.h"
+ #include "misc.h"
+ 
++static FILE *probe_log;
++#define printf(...) fprintf(probe_log, __VA_ARGS__)
++#define puts(s) fprintf(probe_log, "%s\n", (s))
++
+ int main(void) {
++	probe_log = fopen("/data/scummvm-opengnm-triangle.log", "w");
++	if (!probe_log) return 2;
++	setvbuf(probe_log, NULL, _IONBF, 0);
++	puts("OpenGNM triangle: native GNM + open-source shader compiler; no Piglet");
+ 	MemoryAllocator garlicmem = memalloc_init(
+ 		64 * 1024 * 1024,  // 64mB
+ 		ORBIS_KERNEL_PROT_CPU_READ | ORBIS_KERNEL_PROT_CPU_RW |
+@@ -22,10 +30,6 @@ int main(void) {
+ 		ORBIS_KERNEL_WC_GARLIC
+ 	);
+ 
+-	if (!initclearutility(&garlicmem)) {
+-		fatal("Failed to init clear utility");
+-	}
+-
+ 	// init video
+ 	DisplayContext display = {0};
+ 	if (!displayctx_init(&display)) {
+@@ -57,10 +61,24 @@ int main(void) {
+ 	}
+ 
+ 	GnmCommandBuffer cmdbuf = gnmCmdInit(cmdmem, cmdmemsize, NULL, NULL);
++	gnmDrawCmdInitDefaultHardwareState(&cmdbuf);
++	gnmDrawCmdSetNumInstances(&cmdbuf, 1);
++	// Screen, window, generic and viewport scissors intersect. Upstream only
++	// sets the screen scissor, leaving a zero-sized clip rectangle elsewhere.
++	const uint32_t scissor_regs[] = {0x28204, 0x28240, 0x28250};
++	for (unsigned i = 0; i < 3; ++i) {
++		*cmdbuf.cmdptr++ = 0xc0026900; // SET_CONTEXT_REG, three payload words
++		*cmdbuf.cmdptr++ = (scissor_regs[i] - 0x28000) / 4;
++		*cmdbuf.cmdptr++ = 0x80000000; // top-left zero, no window offset
++		*cmdbuf.cmdptr++ = (display.screenh << 16) | display.screenw;
++	}
+ 
+-	// clear both render targets right away, since clearing sets some controls
+-	const float clearcolor[4] = {1.0, 1.0, 1.0, 1.0};
+-	clearcolortarget(&cmdbuf, &fbtarget, clearcolor);
++	// Diagnostic CPU prefill: establishes presentation independently of drawing.
++	uint64_t rtbytes = 0; uint32_t rtalign = 0;
++	gnmRtCalcByteSize(&rtbytes, &rtalign, &fbtarget);
++	memset(gnmRtGetBaseAddr(&fbtarget), 0x7f, rtbytes);
++	const GnmDepthStencilControl no_depth = {0};
++	gnmDrawCmdSetDepthStencilControl(&cmdbuf, &no_depth);
+ 
+ 	// wait for clears to write
+ 	gnmDrawCmdWaitGraphicsWrite(
+@@ -120,28 +138,41 @@ int main(void) {
+ 		1
+ 	);
+ 
+-	const uint32_t* dcbaddr = cmdbuf.beginptr;
++	// Poll the EOP label without requesting a CP interrupt. shadPS4 lacks
++	// the upstream INT_SEL=3 case; INT_SEL=0 + DATA_SEL=2 writes the same label.
++	cmdbuf.cmdptr[-3] &= ~(3u << 24);
++
++	void* dcbaddr = cmdbuf.beginptr;
+ 	uint32_t dcbsize = (cmdbuf.cmdptr - cmdbuf.beginptr) * sizeof(uint32_t);
+-	const uint32_t* ccbaddr = NULL;
++	void* ccbaddr = NULL;
+ 	uint32_t ccbsize = 0;
+ 
+-	while (1) {
++	FILE *dump = fopen("/data/opengnm-commands.bin", "wb");
++	if (dump) { fwrite(dcbaddr, 1, dcbsize, dump); fclose(dump); }
++
++	for (unsigned frame = 0; frame < 120; ++frame) {
+ 		*label = 9;
+ 
+-		sceGnmSubmitCommandBuffers(1, &dcbaddr, &dcbsize, &ccbaddr, &ccbsize);
++		int submit = sceGnmSubmitCommandBuffers(1, &dcbaddr, &dcbsize, &ccbaddr, &ccbsize);
++		if (submit) { printf("FAIL submit: 0x%x\n", submit); return 2; }
+ 
+-		while (*label != 1) {
+-			continue;
++		unsigned waited = 0;
++		while (*(volatile uint64_t*)label != 1) {
++			if (++waited > 5000) { puts("FAIL GPU fence timeout"); return 2; }
++			sceKernelUsleep(1000);
+ 		}
+ 
+ 		if (!displayctx_flip(&display, 0)) {
+-			puts("displayflip failed");
+-			break;
++			puts("FAIL displayflip");
++			return 2;
+ 		}
+ 
+ 		sceGnmSubmitDone();
++		if (frame == 0 || frame == 119) printf("FRAME %u submitted and flipped\n", frame);
+ 	}
+ 
++	puts("PASS submission/flip loop; pixels require separate inspection");
++	sceKernelUsleep(10000000);
+ 	displayctx_destroy(&display);
+ 	memalloc_destroy(&garlicmem);
+ 

@@ -14,7 +14,9 @@ int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   ctx->next_shader=65536;
   ctx->next_framebuffer=1;
   ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=4;
-  for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->attribs[i].size=4;
+  for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) {
+    ctx->attribs[i].size=4; ctx->attribs[i].constant[3]=1;
+  }
   ctx->width=width; ctx->height=height;
   ctx->scissor[2]=ctx->viewport[2]=width;
   ctx->scissor[3]=ctx->viewport[3]=height;
@@ -260,6 +262,16 @@ void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean norm
   a->buffer=current->array_buffer; a->size=size; a->stride=stride;
   a->offset=(uintptr_t)pointer;
 }
+static void constant_attrib(GLuint index, const GLfloat *value, unsigned size) {
+  if(!current) return;
+  if(index>=PS4GL_MAX_ATTRIBS || !value) { error(GL_INVALID_VALUE); return; }
+  GLfloat copy[4]={0,0,0,1};
+  memcpy(copy,value,size*sizeof(*value));
+  memcpy(current->attribs[index].constant,copy,sizeof(copy));
+}
+void glVertexAttrib2fv(GLuint index, const GLfloat *value) { constant_attrib(index,value,2); }
+void glVertexAttrib3fv(GLuint index, const GLfloat *value) { constant_attrib(index,value,3); }
+void glVertexAttrib4fv(GLuint index, const GLfloat *value) { constant_attrib(index,value,4); }
 void glEnableVertexAttribArray(GLuint index) {
   if(!current) return;
   if(index>=PS4GL_MAX_ATTRIBS) { error(GL_INVALID_VALUE); return; }
@@ -290,7 +302,7 @@ int ps4glPackVertices(PS4GLContext *ctx, const PS4GLProgram *p, GLsizei count, v
         PS4GLBuffer *b=find_buffer(ctx,a->buffer);
         size_t stride=a->stride ? (size_t)a->stride : (size_t)a->size*4;
         memcpy(value,b->data+a->offset+(size_t)v*stride,(size_t)a->size*4);
-      }
+      } else memcpy(value,a->constant,sizeof(value));
       memcpy(out,value,p->components[i]*4); out+=p->components[i]*4;
     }
   }
@@ -300,7 +312,7 @@ void ps4glDestroyBuffers(PS4GLContext *ctx) {
   if(!ctx) return;
   for(unsigned i=0;i<PS4GL_MAX_BUFFERS;++i) { free(ctx->buffers[i].data); ctx->buffers[i]=(PS4GLBuffer){0}; }
   ctx->array_buffer=ctx->element_buffer=0;
-  for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->attribs[i]=(PS4GLAttrib){.size=4};
+  for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->attribs[i]=(PS4GLAttrib){.size=4,.constant={0,0,0,1}};
 }
 static PS4GLProgram *program(GLuint name) {
   if (!current || !name || name>PS4GL_MAX_PROGRAMS) return NULL;
@@ -518,6 +530,7 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glGetProgramiv); PROC(glDrawArrays); PROC(glDrawElements);
   PROC(glGenBuffers); PROC(glBindBuffer); PROC(glDeleteBuffers); PROC(glIsBuffer);
   PROC(glBufferData); PROC(glBufferSubData); PROC(glGetBufferParameteriv);
+  PROC(glVertexAttrib2fv); PROC(glVertexAttrib3fv); PROC(glVertexAttrib4fv);
   PROC(glVertexAttribPointer); PROC(glEnableVertexAttribArray); PROC(glDisableVertexAttribArray);
 #undef PROC
   return NULL;

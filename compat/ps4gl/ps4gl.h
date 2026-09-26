@@ -146,6 +146,7 @@ typedef struct PS4GLAttrib {
   GLsizei stride;
   uintptr_t offset;
   GLboolean enabled;
+  GLfloat constant[4]; /* Current generic value when the array is disabled. */
 } PS4GLAttrib;
 typedef struct PS4GLSnapshot {
   VkBuffer buffer;
@@ -321,6 +322,9 @@ void glBufferData(GLenum, GLsizeiptr, const void *, GLenum);
 void glBufferSubData(GLenum, GLintptr, GLsizeiptr, const void *);
 void glGetBufferParameteriv(GLenum, GLenum, GLint *);
 void glVertexAttribPointer(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
+void glVertexAttrib2fv(GLuint, const GLfloat *);
+void glVertexAttrib3fv(GLuint, const GLfloat *);
+void glVertexAttrib4fv(GLuint, const GLfloat *);
 void glEnableVertexAttribArray(GLuint);
 void glDisableVertexAttribArray(GLuint);
 /* Pack active inputs into the imported program's canonical float layout. */

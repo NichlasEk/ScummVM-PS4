@@ -1,6 +1,8 @@
 # Experimental SDL GL adapter checkpoint (2026-09-26)
 
-The latest continuation below adds a reusable frame owner and numeric queries.
+The frame owner and numeric queries are implemented below. For the subsequent
+ScummVM startup audit and constant vertex attributes, see
+[PS4-SCUMMVM-GL-STARTUP.md](PS4-SCUMMVM-GL-STARTUP.md).
 
 A separate SDL archive now routes real SDL video/GL entrypoints to the bounded
 OpenGNM frontend. This is a diagnostic integration checkpoint, not a complete
@@ -146,8 +148,22 @@ remain in `artifacts/vulkan/sdlgl/`; host results are `frame-owner-host.log` and
 `frame-state-host.log` under `artifacts/vulkan/`. Non-SDL regressions are
 `artifacts/vulkan/frameowner-regression-*.log`.
 
-Current package: `dist/ScummVM-PS4-SDL-GL.pkg`.
+Frame-owner checkpoint package (superseded by the startup audit below):
+`dist/ScummVM-PS4-SDL-GL.pkg`.
 SHA-256: `8aa35a96d58d9a68ed270a2fdedbc1ed3dc44658201d0e5c2430a3cb4d79160b`.
-The stable ScummVM package remains unchanged. Next: audit the startup GL API
-and feature selection, then connect the Vulkan bootstrap to ScummVM. Actual game
-and physical PS4 execution remain unverified.
+The stable ScummVM package remains unchanged. The subsequent startup API audit
+is in `PS4-SCUMMVM-GL-STARTUP.md`. Next: connect the Vulkan bootstrap and resolve
+the identified negotiation/rendering gaps. Actual game and physical PS4
+execution remain unverified.
+
+## Constant-attribute continuation (2026-09-26)
+
+The SDL archive and diagnostic were rebuilt with the new per-context constant
+vertex attributes. This keeps the adapter's allocated context layout in sync
+with the core. Current package: `dist/ScummVM-PS4-SDL-GL.pkg`.
+SHA-256: `8fe91dee10347296d1274b6377a80270da0bccc986d9169458d541ca8e496e56`.
+The separate `--glvbo` fixture tests constant values against independent pixel
+expectations; the SDL fixture retains the existing FBO/lifecycle checks.
+
+Startup requirements and the reproducible call inventory are documented in
+[PS4-SCUMMVM-GL-STARTUP.md](PS4-SCUMMVM-GL-STARTUP.md).

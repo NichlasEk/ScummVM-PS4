@@ -138,6 +138,8 @@ int main(void) {
   glBufferData(GL_ARRAY_BUFFER,sizeof(data),NULL,GL_STATIC_DRAW);
   PS4GLProgram attributes={.components={2,4,2},.vertex_stride=32};
   float packed[16];
+  const GLfloat ignored_constant[]={9,8,7,6};
+  glVertexAttrib4fv(1,ignored_constant); /* Enabled arrays override constants, including default W. */
   assert(ps4glPackVertices(&vertices_ctx,&attributes,2,packed));
   assert(packed[0]==1 && packed[1]==2 && packed[5]==1 && packed[6]==.6f && packed[8]==3 && packed[13]==1);
   float separate_uv[]={.11f,.22f,.33f,.44f};
@@ -162,13 +164,30 @@ int main(void) {
   assert(!ps4glPackVertices(&vertices_ctx,&attributes,2,packed)); assert(glGetError()==GL_INVALID_OPERATION);
   glDeleteBuffers(2,buffers); assert(!glIsBuffer(buffers[0]));
   assert(!ps4glPackVertices(&vertices_ctx,&attributes,2,packed)); assert(glGetError()==GL_INVALID_OPERATION);
+  const GLfloat default_constant[]={0,0,0,1}; glVertexAttrib4fv(1,default_constant);
   for(unsigned i=0;i<3;++i) glDisableVertexAttribArray(i);
   assert(ps4glPackVertices(&vertices_ctx,&attributes,2,packed));
   assert(packed[0]==0 && packed[5]==1 && packed[6]==0);
+  const GLfloat constant[]={.2f,.4f,.6f,.8f};
+  glVertexAttrib4fv(1,constant);
+  assert(ps4glPackVertices(&vertices_ctx,&attributes,2,packed));
+  assert(!memcmp(packed+2,constant,sizeof(constant)) && !memcmp(packed+10,constant,sizeof(constant)));
+  glVertexAttrib3fv(1,constant);
+  assert(ps4glPackVertices(&vertices_ctx,&attributes,2,packed));
+  assert(packed[4]==.6f && packed[5]==1);
+  glVertexAttrib2fv(1,constant);
+  glVertexAttrib4fv(PS4GL_MAX_ATTRIBS,constant); assert(glGetError()==GL_INVALID_VALUE);
+  glVertexAttrib3fv(1,NULL); assert(glGetError()==GL_INVALID_VALUE);
+  assert(ps4glPackVertices(&vertices_ctx,&attributes,2,packed));
+  assert(packed[2]==.2f && packed[3]==.4f && packed[4]==0 && packed[5]==1);
+  ps4glMakeCurrent(&a); assert(a.attribs[1].constant[0]==0 && a.attribs[1].constant[3]==1);
+  ps4glMakeCurrent(&vertices_ctx);
+  assert(ps4glGetProcAddress("glVertexAttrib2fv") && ps4glGetProcAddress("glVertexAttrib3fv") && ps4glGetProcAddress("glVertexAttrib4fv"));
   GLuint too_many[PS4GL_MAX_BUFFERS+1]; glGenBuffers(PS4GL_MAX_BUFFERS+1,too_many);
   assert(glGetError()==GL_OUT_OF_MEMORY);
   glBindBuffer(GL_ARRAY_BUFFER,1000); assert(glIsBuffer(1000));
   ps4glDestroyBuffers(&vertices_ctx);
+  assert(vertices_ctx.attribs[1].constant[0]==0 && vertices_ctx.attribs[1].constant[3]==1);
   PS4GLContext indexed;
   assert(ps4glInit(&indexed,80,60)); ps4glMakeCurrent(&indexed);
   indexed.programs[0]=(PS4GLProgram){.pipeline=(VkPipeline)(uintptr_t)5,
@@ -463,5 +482,5 @@ int main(void) {
   ps4glEndPass(); glDrawArrays(0xdead,0,0); assert(glGetError()==GL_INVALID_ENUM && lazy_calls==2);
 
   ps4glMakeCurrent(NULL);
-  puts("PASS signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
+  puts("PASS constant vertex attributes, array precedence, context isolation and atomic errors; signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

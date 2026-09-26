@@ -156,7 +156,34 @@ static void check_launcher_state(void) {
   ps4glMakeCurrent(&a); assert(a.pack_alignment==8 && a.unpack_alignment==2 && !a.command);
   ps4glMakeCurrent(NULL);
 }
+static void check_large_textures(void) {
+  PS4GLContext ctx; assert(ps4glInit(&ctx,1280,720)); ps4glMakeCurrent(&ctx);
+  GLuint ids[5]; glGenTextures(5,ids);
+  for (unsigned i=0;i<4;++i) {
+    glBindTexture(GL_TEXTURE_2D,ids[i]);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2048,2048,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+    assert(glGetError()==GL_NO_ERROR);
+  }
+  assert(ctx.texture_bytes==PS4GL_TEXTURE_BUDGET);
+  glBindTexture(GL_TEXTURE_2D,ids[4]);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  assert(glGetError()==GL_OUT_OF_MEMORY);
+  glBindTexture(GL_TEXTURE_2D,ids[0]);
+  const PS4GLTexture *t=ps4glTextureAtUnit(&ctx,0); assert(t);
+  void *before=t->pixels;
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2049,720,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  assert(glGetError()==GL_INVALID_VALUE && t->pixels==before && t->width==2048);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,1280,720,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  assert(glGetError()==GL_NO_ERROR && t->width==1280 && t->height==720);
+  const unsigned char edge[]={7,23,201,255};
+  glTexSubImage2D(GL_TEXTURE_2D,0,1279,719,1,1,GL_RGBA,GL_UNSIGNED_BYTE,edge);
+  assert(glGetError()==GL_NO_ERROR && !memcmp(t->pixels+(1280*720-1)*4,edge,4));
+  glDeleteTextures(5,ids); assert(ctx.texture_bytes==0);
+  ps4glMakeCurrent(NULL);
+}
+
 int main(void) {
+  check_large_textures();
   check_launcher_state();
   PS4GLContext a,b;
   assert(ps4glInit(&a,80,60) && ps4glInit(&b,20,10));

@@ -125,7 +125,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
     try:
         deadline = time.monotonic() + 25
         while time.monotonic() < deadline:
-            if guest_log.exists() and 'FRAME 0' in guest_log.read_text():
+            if guest_log.exists() and (success_marker if args.sdlgl else 'FRAME 0') in guest_log.read_text():
                 break
             if p.poll() is not None:
                 raise RuntimeError('Emulator exited before first frame; inspect triangle-emulator.log')
@@ -145,9 +145,15 @@ with (reports / 'triangle-emulator.log').open('w') as log:
         time.sleep(.1)
         t.XTestFakeKeyEvent(d, key, 0, 0)
         x.XFlush(d)
+        # SDL's last frame stays idle during validation. F12 needs another
+        # host present and may otherwise capture a partial earlier recording.
+        settled = None
+        if args.sdlgl:
+            settled = reports / 'settled-window.png'
+            subprocess.run(['import', '-window', 'root', str(settled)], check=True)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            candidates = set(screens.glob(title_id + '*.png')) - before
+            candidates = {settled} if settled else set(screens.glob(title_id + '*.png')) - before
             if candidates and success_marker in guest_log.read_text():
                 time.sleep(.3)  # Let the capture writer finish.
                 screenshot = max(candidates, key=lambda f: f.stat().st_mtime)

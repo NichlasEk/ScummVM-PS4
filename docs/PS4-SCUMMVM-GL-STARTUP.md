@@ -61,8 +61,9 @@ itself a startup blocker.
    dither under the existing fixed-disabled Vulkan policy. Enabling them is
    still rejected; this does not add depth/cull support. Pack alignment is
    separately tracked. See [PS4-GL-LAUNCHER-STATE.md](PS4-GL-LAUNCHER-STATE.md).
-6. Validate real texture sizes/formats and object lifetime. The current 1024
-   texture limit is below TWP's 1280x720 screen width. RGB8 and RGB565 uploads
+6. Screen-sized framebuffer recordings now pass the native pixel oracle,
+   with a 2048 texture limit and packet-aligned command submissions. See
+   [PS4-LARGE-FRAMEBUFFERS.md](PS4-LARGE-FRAMEBUFFERS.md). RGB8 and RGB565 uploads
    now work alongside RGBA8, but other packed/BGRA/indexed formats remain. See
    [PS4-GL-RGB-TEXTURES.md](PS4-GL-RGB-TEXTURES.md). TWP deletes attached
    textures before deleting their FBO, currently rejected by our subset. Shader

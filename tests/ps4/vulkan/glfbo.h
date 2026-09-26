@@ -58,15 +58,20 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
-  unsigned char pixels[64*64*4];
+#ifdef SDLGL_PROBE
+  enum { target_width=1280, target_height=720 };
+#else
+  enum { target_width=64, target_height=64 };
+#endif
+  static unsigned char pixels[target_width*target_height*4];
   for(unsigned i=0;i<sizeof(pixels);i+=4) { pixels[i]=0; pixels[i+1]=0; pixels[i+2]=255; pixels[i+3]=255; }
-  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,64,64,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,target_width,target_height,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
   glGenFramebuffers(1,&framebuffer); glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
   glClear(GL_COLOR_BUFFER_BIT);
   if(glGetError()!=GL_INVALID_FRAMEBUFFER_OPERATION) return 2;
   glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);
   if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return 2;
-  glViewport(0,0,64,32); glDisable(GL_BLEND); glDisable(GL_SCISSOR_TEST);
+  glViewport(0,0,target_width,target_height/2); glDisable(GL_BLEND); glDisable(GL_SCISSOR_TEST);
   glUseProgram(programs[0]); GLint color=glGetUniformLocation(programs[0],"color");
   if(color<0) return 2;
   glUniform4f(color,1,0,0,1); draw_gl_color(programs[0]);
@@ -78,13 +83,13 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   if(glGetError()!=GL_INVALID_OPERATION || !glIsTexture(texture)) return 2;
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(0,0,320,720); draw_gl_surface();
   glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
-  glEnable(GL_SCISSOR_TEST); glScissor(32,32,32,32); glClearColor(0,1,0,1); glClear(GL_COLOR_BUFFER_BIT);
+  glEnable(GL_SCISSOR_TEST); glScissor(target_width/2,target_height/2,target_width/2,target_height/2); glClearColor(0,1,0,1); glClear(GL_COLOR_BUFFER_BIT);
   glDisable(GL_SCISSOR_TEST); glBindFramebuffer(GL_FRAMEBUFFER,0);
   glViewport(320,0,320,720); draw_gl_surface();
   /* New storage must not overwrite either earlier sample before submission. */
   for(unsigned i=0;i<sizeof(pixels);i+=4) { pixels[i]=255; pixels[i+1]=255; pixels[i+2]=0; pixels[i+3]=255; }
-  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,64,64,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
-  glBindFramebuffer(GL_FRAMEBUFFER,framebuffer); glViewport(0,0,64,32);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,target_width,target_height,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+  glBindFramebuffer(GL_FRAMEBUFFER,framebuffer); glViewport(0,0,target_width,target_height/2);
   glUseProgram(programs[0]); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
   glUniform4f(color,0,1,1,.5f); draw_gl_color(programs[0]); glDisable(GL_BLEND);
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(640,0,640,720);

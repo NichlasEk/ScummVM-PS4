@@ -212,3 +212,10 @@ shaders is unsupported. The next gate is the engine shader capability and its
 actual required GL operations, not game detection. Temporary coordinate logging
 was removed from source and the package rebuilt; the live diagnostic instance
 retains it until the next restart.
+
+## Screen-sized framebuffer checkpoint
+
+See [PS4-LARGE-FRAMEBUFFERS.md](PS4-LARGE-FRAMEBUFFERS.md) for the 1280x720
+offscreen test, command capacity/submission fix, measured memory cost and
+remaining engine shader discovery gate. The visible test window is not restarted
+by this build. Shader capabilities remain disabled for game startup.

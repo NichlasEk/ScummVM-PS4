@@ -105,7 +105,7 @@ typedef struct PS4GLBlendVariant { PS4GLBlend state; VkPipeline pipeline; VkRend
 #define GL_PACK_ALIGNMENT 0x0d05
 #define PS4GL_TEXTURE_UNITS 4
 #define PS4GL_MAX_TEXTURES 32
-#define PS4GL_TEXTURE_LIMIT 1024
+#define PS4GL_TEXTURE_LIMIT 2048
 #define PS4GL_TEXTURE_BUDGET (64u*1024u*1024u)
 typedef struct PS4GLTexture {
   GLuint name;

@@ -644,32 +644,64 @@ void glTexParameteri(GLenum target, GLenum pname, GLint value) {
     if(pname==GL_TEXTURE_WRAP_S) t->wrap_s=value; else t->wrap_t=value;
   } else error(GL_INVALID_ENUM);
 }
+/* CPU uploads are normalized to the immutable RGBA8 draw snapshot format. */
+static unsigned texture_pixel_bytes(GLenum format, GLenum type) {
+  if(format!=GL_RGB && format!=GL_RGBA) { error(GL_INVALID_ENUM); return 0; }
+  if(type==GL_UNSIGNED_BYTE) return format==GL_RGB ? 3 : 4;
+  if(type==GL_UNSIGNED_SHORT_5_6_5) {
+    if(format==GL_RGB) return 2;
+    error(GL_INVALID_OPERATION); return 0;
+  }
+  error(GL_INVALID_ENUM); return 0;
+}
+static void texture_copy(unsigned char *dst, size_t dst_stride, const void *pixels,
+                         GLsizei width, GLsizei height, unsigned bpp, GLboolean rgb) {
+  size_t row=(size_t)width*bpp;
+  size_t stride=(row+current->unpack_alignment-1)&~(size_t)(current->unpack_alignment-1);
+  if(bpp==4 && !rgb) {
+    for(GLsizei y=0;y<height;++y)
+      memcpy(dst+(size_t)y*dst_stride,(const unsigned char *)pixels+(size_t)y*stride,row);
+    return;
+  }
+  for(GLsizei y=0;y<height;++y) for(GLsizei x=0;x<width;++x) {
+    const unsigned char *src=(const unsigned char *)pixels+(size_t)y*stride+(size_t)x*bpp;
+    unsigned char *out=dst+(size_t)y*dst_stride+(size_t)x*4;
+    if(bpp==2) {
+      uint16_t packed; memcpy(&packed,src,2); /* Unaligned client pointers are valid. */
+      out[0]=(unsigned char)((((packed>>11)&31)*255+15)/31);
+      out[1]=(unsigned char)((((packed>>5)&63)*255+31)/63);
+      out[2]=(unsigned char)(((packed&31)*255+15)/31);
+    } else memcpy(out,src,3);
+    out[3]=rgb || bpp!=4 ? 255 : src[3];
+  }
+}
 void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width, GLsizei height,
                   GLint border, GLenum format, GLenum type, const void *pixels) {
   if(!current) return;
   PS4GLTexture *t=bound_texture(target); if(!t) return;
   if(level || border || width<0 || height<0 || width>PS4GL_TEXTURE_LIMIT || height>PS4GL_TEXTURE_LIMIT) { error(GL_INVALID_VALUE); return; }
-  if((internal!=GL_RGBA && internal!=GL_RGBA8) || format!=GL_RGBA || type!=GL_UNSIGNED_BYTE) { error(GL_INVALID_ENUM); return; }
+  if(internal!=GL_RGB && internal!=GL_RGB8 && internal!=GL_RGBA && internal!=GL_RGBA8) { error(GL_INVALID_ENUM); return; }
+  unsigned bpp=texture_pixel_bytes(format,type); if(!bpp) return;
+  GLboolean rgb=internal==GL_RGB || internal==GL_RGB8;
   size_t bytes=(size_t)width*height*4, old=(size_t)t->width*t->height*4;
   if(bytes>PS4GL_TEXTURE_BUDGET-(current->texture_bytes-old)) { error(GL_OUT_OF_MEMORY); return; }
   unsigned char *copy=bytes ? calloc(1,bytes) : NULL;
   if(bytes && !copy) { error(GL_OUT_OF_MEMORY); return; }
-  size_t row=(size_t)width*4, stride=(row+current->unpack_alignment-1)&~(size_t)(current->unpack_alignment-1);
-  if(pixels && row) for(GLsizei y=0;y<height;++y) memcpy(copy+(size_t)y*row,(const unsigned char *)pixels+(size_t)y*stride,row);
+  if(pixels && bytes) texture_copy(copy,(size_t)width*4,pixels,width,height,bpp,rgb);
+  else if(rgb) for(size_t i=3;i<bytes;i+=4) copy[i]=255;
   end_target(); t->render_target=0;
-  free(t->pixels); t->pixels=copy; t->width=width; t->height=height; current->texture_bytes+=bytes; current->texture_bytes-=old;
+  free(t->pixels); t->rgb_storage=rgb; t->pixels=copy; t->width=width; t->height=height; current->texture_bytes+=bytes; current->texture_bytes-=old;
 }
 void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width, GLsizei height,
                      GLenum format, GLenum type, const void *pixels) {
   if(!current) return;
   PS4GLTexture *t=bound_texture(target); if(!t) return;
-  if(format!=GL_RGBA || type!=GL_UNSIGNED_BYTE) { error(GL_INVALID_ENUM); return; }
+  unsigned bpp=texture_pixel_bytes(format,type); if(!bpp) return;
   if(level || x<0 || y<0 || width<0 || height<0 || x>t->width || y>t->height || width>t->width-x || height>t->height-y) { error(GL_INVALID_VALUE); return; }
   if(!width || !height) return;
   if(t->render_target) { error(GL_INVALID_OPERATION); return; }
   if(!pixels || !t->pixels) { error(GL_INVALID_OPERATION); return; }
-  size_t row=(size_t)width*4, stride=(row+current->unpack_alignment-1)&~(size_t)(current->unpack_alignment-1);
-  for(GLsizei r=0;r<height;++r) memcpy(t->pixels+((size_t)(y+r)*t->width+x)*4,(const unsigned char *)pixels+(size_t)r*stride,row);
+  texture_copy(t->pixels+((size_t)y*t->width+x)*4,(size_t)t->width*4,pixels,width,height,bpp,t->rgb_storage);
 }
 
 static PS4GLFramebuffer *framebuffer_name(PS4GLContext *ctx, GLuint name) {
@@ -738,7 +770,9 @@ GLenum glCheckFramebufferStatus(GLenum target) {
   GLuint name=ps4glFramebufferTexture(current);
   if(!name) return GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
   PS4GLTexture *t=texture_name(current,name);
-  return t && t->pixels && t->width>0 && t->height>0 ? GL_FRAMEBUFFER_COMPLETE : GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+  if(!t || !t->pixels || t->width<=0 || t->height<=0) return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+  /* RGB render targets need alpha swizzling; keep this upload-only for now. */
+  return t->rgb_storage ? GL_FRAMEBUFFER_UNSUPPORTED : GL_FRAMEBUFFER_COMPLETE;
 }
 void ps4glDestroyFramebuffers(PS4GLContext *ctx) {
   if(!ctx) return;

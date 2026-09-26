@@ -58,8 +58,9 @@ itself a startup blocker.
    which the current state API rejects. Distinguish disable semantics from
    claiming working depth/cull support.
 6. Validate real texture sizes/formats and object lifetime. The current 1024
-   texture limit is below TWP's 1280x720 screen width. RGBA8-only uploads cannot
-   substitute for all launcher's packed/RGB/indexed formats. TWP deletes attached
+   texture limit is below TWP's 1280x720 screen width. RGB8 and RGB565 uploads
+   now work alongside RGBA8, but other packed/BGRA/indexed formats remain. See
+   [PS4-GL-RGB-TEXTURES.md](PS4-GL-RGB-TEXTURES.md). TWP deletes attached
    textures before deleting their FBO, currently rejected by our subset. Shader
    linking during command recording and lifetime program-slot exhaustion also
    need explicit treatment.

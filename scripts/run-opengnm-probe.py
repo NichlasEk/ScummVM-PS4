@@ -203,7 +203,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
             if args.glblend and (guest_log.read_text().count('PASS GL blend variants=8 and state snapshots') != 8 or
                                  'PASS GL vertex command buffer resubmission' not in guest_log.read_text()):
                 raise RuntimeError('GL blend state/lifetime checks incomplete')
-            if args.gltexture and guest_log.read_text().count('PASS GL texture units updates filtering and deletion') != 8:
+            if args.gltexture and (guest_log.read_text().count('PASS GL texture units updates filtering and deletion') != 8 or
+                                   guest_log.read_text().count('PASS GL RGB8 RGB565 uploads and RGB subimage snapshots') != 8):
                 raise RuntimeError('GL texture checks incomplete')
             if args.glarray and guest_log.read_text().count('PASS GL array snapshots and indexed updates') != 8:
                 raise RuntimeError('GL array checks incomplete')

@@ -62,6 +62,63 @@ static int begin_lazy(PS4GLContext *ctx) {
   if(lazy_fail) return 0;
   ps4glBeginPass((VkCommandBuffer)(uintptr_t)1); return 1;
 }
+static void check_rgb_uploads(void) {
+  PS4GLContext ctx; assert(ps4glInit(&ctx,80,60)); ps4glMakeCurrent(&ctx);
+  GLuint name; glGenTextures(1,&name); glBindTexture(GL_TEXTURE_2D,name);
+  const PS4GLTexture *t=ps4glTextureAtUnit(&ctx,0);
+  for(unsigned align=1;align<=8;align*=2) for(unsigned width=1;width<=3;width+=2) {
+    unsigned char storage[65]; memset(storage,0xee,sizeof(storage));
+    unsigned char *src=storage+1; /* Deliberately unaligned, with poisoned padding. */
+    size_t stride=(width*3+align-1)&~(size_t)(align-1);
+    for(unsigned y=0;y<2;++y) for(unsigned x=0;x<width;++x) {
+      src[y*stride+x*3]=11+x; src[y*stride+x*3+1]=25+y; src[y*stride+x*3+2]=71;
+    }
+    glPixelStorei(GL_UNPACK_ALIGNMENT,align);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,width,2,0,GL_RGB,GL_UNSIGNED_BYTE,src);
+    for(unsigned y=0;y<2;++y) for(unsigned x=0;x<width;++x) {
+      const unsigned char expected[]={11+x,25+y,71,255};
+      assert(!memcmp(t->pixels+(y*width+x)*4,expected,4));
+    }
+    stride=(width*2+align-1)&~(size_t)(align-1);
+    memset(storage,0xee,sizeof(storage));
+    for(unsigned y=0;y<2;++y) for(unsigned x=0;x<width;++x) {
+      uint16_t packed=y ? 0x8410 : 0xf800; memcpy(src+y*stride+x*2,&packed,2);
+    }
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,width,2,0,GL_RGB,GL_UNSIGNED_SHORT_5_6_5,src);
+    for(unsigned x=0;x<width;++x) {
+      const unsigned char red[]={255,0,0,255}, middle[]={132,130,132,255};
+      assert(!memcmp(t->pixels+x*4,red,4));
+      assert(!memcmp(t->pixels+(width+x)*4,middle,4));
+    }
+    assert(!glGetError() && ctx.texture_bytes==width*2*4);
+  }
+  glPixelStorei(GL_UNPACK_ALIGNMENT,4);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGB8,3,3,0,GL_RGB,GL_UNSIGNED_BYTE,NULL);
+  unsigned char rgba[]={9,8,7,0};
+  glTexSubImage2D(GL_TEXTURE_2D,0,1,1,1,1,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
+  assert(t->pixels[16]==9 && t->pixels[19]==255 && t->pixels[15]==255 && !t->pixels[20]);
+  uint16_t green=0x07e0;
+  glTexSubImage2D(GL_TEXTURE_2D,0,2,2,1,1,GL_RGB,GL_UNSIGNED_SHORT_5_6_5,&green);
+  const unsigned char expected_green[]={0,255,0,255}; assert(!memcmp(t->pixels+32,expected_green,4));
+  unsigned char rows[]={31,32,33,99,41,42,43};
+  glTexSubImage2D(GL_TEXTURE_2D,0,1,0,1,2,GL_RGB,GL_UNSIGNED_BYTE,rows);
+  assert(t->pixels[4]==31 && t->pixels[16]==41 && t->pixels[7]==255 && t->pixels[19]==255);
+  assert(!t->pixels[0] && !t->pixels[8] && !memcmp(t->pixels+32,expected_green,4));
+  unsigned char before[36]; memcpy(before,t->pixels,36);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,1,1,0,GL_RGBA,GL_UNSIGNED_SHORT_5_6_5,&green);
+  assert(glGetError()==GL_INVALID_OPERATION && t->rgb_storage && ctx.texture_bytes==36);
+  glTexSubImage2D(GL_TEXTURE_2D,0,0,0,1,1,GL_RGB,GL_FLOAT,rgba);
+  assert(glGetError()==GL_INVALID_ENUM && !memcmp(before,t->pixels,36));
+  glTexSubImage2D(GL_TEXTURE_2D,0,3,3,0,0,GL_RGB,GL_UNSIGNED_BYTE,NULL);
+  assert(!glGetError());
+  GLuint fbo; glGenFramebuffers(1,&fbo); glBindFramebuffer(GL_FRAMEBUFFER,fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,name,0);
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_UNSUPPORTED);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba);
+  assert(!t->rgb_storage && t->pixels[3]==0 && ctx.texture_bytes==4);
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
+  glDeleteFramebuffers(1,&fbo); ps4glDestroyTextures(&ctx); ps4glMakeCurrent(NULL);
+}
 int main(void) {
   PS4GLContext a,b;
   assert(ps4glInit(&a,80,60) && ps4glInit(&b,20,10));
@@ -303,6 +360,7 @@ int main(void) {
   assert(ap->uniform_data[1][204]==0);
   glUniform4fv(base,1,colors); assert(glGetError()==GL_INVALID_OPERATION);
   glUniform1f(PS4GL_MAX_UNIFORMS*5,1); assert(glGetError()==GL_INVALID_OPERATION);
+  check_rgb_uploads();
   PS4GLContext texctx;
   assert(ps4glInit(&texctx,80,60)); ps4glMakeCurrent(&texctx);
   GLuint tex[2]; glGenTextures(2,tex); assert(!glIsTexture(tex[0]));
@@ -519,5 +577,5 @@ int main(void) {
   assert(uploads==old_uploads && indexed_draws==old_draws);
   ps4glDestroyBuffers(&strips);
   ps4glMakeCurrent(NULL);
-  puts("PASS triangle strips, winding, degenerates, index widths, bounds and snapshots; constant vertex attributes, array precedence, context isolation and atomic errors; signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
+  puts("PASS triangle strips, winding, degenerates, index widths, bounds and snapshots; constant vertex attributes, array precedence, context isolation and atomic errors; signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; RGB8/RGB565 conversion, opaque RGB storage, padded rows and subimages; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

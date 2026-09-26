@@ -186,3 +186,14 @@ and uint32-indexed strips. The original 2,553-pixel oracle still passes. See
 [PS4-GL-TRIANGLE-STRIPS.md](PS4-GL-TRIANGLE-STRIPS.md) for semantics and bounds.
 Current package SHA-256:
 `6f4552f148c20334e8764979241f79564aae7a71d18a9d84fc943073b19fd9a3`.
+
+## RGB texture continuation (2026-09-26)
+
+Rebuilt with the expanded texture/context layout for RGB8/RGB565 uploads.
+The SDL regression passes all 2,553 pixel checks and native lifecycle cleanup;
+the separate `--gltexture` fixture validates the new formats (see
+[PS4-GL-RGB-TEXTURES.md](PS4-GL-RGB-TEXTURES.md)).
+Current package SHA-256:
+`89e6d250cdeb7d2baf1ae1d150552b70594a0cdf12ab573ac47f24511c7a8927`.
+The stable package remains unchanged; actual application startup is still gated
+at GLAD and has not been rebuilt for this upload-format milestone.

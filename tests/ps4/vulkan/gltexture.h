@@ -5,8 +5,9 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
   GLint image_a=glGetUniformLocation(program,"imageA"), image_b=glGetUniformLocation(program,"imageB");
   if(image_a<0 || image_b<0) return 2;
   GLuint textures[3]; glGenTextures(3,textures);
-  unsigned char a[]={0,0,0,255, 255,0,0,255, 0,0,0,255, 0,0,0,255};
-  unsigned char b[]={0,0,0,255, 0,0,0,255, 0,0,64,255, 0,0,0,255};
+  uint16_t a[]={0,0xf800,0,0};
+  /* RGB rows padded from six to eight bytes, with poison in the padding. */
+  unsigned char b[]={0,0,0, 0,0,0, 99,99, 0,0,64, 0,0,0, 99,99};
   unsigned char c[]={0,0,0,255, 0,0,0,255, 0,0,191,255, 0,0,0,255};
   for(unsigned i=0;i<3;++i) {
     glActiveTexture(GL_TEXTURE0+i); glBindTexture(GL_TEXTURE_2D,textures[i]);
@@ -14,7 +15,9 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2,2,0,GL_RGBA,GL_UNSIGNED_BYTE,i==0 ? a : i==1 ? b : c);
+    if(i==0) glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,2,2,0,GL_RGB,GL_UNSIGNED_SHORT_5_6_5,a);
+    else if(i==1) glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2,2,0,GL_RGB,GL_UNSIGNED_BYTE,b);
+    else glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2,2,0,GL_RGBA,GL_UNSIGNED_BYTE,c);
   }
   glUniform1i(image_a,0); glUniform1i(image_b,1);
   GLint coordinates=glGetUniformLocation(program,"coordinates");
@@ -51,7 +54,7 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
   glBindBuffer(GL_ARRAY_BUFFER,buffers[0]);
   /* Change one texel after the left draw; switch the second sampler's unit. */
   glActiveTexture(GL_TEXTURE0); unsigned char red[]={128,0,0,255};
-  glTexSubImage2D(GL_TEXTURE_2D,0,1,0,1,1,GL_RGBA,GL_UNSIGNED_BYTE,red);
+  glTexSubImage2D(GL_TEXTURE_2D,0,1,0,1,1,GL_RGB,GL_UNSIGNED_BYTE,red);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   glUniform1i(image_b,2);
@@ -85,6 +88,7 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
   if(glGetError()!=GL_INVALID_OPERATION) return 2;
   fprintf(report,"PASS GL vertex deleted-buffer rejection\n");
   fprintf(report,"PASS GL index uint16 uint32 offset mutation\n");
+  fprintf(report,"PASS GL RGB8 RGB565 uploads and RGB subimage snapshots\n");
   fprintf(report,"PASS GL texture units updates filtering and deletion\n");
   return 0;
 }

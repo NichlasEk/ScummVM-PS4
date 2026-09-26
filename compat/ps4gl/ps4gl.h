@@ -94,6 +94,10 @@ typedef struct PS4GLBlendVariant { PS4GLBlend state; VkPipeline pipeline; VkRend
 #define GL_NEAREST_MIPMAP_LINEAR 0x2702
 #define GL_REPEAT 0x2901
 #define GL_CLAMP_TO_EDGE 0x812f
+#define GL_FRAMEBUFFER_UNSUPPORTED 0x8cdd
+#define GL_RGB 0x1907
+#define GL_RGB8 0x8051
+#define GL_UNSIGNED_SHORT_5_6_5 0x8363
 #define GL_RGBA 0x1908
 #define GL_RGBA8 0x8058
 #define GL_UNSIGNED_BYTE 0x1401
@@ -108,6 +112,7 @@ typedef struct PS4GLTexture {
   unsigned char *pixels;
   GLsizei width,height;
   GLenum min_filter,mag_filter,wrap_s,wrap_t;
+  GLboolean rgb_storage;
   unsigned render_target;
 } PS4GLTexture;
 typedef struct PS4GLTextureSnapshot {

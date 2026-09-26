@@ -1,3 +1,6 @@
+#ifdef GLSTATE_PROBE
+#include "ps4gl.c"
+#endif
 /* All offscreen resources are created through public Vulkan API. */
 static VkImage off_image;
 static VkDeviceMemory off_memory;
@@ -162,6 +165,23 @@ static void draw_offscreen(VkCommandBuffer cmd, unsigned frame,
   vkCmdSetScissor(cmd, 0, 1, &left);
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines[1]);
 #ifdef RECTCLEAR_PROBE
+#ifdef GLSTATE_PROBE
+  PS4GLContext gl;
+  ps4glInit(&gl,80,60);
+  ps4glMakeCurrent(&gl);
+  ps4glBeginPass(cmd);
+  void (*clear_gl)(GLbitfield) = (void (*)(GLbitfield))ps4glGetProcAddress("glClear");
+  glViewport(1,2,3,4); /* GL viewport must not restrict clears. */
+  glEnable(GL_SCISSOR_TEST);
+  glClearColor(.2f,.4f,.6f,.8f);
+  glScissor(6,39,11,13); clear_gl(GL_COLOR_BUFFER_BIT);
+  glScissor(49,14,17,9); clear_gl(GL_COLOR_BUFFER_BIT);
+  glClearColor(.7f,.1f,.3f,.9f);
+  glScissor(12,35,13,9); clear_gl(GL_COLOR_BUFFER_BIT);
+  fprintf(report,"GL state frame %u error=%u\n",frame,glGetError());
+  ps4glEndPass();
+  ps4glMakeCurrent(NULL);
+#else
   VkClearAttachment clear = {.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
     .colorAttachment=0, .clearValue.color.float32={.2f,.4f,.6f,.8f}};
   VkClearRect rects[]={{{{6,8},{11,13}},0,1}, {{{49,37},{17,9}},0,1}};
@@ -170,6 +190,7 @@ static void draw_offscreen(VkCommandBuffer cmd, unsigned frame,
   clear.clearValue.color=(VkClearColorValue){.float32={.7f,.1f,.3f,.9f}};
   VkClearRect overlap={{{12,16},{13,9}},0,1};
   vkCmdClearAttachments(cmd,1,&clear,1,&overlap);
+#endif
 #endif
   vkCmdDraw(cmd, 3, 1, 0, 0);
   vkCmdSetScissor(cmd, 0, 1, &topright);

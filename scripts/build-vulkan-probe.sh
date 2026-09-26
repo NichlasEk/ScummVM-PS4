@@ -3,9 +3,13 @@
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 case "${1:-}" in
- ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp) ;;
- *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp]' >&2; exit 2 ;;
+ ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate) ;;
+ *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate]' >&2; exit 2 ;;
 esac
+variant=${1:-}
+if [[ "$variant" == --glstate ]]; then
+ set -- --rectclear
+fi
 export OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
 "$root/scripts/build-opengnm-probe.sh"
 probe="$root/build/vulkan-probe"
@@ -41,6 +45,10 @@ if [[ "${1:-}" == --twp ]]; then
 else
  python3 "$root/scripts/prepare-vulkan-shaders.py" "$probe" "$@"
 fi
+if [[ "$variant" == --glstate ]]; then
+ sed -i '1i#define GLSTATE_PROBE 1' "$probe/draw.c"
+ cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$probe/"
+fi
 content=IV0000-SCVM00009_00-SCUMMVMVULKAN001
 driver="$root/.tools/opengnm-stack/vulkan-ps4"
 if [[ -f "$driver/sce_sys/param.sfo" ]]; then
@@ -75,6 +83,9 @@ if [[ "${1:-}" == --rectclear ]]; then
 fi
 if [[ "${1:-}" == --twp ]]; then
  package=ScummVM-PS4-Vulkan-TWP.pkg
+fi
+if [[ "$variant" == --glstate ]]; then
+ package=ScummVM-PS4-GL-State.pkg
 fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"

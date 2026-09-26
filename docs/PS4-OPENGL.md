@@ -8,8 +8,9 @@ or Piglet. The native GNM baseline is in [PS4-OPENGNM.md](PS4-OPENGNM.md); valid
 texture uploads, offscreen composition, indexed vertices, readback and partial
 clears are now in [PS4-VULKAN.md](PS4-VULKAN.md). TWP shader translation and
 reflection pass offline, and all five original fragment effects now render in
-the native Vulkan diagnostic with bounded RGB checks. The GL-facing context and
-state adapter are still missing. The alternatives below preserve the earlier
+the native Vulkan diagnostic with bounded RGB checks. A first bounded
+[GL state/clear frontend](PS4-GL-STATE.md) now exists; shader/draw APIs and SDL
+context integration are still missing. The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 
 ## Capability probe checkpoint
@@ -119,7 +120,8 @@ when libpsbc is missing. Do not use the README's broad API claims as proof of
 Zink compatibility. [Current Zink requirements](https://docs.mesa3d.org/drivers/zink.html)
 include many extensions beyond a nominal Vulkan 1.0 implementation; check the
 exact selected Zink release's profile against the driver before integration.
-No local OpenGNM build or physical GPU test has been performed yet.
+Local OpenGNM/Vulkan builds and emulator pixel tests are now recorded in
+[PS4-VULKAN.md](PS4-VULKAN.md); physical PS4 tests remain pending.
 
 A dedicated TWP software renderer is another option, but rewrites its effects
 and benefits one engine. For the user's broader ScummVM goal, a reusable Mesa

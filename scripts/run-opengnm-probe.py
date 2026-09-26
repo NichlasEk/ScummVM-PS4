@@ -20,10 +20,13 @@ variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
 variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
+variants.add_argument('--glstate', action='store_true')
 variants.add_argument('--twp', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
+if args.glstate:
+    args.rectclear = True
 if args.rectclear:
     args.readback = True
 if args.readback:
@@ -52,7 +55,7 @@ if args.vulkan:
     if args.twp:
         reports /= 'twp'
     elif args.composite:
-        reports /= 'rectclear' if args.rectclear else 'readback' if args.readback else 'composite'
+        reports /= 'glstate' if args.glstate else 'rectclear' if args.rectclear else 'readback' if args.readback else 'composite'
     elif args.resources:
         reports /= 'sprites' if args.sprites else 'upload' if args.upload else 'resources'
 reports.mkdir(parents=True, exist_ok=True)
@@ -136,6 +139,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.glstate and (guest_log.read_text().count(' error=0') != 8):
+                raise RuntimeError('GL state/error checks did not complete')
             if args.readback and (guest_log.read_text().count('PASS readback frame ') != 9 or
                                   'PASS readback command buffer resubmission' not in guest_log.read_text()):
                 raise RuntimeError('Readback pixel/guard checks did not complete')

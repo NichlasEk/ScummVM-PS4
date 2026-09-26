@@ -113,7 +113,7 @@ int main(void) {
   assert(!words && !fs && !bytes && !fb && log[0]); bindings[2].index=6;
   const char *comma="#version 110\nattribute vec2 a,b;void main(){gl_Position=vec4(a+b,0,1);}";
   assert(!ps4glCompileLegacyGLSL(0,comma,&words,&bytes,log,sizeof(log)));
-  const char *builtin="#version 110\nvoid main(){gl_FragColor=gl_FragCoord;}";
+  const char *builtin="#version 110\nvoid main(){gl_FragColor=gl_FrontFacing?vec4(1.):vec4(0.);}";
   assert(!ps4glCompileLegacyGLSL(1,builtin,&words,&bytes,log,sizeof(log)) && !words && !bytes && strstr(log,"builtin"));
   const char *missing="#version 110\nvarying vec2 absent;void main(){gl_FragColor=vec4(absent,0,1);}";
   assert(!ps4glLinkLegacyGLSL(legacy_vsrc,missing,bindings,3,&words,&bytes,&fs,&fb,log,sizeof(log)));
@@ -131,6 +131,53 @@ int main(void) {
     }
   }
   assert(!ps4glCompileLegacyGLSL(1,"#version 110\nuniform vec4 tooMany[65];void main(){gl_FragColor=tooMany[64];}",&words,&bytes,log,sizeof(log)));
+  /* Original Grim actor shader: flattened struct fields retain GL names and types. */
+  if(!ps4glCompileLegacyGLSL(0,legacy_grim_actor_vertex,&words,&bytes,log,sizeof(log))) {
+    fprintf(stderr,"Grim actor vertex: %s\n",log); abort();
+  }
+  PS4GLProgram grim={0}; assert(gl_reflect_uniforms(words,bytes,0,&grim));
+  unsigned fields=0;
+  for(unsigned u=0;u<grim.uniform_count;++u) {
+    const PS4GLUniform *field=&grim.uniforms[u];
+    if(!strncmp(field->name,"shadow.",7)) {
+      ++fields;
+      if(!strcmp(field->name,"shadow._active")) assert(field->integer==2 && field->width==1);
+      else assert(!field->integer && field->width==3 && field->offset[0]%16==0);
+    }
+  }
+  assert(fields==5); free(words);
+  if(!ps4glLinkLegacyGLSL(legacy_grim_actor_vertex,legacy_grim_actor_fragment,NULL,0,&words,&bytes,&fs,&fb,log,sizeof(log))) {
+    fprintf(stderr,"Grim actor pair: %s\n",log); abort();
+  }
+  PS4GLProgram actor={0};
+  assert(gl_reflect_uniforms(words,bytes,0,&actor) && gl_reflect_uniforms(fs,fb,1,&actor));
+  assert(gl_reflect_samplers(words,bytes,0,&actor) && gl_reflect_samplers(fs,fb,1,&actor));
+  unsigned coord=0;
+  for(unsigned u=0;u<actor.uniform_count;++u) if(!strcmp(actor.uniforms[u].name,"ps4gl_fragcoord_y")) { assert(actor.uniforms[u].width==2 && actor.uniforms[u].offset[1]>=0); ++coord; }
+  assert(coord==1); free(words); free(fs);
+  for(unsigned i=0;i<sizeof(grim_pairs)/sizeof(grim_pairs[0]);++i) {
+    if(!ps4glLinkLegacyGLSL(grim_pairs[i].vertex,grim_pairs[i].fragment,NULL,0,&words,&bytes,&fs,&fb,log,sizeof(log))) {
+      fprintf(stderr,"%s: %s\n",grim_pairs[i].name,log); abort();
+    }
+    PS4GLProgram pair={0};
+    assert(gl_reflect_uniforms(words,bytes,0,&pair) && gl_reflect_uniforms(fs,fb,1,&pair));
+    assert(gl_reflect_samplers(words,bytes,0,&pair) && gl_reflect_samplers(fs,fb,1,&pair));
+    free(words); free(fs);
+  }
+  puts("PASS all original Grim shader pairs compiled, linked and reflected");
+  const char *struct_v="#version 110\nstruct Params { bool enabled; vec3 color; }; uniform Params p; void main(){gl_Position=vec4(p.color,1.0);}";
+  const char *struct_f="#version 110\nstruct Params { bool enabled; vec3 color; }; uniform Params p; void main(){gl_FragColor=p.enabled?vec4(p.color,1.0):vec4(0.0);}";
+  if(!ps4glLinkLegacyGLSL(struct_v,struct_f,NULL,0,&words,&bytes,&fs,&fb,log,sizeof(log))) { fprintf(stderr,"struct pair: %s\n",log); abort(); }
+  PS4GLProgram shared={0};
+  assert(gl_reflect_uniforms(words,bytes,0,&shared) && gl_reflect_uniforms(fs,fb,1,&shared));
+  assert(shared.uniform_count==2);
+  for(unsigned u=0;u<shared.uniform_count;++u) assert(shared.uniforms[u].offset[0]>=0 && shared.uniforms[u].offset[1]>=0);
+  free(words); free(fs);
+  const char *struct_bad="#version 110\nstruct Params { bool enabled; vec4 color; }; uniform Params p; void main(){gl_FragColor=p.color;}";
+  assert(!ps4glLinkLegacyGLSL(struct_v,struct_bad,NULL,0,&words,&bytes,&fs,&fb,log,sizeof(log)) && strstr(log,"fields differ"));
+  const char *nested="#version 110\nstruct Inner { float x; }; struct Outer { Inner child; }; uniform Outer p; void main(){gl_Position=vec4(p.child.x);}";
+  assert(!ps4glCompileLegacyGLSL(0,nested,&words,&bytes,log,sizeof(log)));
+  puts("PASS original Grim actor vertex struct, bool/vector reflection, shared stage fields, mismatched and nested struct rejection");
   ps4glGLSLFinalize(); ps4glGLSLFinalize();
   assert(ps4glGLSLInitialize());
   assert(ps4glCompileVulkanGLSL(0,valid,&words,&bytes,log,sizeof(log))); free(words);

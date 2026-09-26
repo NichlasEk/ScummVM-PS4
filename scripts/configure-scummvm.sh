@@ -13,6 +13,8 @@ source_dir=${SCUMMVM_SOURCE_DIR:-"$root/.tools/scummvm-src"}
 "$root/scripts/build-ps4-vorbis.sh"
 "$root/scripts/build-ps4-png.sh"
 "$root/scripts/build-ps4-theora.sh"
+"$root/scripts/build-ps4-mpeg2.sh"
+"$root/scripts/build-ps4-gif.sh"
 mkdir -p "$build_dir"
 cd "$build_dir"
 export CXX=clang++ CC=clang AR=llvm-ar RANLIB=llvm-ranlib
@@ -40,12 +42,12 @@ fi
  --disable-timidity --disable-alsa --disable-seq-midi --disable-mt32emu --disable-cloud --disable-sdlnet --disable-enet \
  --disable-libcurl --disable-discord --disable-taskbar --disable-system-dialogs --disable-libunity --disable-gtk \
  --disable-tts --disable-sparkle --with-ogg-prefix="$root/build/ps4-vorbis/install" --with-vorbis-prefix="$root/build/ps4-vorbis/install" --disable-tremor --with-mad-prefix="$root/build/ps4-mad/install" --disable-flac \
- --disable-fribidi --with-zlib-prefix="$root/build/ps4-png/install" --with-jpeg-prefix="$root/build/ps4-jpeg/install" --with-png-prefix="$root/build/ps4-png/install" --disable-gif --with-theoradec-prefix="$root/build/ps4-theora/install" --disable-vpx \
+ --disable-fribidi --with-zlib-prefix="$root/build/ps4-png/install" --with-jpeg-prefix="$root/build/ps4-jpeg/install" --with-png-prefix="$root/build/ps4-png/install" --with-gif-prefix="$root/build/ps4-gif/install" --with-theoradec-prefix="$root/build/ps4-theora/install" --disable-vpx \
  --disable-faad --disable-fluidsynth --disable-fluidlite --disable-sonivox --enable-freetype2 \
- --disable-mikmod --disable-mpeg2 --disable-a52 --disable-openmpt --disable-mpcdec --disable-nasm --disable-readline --disable-sndio --enable-lua --disable-translation
+ --disable-mikmod --with-mpeg2-prefix="$root/build/ps4-mpeg2/install" --disable-a52 --disable-openmpt --disable-mpcdec --disable-nasm --disable-readline --disable-sndio --enable-lua --disable-translation
 
 # These are required target ports; do not silently ship a build without them.
-for feature in USE_PNG USE_ZLIB USE_THEORADEC; do
+for feature in USE_PNG USE_ZLIB USE_THEORADEC USE_MPEG2 USE_GIF; do
  if ! grep -q "^#define $feature" config.h; then
   echo "Required PS4 dependency missing: $feature" >&2
   exit 1

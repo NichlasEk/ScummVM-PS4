@@ -41,7 +41,7 @@ static SDL_GLContext sdl_create(SDL_Window **window) {
   if(SDL_GL_GetProcAddress("glUniform1i")!=(void *)ps4glGetProcAddress("glUniform1i") ||
      SDL_GL_GetProcAddress("glNotImplemented") || SDL_GL_CreateContext(*window)) return NULL;
   const SDL_GLattr attrs[]={SDL_GL_RED_SIZE,SDL_GL_GREEN_SIZE,SDL_GL_BLUE_SIZE,SDL_GL_ALPHA_SIZE,SDL_GL_DEPTH_SIZE,SDL_GL_STENCIL_SIZE,SDL_GL_DOUBLEBUFFER,SDL_GL_MULTISAMPLEBUFFERS,SDL_GL_MULTISAMPLESAMPLES};
-  const int expected[]={8,8,8,8,0,0,1,0,0};
+  const int expected[]={8,8,8,8,32,8,1,0,0};
   for(unsigned i=0;i<sizeof(attrs)/sizeof(attrs[0]);++i) { int value=-1;
     if(SDL_GL_GetAttribute(attrs[i],&value) || value!=expected[i]) return NULL;
   }

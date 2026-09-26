@@ -1,5 +1,8 @@
 #include "shaders.h"
+#include "ps4libc-threading.h"
+#include "allocator.h"
 #include "vk_ps4_log.h"
+#include <sched.h>
 #include <orbis/libkernel.h>
 #include <stdio.h>
 #include <string.h>
@@ -58,12 +61,14 @@ static FILE *report;
 #include "sdlgl.h"
 #endif
 int main(void) {
+  ps4EnableLibcLocks();
   report = fopen("/data/scummvm-vulkan-probe.log", "w");
   if (!report)
     return 2;
   setvbuf(report, NULL, _IONBF, 0);
   vk_ps4_log_open("/data/scummvm-vulkan-driver.log");
   fprintf(report, "START Vulkan draw probe\n");
+  if(!check_concurrent_allocator(report)) return 2;
 #ifdef SDLGL_PROBE
   PS4GLDisplayOwner display={0};
   if(ps4glDisplayInit(&display)) {
@@ -338,7 +343,8 @@ int main(void) {
 #ifdef SDLGL_PROBE
   SDLProbeOwner sdl_state={.device=device,.queue=queue,.swap=swap};
   if(ps4glFrameInit(&sdl_state.frames,device,queue,swap,pass,images,fb,1280,720)) return 2;
-  PS4GLSDLOwner sdl_owner={.physical=physical,.device=device,.pass=pass,.width=1280,.height=720,
+  memcpy(sdl_state.frames.depth_images,display.depth_images,sizeof(display.depth_images));
+  PS4GLSDLOwner sdl_owner={.physical=physical,.device=device,.pass=pass,.width=1280,.height=720,.depth_stencil=1,
     .begin=sdl_begin,.present=sdl_present,.quiesce=sdl_quiesce,.data=&sdl_state};
   if(ps4glSDLSetOwner(&sdl_owner)) return 2;
   SDL_Window *sdl_window=NULL; SDL_GLContext sdl_context=sdl_create(&sdl_window);
@@ -424,6 +430,7 @@ int main(void) {
     }
     SDL_ClearError(); SDL_GL_SwapWindow(sdl_window);
     if(*SDL_GetError() || sdl_state.frames.frames!=frame+1 || glctx->command || sdl_state.frames.state) return 2;
+    if(frame==7 && check_capture_probe()) return 2;
     if(glctx->target_bytes!=(frame==7 ? 0u : 256u) || glctx->snapshot_count || glctx->texture_bytes!=(frame==7 ? 0u : 256u)) return 2;
     fprintf(report,"PASS SDL swap %u\nPASS GL framebuffer storage collected\nFRAME %u Vulkan submitted and presented\n",frame,frame);
     sceKernelUsleep(100000);

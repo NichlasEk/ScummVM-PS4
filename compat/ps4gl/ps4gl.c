@@ -11,7 +11,7 @@ int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   if (!ctx || width <= 0 || height <= 0) return 0;
   memset(ctx, 0, sizeof(*ctx));
   ctx->blend=(PS4GLBlend){.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};
-  ctx->depth_write_mask=GL_TRUE;
+  ctx->depth_write_mask=GL_TRUE; ctx->raster=(PS4GLRaster)PS4GL_RASTER_DEFAULT; ctx->clear_depth=1.f;
   ctx->next_shader=65536;
   ctx->next_framebuffer=1;
   ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=ctx->pack_alignment=4;
@@ -81,36 +81,62 @@ void glBlendEquationSeparate(GLenum rgb, GLenum alpha) {
   current->blend.equation_rgb=rgb; current->blend.equation_alpha=alpha;
 }
 void glBlendEquation(GLenum equation) { glBlendEquationSeparate(equation,equation); }
-/* Fixed raster policy of the bounded color-only backend, not general GL state.
+/* Raster features that are still unavailable in the bounded backend.
  * Disabling these features is supported; enabling them must remain explicit
  * failure until the corresponding rendering behavior is implemented. */
 static int fixed_disabled_cap(GLenum cap) {
-  return cap==GL_CULL_FACE || cap==GL_DEPTH_TEST || cap==GL_DITHER;
+  return cap==GL_CULL_FACE || cap==GL_DITHER;
 }
 void glEnable(GLenum cap) {
+  if(current && cap==GL_DEPTH_TEST) { current->raster.depth_enabled=1; return; }
+  if(current && cap==GL_STENCIL_TEST) { current->raster.stencil_enabled=1; return; }
+  if(current && cap==GL_POLYGON_OFFSET_FILL) { current->polygon_offset_fill=1; return; }
   if(fixed_disabled_cap(cap)) { error(GL_INVALID_OPERATION); return; }
   if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return; }
   if(current) { if(cap==GL_BLEND) current->blend.enabled=1; else current->scissor_enabled=GL_TRUE; }
 }
 void glDisable(GLenum cap) {
+  if(current && cap==GL_DEPTH_TEST) { current->raster.depth_enabled=0; return; }
+  if(current && cap==GL_STENCIL_TEST) { current->raster.stencil_enabled=0; return; }
+  if(current && cap==GL_POLYGON_OFFSET_FILL) { current->polygon_offset_fill=0; return; }
   if(fixed_disabled_cap(cap)) return;
   if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return; }
   if(current) { if(cap==GL_BLEND) current->blend.enabled=0; else current->scissor_enabled=GL_FALSE; }
 }
 GLboolean glIsEnabled(GLenum cap) {
+  if(current && cap==GL_DEPTH_TEST) return current->raster.depth_enabled;
+  if(current && cap==GL_STENCIL_TEST) return current->raster.stencil_enabled;
+  if(current && cap==GL_POLYGON_OFFSET_FILL) return current->polygon_offset_fill;
   if(fixed_disabled_cap(cap)) return GL_FALSE;
   if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return GL_FALSE; }
   return current ? (cap==GL_BLEND ? current->blend.enabled : current->scissor_enabled) : GL_FALSE;
 }
-/* Depth writes are tracked for state restoration; color-only targets have no
- * depth attachment, and enabling depth testing remains unsupported. */
+/* Depth writes are applied only when the active target owns a depth plane. */
 void glDepthMask(GLboolean enabled) {
-  if(current) current->depth_write_mask=enabled ? GL_TRUE : GL_FALSE;
+  if(current) { current->depth_write_mask=enabled ? GL_TRUE : GL_FALSE; current->raster.depth_write=!!enabled; }
 }
+void glColorMask(GLboolean r,GLboolean g,GLboolean b,GLboolean a) {
+  if(current) current->raster.color_mask= (!!r) | (!!g<<1) | (!!b<<2) | (!!a<<3);
+}
+void glClearDepth(double value) { if(current) current->clear_depth=value>0 ? (value<1 ? (float)value : 1.f) : 0.f; }
+void glClearStencil(GLint value) { if(current) current->clear_stencil=value; }
+static int compare_func(GLenum f) { return f>=GL_NEVER && f<=GL_ALWAYS; }
+void glDepthFunc(GLenum f) { if(!compare_func(f)) { error(GL_INVALID_ENUM); return; } if(current) current->raster.depth_func=f; }
+void glStencilFunc(GLenum f,GLint ref,GLuint mask) {
+  if(!compare_func(f)) { error(GL_INVALID_ENUM); return; }
+  if(current) { current->raster.stencil_func=f; current->raster.stencil_ref=ref<0?0:ref>255?255:(unsigned)ref; current->raster.stencil_mask=mask&255; }
+}
+static int stencil_op(GLenum op) { return op==GL_KEEP || op==GL_ZERO || op==GL_REPLACE || op==GL_INCR || op==GL_DECR || op==GL_INVERT || op==GL_INCR_WRAP || op==GL_DECR_WRAP; }
+void glStencilOp(GLenum fail,GLenum depth_fail,GLenum pass) {
+  if(!stencil_op(fail) || !stencil_op(depth_fail) || !stencil_op(pass)) { error(GL_INVALID_ENUM); return; }
+  if(current) { current->raster.stencil_fail=fail; current->raster.stencil_depth_fail=depth_fail; current->raster.stencil_pass=pass; }
+}
+void glStencilMask(GLuint mask) { if(current) current->raster.stencil_write_mask=mask&255; }
 void glGetBooleanv(GLenum pname, GLboolean *values) {
   if(!current) return;
   if(!values) { error(GL_INVALID_VALUE); return; }
-  if(pname==GL_DEPTH_WRITEMASK) *values=current->depth_write_mask;
+  if(pname==GL_COLOR_WRITEMASK) { for(unsigned i=0;i<4;++i) values[i]=!!(current->raster.color_mask&(1u<<i)); }
+  else if(pname==GL_DEPTH_WRITEMASK) *values=current->depth_write_mask;
   else error(GL_INVALID_ENUM);
 }
 void glGetIntegerv(GLenum pname, GLint *values) {
@@ -139,8 +165,11 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   else if(pname==GL_MAX_VERTEX_ATTRIBS) *values=PS4GL_MAX_ATTRIBS;
   else if(pname==GL_MAX_TEXTURE_IMAGE_UNITS || pname==GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS) *values=2;
   else if(pname==GL_RED_BITS || pname==GL_GREEN_BITS || pname==GL_BLUE_BITS || pname==GL_ALPHA_BITS) *values=8;
-  else if(pname==GL_DEPTH_BITS || pname==GL_STENCIL_BITS || pname==GL_STEREO || pname==GL_SAMPLE_BUFFERS || pname==GL_SAMPLES) *values=0;
+  else if(pname==GL_DEPTH_BITS || pname==GL_STENCIL_BITS) *values=(!current->framebuffer && current->default_depth_stencil) ? (pname==GL_DEPTH_BITS ? 32 : 8) : 0;
+  else if(pname==GL_STEREO || pname==GL_SAMPLE_BUFFERS || pname==GL_SAMPLES) *values=0;
   else if(pname==GL_DOUBLEBUFFER) *values=!current->framebuffer;
+  else if(pname==GL_DEPTH_TEST) *values=current->raster.depth_enabled;
+  else if(pname==GL_STENCIL_TEST) *values=current->raster.stencil_enabled;
   else if (pname==GL_SCISSOR_TEST) *values=current->scissor_enabled;
   else error(GL_INVALID_ENUM);
 }
@@ -168,14 +197,21 @@ void glClear(GLbitfield mask) {
   if (mask & ~(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT|GL_STENCIL_BUFFER_BIT)) {
     error(GL_INVALID_VALUE); return;
   }
-  /* This color-only target has no depth/stencil attachment: GL ignores those
-   * bits rather than rejecting a valid request for an absent buffer. */
-  if (!(mask & GL_COLOR_BUFFER_BIT)) return;
+  /* Offscreen color targets have no depth/stencil attachment; GL ignores
+   * clear bits for absent buffers. The default display owns both planes. */
+  if(!current->framebuffer && current->default_depth_stencil) {
+    if(!current->depth_write_mask) mask&=~GL_DEPTH_BUFFER_BIT;
+    if(!current->raster.stencil_write_mask) mask&=~GL_STENCIL_BUFFER_BIT;
+    else if((mask&GL_STENCIL_BUFFER_BIT) && current->raster.stencil_write_mask!=255) { error(GL_INVALID_OPERATION); return; }
+  } else mask&=~(GL_DEPTH_BUFFER_BIT|GL_STENCIL_BUFFER_BIT);
+  if(!current->raster.color_mask) mask&=~GL_COLOR_BUFFER_BIT;
+  else if((mask&GL_COLOR_BUFFER_BIT) && current->raster.color_mask!=15) { error(GL_INVALID_OPERATION); return; }
+  if(!mask) return;
   if (!current->command && current->begin_frame && !current->begin_frame(current)) { error(GL_INVALID_OPERATION); return; }
   if (!current->command) { error(GL_INVALID_OPERATION); return; }
   /* A complete color clear overwrites every texel. A new offscreen target
    * can skip importing its CPU shadow only for this operation. */
-  current->discard_target_contents=!current->scissor_enabled;
+  current->discard_target_contents=(mask&GL_COLOR_BUFFER_BIT) && !current->scissor_enabled;
   int prepared=prepare_target(); current->discard_target_contents=GL_FALSE;
   if(!prepared) return;
   int64_t x0=0,y0=0,x1=current->width,y1=current->height;
@@ -193,7 +229,11 @@ void glClear(GLbitfield mask) {
   /* GL is bottom-left; the native attachment's rows are top-left. */
   VkClearRect rect={{{(int32_t)x0,(int32_t)(current->active_target ? y0 : current->height-y1)},
                     {(uint32_t)(x1-x0),(uint32_t)(y1-y0)}},0,1};
-  vkCmdClearAttachments(current->command,1,&clear,1,&rect);
+  if(mask&GL_COLOR_BUFFER_BIT) vkCmdClearAttachments(current->command,1,&clear,1,&rect);
+  clear.aspectMask=((mask&GL_DEPTH_BUFFER_BIT)?VK_IMAGE_ASPECT_DEPTH_BIT:0)|((mask&GL_STENCIL_BUFFER_BIT)?VK_IMAGE_ASPECT_STENCIL_BIT:0);
+  clear.clearValue.depthStencil.depth=current->clear_depth;
+  clear.clearValue.depthStencil.stencil=(unsigned)current->clear_stencil&255;
+  if(clear.aspectMask) vkCmdClearAttachments(current->command,1,&clear,1,&rect);
 }
 static PS4GLBuffer *find_buffer(PS4GLContext *ctx, GLuint name) {
   if(!name) return NULL;
@@ -380,6 +420,7 @@ GLint glGetUniformLocation(GLuint name, const char *uniform) {
   PS4GLProgram *p=program(name);
   if(!p || !uniform) { error(GL_INVALID_VALUE); return -1; }
   if(!p->pipeline) { error(GL_INVALID_OPERATION); return -1; }
+  if(!strncmp(uniform,"ps4gl_",6)) return -1;
   for(unsigned i=0;i<p->uniform_count;++i) {
     PS4GLUniform *u=&p->uniforms[i]; size_t len=strlen(u->name);
     if(!strcmp(uniform,u->name)) return (GLint)i;
@@ -485,7 +526,7 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   VkRect2D sc={{(int32_t)x0,(int32_t)(current->active_target ? y0 : current->height-y1)},
               {(uint32_t)(x1-x0),(uint32_t)(y1-y0)}};
   VkPipeline pipeline=p->pipeline;
-  if(current->blend.enabled || current->managed_frame) {
+  if(current->blend.enabled || current->managed_frame || current->default_depth_stencil || current->raster.color_mask!=15) {
     if(!current->select_pipeline) { error(GL_INVALID_OPERATION); return; }
     pipeline=current->select_pipeline(current,p); if(!pipeline) return;
   }
@@ -541,6 +582,13 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     free(packed);
     if(!ok) return;
   }
+  /* GL window coordinates have a bottom-left origin. Render-to-texture
+   * already uses GL-oriented rows, whereas the swapchain uses top-left rows. */
+  for(unsigned u=0;u<p->uniform_count;++u) if(!strcmp(p->uniforms[u].name,"ps4gl_fragcoord_y")) {
+    const GLfloat transform[2]={current->active_target ? 1.f : -1.f,
+                               current->active_target ? 0.f : (GLfloat)current->height};
+    memcpy(p->uniform_data[1]+p->uniforms[u].offset[1],transform,sizeof(transform));
+  }
   if(p->uniform_stages || p->sampler_mask) {
     if(!current->upload_uniforms) { error(GL_INVALID_OPERATION); return; }
     if(!current->upload_uniforms(current,p)) return;
@@ -574,8 +622,9 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glGenFramebuffers); PROC(glBindFramebuffer); PROC(glDeleteFramebuffers); PROC(glIsFramebuffer);
   PROC(glFramebufferTexture2D); PROC(glCheckFramebufferStatus);
   PROC(glGenTextures); PROC(glBindTexture); PROC(glDeleteTextures); PROC(glIsTexture);
-  PROC(glActiveTexture); PROC(glPixelStorei); PROC(glTexParameteri); PROC(glTexImage2D); PROC(glTexSubImage2D);
+  PROC(glActiveTexture); PROC(glPixelStorei); PROC(glReadPixels); PROC(glTexParameteri); PROC(glTexImage2D); PROC(glTexSubImage2D);
   PROC(glUniform1i); PROC(glUniform1iv);
+  PROC(glColorMask); PROC(glClearDepth); PROC(glClearStencil); PROC(glDepthFunc); PROC(glStencilFunc); PROC(glStencilOp); PROC(glStencilMask);
   PROC(glGetUniformLocation); PROC(glUniform1f); PROC(glUniform2f); PROC(glUniform3f); PROC(glUniform4f);
   PROC(glUniform1fv); PROC(glUniform2fv); PROC(glUniform3fv); PROC(glUniform4fv); PROC(glUniformMatrix4fv);
   PROC(glGetProgramiv); PROC(glDrawArrays); PROC(glDrawElements);
@@ -600,7 +649,7 @@ void glGenTextures(GLsizei count, GLuint *names) {
   if(count<0 || (count && !names)) { error(GL_INVALID_VALUE); return; }
   unsigned available=0;
   for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) available+=!current->textures[i].name;
-  if((unsigned)count>available) { error(GL_OUT_OF_MEMORY); return; }
+  if((unsigned)count>available) { fprintf(stderr,"PS4GL texture record limit: requested=%d available=%u bytes=%zu\n",count,available,current->texture_bytes); error(GL_OUT_OF_MEMORY); return; }
   for(GLsizei n=0;n<count;++n) {
     while(current->next_texture && texture_name(current,current->next_texture)) ++current->next_texture;
     if(!current->next_texture) { error(GL_OUT_OF_MEMORY); return; }
@@ -672,6 +721,14 @@ static PS4GLTexture *bound_texture(GLenum target) {
   if(!t) error(GL_INVALID_OPERATION);
   return t;
 }
+void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void *data) {
+  if(!current) return;
+  if(format!=GL_RGBA || type!=GL_UNSIGNED_BYTE) { error(GL_INVALID_ENUM); return; }
+  if(x<0 || y<0 || width<0 || height<0) { error(GL_INVALID_VALUE); return; }
+  if(!width || !height) return;
+  if(!data || !current->read_pixels || !current->framebuffer || current->command) { error(GL_INVALID_OPERATION); return; }
+  if(!current->read_pixels(current,x,y,width,height,data) && !current->error) error(GL_INVALID_OPERATION);
+}
 void glPixelStorei(GLenum pname, GLint value) {
   if(!current) return;
   if(pname!=GL_UNPACK_ALIGNMENT && pname!=GL_PACK_ALIGNMENT) { error(GL_INVALID_ENUM); return; }
@@ -694,8 +751,8 @@ void glTexParameteri(GLenum target, GLenum pname, GLint value) {
 }
 /* CPU uploads are normalized to the immutable RGBA8 draw snapshot format. */
 static unsigned texture_pixel_bytes(GLenum format, GLenum type) {
-  if(format!=GL_RGB && format!=GL_RGBA) { error(GL_INVALID_ENUM); return 0; }
-  if(type==GL_UNSIGNED_BYTE) return format==GL_RGB ? 3 : 4;
+  if(format!=GL_RGB && format!=GL_RGBA && format!=GL_ALPHA && format!=GL_LUMINANCE && format!=GL_LUMINANCE_ALPHA) { error(GL_INVALID_ENUM); return 0; }
+  if(type==GL_UNSIGNED_BYTE) return format==GL_RGB ? 3 : format==GL_RGBA ? 4 : format==GL_LUMINANCE_ALPHA ? 2 : 1;
   if(type==GL_UNSIGNED_SHORT_5_6_5) {
     if(format==GL_RGB) return 2;
     error(GL_INVALID_OPERATION); return 0;
@@ -703,10 +760,11 @@ static unsigned texture_pixel_bytes(GLenum format, GLenum type) {
   error(GL_INVALID_ENUM); return 0;
 }
 static void texture_copy(unsigned char *dst, size_t dst_stride, const void *pixels,
-                         GLsizei width, GLsizei height, unsigned bpp, GLboolean rgb) {
+                         GLsizei width, GLsizei height, unsigned bpp, GLenum format, GLenum internal) {
+  GLboolean rgb=internal==GL_RGB || internal==GL_RGB8;
   size_t row=(size_t)width*bpp;
   size_t stride=(row+current->unpack_alignment-1)&~(size_t)(current->unpack_alignment-1);
-  if(bpp==4 && !rgb) {
+  if(bpp==4 && (internal==GL_RGBA || internal==GL_RGBA8)) {
     for(GLsizei y=0;y<height;++y)
       memcpy(dst+(size_t)y*dst_stride,(const unsigned char *)pixels+(size_t)y*stride,row);
     return;
@@ -714,13 +772,20 @@ static void texture_copy(unsigned char *dst, size_t dst_stride, const void *pixe
   for(GLsizei y=0;y<height;++y) for(GLsizei x=0;x<width;++x) {
     const unsigned char *src=(const unsigned char *)pixels+(size_t)y*stride+(size_t)x*bpp;
     unsigned char *out=dst+(size_t)y*dst_stride+(size_t)x*4;
-    if(bpp==2) {
+    if(format==GL_ALPHA) { out[0]=out[1]=out[2]=0; out[3]=src[0]; }
+    else if(format==GL_LUMINANCE || format==GL_LUMINANCE_ALPHA) {
+      out[0]=out[1]=out[2]=src[0]; out[3]=format==GL_LUMINANCE_ALPHA ? src[1] : 255;
+    } else if(bpp==2) {
       uint16_t packed; memcpy(&packed,src,2); /* Unaligned client pointers are valid. */
       out[0]=(unsigned char)((((packed>>11)&31)*255+15)/31);
       out[1]=(unsigned char)((((packed>>5)&63)*255+31)/63);
       out[2]=(unsigned char)(((packed&31)*255+15)/31);
     } else memcpy(out,src,3);
-    out[3]=rgb || bpp!=4 ? 255 : src[3];
+    if(format==GL_RGB || format==GL_RGBA) out[3]=bpp==4 ? src[3] : 255;
+    if(rgb) out[3]=255;
+    if(internal==GL_ALPHA) out[0]=out[1]=out[2]=0;
+    if(internal==GL_LUMINANCE || internal==GL_LUMINANCE_ALPHA) out[1]=out[2]=out[0];
+    if(internal==GL_LUMINANCE) out[3]=255;
   }
 }
 void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width, GLsizei height,
@@ -728,7 +793,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width, GLs
   if(!current) return;
   PS4GLTexture *t=bound_texture(target); if(!t) return;
   if(level || border || width<0 || height<0 || width>PS4GL_TEXTURE_LIMIT || height>PS4GL_TEXTURE_LIMIT) { error(GL_INVALID_VALUE); return; }
-  if(internal!=GL_RGB && internal!=GL_RGB8 && internal!=GL_RGBA && internal!=GL_RGBA8) { error(GL_INVALID_ENUM); return; }
+  if(internal!=GL_RGB && internal!=GL_RGB8 && internal!=GL_RGBA && internal!=GL_RGBA8 && internal!=GL_ALPHA && internal!=GL_LUMINANCE && internal!=GL_LUMINANCE_ALPHA) { error(GL_INVALID_ENUM); return; }
   unsigned bpp=texture_pixel_bytes(format,type); if(!bpp) return;
   GLboolean rgb=internal==GL_RGB || internal==GL_RGB8;
   size_t bytes=(size_t)width*height*4, old=(size_t)t->width*t->height*4;
@@ -736,10 +801,10 @@ void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width, GLs
   if(current->next_texture_revision==UINT64_MAX) { error(GL_OUT_OF_MEMORY); return; }
   unsigned char *copy=bytes ? calloc(1,bytes) : NULL;
   if(bytes && !copy) { error(GL_OUT_OF_MEMORY); return; }
-  if(pixels && bytes) texture_copy(copy,(size_t)width*4,pixels,width,height,bpp,rgb);
+  if(pixels && bytes) texture_copy(copy,(size_t)width*4,pixels,width,height,bpp,format,internal);
   else if(rgb) for(size_t i=3;i<bytes;i+=4) copy[i]=255;
   end_target(); t->render_target=0; t->revision=++current->next_texture_revision;
-  free(t->pixels); t->cpu_contents_defined=pixels!=NULL; t->rgb_storage=rgb; t->pixels=copy; t->width=width; t->height=height; current->texture_bytes+=bytes; current->texture_bytes-=old;
+  free(t->pixels); t->cpu_contents_defined=pixels!=NULL; t->rgb_storage=rgb; t->internal_format=internal; t->pixels=copy; t->width=width; t->height=height; current->texture_bytes+=bytes; current->texture_bytes-=old;
 }
 void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width, GLsizei height,
                      GLenum format, GLenum type, const void *pixels) {
@@ -752,7 +817,7 @@ void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width
   if(!pixels || !t->pixels) { error(GL_INVALID_OPERATION); return; }
   if(current->next_texture_revision==UINT64_MAX) { error(GL_OUT_OF_MEMORY); return; }
   t->revision=++current->next_texture_revision; t->cpu_contents_defined=GL_TRUE;
-  texture_copy(t->pixels+((size_t)y*t->width+x)*4,(size_t)t->width*4,pixels,width,height,bpp,t->rgb_storage);
+  texture_copy(t->pixels+((size_t)y*t->width+x)*4,(size_t)t->width*4,pixels,width,height,bpp,format,t->internal_format);
 }
 
 static PS4GLFramebuffer *framebuffer_name(PS4GLContext *ctx, GLuint name) {
@@ -778,7 +843,7 @@ void glGenFramebuffers(GLsizei count, GLuint *names) {
   if(count<0 || (count && !names)) { error(GL_INVALID_VALUE); return; }
   unsigned available=0;
   for(unsigned i=0;i<PS4GL_MAX_FRAMEBUFFERS;++i) available+=!current->framebuffers[i].name;
-  if((unsigned)count>available) { error(GL_OUT_OF_MEMORY); return; }
+  if((unsigned)count>available) { fprintf(stderr,"PS4GL framebuffer record limit: requested=%d available=%u bytes=%zu\n",count,available,current->texture_bytes); error(GL_OUT_OF_MEMORY); return; }
   for(GLsizei n=0;n<count;++n) {
     while(current->next_framebuffer && framebuffer_name(current,current->next_framebuffer)) ++current->next_framebuffer;
     if(!current->next_framebuffer) { error(GL_OUT_OF_MEMORY); return; }

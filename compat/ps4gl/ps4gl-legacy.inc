@@ -2,8 +2,9 @@
  * global declarations; complex interface forms fail rather than being guessed. */
 #include <ctype.h>
 #include <stdarg.h>
-typedef struct LegacyDecl { char kind[16],type[16],name[64]; unsigned count; size_t begin,end; } LegacyDecl;
-typedef struct LegacySource { char *text; LegacyDecl decl[64]; unsigned count; } LegacySource;
+typedef struct LegacyDecl { char kind[16],type[64],name[64]; unsigned count; size_t begin,end; } LegacyDecl;
+typedef struct LegacyStruct { char name[64]; LegacyDecl fields[16]; unsigned count; size_t begin,end; } LegacyStruct;
+typedef struct LegacySource { char *text; LegacyDecl decl[64]; unsigned count; LegacyStruct structs[8]; unsigned struct_count; int fragcoord; char constant_names[16][64]; unsigned constants[16],constant_count; } LegacySource;
 typedef struct LegacyOutput { char *text; size_t length; int failed; } LegacyOutput;
 #define LEGACY_OUTPUT_LIMIT (512u*1024u)
 static void legacy_emit(LegacyOutput *out, const char *format, ...) {
@@ -27,6 +28,14 @@ static int legacy_token(const char *text, size_t *at, char *token, size_t capaci
 static int legacy_type(const char *type) {
   return !strcmp(type,"float") || !strcmp(type,"int") || !strcmp(type,"bool") || !strcmp(type,"vec2") ||
     !strcmp(type,"vec3") || !strcmp(type,"vec4") || !strcmp(type,"mat4") || !strcmp(type,"sampler2D");
+}
+static const LegacyStruct *legacy_struct(const LegacySource *source, const char *name) {
+  for(unsigned i=0;i<source->struct_count;++i)
+    if(!strcmp(source->structs[i].name,name)) return &source->structs[i];
+  return NULL;
+}
+static void legacy_field_name(char *out, size_t size, const char *object, const char *field) {
+  snprintf(out,size,"ps4gl_field_%zu_%s%s",strlen(object),object,field);
 }
 static int legacy_preprocess(int fragment, const char *source, LegacySource *out, char *log, size_t cap) {
   if(!initialized || !source) { diagnostic(log,cap,"Invalid legacy compiler state"); return 0; }
@@ -64,8 +73,44 @@ static int legacy_preprocess(int fragment, const char *source, LegacySource *out
     size_t begin=at;
     if(!legacy_token(out->text,&at,token,sizeof(token))) break;
     if(!strncmp(token,"ps4gl_",6)) { diagnostic(log,cap,"Reserved bridge identifier"); return 0; }
+    if(fragment && !strcmp(token,"gl_FragCoord")) { out->fragcoord=1; continue; }
     if(!strncmp(token,"gl_",3) && strcmp(token,"gl_Position") && strcmp(token,"gl_FragColor")) {
       diagnostic(log,cap,"Unsupported legacy builtin (only gl_Position/gl_FragColor are translated)"); return 0;
+    }
+    if(!depth && !strcmp(token,"const")) {
+      size_t q=at; char type[16],name[64],equal[4],value[64],semi[4];
+      if(legacy_token(out->text,&q,type,sizeof(type)) && !strcmp(type,"int") &&
+         legacy_token(out->text,&q,name,sizeof(name)) && legacy_token(out->text,&q,equal,sizeof(equal)) && !strcmp(equal,"=") &&
+         legacy_token(out->text,&q,value,sizeof(value)) && legacy_token(out->text,&q,semi,sizeof(semi)) && !strcmp(semi,";")) {
+        char *end; unsigned long v=strtoul(value,&end,10);
+        if(!*end && v && v<=64) {
+          if(out->constant_count==16) goto unsupported;
+          strcpy(out->constant_names[out->constant_count],name); out->constants[out->constant_count++]=(unsigned)v;
+        }
+      }
+    }
+    if(!depth && !strcmp(token,"struct")) {
+      if(out->struct_count==8) goto unsupported;
+      LegacyStruct *st=&out->structs[out->struct_count]; st->begin=begin;
+      if(!legacy_token(out->text,&at,st->name,sizeof(st->name)) ||
+         !strncmp(st->name,"ps4gl_",6) || legacy_struct(out,st->name) ||
+         !legacy_token(out->text,&at,token,sizeof(token)) || strcmp(token,"{")) goto unsupported;
+      for(;;) {
+        if(!legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;
+        if(!strcmp(token,"}")) break;
+        if(st->count==16) goto unsupported;
+        LegacyDecl *field=&st->fields[st->count];
+        if(!strcmp(token,"highp") || !strcmp(token,"mediump") || !strcmp(token,"lowp"))
+          if(!legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;
+        if(!legacy_type(token) || !strcmp(token,"sampler2D")) goto unsupported;
+        strcpy(field->type,token);
+        if(!legacy_token(out->text,&at,field->name,sizeof(field->name)) ||
+           !strncmp(field->name,"ps4gl_",6) ||
+           !legacy_token(out->text,&at,token,sizeof(token)) || strcmp(token,";")) goto unsupported;
+        ++st->count;
+      }
+      if(!st->count || !legacy_token(out->text,&at,token,sizeof(token)) || strcmp(token,";")) goto unsupported;
+      st->end=at; ++out->struct_count; continue;
     }
     if(!strcmp(token,"{")) ++depth;
     if(!strcmp(token,"}")) --depth;
@@ -81,18 +126,23 @@ static int legacy_preprocess(int fragment, const char *source, LegacySource *out
     if(!legacy_token(out->text,&at,d->type,sizeof(d->type))) goto unsupported;
     if(!strcmp(d->type,"highp") || !strcmp(d->type,"mediump") || !strcmp(d->type,"lowp"))
       if(!legacy_token(out->text,&at,d->type,sizeof(d->type))) goto unsupported;
-    if(!legacy_type(d->type) || !legacy_token(out->text,&at,d->name,sizeof(d->name)) ||
+    if((!legacy_type(d->type) && !legacy_struct(out,d->type)) || !legacy_token(out->text,&at,d->name,sizeof(d->name)) ||
        !strncmp(d->name,"ps4gl_",6) || !(isalpha((unsigned char)d->name[0]) || d->name[0]=='_')) goto unsupported;
     if(!legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;
     if(!strcmp(token,"[")) {
       if(!legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;
       char *end; unsigned long count=strtoul(token,&end,10);
-      if(*end || !count || count>64) goto unsupported;
+      if(*end) {
+        count=0;
+        for(unsigned c=0;c<out->constant_count;++c) if(!strcmp(token,out->constant_names[c])) count=out->constants[c];
+      }
+      if(!count || count>64) goto unsupported;
       d->count=(unsigned)count;
       if(!legacy_token(out->text,&at,token,sizeof(token)) || strcmp(token,"]") ||
          !legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;
     }
     if(strcmp(token,";") || (strcmp(d->kind,"uniform") && (d->count || !strcmp(d->type,"mat4") || !strcmp(d->type,"sampler2D") || !strcmp(d->type,"int") || !strcmp(d->type,"bool")))) goto unsupported;
+    if(legacy_struct(out,d->type) && (strcmp(d->kind,"uniform") || d->count)) goto unsupported;
     if(!strcmp(d->type,"bool") && d->count) goto unsupported;
     if(!strcmp(d->type,"sampler2D") && (d->count || !fragment || strcmp(d->kind,"uniform"))) goto unsupported;
     if(fragment && !strcmp(d->kind,"attribute")) goto unsupported;
@@ -135,7 +185,16 @@ static char *legacy_rewrite(const LegacySource *source, int fragment, const Lega
                             const PS4GLAttributeBinding *bindings, size_t count, char *log, size_t cap) {
   LegacyOutput out={.text=malloc(LEGACY_OUTPUT_LIMIT)}; if(!out.text) return NULL;
   out.text[0]=0; legacy_emit(&out,"#version 450\n");
-  int uniforms=0; unsigned used_attributes=0;
+  /* Keep source struct types for constructors and local values; flatten only
+   * uniform storage, so the existing checked std140 upload path stays valid. */
+  for(unsigned i=0;i<source->struct_count;++i) {
+    const LegacyStruct *st=&source->structs[i];
+    legacy_emit(&out,"struct %s {",st->name);
+    for(unsigned j=0;j<st->count;++j) legacy_emit(&out,"%s %s;",st->fields[j].type,st->fields[j].name);
+    legacy_emit(&out,"};\n");
+  }
+  const char *instance=fragment ? "ps4gl_fragment_data" : "ps4gl_vertex_data";
+  int uniforms=source->fragcoord; unsigned used_attributes=0;
   for(unsigned i=0;i<source->count;++i) {
     const LegacyDecl *d=&source->decl[i];
     if(!strcmp(d->kind,"uniform") && strcmp(d->type,"sampler2D")) { uniforms=1; continue; }
@@ -148,29 +207,59 @@ static char *legacy_rewrite(const LegacySource *source, int fragment, const Lega
   }
   if(uniforms) {
     legacy_emit(&out,"layout(std140,set=0,binding=%d) uniform ps4gl_%s_defaults {\n",fragment ? 1 : 0,fragment ? "fragment" : "vertex");
+    if(source->fragcoord) legacy_emit(&out,"vec2 ps4gl_fragcoord_y;\n");
     for(unsigned i=0;i<source->count;++i) { const LegacyDecl *d=&source->decl[i];
       if(!strcmp(d->kind,"uniform") && strcmp(d->type,"sampler2D")) {
+        const LegacyStruct *st=legacy_struct(source,d->type);
+        if(st) {
+          for(unsigned j=0;j<st->count;++j) {
+            char name[160]; legacy_field_name(name,sizeof(name),d->name,st->fields[j].name);
+            if(!strcmp(st->fields[j].type,"bool")) legacy_emit(&out,"int ps4gl_bool_%s;\n",name);
+            else legacy_emit(&out,"%s %s;\n",st->fields[j].type,name);
+          }
+          continue;
+        }
         if(!strcmp(d->type,"bool")) legacy_emit(&out,"int ps4gl_bool_%s",d->name);
         else legacy_emit(&out,"%s %s",d->type,d->name);
         if(d->count) legacy_emit(&out,"[%u]",d->count);
         legacy_emit(&out,";\n");
       }
     }
-    legacy_emit(&out,"};\n");
+    legacy_emit(&out,"} %s;\n",instance);
   }
   if(fragment) legacy_emit(&out,"layout(location=0) out vec4 ps4gl_fragment_color;\n");
-  size_t at=0; unsigned declaration=0; char token[128];
+  size_t at=0; unsigned declaration=0, structure=0; char token[128];
   while(source->text[at]) {
+    if(structure<source->struct_count && at==source->structs[structure].begin) { at=source->structs[structure++].end; continue; }
     if(declaration<source->count && at==source->decl[declaration].begin) { at=source->decl[declaration++].end; continue; }
     if(isalpha((unsigned char)source->text[at]) || source->text[at]=='_') {
+      size_t previous=at; while(previous && isspace((unsigned char)source->text[previous-1])) --previous;
+      int member=previous && source->text[previous-1]=='.';
       if(!legacy_token(source->text,&at,token,sizeof(token))) goto fail;
+      if(member) { legacy_emit(&out,"%s",token); continue; }
       const char *replacement=!strcmp(token,"main") ? "ps4gl_main" : !strcmp(token,"texture2D") ? "texture" :
         !strcmp(token,"gl_FragColor") ? "ps4gl_fragment_color" : token;
       const LegacyDecl *boolean=NULL;
       for(unsigned i=0;i<source->count;++i)
         if(!strcmp(source->decl[i].kind,"uniform") && !strcmp(source->decl[i].type,"bool") &&
            !strcmp(token,source->decl[i].name)) { boolean=&source->decl[i]; break; }
-      if(boolean) legacy_emit(&out,"(ps4gl_bool_%s != 0)",boolean->name);
+      int uniform=legacy_find(source,"uniform",token);
+      const LegacyStruct *st=uniform<0 ? NULL : legacy_struct(source,source->decl[uniform].type);
+      if(!strcmp(token,"gl_FragCoord") && source->fragcoord) {
+        legacy_emit(&out,"vec4(gl_FragCoord.x,gl_FragCoord.y*%s.ps4gl_fragcoord_y.x+%s.ps4gl_fragcoord_y.y,gl_FragCoord.zw)",instance,instance);
+      }
+      else if(st) {
+        legacy_emit(&out,"%s(",st->name);
+        for(unsigned j=0;j<st->count;++j) {
+          char name[160]; legacy_field_name(name,sizeof(name),token,st->fields[j].name);
+          if(j) legacy_emit(&out,",");
+          if(!strcmp(st->fields[j].type,"bool")) legacy_emit(&out,"(%s.ps4gl_bool_%s != 0)",instance,name);
+          else legacy_emit(&out,"%s.%s",instance,name);
+        }
+        legacy_emit(&out,")");
+      }
+      else if(boolean) legacy_emit(&out,"(%s.ps4gl_bool_%s != 0)",instance,boolean->name);
+      else if(uniform>=0 && strcmp(source->decl[uniform].type,"sampler2D")) legacy_emit(&out,"%s.%s",instance,token);
       else legacy_emit(&out,"%s",replacement);
     } else legacy_emit(&out,"%c",source->text[at++]);
   }
@@ -187,6 +276,16 @@ static int legacy_pair(const char *v, const char *f, const PS4GLAttributeBinding
   if(!legacy_preprocess(0,v,&vs,log,cap) || !legacy_preprocess(1,f,&fs,log,cap)) goto done;
   for(unsigned i=0;i<fs.count;++i) {
     LegacyDecl *d=&fs.decl[i]; int match=legacy_find(&vs,d->kind,d->name);
+    if(match>=0) {
+      const LegacyStruct *a=legacy_struct(&fs,d->type), *b=legacy_struct(&vs,vs.decl[match].type);
+      if((a!=NULL)!=(b!=NULL) || (a && a->count!=b->count)) {
+        diagnostic(log,cap,"Legacy uniform struct types differ across stages"); goto done;
+      }
+      if(a) for(unsigned j=0;j<a->count;++j)
+        if(strcmp(a->fields[j].name,b->fields[j].name) || strcmp(a->fields[j].type,b->fields[j].type)) {
+          diagnostic(log,cap,"Legacy uniform struct fields differ across stages"); goto done;
+        }
+    }
     if((!strcmp(d->kind,"varying") && match<0) || (match>=0 &&
        (strcmp(d->type,vs.decl[match].type) || d->count!=vs.decl[match].count))) {
       diagnostic(log,cap,"Legacy varying/uniform types do not match across stages"); goto done;

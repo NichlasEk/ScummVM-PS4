@@ -54,7 +54,7 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
   PS4GLContext *ctx=ps4glCurrentContext();
   unsigned cached=ctx->texture_snapshot_reuses, uploaded=ctx->texture_snapshot_uploads;
   /* A text/sprite-heavy frame must not exhaust a small bookkeeping table. */
-  for(unsigned repeat=0;repeat<80;++repeat) {
+  for(unsigned repeat=0;repeat<300;++repeat) {
     elements(GL_TRIANGLES,3,GL_UNSIGNED_SHORT,(const void *)4);
     GLenum err=glGetError();
     if(err) {
@@ -62,7 +62,7 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
       return 2;
     }
   }
-  if(ctx->texture_snapshot_reuses!=cached+160 || ctx->texture_snapshot_uploads!=uploaded) return 2;
+  if(ctx->texture_snapshot_reuses!=cached+600 || ctx->texture_snapshot_uploads!=uploaded) return 2;
   glBindBuffer(GL_ARRAY_BUFFER,buffers[0]);
   /* Change one texel after the left draw; switch the second sampler's unit. */
   glActiveTexture(GL_TEXTURE0); unsigned char red[]={128,0,0,255};
@@ -88,7 +88,7 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
   if(ctx->texture_snapshot_reuses!=cached+2) return 2;
   fprintf(report,"PASS GL versioned texture snapshot reuse and mutation\n");
   if(ctx->snapshot_count<=64 || ctx->upload_page_count!=1 ||
-     ctx->upload_memory_bytes>PS4GL_UPLOAD_PAGE_BYTES || ctx->snapshot_bytes>128u*1024u) return 2;
+     ctx->upload_memory_bytes>PS4GL_UPLOAD_PAGE_BYTES || ctx->snapshot_bytes>512u*1024u) return 2;
   fprintf(report,"PASS GL many draws: snapshots=%u payload=%zu reserved=%zu pages=%u\n",
     ctx->snapshot_count,ctx->snapshot_bytes,ctx->upload_memory_bytes,ctx->upload_page_count);
   /* Budget failures must happen before reading client bytes or changing storage. */

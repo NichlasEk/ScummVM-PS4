@@ -31,7 +31,13 @@ patch_once "$stack/opengnm-psbc" "$root/patches/opengnm/psbc-build.patch"
 patch_once "$stack/vulkan-ps4" "$root/patches/opengnm/vulkan-runtime.patch"
 patch_once "$stack/opengnm" "$root/patches/opengnm/gnm-init.patch"
 patch_once "$stack/freegnm-examples" "$root/patches/opengnm/triangle-probe.patch"
-python3 "$root/scripts/prepare-opengnm-psbc.py" "$stack/opengnm-psbc"
+# Keep schema validation enabled without changing the system Python installation.
+codegen_python="$root/.tools/psbc-codegen/bin/python3"
+if [[ ! -x "$codegen_python" ]]; then python3 -m venv --system-site-packages "$root/.tools/psbc-codegen"; fi
+if ! "$codegen_python" -c 'import lxml.etree, rnc2rng, mako, yaml' 2>/dev/null; then
+ "$codegen_python" -m pip install --disable-pip-version-check -r "$root/scripts/psbc-codegen-requirements.txt"
+fi
+"$codegen_python" "$root/scripts/prepare-opengnm-psbc.py" "$stack/opengnm-psbc"
 make -C "$stack/opengnm-psbc" -j"$jobs" > "$root/artifacts/opengnm/psbc-host-build.log" 2>&1
 python3 "$root/tests/ps4/check-opengnm-compiler.py" > "$root/artifacts/opengnm/psbc-verify.log" 2>&1
 cmake -S "$stack/opengnm" -B "$root/build/opengnm-host" \

@@ -13,7 +13,9 @@ typedef struct PS4GLDisplayOwner {
   VkQueue queue;
   VkSwapchainKHR swap;
   VkRenderPass pass;
-  VkImage images[2];
+  VkImage images[2], depth_images[2];
+  VkDeviceMemory depth_memory[2];
+  VkImageView depth_views[2];
   VkImageView views[2];
   VkFramebuffer targets[2];
   unsigned width,height,ready;

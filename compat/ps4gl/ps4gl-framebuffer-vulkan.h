@@ -32,10 +32,10 @@ static void end_render_target(PS4GLContext *c) {
   if(c->active_target) target_barrier(c,&c->targets[c->active_target-1],VK_IMAGE_LAYOUT_GENERAL);
   else {
     VkMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-      .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-      .dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
-    vkCmdPipelineBarrier(c->command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,1,&b,0,NULL,0,NULL);
+      .srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+      .dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT};
+    vkCmdPipelineBarrier(c->command,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+      VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,1,&b,0,NULL,0,NULL);
   }
   c->active_target=0;
 }
@@ -57,7 +57,7 @@ static int create_target(PS4GLContext *c, PS4GLTexture *texture) {
   VkImageCreateInfo ci={.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,.imageType=VK_IMAGE_TYPE_2D,
     .format=VK_FORMAT_R8G8B8A8_UNORM,.extent={(uint32_t)t.width,(uint32_t)t.height,1},.mipLevels=1,.arrayLayers=1,
     .samples=VK_SAMPLE_COUNT_1_BIT,.tiling=VK_IMAGE_TILING_OPTIMAL,
-    .usage=VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT};
+    .usage=VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT};
   if(vkCreateImage(c->program_device,&ci,NULL,&t.image)!=VK_SUCCESS) goto cleanup;
   VkMemoryRequirements req; vkGetImageMemoryRequirements(c->program_device,t.image,&req);
   VkPhysicalDeviceMemoryProperties properties; vkGetPhysicalDeviceMemoryProperties(c->physical,&properties);

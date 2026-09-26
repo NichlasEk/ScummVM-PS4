@@ -34,6 +34,8 @@ PYUNBOOT
 "$root/scripts/build-ps4-vorbis.sh"
 "$root/scripts/build-ps4-png.sh"
 "$root/scripts/build-ps4-theora.sh"
+"$root/scripts/build-ps4-mpeg2.sh"
+"$root/scripts/build-ps4-gif.sh"
 mkdir -p "$SCUMMVM_SOURCE_DIR/engines/sotc"
 python3 - "$root/engines/sotc" "$SCUMMVM_SOURCE_DIR/engines/sotc" <<'COPY'
 import filecmp, pathlib, shutil, sys
@@ -59,14 +61,14 @@ else:
  s=s.replace('int res = scummvm_main(argc, argv);',block)
 if p.read_text()!=s: p.write_text(s)
 PYBOOT
-fingerprint=$( { sha256sum "$root/scripts/configure-scummvm.sh" "$root/engines/sotc/configure.engine" "$root/build/ps4-jpeg/.build-id" "$root/build/ps4-mad/.build-id" "$root/build/ps4-freetype/.build-id" "$root/build/ps4-vorbis/.build-id" "$root/build/ps4-png/.build-id" "$root/build/ps4-theora/.build-id"; printf '%s\n' "$SCUMMVM_ENGINES" "$SCUMMVM_EXTRA_CXXFLAGS"; } | sha256sum | cut -d ' ' -f 1)
+fingerprint=$( { sha256sum "$root/scripts/configure-scummvm.sh" "$root/engines/sotc/configure.engine" "$root/build/ps4-jpeg/.build-id" "$root/build/ps4-mad/.build-id" "$root/build/ps4-freetype/.build-id" "$root/build/ps4-vorbis/.build-id" "$root/build/ps4-png/.build-id" "$root/build/ps4-theora/.build-id" "$root/build/ps4-mpeg2/.build-id" "$root/build/ps4-gif/.build-id"; printf '%s\n' "$SCUMMVM_ENGINES" "$SCUMMVM_EXTRA_CXXFLAGS"; } | sha256sum | cut -d ' ' -f 1)
 if [[ ! -f "$SCUMMVM_BUILD_DIR/config.h" || ! -f "$SCUMMVM_BUILD_DIR/.sotc-config-id" ]] || [[ $(cat "$SCUMMVM_BUILD_DIR/.sotc-config-id") != "$fingerprint" ]]; then
  "$root/scripts/configure-scummvm.sh" > "$root/artifacts/sotc/configure.log" 2>&1
  touch "$SCUMMVM_BUILD_DIR/config.h"
  printf '%s\n' "$fingerprint" > "$SCUMMVM_BUILD_DIR/.sotc-config-id"
 fi
 # Static dependency changes must relink even when no ScummVM source changed.
-if [[ -f "$SCUMMVM_BUILD_DIR/scummvm" ]] && { [[ "$root/build/ps4-input/libSDL2.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-storage/libscummvm-jbc.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-jpeg/install/lib/libjpeg.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-mad/install/lib/libmad.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-freetype/install/lib/libfreetype.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-vorbis/install/lib/libogg.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-vorbis/install/lib/libvorbis.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-vorbis/install/lib/libvorbisfile.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-png/install/lib/libpng16.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-png/install/lib/libz.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-theora/install/lib/libtheoradec.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]]; }; then
+if [[ -f "$SCUMMVM_BUILD_DIR/scummvm" ]] && { [[ "$root/build/ps4-input/libSDL2.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-storage/libscummvm-jbc.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-jpeg/install/lib/libjpeg.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-mad/install/lib/libmad.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-freetype/install/lib/libfreetype.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-vorbis/install/lib/libogg.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-vorbis/install/lib/libvorbis.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-vorbis/install/lib/libvorbisfile.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-png/install/lib/libpng16.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-png/install/lib/libz.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-theora/install/lib/libtheoradec.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-mpeg2/install/lib/libmpeg2.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]] || [[ "$root/build/ps4-gif/install/lib/libgif.a" -nt "$SCUMMVM_BUILD_DIR/scummvm" ]]; }; then
  rm -- "$SCUMMVM_BUILD_DIR/scummvm"
 fi
 make -C "$SCUMMVM_BUILD_DIR" -j"${BUILD_JOBS:-12}" > "$root/artifacts/sotc/build.log" 2>&1

@@ -72,7 +72,7 @@ static int gl_reflect_uniforms(const uint32_t *s, size_t bytes, unsigned stage, 
       int offset=gl_spv_dec(s,n,ptr[3],m,35);
       if(offset<0 || (unsigned)offset%alignment || (unsigned)offset>PS4GL_UNIFORM_BYTES-occupied_bytes) return 0;
       for(unsigned b=offset;b<(unsigned)offset+occupied_bytes;++b) { if(occupied[b]) return 0; occupied[b]=1; }
-      const char *name=NULL;
+      const char *name=NULL; char field_name[64];
       for(size_t j=5;j<n;j+=s[j]>>16) if((s[j]&65535)==6 && (s[j]>>16)>=4 && s[j+1]==ptr[3] && s[j+2]==m) {
         const char *candidate=(const char *)(s+j+3);
         const char *end=memchr(candidate,0,((s[j]>>16)-3)*4);
@@ -81,10 +81,22 @@ static int gl_reflect_uniforms(const uint32_t *s, size_t bytes, unsigned stage, 
           if(!is_integer || width!=1 || array) return 0;
           is_integer=2; candidate+=11;
         }
-        if(end==candidate || end-candidate>=64) return 0;
+        if(end==candidate) return 0;
+        if(!strncmp(candidate,"ps4gl_field_",12)) {
+          const char *digits=candidate+12; unsigned length=0;
+          if(*digits<'1' || *digits>'9') return 0;
+          while(*digits>='0' && *digits<='9') {
+            length=length*10+(unsigned)(*digits++-'0'); if(length>=64) return 0;
+          }
+          if(*digits++!='_' || (size_t)(end-digits)<=length || end-digits+1>=64) return 0;
+          memcpy(field_name,digits,length); field_name[length]='.';
+          strcpy(field_name+length+1,digits+length); candidate=field_name;
+        }
+        if(strlen(candidate)>=64) return 0;
         name=candidate;
       }
       if(!name) return 0;
+      if(!strcmp(name,"ps4gl_fragcoord_y") && (stage!=1 || width!=2 || is_integer || length)) return 0;
       unsigned u;
       for(u=0;u<p->uniform_count;++u) if(!strcmp(p->uniforms[u].name,name)) break;
       if(u==p->uniform_count) {

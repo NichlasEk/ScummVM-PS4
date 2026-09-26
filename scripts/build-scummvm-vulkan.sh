@@ -64,10 +64,18 @@ relative='backends/graphics3d/openglsdl/openglsdl-graphics3d.cpp'
 p=root/relative
 original=p.read_text()
 s=original.replace('SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);','SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);').replace('SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);','SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);')
-s=s.replace('if (g_engine) {', 'if (g_engine && glReadPixels) {')
+# GL 0.0 subset supports completed offscreen captures, not the presented swapchain.
+s=s.replace('if (g_engine) {', 'if (g_engine && glReadPixels && OpenGLContext.majorVersion > 0) {')
 anchor='\t\tif (_window->createOrUpdateWindow(effectiveWidth, effectiveHeight, sdlflags)) {'
 assert s.count(anchor)==1
 s=s.replace(anchor,'\t\teffectiveWidth = 1280; effectiveHeight = 720; sdlflags = SDL_WINDOW_OPENGL; _vsync = true;\n'+anchor)
+patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
+relative='engines/grim/grim.cpp'
+p=root/relative
+original=p.read_text()
+anchor='\t\tinitGraphics3d(screenW, screenH);'
+assert original.count(anchor)==1
+s=original.replace(anchor,anchor+'\n\t\t// Fixed native target can differ from the engine request.\n\t\tscreenW = g_system->getWidth(); screenH = g_system->getHeight();')
 patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
 relative='engines/twp/metaengine.cpp'
 p=root/relative
@@ -93,6 +101,8 @@ anchor='\ttype = contextType;\n'
 assert original.count(anchor)==1
 s=original.replace(anchor,anchor+Path(sys.argv[2]).read_text())
 patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
+import runpy
+patch.extend(runpy.run_path(str(Path(sys.argv[2]).parents[2]/'scripts/scummvm-vulkan-runtime.py'))['runtime_patches'](root))
 overlay=root/'.vulkan-overlay.patch'
 overlay.write_text(''.join(patch))
 subprocess.run(['git','-C',str(root),'apply','--check',str(overlay)],check=True)
@@ -129,9 +139,11 @@ for name in ps4gl ps4gl-vulkan ps4gl-glsl ps4gl-frame ps4gl-display ps4gl-main; 
   -c "$root/compat/ps4gl/$name.c" -o "$object"
  [[ "$name" == ps4gl-main ]] || objects+=("$object")
 done
-export SCUMMVM_EXPERIMENTAL_VULKAN=1 SCUMMVM_ENGINES=twp
+export SCUMMVM_EXPERIMENTAL_VULKAN=1
+# Default to the full engine set; use SCUMMVM_ENGINES=twp for a focused rebuild.
+export SCUMMVM_ENGINES=${SCUMMVM_ENGINES:-}
 export SCUMMVM_SDL_CONFIG=scummvm-vulkan-sdl2-config
-bridge_ldflags="-Wl,--wrap=main -Wl,-z,max-page-size=0x4000"
+bridge_ldflags="-Wl,--wrap=main -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -Wl,-z,max-page-size=0x4000"
 export SCUMMVM_VULKAN_LIBS="${objects[*]} -Wl,--whole-archive $native/vulkan-ps4/libvulkan_ps4.a $native/opengnm/libopengnm.a -Wl,--no-whole-archive $SCUMMVM_BUILD_DIR/bridge/libpsbc-scummvm.a $root/build/glslang-orbis/libglslang-ps4.a -lunwind -lSceGnmDriver"
 "$root/scripts/configure-scummvm.sh" > "$root/artifacts/scummvm-vulkan/configure.log" 2>&1
 for feature in USE_OPENGL USE_GLAD USE_OPENGL_SHADERS; do

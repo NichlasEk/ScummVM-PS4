@@ -95,3 +95,5 @@ the background and plays a tone; Circle exits. On hardware the log is
 
 Project code is GPL-3.0-or-later; generated packages also include separately
 licensed OpenOrbis/SDL components. ScummVM retains its upstream license notices.
+External prebuilt PS4 modules are not included in Git; see the
+[module placeholders and setup instructions](external/ps4-runtime/README.md).

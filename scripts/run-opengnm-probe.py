@@ -175,10 +175,12 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 if time.monotonic() >= deadline or p.poll() is not None:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
+            if 'PASS concurrent allocator: two threads, 160000' not in guest_log.read_text():
+                raise RuntimeError('Concurrent allocator regression did not pass')
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
             if args.sdlgl:
                 sdl_log = guest_log.read_text()
-                sdl_markers = ('PASS GL framebuffer import from upload page offset',
+                sdl_markers = ('PASS GL framebuffer import from upload page offset', 'PASS GL completed framebuffer readback orientation crop packing and rejection',
                                'PASS SDL full target clear skips obsolete upload',
                                'PASS GL undefined target skips initialization copy',
                                'PASS SDL fresh shader link during active recording',

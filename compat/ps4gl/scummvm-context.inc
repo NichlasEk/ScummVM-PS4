@@ -36,6 +36,13 @@
 	PS4GL_LOAD(glGetError);
 	PS4GL_LOAD(glGetBooleanv);
 	PS4GL_LOAD(glDepthMask);
+	PS4GL_LOAD(glColorMask);
+	PS4GL_LOAD(glClearDepth);
+	PS4GL_LOAD(glClearStencil);
+	PS4GL_LOAD(glDepthFunc);
+	PS4GL_LOAD(glStencilFunc);
+	PS4GL_LOAD(glStencilOp);
+	PS4GL_LOAD(glStencilMask);
 	PS4GL_LOAD(glGetIntegerv);
 	PS4GL_LOAD(glGetString);
 	PS4GL_LOAD(glGetFloatv);
@@ -54,6 +61,7 @@
 	PS4GL_LOAD(glIsTexture);
 	PS4GL_LOAD(glActiveTexture);
 	PS4GL_LOAD(glPixelStorei);
+	PS4GL_LOAD(glReadPixels);
 	PS4GL_LOAD(glTexParameteri);
 	PS4GL_LOAD(glTexImage2D);
 	PS4GL_LOAD(glTexSubImage2D);

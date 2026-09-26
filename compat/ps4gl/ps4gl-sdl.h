@@ -9,7 +9,7 @@ typedef struct PS4GLSDLOwner {
   VkPhysicalDevice physical;
   VkDevice device;
   VkRenderPass pass;
-  int width,height;
+  int width,height,depth_stencil;
   int (*begin)(void *); /* optional lazy frame owner, 0 success */
   int (*present)(void *);
   int (*quiesce)(void *);

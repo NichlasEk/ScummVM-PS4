@@ -177,9 +177,21 @@ The package copies upstream's configured engine-data manifests, including
 required `.dat`/table files, script patches, core support data and the virtual
 keyboard pack into `/app0/data`. It does not package the user's game directories.
 
-## Remaining exclusions: package 1.17
+## MPEG-2 development update (2026-09-26)
 
-This table reflects current configure results, not the historical 1.09 list.
+MPEG-2 is now ported and verified with generated video on host and in shadPS4.
+The shared configuration selects 104 main engines, including QD Engine; an
+isolated QD-only PS4 executable also compiles and links. Existing package 1.17
+is not retroactively updated. See [MPEG-2 evidence](PS4-MPEG2.md).
+
+The remaining dependency exclusions in the ordinary software-output configuration
+are HPL1 (OpenGL shaders), TWP (OpenGL shaders), and The Watchmaker
+(classic OpenGL). TWP gameplay has separately been reached in the experimental
+Vulkan build; broader GL functionality and main-package integration remain.
+
+## Historical exclusions: package 1.17
+
+This table records package 1.17, before the MPEG-2 development update above.
 TestBed and Playground3D are deliberately disabled test engines and omitted.
 
 | Engine / game family | Mandatory dependencies still missing |
@@ -191,9 +203,9 @@ TestBed and Playground3D are deliberately disabled test engines and omitted.
 
 ## Work still needed
 
-1. **Images:** GIF remains missing for HPL1; that engine also needs shaders.
-2. **Video:** port libmpeg2 for QDEngine. Verify cutscenes and
-   audio/video timing; compilation is insufficient.
+1. **Images:** GIF is now ported and decoder-tested, including palettes, transparency, interlace and offsets. HPL1 gameplay remains unverified.
+2. **Video:** libmpeg2 is now ported and decoder-tested. QDEngine cutscenes and
+   audio/video timing remain to be verified with game data.
 3. **Graphics backend:** HPL1 and Thimbleweed Park require OpenGL shaders;
    The Watchmaker requires classic OpenGL. The SDL software-output backend
    provides neither. These need a PS4 graphics backend or an engine-supported
@@ -258,3 +270,13 @@ Lord Avalot d'Argent
 - Separate PICE work remains incomplete and is documented in `PICE-SAVE-RUNTIME.md`.
 
 Local build evidence: `artifacts/scummvm/configure.log`, `build.log`, `package.log`.
+
+## Vulkan and Grim checkpoint (2026-09-26)
+
+The experimental Vulkan build now defaults to the full engine configuration and
+includes GIF and MPEG-2. Enabled engines are not a claim of full runtime support.
+Grim Fandango reaches gameplay: the intro-to-room crash, invisible actor, and
+D-pad routing are repaired. A held arrow key walks Manny into the corridor;
+the user also confirmed that the game works. See [Grim implementation and
+validation](PS4-GRIM-SHADERS.md) for remaining GL limits and test evidence.
+Physical PS4 validation remains separate from these shadPS4 results.

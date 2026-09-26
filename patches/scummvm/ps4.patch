@@ -466,7 +466,7 @@
  	SDL_Event ev;
  	while (SDL_PollEvent(&ev)) {
  		preprocessEvents(&ev);
-@@ -933,7 +958,11 @@
+@@ -933,9 +958,19 @@
  		case SDL_JOYBUTTONUP:
  			return handleJoyButtonUp(ev, event);
  		case SDL_JOYAXISMOTION:
@@ -476,9 +476,17 @@
  			return handleJoyAxisMotion(ev, event);
 +#endif
  		case SDL_JOYHATMOTION:
++#ifdef __PS4__
++			// OpenOrbis also sends buttons 13-16. Use them so D-pad events
++			// pass through the keymapper; pushed hat events bypass mapping.
++			return false;
++#else
  			return handleJoyHatMotion(ev, event);
++#endif
  		default:
-@@ -1126,6 +1155,16 @@
+ 			break;
+ 		}
+@@ -1126,6 +1161,20 @@
  }
  
  int SdlEventSource::mapSDLJoystickButtonToOSystem(Uint8 sdlButton) {
@@ -488,6 +496,10 @@
 +	case 9: return Common::JOYSTICK_BUTTON_START;
 +	case 11: return Common::JOYSTICK_BUTTON_LEFT_STICK;
 +	case 12: return Common::JOYSTICK_BUTTON_RIGHT_STICK;
++	case 13: return Common::JOYSTICK_BUTTON_DPAD_UP;
++	case 14: return Common::JOYSTICK_BUTTON_DPAD_DOWN;
++	case 15: return Common::JOYSTICK_BUTTON_DPAD_LEFT;
++	case 16: return Common::JOYSTICK_BUTTON_DPAD_RIGHT;
 +	case 17: return Common::JOYSTICK_BUTTON_BACK;
 +	default: if (sdlButton >= 6) return -1;
 +	}
@@ -928,3 +940,91 @@
  			0,
  			0
  		}
+--- a/image/gif.cpp
++++ b/image/gif.cpp
+@@ -34,7 +34,7 @@
+ 
+ namespace Image {
+ 
+-GIFDecoder::GIFDecoder() : _outputSurface(0), _palette(0), _colorCount(0) {
++GIFDecoder::GIFDecoder() : _outputSurface(0), _palette(0), _colorCount(0), _hasTransparentColor(false), _transparentColor(0) {
+ }
+ 
+ GIFDecoder::~GIFDecoder() {
+@@ -81,16 +81,24 @@
+ 	const int width = gif->SWidth;
+ 	const int height = gif->SHeight;
+ 
+-	const ColorMapObject *colorMap = gif->SColorMap;
+-	_hasTransparentColor = false;
+-	for (int i = 0; i < gif->ExtensionBlockCount; ++i) {
+-		const ExtensionBlock &eb = gif->ExtensionBlocks[i];
+-		GraphicsControlBlock gcb;
+-		DGifExtensionToGCB(eb.ByteCount, eb.Bytes, &gcb);
+-		if (gcb.TransparentColor != NO_TRANSPARENT_COLOR) {
+-			_hasTransparentColor = true;
+-			_transparentColor = gcb.TransparentColor;
+-			break;
++	// The first frame may have its own palette and occupy only part of the canvas.
++	const GifImageDesc &desc = gifImage->ImageDesc;
++	const ColorMapObject *colorMap = desc.ColorMap ? desc.ColorMap : gif->SColorMap;
++	if (!colorMap || colorMap->ColorCount <= 0 || colorMap->ColorCount > 256 ||
++	    width <= 0 || height <= 0 || desc.Width <= 0 || desc.Height <= 0 ||
++	    desc.Left < 0 || desc.Top < 0 || desc.Left + desc.Width > width ||
++	    desc.Top + desc.Height > height) {
++		DGifCloseFile(gif, 0);
++		return false;
++	}
++	GraphicsControlBlock gcb;
++	_hasTransparentColor = DGifSavedExtensionToGCB(gif, 0, &gcb) == GIF_OK &&
++	                       gcb.TransparentColor >= 0 && gcb.TransparentColor < colorMap->ColorCount;
++	_transparentColor = _hasTransparentColor ? gcb.TransparentColor : 0;
++	for (size_t i = 0; i < (size_t)desc.Width * desc.Height; ++i) {
++		if (gifImage->RasterBits[i] >= colorMap->ColorCount) {
++			DGifCloseFile(gif, 0);
++			return false;
+ 		}
+ 	}
+ 
+@@ -105,23 +113,15 @@
+ 		_palette[(i * 3) + 2] = colorMap->Colors[i].Blue;
+ 	}
+ 
+-	// TODO: support transparency
+-
+ 	_outputSurface->create(width, height, format);
+-	const uint8 *in = (const uint8 *)gifImage->RasterBits;
+-	uint8 *pixelPtr = (uint8 *)_outputSurface->getBasePtr(0, 0);
+-	if (gif->Image.Interlace) {
+-		const int interlacedOffset[] = {0, 4, 2, 1};
+-		const int interlacedJumps[] = {8, 8, 4, 2};
+-		for (int i = 0; i < 4; ++i) {
+-			for (int row = interlacedOffset[i]; row < height; row += interlacedJumps[i]) {
+-				memcpy(pixelPtr + width * row, in, width);
+-				in += width;
+-			}
+-		}
+-	} else {
+-		memcpy(pixelPtr, in, width * height);
+-	}
++	const byte background = _hasTransparentColor ? _transparentColor :
++	                        (colorMap == gif->SColorMap && gif->SBackGroundColor < _colorCount ? gif->SBackGroundColor : 0);
++	for (int row = 0; row < height; ++row)
++		memset(_outputSurface->getBasePtr(0, row), background, width);
++	// DGifSlurp already converts interlaced data into ordinary scanline order.
++	for (int row = 0; row < desc.Height; ++row)
++		memcpy(_outputSurface->getBasePtr(desc.Left, desc.Top + row),
++		       gifImage->RasterBits + row * desc.Width, desc.Width);
+ 
+ 	DGifCloseFile(gif, 0);
+ 	return true;
+@@ -131,6 +131,9 @@
+ }
+ 
+ void GIFDecoder::destroy() {
++	_colorCount = 0;
++	_hasTransparentColor = false;
++	_transparentColor = 0;
+ 	if (_outputSurface) {
+ 		_outputSurface->free();
+ 		delete _outputSurface;

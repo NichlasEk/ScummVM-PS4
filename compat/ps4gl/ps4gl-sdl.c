@@ -67,6 +67,7 @@ static SDL_GLContext create_context(_THIS, SDL_Window *window) {
   if(!ps4glInit(context,owner.width,owner.height) || !ps4glGLSLInitialize()) {
     free(context); context=NULL; SDL_SetError("GL context initialization failed"); return NULL;
   }
+  context->default_depth_stencil=!!owner.depth_stencil;
   context->begin_frame=owner.begin ? begin_frame : NULL;
   ps4glMakeCurrent(context); ps4glConfigureVertexDevice(owner.physical,owner.device);
   ps4glConfigureShaderCompiler(owner.pass,ps4glCompileLegacyGLSL,ps4glLinkLegacyGLSL);

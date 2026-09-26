@@ -5,7 +5,7 @@ index e104443..641fb26 100644
 @@ -69,6 +69,8 @@ CXXFLAGS := $(ARCHFLAGS) $(INCDIRS) $(DEFINES) -std=c++17 -O2 -g \
              -Wall -Wextra -Wno-unused-function \
              -Wno-macro-redefined -Wno-typedef-redefinition
-
+ 
 +CFLAGS += $(EXTRA_CFLAGS)
 +
  # === Sources ===
@@ -29,7 +29,7 @@ index e104443..641fb26 100644
  APP_LIBS = --whole-archive $(LIB_STATIC) $(OPENGNM_LIB) --no-whole-archive \
 -           $(PSBC_LIB) $(PS4_LIBS)
 +           $(PSBC_LIB) $(EXTRA_LIBS) $(PS4_LIBS)
-
+ 
  # === Link flags ===
  # Link against opengnm (orbis build), libpsbc, and OpenOrbis firmware stubs
 @@ -182,6 +181,8 @@ pkg: $(PKG_CONTENT_ID).pkg
@@ -175,7 +175,7 @@ index 0000000..91cfc34
 +}
 +#endif
 diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
-index 168c1f3..6f69739 100644
+index 168c1f3..22bb332 100644
 --- a/src/vk_ps4_command.c
 +++ b/src/vk_ps4_command.c
 @@ -11,15 +11,18 @@
@@ -191,13 +191,30 @@ index 168c1f3..6f69739 100644
   * (stencil ref/mask/ops don't have GNM API wrappers). */
  #include <pm4/sid.h>
  #include <pm4/amdgfxregs.h>
-
+ 
 -#define VK_PS4_CMD_BUFFER_SIZE (256 * 1024)  /* 256KB default PM4 buffer */
 +#include "vk_ps4_pm4_chunks.h"
 +#define VK_PS4_CMD_BUFFER_SIZE VK_PS4_PM4_RECORDING_BYTES
-
+ 
  /* Forward declaration from vk_ps4_pipeline.c */
  extern GnmPrimitiveType vk_topology_to_gnm(VkPrimitiveTopology topology);
+@@ -435,14 +438,14 @@ static void vk_ps4_clear_color(VkPs4CommandBuffer *cmd,
+  * Triggers the GCN lazy clear by doing a draw that accesses depth.
+  * Temporarily enables depth write to guarantee the lazy clear fires,
+  * even if the currently bound pipeline has depth disabled. */
+-static void vk_ps4_clear_depth_draw(GnmCommandBuffer *cmd) {
++static void vk_ps4_clear_depth_draw(GnmCommandBuffer *cmd, bool write_depth) {
+     /* Temporarily enable depth write so the draw accesses the depth buffer.
+      * This guarantees the lazy clear fires regardless of the bound pipeline's
+      * depth state. DB_DEPTH_CONTROL is restored by the next CmdBindPipeline. */
+     GnmDepthStencilControl ds_write;
+     memset(&ds_write, 0, sizeof(ds_write));
+     ds_write.depthenable = 1;
+-    ds_write.zwrite = 1;
++    ds_write.zwrite = write_depth;
+     ds_write.zfunc = GNM_DEPTH_COMPARE_ALWAYS;
+     ds_write.stencilenable = 0;
+     ds_write.depthboundsenable = 0;
 @@ -586,6 +589,8 @@ static void vk_ps4_rebind_pipeline_state(VkPs4CommandBuffer *cmd) {
      /* Re-emit PS if present */
      if (pipe->has_ps) {
@@ -931,6 +948,33 @@ index 168c1f3..6f69739 100644
  /* === Render pass commands === */
  
  /* Check if attachment `att_idx` is used by subpass `subpass` (via any
+@@ -2318,7 +2466,7 @@ vk_ps4_CmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBegin
+                 sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+ 
+                 /* Trigger the lazy clear with a fullscreen draw. */
+-                vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
++                vk_ps4_clear_depth_draw(&cmd->gnm_cmd, true);
+ 
+             } else if (view->image->is_render_target) {
+                 const VkClearColorValue *cc =
+@@ -2460,7 +2608,7 @@ vk_ps4_CmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents)
+                         db_ctrl.depthclearenable = has_depth ? 1 : 0;
+                         db_ctrl.stencilclearenable = has_stencil ? 1 : 0;
+                         sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+-                        vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
++                        vk_ps4_clear_depth_draw(&cmd->gnm_cmd, true);
+                     }
+                 }
+             }
+@@ -2492,7 +2640,7 @@ vk_ps4_CmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents)
+                         db_ctrl.depthclearenable = has_depth ? 1 : 0;
+                         db_ctrl.stencilclearenable = has_stencil ? 1 : 0;
+                         sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
+-                        vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
++                        vk_ps4_clear_depth_draw(&cmd->gnm_cmd, true);
+                     }
+                 }
+             }
 @@ -2516,19 +2664,40 @@ vk_ps4_CmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags sr
      if (!commandBuffer) return;
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
@@ -1147,7 +1191,16 @@ index 168c1f3..6f69739 100644
  }
  
  VKAPI_ATTR void VKAPI_CALL
-@@ -2773,122 +2880,125 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
+@@ -2756,7 +2863,7 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
+         0, 0,
+         img->create_info.extent.width,
+         img->create_info.extent.height);
+-    vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
++    vk_ps4_clear_depth_draw(&cmd->gnm_cmd, true);
+ 
+     /* Iterate ranges to validate bounds (API contract). The lazy clear
+      * covers the entire target regardless of ranges. */
+@@ -2773,122 +2880,150 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
      (void)imageLayout;
  }
  
@@ -1185,7 +1238,28 @@ index 168c1f3..6f69739 100644
 -                vk_ps4_emit_context_reg(&cmd->gnm_cmd,
 -                    R_028028_DB_STENCIL_CLEAR,
 -                    S_028028_CLEAR(att->clearValue.depthStencil.stencil));
--            }
++        if (att->aspectMask && !(att->aspectMask & ~(VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT))) {
++            uint32_t idx = vk_ps4_subpass_depth_attachment(cmd);
++            VkPs4ImageView *view = vk_ps4_get_attachment_view(cmd, idx);
++            if (!view || !view->image || !view->image->is_depth_target) goto unsupported;
++            VkPs4Image *img = view->image;
++            for (uint32_t r=0;r<rectCount;++r) {
++                const VkRect2D *rect=&pRects[r].rect;
++                if (pRects[r].baseArrayLayer || pRects[r].layerCount!=1 || rect->offset.x<0 || rect->offset.y<0 ||
++                    (uint64_t)rect->offset.x+rect->extent.width>img->create_info.extent.width ||
++                    (uint64_t)rect->offset.y+rect->extent.height>img->create_info.extent.height) goto unsupported;
++                sceGnmDrawCmdSetDepthRenderTarget(&cmd->gnm_cmd,&img->gnm_drt);
++                sceGnmDrawCmdSetDepthClearValue(&cmd->gnm_cmd,att->clearValue.depthStencil.depth);
++                vk_ps4_emit_context_reg(&cmd->gnm_cmd,R_028028_DB_STENCIL_CLEAR,S_028028_CLEAR(att->clearValue.depthStencil.stencil));
++                GnmDbRenderControl ctrl={0};
++                ctrl.depthclearenable=!!(att->aspectMask&VK_IMAGE_ASPECT_DEPTH_BIT);
++                ctrl.stencilclearenable=!!(att->aspectMask&VK_IMAGE_ASPECT_STENCIL_BIT);
++                sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd,&ctrl);
++                sceGnmDrawCmdSetScreenScissor(&cmd->gnm_cmd,rect->offset.x,rect->offset.y,rect->offset.x+rect->extent.width,rect->offset.y+rect->extent.height);
++                sceGnmDrawCmdSetRenderTargetMask(&cmd->gnm_cmd,0);
++                vk_ps4_clear_depth_draw(&cmd->gnm_cmd, ctrl.depthclearenable);
++                memset(&ctrl,0,sizeof(ctrl)); sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd,&ctrl);
+             }
 -
 -            GnmDbRenderControl db_ctrl;
 -            memset(&db_ctrl, 0, sizeof(db_ctrl));
@@ -1217,6 +1291,9 @@ index 168c1f3..6f69739 100644
 -                        cmd->current_render_pass.render_area.extent.height);
 -            }
 -
++            if (cmd->current_pipeline) vk_ps4_CmdBindPipeline(commandBuffer,VK_PIPELINE_BIND_POINT_GRAPHICS,(VkPipeline)cmd->current_pipeline);
++            continue;
++        }
 +        if (att->aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) goto unsupported;
 +        uint32_t idx = vk_ps4_subpass_color_attachment(cmd, att->colorAttachment);
 +        if (idx == VK_ATTACHMENT_UNUSED) continue;
@@ -1790,7 +1867,7 @@ index 9d8a83f..73048f3 100644
      /* Allocate the epilogue command buffer used by QueueSubmit for EOP
           * fence/semaphore signal writes.  Small and reused across submits. */
 diff --git a/src/vk_ps4_image.c b/src/vk_ps4_image.c
-index 6545469..d50b826 100644
+index 6545469..cbe05c0 100644
 --- a/src/vk_ps4_image.c
 +++ b/src/vk_ps4_image.c
 @@ -38,6 +38,14 @@ vk_ps4_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
@@ -1808,6 +1885,15 @@ index 6545469..d50b826 100644
      VkPs4Image *img = vk_ps4_alloc_zero(alloc, sizeof(*img), 16);
      if (!img) return VK_ERROR_OUT_OF_HOST_MEMORY;
      img->type = VK_PS4_OBJ_IMAGE;
+@@ -109,7 +117,7 @@ vk_ps4_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
+         drt_ci.numslices = pCreateInfo->arrayLayers;
+         drt_ci.zfmt = zfmt;
+         drt_ci.stencilfmt = sfmt;
+-        drt_ci.tilemodehint = GNM_TM_DISPLAY_2D_THIN;
++        drt_ci.tilemodehint = GNM_TM_DEPTH_2D_THIN_128;
+         drt_ci.mingpumode = gpu_mode;
+         drt_ci.numfragments = 1;
+         GnmError err = sceGnmCreateDepthRenderTarget(&img->gnm_drt, &drt_ci);
 @@ -131,7 +139,7 @@ vk_ps4_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
          tex_ci.nummiplevels = mip_levels;
          tex_ci.numslices = pCreateInfo->arrayLayers;
@@ -1826,7 +1912,36 @@ index 6545469..d50b826 100644
          tex_ci.mingpumode = gpu_mode;
  
          GnmError err = sceGnmCreateTexture(&img->gnm_texture, &tex_ci);
-@@ -314,7 +322,8 @@ vk_ps4_GetImageSubresourceLayout(VkDevice device, VkImage image,
+@@ -175,7 +183,11 @@ vk_ps4_GetImageMemoryRequirements(VkDevice device, VkImage image, VkMemoryRequir
+     if (!image || !pMemoryRequirements) return;
+     VkPs4Image *img = (VkPs4Image *)image;
+ 
+-    if (img->is_render_target) {
++    if (img->is_depth_target) {
++        uint64_t size=0; uint32_t align=0;
++        sceGnmDrtCalcByteSize(&size,&align,&img->gnm_drt);
++        pMemoryRequirements->size=size; pMemoryRequirements->alignment=align;
++    } else if (img->is_render_target) {
+         uint64_t size = 0;
+         uint32_t align = 0;
+         sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt);
+@@ -226,7 +238,14 @@ vk_ps4_BindImageMemory(VkDevice device, VkImage image, VkDeviceMemory memory, Vk
+ 
+     void *gpu_addr = (char *)mem->gnm_mem.mapped + offset;
+ 
+-    if (img->is_render_target) {
++    if (img->is_depth_target) {
++        uint64_t stencil_offset=0;
++        sceGnmDrtCalcStencilByteOffset(&stencil_offset,&img->gnm_drt);
++        sceGnmDrtSetZReadAddress(&img->gnm_drt,gpu_addr);
++        sceGnmDrtSetZWriteAddress(&img->gnm_drt,gpu_addr);
++        sceGnmDrtSetStencilReadAddress(&img->gnm_drt,(char *)gpu_addr+stencil_offset);
++        sceGnmDrtSetStencilWriteAddress(&img->gnm_drt,(char *)gpu_addr+stencil_offset);
++    } else if (img->is_render_target) {
+         sceGnmRtSetBaseAddr(&img->gnm_rt, gpu_addr);
+     } else {
+         sceGnmTexSetBaseAddress(&img->gnm_texture, gpu_addr);
+@@ -314,7 +333,8 @@ vk_ps4_GetImageSubresourceLayout(VkDevice device, VkImage image,
      /* For linear textures, row pitch = width * bytes_per_pixel */
      uint32_t bpp = 4;
      pLayout->offset = 0;
@@ -2312,10 +2427,10 @@ index 683667b..3b91cda 100644
 +++ b/src/vk_ps4_queue.c
 @@ -17,6 +17,7 @@
  #include "vk_ps4_internal.h"
-
+ 
  #include <string.h>
 +#include "vk_ps4_pm4_chunks.h"
-
+ 
  /* Emit an EOP event write into the epilogue command buffer that writes
   * signal_value to the GPU label at gpuaddr.  Returns the number of bytes
 @@ -35,6 +36,8 @@ static uint32_t vk_ps4_queue_emit_eop(
@@ -2330,7 +2445,7 @@ index 683667b..3b91cda 100644
 @@ -118,14 +121,21 @@ vk_ps4_QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSub
              uint32_t cmd_size_bytes = cmd->pm4_used * sizeof(uint32_t);
              if (cmd_size_bytes == 0) continue;
-
+ 
 -            void *dcb_addr = cmd->pm4_buffer;
 -
 -            /* Submit to GNM — pass NULL for ccb_addrs and ccb_sizes
@@ -2354,7 +2469,7 @@ index 683667b..3b91cda 100644
 -                1, &dcb_addr, &cmd_size_bytes, NULL, NULL
 +                count, addresses, sizes, NULL, NULL
              );
-
+ 
              if (result != 0) {
 @@ -246,6 +256,8 @@ vk_ps4_QueueWaitIdle(VkQueue queue) {
              1, &eop_addr, &eop_bytes, NULL, NULL

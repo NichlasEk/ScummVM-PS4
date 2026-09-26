@@ -18,6 +18,8 @@ export OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchai
 probe="$root/build/vulkan-probe"
 reports="$root/artifacts/vulkan"
 mkdir -p "$probe" "$reports"
+cp "$root/compat/ps4gl/ps4libc-threading.h" "$probe/ps4libc-threading.h"
+cp "$root/tests/ps4/vulkan/allocator.h" "$probe/allocator.h"
 cp "$root/tests/ps4/vulkan/draw.c" "$probe/draw.c"
 cp "$root/tests/ps4/vulkan/resources.h" "$probe/resources.h"
 cp "$root/tests/ps4/vulkan/readback.h" "$probe/readback.h"
@@ -54,7 +56,7 @@ if [[ "$variant" == --glstate ]]; then
 fi
 if [[ "$variant" == --gllegacy || "$variant" == --glsl || "$variant" == --glfbo || "$variant" == --glblend || "$variant" == --gldraw || "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLDRAW_PROBE 1' "$probe/draw.c"
- cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$root/compat/ps4gl/ps4gl-bindings.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$root/compat/ps4gl/ps4gl-framebuffer-vulkan.h" "$probe/"
+ cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$root/compat/ps4gl/ps4gl-bindings.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$root/compat/ps4gl/ps4gl-framebuffer-vulkan.h" "$root/compat/ps4gl/ps4gl-readback-vulkan.h" "$probe/"
 fi
 if [[ "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLVBO_PROBE 1' "$probe/draw.c"
@@ -89,13 +91,14 @@ driver="$root/.tools/opengnm-stack/vulkan-ps4"
 if [[ -f "$driver/sce_sys/param.sfo" ]]; then
  mv "$driver/sce_sys/param.sfo" "$driver/sce_sys/param.sfo.previous"
 fi
-extra_make=()
+allocator_wrap="--wrap=malloc --wrap=calloc --wrap=realloc --wrap=free"
+extra_make=("EXTRA_LIBS=$allocator_wrap")
 if [[ "$variant" == --glsl || "$variant" == --gllegacy ]]; then
  "$root/scripts/build-ps4-glslang.sh"
  sed -i '1i#define GLSL_PROBE 1' "$probe/draw.c"
  cp "$root/compat/ps4gl/ps4gl-glsl.c" "$root/compat/ps4gl/ps4gl-glsl.h" "$root/compat/ps4gl/ps4gl-stage-interface.h" "$root/compat/ps4gl/ps4gl-legacy.inc" "$root/tests/ps4/vulkan/glsl.h" "$probe/"
  python3 "$root/scripts/prepare-glsl-probe.py" "$probe"
- extra_make+=("EXTRA_CFLAGS=-I$root/.tools/glslang" "EXTRA_LIBS=$root/build/glslang-orbis/libglslang-ps4.a"
+ extra_make+=("EXTRA_CFLAGS=-I$root/.tools/glslang" "EXTRA_LIBS=$allocator_wrap $root/build/glslang-orbis/libglslang-ps4.a"
   "PKG_FILES=eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx glslang-LICENSE.txt")
 fi
 if [[ "$variant" == --gllegacy ]]; then
@@ -112,7 +115,7 @@ if (( sdlgl )); then
  cp "$root/compat/ps4gl/ps4gl-display.c" "$root/compat/ps4gl/ps4gl-display.h" "$probe/"
  cp "$root/compat/ps4gl/ps4gl-frame.c" "$root/compat/ps4gl/ps4gl-frame.h" "$probe/"
  cp "$root/tests/ps4/vulkan/sdlgl.h" "$root/compat/ps4gl/ps4gl-sdl.h" "$probe/"
- extra_make+=("EXTRA_LIBS=$root/build/ps4-sdlgl/libSDL2.a $root/build/glslang-orbis/libglslang-ps4.a -lSceUserService -lSceAudioOut -lScePad -lSceSysmodule")
+ extra_make+=("EXTRA_LIBS=$allocator_wrap $root/build/ps4-sdlgl/libSDL2.a $root/build/glslang-orbis/libglslang-ps4.a -lSceUserService -lSceAudioOut -lScePad -lSceSysmodule")
 fi
 make -C "$driver" -f Makefile.orbis "${extra_make[@]}" -j"${JOBS:-8}" pkg \
  TEST_SRC="$probe/draw.c" TEST_OBJ="$probe/draw.o" \

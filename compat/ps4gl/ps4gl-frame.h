@@ -8,7 +8,7 @@
  * quiesce/destroy it and recreate the parent swapchain before resuming. */
 typedef struct PS4GLFrameOwner {
   VkDevice device; VkQueue queue; VkSwapchainKHR swap;
-  VkRenderPass pass; VkImage images[2]; VkFramebuffer targets[2];
+  VkRenderPass pass; VkImage images[2],depth_images[2]; VkFramebuffer targets[2];
   VkCommandPool pool; VkCommandBuffer command; VkFence fence;
   PS4GLContext *context;
   uint32_t image; int width,height;

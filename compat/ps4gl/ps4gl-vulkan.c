@@ -67,8 +67,14 @@ static VkBlendOp native_equation(GLenum equation) {
     case GL_MIN:return VK_BLEND_OP_MIN; case GL_MAX:return VK_BLEND_OP_MAX; default:return VK_BLEND_OP_ADD;
   }
 }
+static VkStencilOp native_stencil(GLenum op) {
+  switch(op) { case GL_ZERO:return VK_STENCIL_OP_ZERO; case GL_REPLACE:return VK_STENCIL_OP_REPLACE;
+  case GL_INCR:return VK_STENCIL_OP_INCREMENT_AND_CLAMP; case GL_DECR:return VK_STENCIL_OP_DECREMENT_AND_CLAMP;
+  case GL_INVERT:return VK_STENCIL_OP_INVERT; case GL_INCR_WRAP:return VK_STENCIL_OP_INCREMENT_AND_WRAP;
+  case GL_DECR_WRAP:return VK_STENCIL_OP_DECREMENT_AND_WRAP; default:return VK_STENCIL_OP_KEEP; }
+}
 static VkResult create_pipeline(VkDevice device, VkRenderPass pass, const PS4GLProgram *p,
-                                const VkShaderModule *modules, const PS4GLBlend *blend, VkPipeline *out) {
+                                const VkShaderModule *modules, const PS4GLBlend *blend, const PS4GLRaster *raster, VkPipeline *out) {
   const unsigned *components=p->components; unsigned stride=0;
   VkPipelineShaderStageCreateInfo stages[2]={
     {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=modules[0],.pName="main"},
@@ -93,16 +99,23 @@ static VkResult create_pipeline(VkDevice device, VkRenderPass pass, const PS4GLP
   VkPipelineRasterizationStateCreateInfo rs={.sType=VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
     .polygonMode=VK_POLYGON_MODE_FILL,.cullMode=VK_CULL_MODE_NONE,.frontFace=VK_FRONT_FACE_COUNTER_CLOCKWISE,.lineWidth=1};
   VkPipelineMultisampleStateCreateInfo ms={.sType=VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT};
-  VkPipelineColorBlendAttachmentState ba={.colorWriteMask=15,.blendEnable=blend->enabled,
+  VkPipelineColorBlendAttachmentState ba={.colorWriteMask=raster->color_mask,.blendEnable=blend->enabled,
     .srcColorBlendFactor=native_factor(blend->src_rgb),.dstColorBlendFactor=native_factor(blend->dst_rgb),
     .srcAlphaBlendFactor=native_factor(blend->src_alpha),.dstAlphaBlendFactor=native_factor(blend->dst_alpha),
     .colorBlendOp=native_equation(blend->equation_rgb),.alphaBlendOp=native_equation(blend->equation_alpha)};
   VkPipelineColorBlendStateCreateInfo bs={.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,.attachmentCount=1,.pAttachments=&ba};
   VkDynamicState states[]={VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR};
   VkPipelineDynamicStateCreateInfo ds={.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,.dynamicStateCount=2,.pDynamicStates=states};
+  VkStencilOpState stencil={.failOp=native_stencil(raster->stencil_fail),.passOp=native_stencil(raster->stencil_pass),
+    .depthFailOp=native_stencil(raster->stencil_depth_fail),.compareOp=(VkCompareOp)(raster->stencil_func-GL_NEVER),
+    .compareMask=raster->stencil_mask,.writeMask=raster->stencil_write_mask,.reference=raster->stencil_ref};
+  VkPipelineDepthStencilStateCreateInfo depth={.sType=VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+    .depthTestEnable=raster->depth_enabled,.depthWriteEnable=raster->depth_write,
+    .depthCompareOp=(VkCompareOp)(raster->depth_func-GL_NEVER),.stencilTestEnable=raster->stencil_enabled,
+    .front=stencil,.back=stencil,.maxDepthBounds=1.f};
   VkGraphicsPipelineCreateInfo pci={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,.stageCount=2,.pStages=stages,
     .pVertexInputState=&vi,.pInputAssemblyState=&ia,.pViewportState=&vp,.pRasterizationState=&rs,
-    .pMultisampleState=&ms,.pColorBlendState=&bs,.pDynamicState=&ds,.layout=p->layout,.renderPass=pass};
+    .pMultisampleState=&ms,.pDepthStencilState=&depth,.pColorBlendState=&bs,.pDynamicState=&ds,.layout=p->layout,.renderPass=pass};
   return vkCreateGraphicsPipelines(device,VK_NULL_HANDLE,1,&pci,NULL,out);
 }
 GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
@@ -170,7 +183,8 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
   reflected.layout=layout;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) { reflected.components[i]=components[i]; stride+=components[i]*4; }
   PS4GLBlend disabled={.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};
-  result=create_pipeline(device,pass,&reflected,modules,&disabled,&pipeline);
+  const PS4GLRaster raster=PS4GL_RASTER_DEFAULT;
+  result=create_pipeline(device,pass,&reflected,modules,&disabled,&raster,&pipeline);
 cleanup:
   if(result!=VK_SUCCESS) {
     for(unsigned i=0;i<2;++i) if(modules[i]) vkDestroyShaderModule(device,modules[i],NULL);
@@ -209,7 +223,7 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
   collect_targets(ctx,1);
   if(ctx->offscreen_pass) vkDestroyRenderPass(device,ctx->offscreen_pass,NULL);
   ctx->offscreen_pass=VK_NULL_HANDLE; ctx->prepare_target=NULL; ctx->end_target=NULL;
-  ctx->physical=VK_NULL_HANDLE; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL; ctx->select_pipeline=NULL; ctx->import_program=NULL;
+  ctx->physical=VK_NULL_HANDLE; ctx->read_pixels=NULL; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL; ctx->select_pipeline=NULL; ctx->import_program=NULL;
   ctx->program=0; ctx->program_device=VK_NULL_HANDLE; ctx->program_pass=VK_NULL_HANDLE;
 }
 
@@ -290,6 +304,7 @@ static int upload_vertices(PS4GLContext *ctx, const void *data, size_t bytes, si
   return 1;
 }
 #include "ps4gl-framebuffer-vulkan.h"
+#include "ps4gl-readback-vulkan.h"
 static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
   size_t texture_bytes=0;
   const PS4GLTexture *sources[2]={0};
@@ -360,21 +375,23 @@ fail:
 }
 static VkPipeline select_pipeline(PS4GLContext *ctx, PS4GLProgram *p) {
   VkRenderPass pass=ctx->active_pass ? ctx->active_pass : ctx->program_pass;
-  if(!ctx->blend.enabled && pass==ctx->program_pass) return p->pipeline;
+  PS4GLRaster raster=ctx->raster, defaults=PS4GL_RASTER_DEFAULT;
+  if(ctx->framebuffer || !ctx->default_depth_stencil) { raster.depth_enabled=0; raster.stencil_enabled=0; }
+  if(!ctx->blend.enabled && !memcmp(&raster,&defaults,sizeof(raster)) && pass==ctx->program_pass) return p->pipeline;
   for(unsigned i=0;i<p->variant_count;++i)
-    if(p->variants[i].pass==pass && !memcmp(&p->variants[i].state,&ctx->blend,sizeof(ctx->blend))) return p->variants[i].pipeline;
+    if(p->variants[i].pass==pass && !memcmp(&p->variants[i].raster,&raster,sizeof(raster)) && !memcmp(&p->variants[i].state,&ctx->blend,sizeof(ctx->blend))) return p->variants[i].pipeline;
   if(p->variant_count==PS4GL_BLEND_VARIANTS) {
     if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
     return VK_NULL_HANDLE;
   }
   VkPipeline pipeline=VK_NULL_HANDLE;
-  VkResult result=create_pipeline(ctx->program_device,pass,p,p->modules,&ctx->blend,&pipeline);
+  VkResult result=create_pipeline(ctx->program_device,pass,p,p->modules,&ctx->blend,&raster,&pipeline);
   if(result!=VK_SUCCESS) {
     if(pipeline) vkDestroyPipeline(ctx->program_device,pipeline,NULL);
     if(!ctx->error) ctx->error=result==VK_ERROR_OUT_OF_HOST_MEMORY || result==VK_ERROR_OUT_OF_DEVICE_MEMORY ? GL_OUT_OF_MEMORY : GL_INVALID_OPERATION;
     return VK_NULL_HANDLE;
   }
-  p->variants[p->variant_count++]=(PS4GLBlendVariant){ctx->blend,pipeline,pass};
+  p->variants[p->variant_count++]=(PS4GLBlendVariant){.state=ctx->blend,.raster=raster,.pipeline=pipeline,.pass=pass};
   return pipeline;
 }
 void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
@@ -386,7 +403,7 @@ void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
     return;
   }
   ctx->prepare_target=prepare_render_target; ctx->end_target=end_render_target;
-  ctx->physical=physical; ctx->program_device=device; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms; ctx->select_pipeline=select_pipeline; ctx->import_program=ps4glCreateProgramSPIRV;
+  ctx->physical=physical; ctx->program_device=device; ctx->read_pixels=read_pixels; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms; ctx->select_pipeline=select_pipeline; ctx->import_program=ps4glCreateProgramSPIRV;
 }
 void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
   if(!ctx) return;

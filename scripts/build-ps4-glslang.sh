@@ -48,3 +48,6 @@ cmake --build "$build" -j"${JOBS:-8}" > "$root/artifacts/glslang/build.log" 2>&1
  echo END
 } > "$build/merge.mri"
 (cd "$build" && llvm-ar -M < merge.mri)
+# Both glslang and ScummVM's Director engine export Bison's plain yydebug.
+# Rename definitions and references together in the private target archive.
+llvm-objcopy --redefine-sym yydebug=ps4gl_glslang_yydebug "$build/libglslang-ps4.a"

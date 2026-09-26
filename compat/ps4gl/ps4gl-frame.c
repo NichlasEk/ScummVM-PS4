@@ -45,6 +45,14 @@ int ps4glFrameBegin(void *data) {
   VkCommandBufferBeginInfo begin={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   FRAME_TRY(vkBeginCommandBuffer(f->command,&begin));
   f->context=c; f->state=1; frame_barrier(f,0);
+  if(f->depth_images[f->image]) {
+    VkImageMemoryBarrier depth={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+      .oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,.newLayout=VK_IMAGE_LAYOUT_GENERAL,
+      .dstAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+      .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+      .image=f->depth_images[f->image],.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT,0,1,0,1}};
+    vkCmdPipelineBarrier(f->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,NULL,0,NULL,1,&depth);
+  }
   ps4glBeginFrame(f->command,f->pass,f->targets[f->image],f->width,f->height);
   if(c->command!=f->command || !c->managed_frame) { f->failed=1; return -1; }
   return 0;

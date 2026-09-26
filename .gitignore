@@ -6,3 +6,6 @@ artifacts/
 build-*/
 dist-*/
 __pycache__/
+# External PS4 runtime modules: keep only documentation and placeholders in Git.
+*.prx
+*.sprx

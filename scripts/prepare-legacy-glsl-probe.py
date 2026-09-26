@@ -22,7 +22,20 @@ for name,body in bodies.items():
     text=(vs if name in ('vsrc','vshader') else fs)+body
     parts.append(f'static const char legacy_{name}[] = {json.dumps(text)};\n')
     manifest[name]=hashlib.sha256(text.encode()).hexdigest()
-parts.append('static const char legacy_color[] = "#version 100\\nprecision mediump float;uniform vec4 color;uniform int mode;uniform int modes[2];void main(){gl_FragColor=(mode==-7 && modes[0]==3 && modes[1]==-11)?color:vec4(0.0);}";\n')
+for stage, prefix in (('vertex',vs),('fragment',fs)):
+    text=prefix+(source/f'engines/grim/shaders/grim_actor.{stage}').read_text()
+    parts.append(f'static const char legacy_grim_actor_{stage}[] = {json.dumps(text)};\n')
+    manifest[f'grim_actor_{stage}']=hashlib.sha256(text.encode()).hexdigest()
+grim_pairs=[]
+for vertex in sorted((source/'engines/grim/shaders').glob('grim_*.vertex')):
+    name=vertex.stem
+    for stage,prefix in (('vertex',vs),('fragment',fs)):
+        if name=='grim_actor': continue
+        text=prefix+vertex.with_suffix('.'+stage).read_text()
+        parts.append(f'static const char legacy_{name}_{stage}[] = {json.dumps(text)};\n')
+    grim_pairs.append(f'{{"{name}",legacy_{name}_vertex,legacy_{name}_fragment}}')
+parts.append('static const struct { const char *name,*vertex,*fragment; } grim_pairs[] = {'+','.join(grim_pairs)+'};\n')
+parts.append('static const char legacy_color[] = "#version 100\\nprecision mediump float;struct TestParams { bool enabled; vec3 tint; vec2 yBounds; };uniform TestParams settings;uniform vec4 color;uniform int mode;uniform int modes[2];void main(){gl_FragColor=(settings.enabled && mode==-7 && modes[0]==3 && modes[1]==-11 && gl_FragCoord.x>0.0 && gl_FragCoord.y>settings.yBounds.x && gl_FragCoord.y<settings.yBounds.y)?color*vec4(settings.tint,1.0):vec4(0.0);}";\n')
 (out/'legacy-sources.h').write_text(''.join(parts))
 (out/'legacy-sources.json').write_text(json.dumps(manifest,indent=2)+'\n')
 # The package carries the shader source used for reproduction and its notices.

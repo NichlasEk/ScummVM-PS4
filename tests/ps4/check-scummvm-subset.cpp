@@ -40,7 +40,7 @@ int main() {
  Context ok; ok.initialize();
  assert(ok.shadersSupported && ok.NPOTSupported && ok.textureEdgeClampSupported && ok.maxTextureSize==1024);
  assert(!ok.majorVersion && !ok.minorVersion && ok.enginesShadersSupported && !ok.framebufferObjectSupported && ok.multitextureSupported && ok.glslVersion==120);
- assert(!GLAD_GL_VERSION_2_0 && !GLAD_GL_ARB_framebuffer_object && !glReadPixels);
+ assert(!GLAD_GL_VERSION_2_0 && !GLAD_GL_ARB_framebuffer_object && glReadPixels);
  for(int failure=0;failure<4;++failure) {
   Context c;
   missing=failure==0 ? "glDrawArrays" : nullptr;

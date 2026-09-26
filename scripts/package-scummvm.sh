@@ -55,6 +55,8 @@ cp "$root/build/ps4-freetype/install/share/licenses/freetype/LICENSE.TXT" "$stag
 cp "$root/build/ps4-vorbis/install/share/licenses/"{libogg-COPYING,libvorbis-COPYING} "$stage/data/"
 cp "$root/build/ps4-png/install/share/licenses/"{libpng-LICENSE,zlib-LICENSE} "$stage/data/"
 cp "$root/build/ps4-theora/install/share/licenses/libtheora-COPYING" "$stage/data/"
+cp "$root/build/ps4-mpeg2/install/share/licenses/libmpeg2-COPYING" "$stage/data/"
+cp "$root/build/ps4-gif/install/share/licenses/giflib-COPYING" "$stage/data/"
 cp "$source_dir/COPYING" "$stage/data/COPYING"
 cp "$source_dir/COPYRIGHT" "$stage/data/COPYRIGHT"
 cp "$source_dir/common/lua/COPYRIGHT" "$stage/data/lua-COPYRIGHT"
@@ -62,6 +64,7 @@ cp "$source_dir/backends/vkeybd/packs/vkeybd_default.zip" "$stage/data/"
 # Build from the patched layout sources, not upstream's prebuilt archive.
 (cd "$source_dir/gui/themes" && python3 scummtheme.py make scummremastered)
 cp "$source_dir/gui/themes/scummremastered.zip" "$stage/data/"
+cp "$source_dir/gui/themes/gui-icons.dat" "$stage/data/"
 printf '%s\n' 'Place legally obtained ScummVM game data in subdirectories here.' > "$stage/games/README.txt"
 pkgtool="$sdk/bin/linux/PkgTool.Core"
 sfo="$stage/sce_sys/param.sfo"
@@ -81,8 +84,8 @@ package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right
     sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING data/COPYRIGHT
     data/libjpeg-turbo-LICENSE.md data/libjpeg-turbo-README.ijg data/libmad-COPYING data/libmad-COPYRIGHT
     data/freetype-FTL.TXT data/freetype-LICENSE.TXT data/freetype-GPLv2.TXT
-    data/libogg-COPYING data/libvorbis-COPYING data/libpng-LICENSE data/zlib-LICENSE data/libtheora-COPYING
-    data/lua-COPYRIGHT data/vkeybd_default.zip data/scummremastered.zip games/README.txt)
+    data/libogg-COPYING data/libvorbis-COPYING data/libpng-LICENSE data/zlib-LICENSE data/libtheora-COPYING data/libmpeg2-COPYING data/giflib-COPYING
+    data/lua-COPYRIGHT data/vkeybd_default.zip data/scummremastered.zip data/gui-icons.dat games/README.txt)
 if [[ ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} == 1 ]]; then
  for spec in 'opengnm/LICENSE:OpenGNM-LICENSE' 'opengnm-psbc/LICENSE:PSBC-LICENSE' 'vulkan-ps4/LICENSE:Vulkan-PS4-LICENSE'; do
   cp "$root/.tools/opengnm-stack/${spec%%:*}" "$stage/data/${spec#*:}"
@@ -102,6 +105,14 @@ while IFS= read -r resource; do
     cp "$resource" "$stage/data/"
     package_files+=("data/$(basename "$resource")")
 done <<< "$engine_data"
+shader_data=$(make -s --no-print-directory -C "$build_dir" \
+    --eval='ps4-shader-data: ; @printf "%s\n" $(DIST_FILES_SHADERS)' ps4-shader-data)
+while IFS= read -r resource; do
+    [[ -n "$resource" ]] || continue
+    mkdir -p "$stage/data/shaders"
+    cp "$resource" "$stage/data/shaders/"
+    package_files+=("data/shaders/$(basename "$resource")")
+done <<< "$shader_data"
 if [[ -n "$dott_source" ]]; then
     mkdir -p "$stage/games/dott"
     # Include only the full game's data, not DOS executables or unrelated demos.

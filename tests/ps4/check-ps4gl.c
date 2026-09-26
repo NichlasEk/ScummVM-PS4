@@ -119,6 +119,20 @@ static void check_rgb_uploads(void) {
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
   glDeleteFramebuffers(1,&fbo); ps4glDestroyTextures(&ctx); ps4glMakeCurrent(NULL);
 }
+static void check_luminance_alpha(void) {
+  PS4GLContext c; assert(ps4glInit(&c,80,60)); ps4glMakeCurrent(&c);
+  GLuint t; glGenTextures(1,&t); glBindTexture(GL_TEXTURE_2D,t);
+  const unsigned char la[]={7,128,99,99,33,255,99,99};
+  glTexImage2D(GL_TEXTURE_2D,0,GL_LUMINANCE_ALPHA,1,2,0,GL_LUMINANCE_ALPHA,GL_UNSIGNED_BYTE,la);
+  const unsigned char expected[]={7,7,7,128,33,33,33,255};
+  assert(!glGetError() && !memcmp(c.textures[0].pixels,expected,8));
+  const unsigned char sub[]={64,192};
+  glTexSubImage2D(GL_TEXTURE_2D,0,0,1,1,1,GL_LUMINANCE_ALPHA,GL_UNSIGNED_BYTE,sub);
+  assert(!glGetError() && c.textures[0].pixels[4]==64 && c.textures[0].pixels[7]==192);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_ALPHA,1,1,0,GL_ALPHA,GL_UNSIGNED_BYTE,sub);
+  assert(!glGetError() && !c.textures[0].pixels[0] && c.textures[0].pixels[3]==64);
+  ps4glDestroyTextures(&c); ps4glMakeCurrent(NULL);
+}
 static void check_launcher_state(void) {
   PS4GLContext a,b; assert(ps4glInit(&a,80,60) && ps4glInit(&b,80,60));
   ps4glMakeCurrent(&a);
@@ -131,15 +145,24 @@ static void check_launcher_state(void) {
   GLint depth=-1; glGetIntegerv(GL_DEPTH_WRITEMASK,&depth); assert(depth==1);
   glGetBooleanv(GL_DEPTH_WRITEMASK,NULL); assert(glGetError()==GL_INVALID_VALUE);
   mask=99; glGetBooleanv(0xffff,&mask); assert(mask==99 && glGetError()==GL_INVALID_ENUM);
-  const GLenum caps[]={GL_CULL_FACE,GL_DEPTH_TEST,GL_DITHER};
+  const GLenum caps[]={GL_CULL_FACE,GL_DITHER};
   glEnable(GL_BLEND); glEnable(GL_SCISSOR_TEST);
-  for(unsigned i=0;i<3;++i) {
+  for(unsigned i=0;i<2;++i) {
     GLint value=-1; glDisable(caps[i]); glDisable(caps[i]);
     assert(!glIsEnabled(caps[i])); glGetIntegerv(caps[i],&value);
     assert(!value && glGetError()==GL_NO_ERROR);
     glEnable(caps[i]); assert(glGetError()==GL_INVALID_OPERATION);
     assert(!glIsEnabled(caps[i]) && glIsEnabled(GL_BLEND) && glIsEnabled(GL_SCISSOR_TEST));
   }
+  glEnable(GL_DEPTH_TEST); glEnable(GL_STENCIL_TEST);
+  assert(glIsEnabled(GL_DEPTH_TEST) && glIsEnabled(GL_STENCIL_TEST));
+  glDepthFunc(GL_GEQUAL); glStencilFunc(GL_EQUAL,-9,~0u); glStencilOp(GL_REPLACE,GL_KEEP,GL_INCR_WRAP);
+  assert(a.raster.depth_func==GL_GEQUAL && a.raster.stencil_ref==0 && a.raster.stencil_mask==255);
+  PS4GLRaster state=a.raster; glStencilOp(GL_REPLACE,0xffff,GL_KEEP);
+  assert(glGetError()==GL_INVALID_ENUM && !memcmp(&state,&a.raster,sizeof(state)));
+  glColorMask(0,7,0,1); GLboolean rgba[4]; glGetBooleanv(GL_COLOR_WRITEMASK,rgba);
+  assert(!rgba[0] && rgba[1] && !rgba[2] && rgba[3]); glColorMask(1,1,1,1);
+  glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
   glDisable(0xffff); glEnable(GL_CULL_FACE);
   assert(glGetError()==GL_INVALID_ENUM && !glGetError());
   assert(!glIsEnabled(0xffff) && glGetError()==GL_INVALID_ENUM);
@@ -191,8 +214,28 @@ static void check_large_textures(void) {
   ps4glMakeCurrent(NULL);
 }
 
+static void check_texture_records(void) {
+  PS4GLContext ctx; assert(ps4glInit(&ctx,80,60)); ps4glMakeCurrent(&ctx);
+  GLuint names[PS4GL_MAX_TEXTURES]; glGenTextures(PS4GL_MAX_TEXTURES,names);
+  assert(glGetError()==GL_NO_ERROR && ctx.texture_bytes==0);
+  const unsigned char pixel[]={4,9,21,255};
+  for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) {
+    glBindTexture(GL_TEXTURE_2D,names[i]);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,pixel);
+    assert(glGetError()==GL_NO_ERROR);
+  }
+  GLuint rejected=0xabcdef; glGenTextures(1,&rejected);
+  assert(glGetError()==GL_OUT_OF_MEMORY && rejected==0xabcdef);
+  assert(ctx.texture_bytes==4*PS4GL_MAX_TEXTURES);
+  glDeleteTextures(PS4GL_MAX_TEXTURES,names); assert(ctx.texture_bytes==0);
+  glGenTextures(1,&rejected); assert(glGetError()==GL_NO_ERROR && rejected!=0xabcdef);
+  glDeleteTextures(1,&rejected); ps4glMakeCurrent(NULL);
+}
+
 int main(void) {
+  check_texture_records();
   check_large_textures();
+  check_luminance_alpha();
   check_launcher_state();
   PS4GLContext a,b;
   assert(ps4glInit(&a,80,60) && ps4glInit(&b,20,10));

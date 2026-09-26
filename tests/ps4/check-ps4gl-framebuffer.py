@@ -18,6 +18,8 @@ for y in range(13,710,17):
         if '--swapchain-clear' in sys.argv:
             if 80<=x<180 and 560<=y<640: want=(137,188,225)
             if 100<=x<140 and 590<=y<620: want=(7,0,255)
+            if 200<=x<250 and 560<=y<640: want=(0,255,0)
+            if 320<=x<400 and 560<=y<640: want=(0,0,255)
         got=im.getpixel((x,y))
         assert max(abs(a-b) for a,b in zip(got,want))<=3,(x,y,got,want)
         checks+=1

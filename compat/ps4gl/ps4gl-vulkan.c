@@ -1,9 +1,10 @@
 #include "ps4gl.h"
 #include <string.h>
+#include "ps4gl-reflect.h"
 /* Explicit bootstrap import. The caller supplies a compatible color render pass.
  * Program code is compiled to GCN by the native Vulkan driver, not by the host. */
 /* Structural/interface guard only; callers still supply validated Vulkan SPIR-V.
- * No descriptor resources; plain float vertex inputs are packed at draw time. */
+ * Bounded default-uniform blocks and plain float vertex inputs. */
 static int supported_interface(const uint32_t *code, size_t bytes, unsigned *components) {
   size_t words=bytes/4;
   for(size_t i=5;i<words;) {
@@ -17,7 +18,7 @@ static int supported_interface(const uint32_t *code, size_t bytes, unsigned *com
     if(op!=59) continue; /* OpVariable */
     if(count<4) return 0;
     uint32_t storage=code[i+3];
-    if(storage==0 || storage==2 || storage==9 || storage==12) return 0;
+    if(storage==0 || storage==9 || storage==12) return 0;
     if(components && storage==1) {
       int builtin=0; unsigned location=PS4GL_MAX_ATTRIBS;
       for(size_t j=5;j<words;j+=code[j]>>16)
@@ -59,12 +60,15 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
      vs[0]!=0x07230203 || fs[0]!=0x07230203) { err=GL_INVALID_VALUE; goto fail; }
   unsigned components[PS4GL_MAX_ATTRIBS]={0}, stride=0;
   if(!supported_interface(vs,vs_size,components) || !supported_interface(fs,fs_size,NULL)) goto fail;
+  PS4GLProgram reflected={0};
+  if(!gl_reflect_uniforms(vs,vs_size,0,&reflected) || !gl_reflect_uniforms(fs,fs_size,1,&reflected)) goto fail;
   unsigned slot;
   for(slot=0;slot<PS4GL_MAX_PROGRAMS;++slot) if(!ctx->programs[slot].pipeline) break;
   if(slot==PS4GL_MAX_PROGRAMS) { err=GL_OUT_OF_MEMORY; goto fail; }
   VkShaderModule modules[2]={VK_NULL_HANDLE,VK_NULL_HANDLE};
   VkPipelineLayout layout=VK_NULL_HANDLE;
   VkPipeline pipeline=VK_NULL_HANDLE;
+  VkDescriptorSetLayout descriptors=VK_NULL_HANDLE;
   VkResult result;
   for(unsigned i=0;i<2;++i) {
     VkShaderModuleCreateInfo ci={.sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -73,6 +77,17 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
     if(result!=VK_SUCCESS) goto cleanup;
   }
   VkPipelineLayoutCreateInfo lci={.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  if(reflected.uniform_stages) {
+    VkDescriptorSetLayoutBinding bindings[2]; unsigned count=0;
+    for(unsigned stage=0;stage<2;++stage) if(reflected.uniform_stages&(1u<<stage))
+      bindings[count++]=(VkDescriptorSetLayoutBinding){.binding=stage,.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount=1,.stageFlags=stage ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT};
+    VkDescriptorSetLayoutCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .bindingCount=count,.pBindings=bindings};
+    result=vkCreateDescriptorSetLayout(device,&dci,NULL,&descriptors);
+    if(result!=VK_SUCCESS) goto cleanup;
+    lci.setLayoutCount=1; lci.pSetLayouts=&descriptors;
+  }
   result=vkCreatePipelineLayout(device,&lci,NULL,&layout);
   if(result!=VK_SUCCESS) goto cleanup;
   VkPipelineShaderStageCreateInfo stages[2]={
@@ -111,11 +126,13 @@ cleanup:
   if(result!=VK_SUCCESS) {
     if(pipeline) vkDestroyPipeline(device,pipeline,NULL);
     if(layout) vkDestroyPipelineLayout(device,layout,NULL);
+    if(descriptors) vkDestroyDescriptorSetLayout(device,descriptors,NULL);
     if(result==VK_ERROR_OUT_OF_HOST_MEMORY || result==VK_ERROR_OUT_OF_DEVICE_MEMORY) err=GL_OUT_OF_MEMORY;
     goto fail;
   }
   ctx->program_device=device; ctx->program_pass=pass;
-  ctx->programs[slot]=(PS4GLProgram){.pipeline=pipeline,.layout=layout,.vertex_stride=stride};
+  reflected.pipeline=pipeline; reflected.layout=layout; reflected.vertex_stride=stride; reflected.descriptors=descriptors;
+  ctx->programs[slot]=reflected;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->programs[slot].components[i]=components[i];
   return slot+1;
 fail:
@@ -131,10 +148,11 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
   for(unsigned i=0;i<PS4GL_MAX_PROGRAMS;++i) {
     if(ctx->programs[i].pipeline) vkDestroyPipeline(device,ctx->programs[i].pipeline,NULL);
     if(ctx->programs[i].layout) vkDestroyPipelineLayout(device,ctx->programs[i].layout,NULL);
+    if(ctx->programs[i].descriptors) vkDestroyDescriptorSetLayout(device,ctx->programs[i].descriptors,NULL);
     ctx->programs[i]=(PS4GLProgram){0};
   }
   ps4glReleaseVertexSnapshots(ctx);
-  ctx->physical=VK_NULL_HANDLE; ctx->upload_vertices=NULL;
+  ctx->physical=VK_NULL_HANDLE; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL;
   ctx->program=0; ctx->program_device=VK_NULL_HANDLE; ctx->program_pass=VK_NULL_HANDLE;
 }
 
@@ -148,7 +166,7 @@ static int upload_vertices(PS4GLContext *ctx, const void *data, size_t bytes, si
     return 0;
   }
   PS4GLSnapshot snap={0}; VkDevice device=ctx->program_device;
-  VkBufferCreateInfo ci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT};
+  VkBufferCreateInfo ci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
   VkResult result=vkCreateBuffer(device,&ci,NULL,&snap.buffer);
   if(result!=VK_SUCCESS) goto fail_upload;
   VkMemoryRequirements req;
@@ -179,6 +197,34 @@ fail_upload:
   if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
   return 0;
 }
+static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
+  /* Fixed 256-byte blocks match the native device's uniform offset alignment. */
+  if(!upload_vertices(ctx,p->uniform_data,sizeof(p->uniform_data),0,0)) return 0;
+  PS4GLSnapshot *snap=&ctx->snapshots[ctx->snapshot_count-1];
+  VkDescriptorPoolSize size={VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,2};
+  VkDescriptorPoolCreateInfo ci={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+    .maxSets=1,.poolSizeCount=1,.pPoolSizes=&size};
+  if(vkCreateDescriptorPool(ctx->program_device,&ci,NULL,&snap->pool)!=VK_SUCCESS) goto fail;
+  VkDescriptorSet set;
+  VkDescriptorSetAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+    .descriptorPool=snap->pool,.descriptorSetCount=1,.pSetLayouts=&p->descriptors};
+  if(vkAllocateDescriptorSets(ctx->program_device,&ai,&set)!=VK_SUCCESS) goto fail;
+  for(unsigned stage=0;stage<2;++stage) if(p->uniform_stages&(1u<<stage)) {
+    VkDescriptorBufferInfo info={snap->buffer,stage*PS4GL_UNIFORM_BYTES,PS4GL_UNIFORM_BYTES};
+    VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=set,
+      .dstBinding=stage,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.pBufferInfo=&info};
+    vkUpdateDescriptorSets(ctx->program_device,1,&write,0,NULL);
+  }
+  vkCmdBindDescriptorSets(ctx->command,VK_PIPELINE_BIND_POINT_GRAPHICS,p->layout,0,1,&set,0,NULL);
+  return 1;
+fail:
+  if(snap->pool) vkDestroyDescriptorPool(ctx->program_device,snap->pool,NULL);
+  vkDestroyBuffer(ctx->program_device,snap->buffer,NULL);
+  vkFreeMemory(ctx->program_device,snap->memory,NULL);
+  *snap=(PS4GLSnapshot){0}; --ctx->snapshot_count; ctx->snapshot_bytes-=sizeof(p->uniform_data);
+  if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
+  return 0;
+}
 void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
   PS4GLContext *ctx=ps4glCurrentContext();
   if(!ctx) return;
@@ -187,12 +233,13 @@ void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
     if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
     return;
   }
-  ctx->physical=physical; ctx->program_device=device; ctx->upload_vertices=upload_vertices;
+  ctx->physical=physical; ctx->program_device=device; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms;
 }
 void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
   if(!ctx) return;
   if(ctx->command) { if(!ctx->error) ctx->error=GL_INVALID_OPERATION; return; }
   for(unsigned i=0;i<ctx->snapshot_count;++i) {
+    if(ctx->snapshots[i].pool) vkDestroyDescriptorPool(ctx->program_device,ctx->snapshots[i].pool,NULL);
     vkDestroyBuffer(ctx->program_device,ctx->snapshots[i].buffer,NULL);
     vkFreeMemory(ctx->program_device,ctx->snapshots[i].memory,NULL);
     ctx->snapshots[i]=(PS4GLSnapshot){0};

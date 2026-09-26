@@ -49,6 +49,7 @@ typedef struct PS4GLAttrib {
 typedef struct PS4GLSnapshot {
   VkBuffer buffer;
   VkDeviceMemory memory;
+  VkDescriptorPool pool;
 } PS4GLSnapshot;
 #define GL_TRIANGLES 0x0004
 #define GL_CURRENT_PROGRAM 0x8b8d
@@ -58,9 +59,21 @@ typedef struct PS4GLSnapshot {
 #define PS4GL_MAX_PROGRAMS 16
 /* Slots are retained through context teardown: recorded GPU commands may still
  * refer to programs after glDeleteProgram. Names are never recycled. */
+#define PS4GL_MAX_UNIFORMS 16
+#define PS4GL_UNIFORM_BYTES 256
+/* Imported default-uniform blocks: set 0, binding 0 vertex / 1 fragment. */
+typedef struct PS4GLUniform {
+  char name[64];
+  unsigned width; /* 1..4 floats or 16 for column-major mat4 */
+  int offset[2];
+} PS4GLUniform;
 typedef struct PS4GLProgram {
   VkPipeline pipeline;
   VkPipelineLayout layout;
+  VkDescriptorSetLayout descriptors;
+  unsigned uniform_stages, uniform_count;
+  PS4GLUniform uniforms[PS4GL_MAX_UNIFORMS];
+  unsigned char uniform_data[2][PS4GL_UNIFORM_BYTES];
   GLboolean deleted, retired;
   unsigned components[PS4GL_MAX_ATTRIBS], vertex_stride;
 } PS4GLProgram;
@@ -95,6 +108,7 @@ typedef struct PS4GLContext {
   unsigned snapshot_count;
   size_t snapshot_bytes;
   /* Immutable payload: packed vertices followed by indices; index type 0 for arrays. */
+  int (*upload_uniforms)(struct PS4GLContext *, const PS4GLProgram *);
   int (*upload_vertices)(struct PS4GLContext *, const void *, size_t, size_t, GLenum);
 } PS4GLContext;
 typedef void (*PS4GLProc)(void);
@@ -105,7 +119,7 @@ void ps4glBeginPass(VkCommandBuffer);
 void ps4glEndPass(void);
 PS4GLProc ps4glGetProcAddress(const char *);
 PS4GLContext *ps4glCurrentContext(void);
-/* Explicit Vulkan-SPIR-V import, not glCompileShader/glLinkProgram. No descriptor resources;
+/* Explicit Vulkan-SPIR-V import, not glCompileShader/glLinkProgram. Bounded float default-uniform blocks;
  * plain float vertex inputs at locations 0..7 are supported. Clip coordinates must already
  * use Vulkan conventions (Y flipped and depth mapped to [0,1]). */
 GLuint ps4glCreateProgramSPIRV(VkDevice, VkRenderPass,
@@ -132,6 +146,16 @@ void glUseProgram(GLuint);
 void glDeleteProgram(GLuint);
 GLboolean glIsProgram(GLuint);
 void glGetProgramiv(GLuint, GLenum, GLint *);
+GLint glGetUniformLocation(GLuint, const char *);
+void glUniform1f(GLint, GLfloat);
+void glUniform2f(GLint, GLfloat, GLfloat);
+void glUniform3f(GLint, GLfloat, GLfloat, GLfloat);
+void glUniform4f(GLint, GLfloat, GLfloat, GLfloat, GLfloat);
+void glUniform1fv(GLint, GLsizei, const GLfloat *);
+void glUniform2fv(GLint, GLsizei, const GLfloat *);
+void glUniform3fv(GLint, GLsizei, const GLfloat *);
+void glUniform4fv(GLint, GLsizei, const GLfloat *);
+void glUniformMatrix4fv(GLint, GLsizei, GLboolean, const GLfloat *);
 void glDrawArrays(GLenum, GLint, GLsizei);
 void glDrawElements(GLenum, GLsizei, GLenum, const void *);
 void glClearColor(GLfloat, GLfloat, GLfloat, GLfloat);

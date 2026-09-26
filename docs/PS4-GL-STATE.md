@@ -4,8 +4,8 @@ The next small integration slice is in `compat/ps4gl/`. It is a reusable,
 single-threaded C frontend for clear color, scissor, viewport state, selected
 queries, error handling and procedure lookup. It forwards color clears to the
 existing Vulkan attachment-clear implementation. It does not yet own an SDL
-context, compile/link GLSL, or upload GL textures. Float vertex-buffer uploads
-are now supported by the snapshot path described below. The imported-program
+context, compile/link GLSL, or upload GL textures. Float vertex/index-buffer uploads and bounded named float/vector/mat4 uniforms
+are supported by the snapshot paths described below. The imported-program
 draw subset added below is separate from runtime GLSL compilation.
 No OpenGL version or extension strings are advertised. Unknown procedure names
 return NULL, so the partial frontend cannot silently stand in for a complete GL.
@@ -246,3 +246,67 @@ The prior GL vertex, procedural draw/program and clear/readback probes also pass
 with this frontend (`artifacts/vulkan/glindex-regression-*.log`). The indexed
 diagnostic binary is restored after regression testing. Stable ScummVM 1.17
 retains SHA-256 `c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.
+
+
+## Named uniform checkpoint (2026-09-26)
+
+`glGetUniformLocation`, `glUniform1f/2f/3f/4f`, their `fv` variants and
+`glUniformMatrix4fv` now update per-program CPU state. The SPIR-V import reflects
+member names, types and offsets from at most one default-uniform bridge block
+per stage: set 0 / binding 0 for vertex, binding 1 for fragment. This explicit
+import contract maps translated default uniforms to Vulkan UBOs; it is not the
+OpenGL uniform-block API or a GLSL linker. Member names must be retained in
+SPIR-V. Matching names in both stages share a location and receive both updates;
+conflicting types reject import. Initial values are zero, missing names return
+-1, updates to location -1 are ignored, and errors preserve prior values.
+
+Accepted members are float32, vec2/3/4 and column-major mat4 (matrix stride 16).
+Matrix setters also transpose CPU input when requested. There are at most 16
+unique names (63 bytes each), 256 bytes per stage, and no arrays, integers,
+booleans, nested structs, row-major shader matrices, samplers or push constants.
+Vector/scalar offsets must meet their base alignment; overlapping and
+out-of-bounds members reject import. Setters support count 0/1, with larger
+counts rejected because arrays are absent. The parser is a bounded interface
+guard; complete SPIR-V validation remains the importing caller's responsibility.
+
+At draw time the bridge snapshots both 256-byte blocks into coherent GPU memory,
+allocates a retained descriptor set and binds it before the native draw. The
+native device reports 256-byte uniform-buffer offset alignment. Both descriptor
+pool and buffer survive edits, program deletion and command resubmission until
+the owner completes fences and discards all referencing command buffers. Uniform
+and vertex/index snapshots share the existing 64-snapshot/64-MiB payload cap;
+a draw using both consumes two slots. This allocation path prioritizes correct
+lifetime over batching/allocator performance.
+
+Reproduce:
+
+```sh
+scripts/build-vulkan-probe.sh --gluniform
+xvfb-run -a -s '-screen 0 1280x720x24' \
+  python3 scripts/run-opengnm-probe.py --vulkan --gluniform
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  -Icompat/ps4gl -I.tools/opengnm-stack/Vulkan-Headers/include \
+  tests/ps4/check-ps4gl-uniforms.c -o build/check-ps4gl-uniforms
+build/check-ps4gl-uniforms build/vulkan-probe/triangle_vert.spv \
+  build/vulkan-probe/triangle_frag.spv
+```
+
+The native probe transforms half-size vertex positions with a mat4, sets a
+shared scalar in both shader stages, changes fragment tint between two indexed
+draws, then overwrites all parameter values before submission. The captured
+framebuffer passes 3,933 RGB samples, eight frames, program/buffer deletion
+checks, command resubmission and lifecycle cleanup. Host ASan/UBSan tests cover
+scalar/vector/matrix writes, transpose, program isolation, shared-stage writes,
+ignored/missing locations, wrong setter types/counts, and reflection rejection
+for wrong binding, matrix stride, scalar type, overlapping offsets and malformed
+instructions. Original game shaders with uniform arrays are still unsupported.
+
+Package: `dist/ScummVM-PS4-GL-Uniform.pkg`.
+Reports: `artifacts/vulkan/gluniform/`.
+SHA-256: `8a8d3cc8426d40eb328169a35c84c085f5dadac73104521252b40fdf078b7761`.
+This verifies the diagnostic in shadPS4; game startup, SDL GL integration and
+physical PS4 remain unverified. Next: uniform arrays and GL texture/sampler
+bindings, then translating GLSL at runtime and connecting the ScummVM backend.
+The previous index, vertex, procedural draw/program and clear/readback probes
+all pass (`artifacts/vulkan/gluniform-regression-*.log`). The uniform diagnostic
+is restored afterward; the stable ScummVM package remains unchanged.

@@ -265,6 +265,41 @@ void glGetProgramiv(GLuint name, GLenum pname, GLint *value) {
   else if (pname==GL_DELETE_STATUS) *value=p->deleted;
   else error(GL_INVALID_ENUM);
 }
+GLint glGetUniformLocation(GLuint name, const char *uniform) {
+  if(!current) return -1;
+  PS4GLProgram *p=program(name);
+  if(!p || !uniform) { error(GL_INVALID_VALUE); return -1; }
+  for(unsigned i=0;i<p->uniform_count;++i)
+    if(!strcmp(uniform,p->uniforms[i].name)) return (GLint)i;
+  return -1;
+}
+static void uniform(GLint location, GLsizei count, unsigned width, GLboolean transpose, const GLfloat *data) {
+  if(!current) return;
+  PS4GLProgram *p=program(current->program);
+  if(!p) { error(GL_INVALID_OPERATION); return; }
+  if(count<0) { error(GL_INVALID_VALUE); return; }
+  if(location==-1) return;
+  if(location<0 || (unsigned)location>=p->uniform_count) { error(GL_INVALID_OPERATION); return; }
+  PS4GLUniform *u=&p->uniforms[location];
+  if(u->width!=width || count>1) { error(GL_INVALID_OPERATION); return; }
+  if(!count) return;
+  if(!data) { error(GL_INVALID_VALUE); return; }
+  float value[16];
+  if(width==16 && transpose) {
+    for(unsigned c=0;c<4;++c) for(unsigned r=0;r<4;++r) value[c*4+r]=data[r*4+c];
+  } else memcpy(value,data,width*4);
+  for(unsigned stage=0;stage<2;++stage) if(u->offset[stage]>=0)
+    memcpy(p->uniform_data[stage]+u->offset[stage],value,width*4);
+}
+void glUniform1fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,1,0,v); }
+void glUniform2fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,2,0,v); }
+void glUniform3fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,3,0,v); }
+void glUniform4fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,4,0,v); }
+void glUniformMatrix4fv(GLint l, GLsizei n, GLboolean t, const GLfloat *v) { uniform(l,n,16,t,v); }
+void glUniform1f(GLint l, GLfloat x) { glUniform1fv(l,1,&x); }
+void glUniform2f(GLint l, GLfloat x, GLfloat y) { float v[]={x,y}; glUniform2fv(l,1,v); }
+void glUniform3f(GLint l, GLfloat x, GLfloat y, GLfloat z) { float v[]={x,y,z}; glUniform3fv(l,1,v); }
+void glUniform4f(GLint l, GLfloat x, GLfloat y, GLfloat z, GLfloat w) { float v[]={x,y,z,w}; glUniform4fv(l,1,v); }
 static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices) {
   if (!current) return;
   if (mode!=GL_TRIANGLES) { error(GL_INVALID_ENUM); return; }
@@ -326,6 +361,10 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     free(packed);
     if(!ok) return;
   }
+  if(p->uniform_stages) {
+    if(!current->upload_uniforms) { error(GL_INVALID_OPERATION); return; }
+    if(!current->upload_uniforms(current,p)) return;
+  }
   vkCmdBindPipeline(current->command,VK_PIPELINE_BIND_POINT_GRAPHICS,p->pipeline);
   vkCmdSetViewport(current->command,0,1,&vp);
   vkCmdSetScissor(current->command,0,1,&sc);
@@ -347,6 +386,8 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glEnable); PROC(glDisable); PROC(glIsEnabled); PROC(glGetError);
   PROC(glGetIntegerv); PROC(glGetFloatv);
   PROC(glUseProgram); PROC(glDeleteProgram); PROC(glIsProgram);
+  PROC(glGetUniformLocation); PROC(glUniform1f); PROC(glUniform2f); PROC(glUniform3f); PROC(glUniform4f);
+  PROC(glUniform1fv); PROC(glUniform2fv); PROC(glUniform3fv); PROC(glUniform4fv); PROC(glUniformMatrix4fv);
   PROC(glGetProgramiv); PROC(glDrawArrays); PROC(glDrawElements);
   PROC(glGenBuffers); PROC(glBindBuffer); PROC(glDeleteBuffers); PROC(glIsBuffer);
   PROC(glBufferData); PROC(glBufferSubData); PROC(glGetBufferParameteriv);

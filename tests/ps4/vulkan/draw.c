@@ -54,6 +54,9 @@ static FILE *report;
 #include "glvbo.h"
 #endif
 #endif
+#ifdef SDLGL_PROBE
+#include "sdlgl.h"
+#endif
 int main(void) {
   report = fopen("/data/scummvm-vulkan-probe.log", "w");
   if (!report)
@@ -320,9 +323,19 @@ int main(void) {
                                     &pipelines[i]));
   }
 #ifdef GLDRAW_PROBE
-  PS4GLContext gl;
-  if(!ps4glInit(&gl,1280,720)) return 2;
-  ps4glMakeCurrent(&gl);
+#ifdef SDLGL_PROBE
+  SDLProbeOwner sdl_state={.device=device,.queue=queue,.swap=swap};
+  PS4GLSDLOwner sdl_owner={.physical=physical,.device=device,.pass=pass,.width=1280,.height=720,
+    .present=sdl_present,.quiesce=sdl_quiesce,.data=&sdl_state};
+  if(ps4glSDLSetOwner(&sdl_owner)) return 2;
+  SDL_Window *sdl_window=NULL; SDL_GLContext sdl_context=sdl_create(&sdl_window);
+  if(!sdl_context) { fprintf(report,"SDL setup failed: %s\n",SDL_GetError()); return 2; }
+  PS4GLContext *glctx=ps4glCurrentContext();
+#else
+  PS4GLContext gl_storage; PS4GLContext *glctx=&gl_storage;
+  if(!ps4glInit(glctx,1280,720)) return 2;
+  ps4glMakeCurrent(glctx);
+#endif
 #ifdef GLSL_PROBE
   ps4glConfigureVertexDevice(physical,device);
   if(!ps4glGLSLInitialize()) return 2;
@@ -511,17 +524,31 @@ int main(void) {
       fprintf(report, "PASS upload command buffer resubmission\n");
     }
 #endif
+#ifdef SDLGL_PROBE
+    sdl_state.index=index; sdl_state.command=cmd;
+    if(frame==0) {
+      sdl_state.fail_present=1; SDL_ClearError(); SDL_GL_SwapWindow(sdl_window);
+      if(!*SDL_GetError() || sdl_state.presented) return 2;
+      sdl_state.fail_present=0;
+      fprintf(report,"PASS SDL presentation failure propagation\n");
+    }
+    SDL_ClearError();
+    SDL_GL_SwapWindow(sdl_window);
+    if(*SDL_GetError() || sdl_state.presented!=frame+1) { fprintf(report,"SDL swap failed: %s\n",SDL_GetError()); return 2; }
+    fprintf(report,"PASS SDL swap %u\n",frame);
+#else
     VkPresentInfoKHR present = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
                                 .swapchainCount = 1,
                                 .pSwapchains = &swap,
                                 .pImageIndices = &index};
     CHECK(vkQueuePresentKHR(queue, &present));
+#endif
     fprintf(report, "FRAME %u Vulkan submitted and presented\n", frame);
     CHECK(vkResetCommandBuffer(cmd, 0));
 #ifdef GLDRAW_PROBE
-    ps4glReleaseVertexSnapshots(&gl);
+    ps4glReleaseVertexSnapshots(glctx);
 #ifdef GLFBO_PROBE
-    if(gl.target_bytes!=(frame==7 ? 0 : 256) || gl.snapshot_count || gl.texture_bytes!=(frame==7 ? 0 : 256)) return 2;
+    if(glctx->target_bytes!=(frame==7 ? 0 : 256) || glctx->snapshot_count || glctx->texture_bytes!=(frame==7 ? 0 : 256)) return 2;
     fprintf(report,"PASS GL framebuffer storage collected\n");
 #endif
 #endif
@@ -533,8 +560,21 @@ int main(void) {
 #ifdef GLDRAW_PROBE
   glDeleteProgram(glprograms[0]); glDeleteProgram(glprograms[1]); glUseProgram(0);
   if(glIsProgram(glprograms[0]) || glIsProgram(glprograms[1]) || glGetError()!=GL_NO_ERROR) return 2;
-  ps4glDestroyFramebuffers(&gl); ps4glDestroyTextures(&gl); ps4glDestroyBuffers(&gl);
-  ps4glDestroyPrograms(device,&gl);
+#ifdef SDLGL_PROBE
+  sdl_state.fail_quiesce=1; SDL_ClearError(); SDL_GL_DeleteContext(sdl_context);
+  if(!*SDL_GetError() || sdl_state.quiesced || ps4glCurrentContext()) return 2;
+  if(SDL_GL_MakeCurrent(sdl_window,sdl_context) || ps4glCurrentContext()!=sdl_context) return 2;
+  sdl_state.fail_quiesce=0;
+  fprintf(report,"PASS SDL failed quiesce retains context for retry\n");
+  SDL_ClearError(); SDL_GL_DeleteContext(sdl_context);
+  if(*SDL_GetError() || ps4glCurrentContext() || SDL_GL_GetCurrentContext() || sdl_state.quiesced!=1) return 2;
+  SDL_DestroyWindow(sdl_window); SDL_Quit();
+  if(ps4glSDLSetOwner(NULL)) return 2;
+  fprintf(report,"PASS SDL context destruction after quiesce\n");
+#else
+  ps4glDestroyFramebuffers(glctx); ps4glDestroyTextures(glctx); ps4glDestroyBuffers(glctx);
+  ps4glDestroyPrograms(device,glctx);
+#endif
   ps4glMakeCurrent(NULL);
 #ifdef GLSL_PROBE
   ps4glGLSLFinalize();

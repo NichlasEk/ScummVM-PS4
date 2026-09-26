@@ -278,3 +278,8 @@ SHA-256: `cc0c63da5909f73b60ba893b6ea53232d738a019f64f525591904fab3ca15edf`.
 The stable 1.17 package is unchanged. Next: SDL context/procedure/frame ownership
 and the remaining engine state gaps, followed by a real TWP startup attempt.
 Physical console and real-game execution through this frontend remain unverified.
+
+
+The next [SDL adapter checkpoint](PS4-SDL-GL.md) now validates real SDL context,
+procedure lookup and swap calls in the native diagnostic. Its Vulkan frame
+owner is still supplied by the probe; complete engine integration remains pending.

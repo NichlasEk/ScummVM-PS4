@@ -19,8 +19,11 @@ An explicit [runtime Vulkan GLSL compiler](PS4-GLSL.md) now works in the native
 diagnostic. GL shader objects and cross-stage linking now drive that diagnostic.
 Bounded legacy GLSL translation and named attribute bindings now also render
 original TWP shader sources in the native diagnostic. Signed scalar integer
-uniforms and arrays now also work, including the original TWP fade shader. Remaining GL state and SDL
-context integration are still missing. The alternatives below preserve the earlier
+uniforms and arrays now also work, including the original TWP fade shader.
+A separate [SDL GL adapter](PS4-SDL-GL.md) now connects real SDL context,
+procedure and swap calls to the native diagnostic. Reusable frame ownership,
+capability queries, input integration and remaining GL state are still missing.
+The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 
 ## Capability probe checkpoint

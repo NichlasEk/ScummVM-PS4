@@ -20,6 +20,7 @@ variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
 variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
+variants.add_argument('--sdlgl', action='store_true')
 variants.add_argument('--gllegacy', action='store_true')
 variants.add_argument('--glsl', action='store_true')
 variants.add_argument('--glfbo', action='store_true')
@@ -35,6 +36,8 @@ variants.add_argument('--twp', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
+if args.sdlgl:
+    args.gllegacy = True
 if args.gllegacy:
     args.glsl = True
 if args.glsl:
@@ -79,7 +82,7 @@ if mode != 'triangle':
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
     if args.gldraw:
-        reports /= 'gllegacy' if args.gllegacy else 'glsl' if args.glsl else 'glfbo' if args.glfbo else 'glblend' if args.glblend else 'gltexture' if args.gltexture else 'glarray' if args.glarray else 'gluniform' if args.gluniform else 'glindex' if args.glindex else 'glvbo' if args.glvbo else 'gldraw'
+        reports /= 'sdlgl' if args.sdlgl else 'gllegacy' if args.gllegacy else 'glsl' if args.glsl else 'glfbo' if args.glfbo else 'glblend' if args.glblend else 'gltexture' if args.gltexture else 'glarray' if args.glarray else 'gluniform' if args.gluniform else 'glindex' if args.glindex else 'glvbo' if args.glvbo else 'gldraw'
     elif args.twp:
         reports /= 'twp'
     elif args.composite:
@@ -167,6 +170,14 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.sdlgl:
+                sdl_log = guest_log.read_text()
+                sdl_markers = ('PASS SDL context destruction after quiesce',
+                               'PASS SDL context proc lookup',
+                               'PASS SDL presentation failure propagation',
+                               'PASS SDL failed quiesce retains context for retry')
+                if sdl_log.count('PASS SDL swap ') != 8 or any(m not in sdl_log for m in sdl_markers):
+                    raise RuntimeError('SDL context/swap lifecycle incomplete')
             if args.gllegacy and guest_log.read_text().count('PASS legacy source and attribute bindings 4 1 6') != 2:
                 raise RuntimeError('Legacy shader attribute checks incomplete')
             if args.gllegacy and 'PASS original TWP fade signed integer uniform' not in guest_log.read_text():

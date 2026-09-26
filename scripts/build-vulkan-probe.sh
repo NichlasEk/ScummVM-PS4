@@ -2,9 +2,11 @@
 # Independent native Vulkan probe; never replaces the stable ScummVM package.
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+sdlgl=0
+if [[ "${1:-}" == --sdlgl ]]; then sdlgl=1; set -- --gllegacy; fi
 case "${1:-}" in
  ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo|--glsl|--gllegacy) ;;
- *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo|--glsl|--gllegacy]' >&2; exit 2 ;;
+ *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo|--glsl|--gllegacy|--sdlgl]' >&2; exit 2 ;;
 esac
 variant=${1:-}
 if [[ "$variant" == --glsl || "$variant" == --gllegacy ]]; then set -- --glfbo; fi
@@ -102,6 +104,14 @@ if [[ "$variant" == --gllegacy ]]; then
  cp "$probe/scummvm-shaders.txt" "$driver/scummvm-shaders.txt"
  extra_make+=("PKG_FILES=eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx glslang-LICENSE.txt scummvm-shaders.txt")
 fi
+if (( sdlgl )); then
+ "$root/scripts/build-ps4-sdlgl.sh"
+ cp "$root/.tools/sdl-input-src/COPYING.txt" "$driver/SDL-LICENSE.txt"
+ extra_make+=("PKG_FILES=eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx glslang-LICENSE.txt scummvm-shaders.txt SDL-LICENSE.txt")
+ sed -i '1i#define SDLGL_PROBE 1' "$probe/draw.c"
+ cp "$root/tests/ps4/vulkan/sdlgl.h" "$root/compat/ps4gl/ps4gl-sdl.h" "$probe/"
+ extra_make+=("EXTRA_LIBS=$root/build/ps4-sdlgl/libSDL2.a $root/build/glslang-orbis/libglslang-ps4.a -lSceUserService -lSceAudioOut -lScePad -lSceSysmodule")
+fi
 make -C "$driver" -f Makefile.orbis "${extra_make[@]}" -j"${JOBS:-8}" pkg \
  TEST_SRC="$probe/draw.c" TEST_OBJ="$probe/draw.o" \
  PKG_TITLE_ID=SCVM00009 PKG_CONTENT_ID="$content" PKG_TITLE='ScummVM Vulkan Probe' \
@@ -161,6 +171,7 @@ if [[ "$variant" == --glfbo || "$variant" == --glsl || "$variant" == --gllegacy 
 fi
 if [[ "$variant" == --glsl || "$variant" == --gllegacy ]]; then package=ScummVM-PS4-GLSL.pkg; fi
 if [[ "$variant" == --gllegacy ]]; then package=ScummVM-PS4-GL-Legacy.pkg; fi
+if (( sdlgl )); then package=ScummVM-PS4-SDL-GL.pkg; fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"
 sha256sum "$package" > "$package.sha256"

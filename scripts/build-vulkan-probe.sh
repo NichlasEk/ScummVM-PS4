@@ -3,8 +3,8 @@
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 case "${1:-}" in
- ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate) ;;
- *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate]' >&2; exit 2 ;;
+ ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw) ;;
+ *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw]' >&2; exit 2 ;;
 esac
 variant=${1:-}
 if [[ "$variant" == --glstate ]]; then
@@ -49,6 +49,10 @@ if [[ "$variant" == --glstate ]]; then
  sed -i '1i#define GLSTATE_PROBE 1' "$probe/draw.c"
  cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$probe/"
 fi
+if [[ "$variant" == --gldraw ]]; then
+ sed -i '1i#define GLDRAW_PROBE 1' "$probe/draw.c"
+ cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$probe/"
+fi
 content=IV0000-SCVM00009_00-SCUMMVMVULKAN001
 driver="$root/.tools/opengnm-stack/vulkan-ps4"
 if [[ -f "$driver/sce_sys/param.sfo" ]]; then
@@ -86,6 +90,9 @@ if [[ "${1:-}" == --twp ]]; then
 fi
 if [[ "$variant" == --glstate ]]; then
  package=ScummVM-PS4-GL-State.pkg
+fi
+if [[ "$variant" == --gldraw ]]; then
+ package=ScummVM-PS4-GL-Draw.pkg
 fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"

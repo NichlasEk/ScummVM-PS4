@@ -20,6 +20,7 @@ variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
 variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
+variants.add_argument('--gldraw', action='store_true')
 variants.add_argument('--glstate', action='store_true')
 variants.add_argument('--twp', action='store_true')
 variants.add_argument('--sprites', action='store_true')
@@ -33,7 +34,7 @@ if args.readback:
     args.composite = True
 if args.upload or args.sprites:
     args.resources = True
-if (args.resources or args.composite or args.twp) and not args.vulkan:
+if (args.resources or args.composite or args.twp or args.gldraw) and not args.vulkan:
     parser.error('Vulkan probe variants require --vulkan')
 mode = 'vulkan' if args.vulkan else 'textures' if args.textures else 'uniforms' if args.uniforms else 'triangle'
 title_id = 'SCVM00009' if args.vulkan else 'SCVM00008' if args.textures else 'SCVM00007' if args.uniforms else 'SCVM00006'
@@ -52,7 +53,9 @@ if mode != 'triangle':
     reports /= mode
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
-    if args.twp:
+    if args.gldraw:
+        reports /= 'gldraw'
+    elif args.twp:
         reports /= 'twp'
     elif args.composite:
         reports /= 'glstate' if args.glstate else 'rectclear' if args.rectclear else 'readback' if args.readback else 'composite'
@@ -122,7 +125,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 screenshot = max(candidates, key=lambda f: f.stat().st_mtime)
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
                 shutil.copy2(guest_log, reports / 'triangle-result.txt')
-                check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-vulkan-twp.py' if args.twp else 'tests/ps4/check-vulkan-composite.py' if args.composite else 'tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
+                check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-ps4gl-draw.py' if args.gldraw else 'tests/ps4/check-vulkan-twp.py' if args.twp else 'tests/ps4/check-vulkan-composite.py' if args.composite else 'tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
                                         str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else []), *(['--upload'] if args.upload else []), *(['--rectclear'] if args.rectclear else [])],
                                        capture_output=True, text=True)
                 (reports / 'pixel-test.log').write_text(check.stdout + check.stderr)
@@ -139,6 +142,12 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.gldraw and guest_log.read_text().count('PASS GL program rejection ') != 3:
+                raise RuntimeError('GL program rejection checks incomplete')
+            if args.gldraw and guest_log.read_text().count('GL draw frame ') != 8:
+                raise RuntimeError('GL draws did not complete')
+            if args.gldraw and guest_log.read_text().count(' error=0') != 8:
+                raise RuntimeError('GL draw errors')
             if args.glstate and (guest_log.read_text().count(' error=0') != 8):
                 raise RuntimeError('GL state/error checks did not complete')
             if args.readback and (guest_log.read_text().count('PASS readback frame ') != 9 or

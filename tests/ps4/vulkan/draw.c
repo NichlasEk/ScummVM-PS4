@@ -32,6 +32,10 @@ static FILE *report;
 #ifdef TWP_PROBE
 #include "twp.h"
 #endif
+#ifdef GLDRAW_PROBE
+#include "ps4gl.c"
+#include "ps4gl-vulkan.c"
+#endif
 int main(void) {
   report = fopen("/data/scummvm-vulkan-probe.log", "w");
   if (!report)
@@ -291,6 +295,23 @@ int main(void) {
     CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pci, NULL,
                                     &pipelines[i]));
   }
+#ifdef GLDRAW_PROBE
+  PS4GLContext gl;
+  if(!ps4glInit(&gl,1280,720)) return 2;
+  ps4glMakeCurrent(&gl);
+  GLuint glprograms[]={ps4glCreateProgramSPIRV(device,pass,background_vert,sizeof(background_vert),background_frag,sizeof(background_frag)),
+    ps4glCreateProgramSPIRV(device,pass,triangle_vert,sizeof(triangle_vert),triangle_frag,sizeof(triangle_frag))};
+  if(!glprograms[0] || !glprograms[1] || glGetError()!=GL_NO_ERROR) return 2;
+  uint32_t rejected_spv[]={0x07230203,0x00010000,0,10,0,(4u<<16)|59,1,2,0};
+  for(unsigned test=0;test<3;++test) {
+    if(test==1) rejected_spv[8]=1; /* Vertex input with no BuiltIn decoration. */
+    if(test==2) rejected_spv[5]=0; /* Zero-sized instruction. */
+    if(ps4glCreateProgramSPIRV(device,pass,rejected_spv,sizeof(rejected_spv),triangle_frag,sizeof(triangle_frag)) ||
+       glGetError()!=GL_INVALID_OPERATION) return 2;
+    fprintf(report,"PASS GL program rejection %u\n",test);
+  }
+  void (*draw_gl)(GLenum,GLint,GLsizei)=(void (*)(GLenum,GLint,GLsizei))ps4glGetProcAddress("glDrawArrays");
+#endif
   VkCommandPool pool;
   VkCommandPoolCreateInfo cpci = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -360,7 +381,19 @@ int main(void) {
     VkRect2D scissor = {{0, 0}, {1280, 720}};
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
-#ifdef TWP_PROBE
+#ifdef GLDRAW_PROBE
+    ps4glBeginPass(cmd);
+    glDisable(GL_SCISSOR_TEST);
+    glViewport(0,0,1280,720);
+    glUseProgram(glprograms[0]); draw_gl(GL_TRIANGLES,0,3);
+    glViewport(160,90,960,540);
+    glEnable(GL_SCISSOR_TEST); glScissor(500,180,300,260);
+    glUseProgram(glprograms[1]);
+    if(frame==7) glDeleteProgram(glprograms[1]);
+    draw_gl(GL_TRIANGLES,0,3);
+    fprintf(report,"GL draw frame %u error=%u\n",frame,glGetError());
+    ps4glEndPass();
+#elif defined(TWP_PROBE)
     draw_twp(cmd, layout, pipelines);
 #else
 #ifdef COMPOSITE_PROBE
@@ -425,6 +458,12 @@ int main(void) {
   CHECK(vkDeviceWaitIdle(device));
   fprintf(report, "PASS Vulkan draw loop; awaiting pixel validation\n");
   sceKernelUsleep(10000000);
+#ifdef GLDRAW_PROBE
+  glDeleteProgram(glprograms[0]); glDeleteProgram(glprograms[1]); glUseProgram(0);
+  if(glIsProgram(glprograms[0]) || glIsProgram(glprograms[1]) || glGetError()!=GL_NO_ERROR) return 2;
+  ps4glDestroyPrograms(device,&gl);
+  ps4glMakeCurrent(NULL);
+#endif
   vkDestroyFence(device, fence, NULL);
   vkDestroyCommandPool(device, pool, NULL);
   for (unsigned i = 0; i < 2; i++) {

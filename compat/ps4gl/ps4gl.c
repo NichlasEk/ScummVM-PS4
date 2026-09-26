@@ -13,6 +13,7 @@ int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   ctx->scissor[3]=ctx->viewport[3]=height;
   return 1;
 }
+PS4GLContext *ps4glCurrentContext(void) { return current; }
 void ps4glMakeCurrent(PS4GLContext *ctx) { current=ctx; }
 void ps4glBeginPass(VkCommandBuffer command) {
   if (!current) return;
@@ -57,6 +58,7 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   if (!values) { error(GL_INVALID_VALUE); return; }
   if (pname==GL_SCISSOR_BOX || pname==GL_VIEWPORT)
     memcpy(values,pname==GL_SCISSOR_BOX ? current->scissor : current->viewport,4*sizeof(GLint));
+  else if (pname==GL_CURRENT_PROGRAM) *values=current->program;
   else if (pname==GL_SCISSOR_TEST) *values=current->scissor_enabled;
   else error(GL_INVALID_ENUM);
 }
@@ -92,12 +94,72 @@ void glClear(GLbitfield mask) {
                     {(uint32_t)(x1-x0),(uint32_t)(y1-y0)}},0,1};
   vkCmdClearAttachments(current->command,1,&clear,1,&rect);
 }
+static PS4GLProgram *program(GLuint name) {
+  if (!current || !name || name>PS4GL_MAX_PROGRAMS) return NULL;
+  PS4GLProgram *p=&current->programs[name-1];
+  return p->pipeline && !p->retired ? p : NULL;
+}
+GLboolean glIsProgram(GLuint name) { return program(name) ? GL_TRUE : GL_FALSE; }
+void glUseProgram(GLuint name) {
+  if (!current) return;
+  if (name && !program(name)) { error(GL_INVALID_VALUE); return; }
+  if (current->program==name) return;
+  PS4GLProgram *old=program(current->program);
+  if (old && old->deleted) old->retired=GL_TRUE;
+  current->program=name;
+}
+void glDeleteProgram(GLuint name) {
+  if (!current || !name) return;
+  PS4GLProgram *p=program(name);
+  if (!p) { error(GL_INVALID_VALUE); return; }
+  p->deleted=GL_TRUE;
+  if (current->program!=name) p->retired=GL_TRUE;
+}
+void glGetProgramiv(GLuint name, GLenum pname, GLint *value) {
+  if (!current) return;
+  PS4GLProgram *p=program(name);
+  if (!p || !value) { error(GL_INVALID_VALUE); return; }
+  if (pname==GL_LINK_STATUS) *value=GL_TRUE;
+  else if (pname==GL_DELETE_STATUS) *value=p->deleted;
+  else error(GL_INVALID_ENUM);
+}
+void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+  if (!current) return;
+  if (mode!=GL_TRIANGLES) { error(GL_INVALID_ENUM); return; }
+  if (count<0 || first<0) { error(GL_INVALID_VALUE); return; }
+  PS4GLProgram *p=program(current->program);
+  if (!p || !current->command || first) { error(GL_INVALID_OPERATION); return; }
+  GLint *v=current->viewport;
+  /* The initial native subset deliberately rejects out-of-target viewports. */
+  if(v[0]<0 || v[1]<0 || (int64_t)v[0]+v[2]>current->width ||
+      (int64_t)v[1]+v[3]>current->height) { error(GL_INVALID_OPERATION); return; }
+  if(!count || !v[2] || !v[3]) return;
+  int64_t x0=0,y0=0,x1=current->width,y1=current->height;
+  if(current->scissor_enabled) {
+    x0=current->scissor[0]; y0=current->scissor[1];
+    x1=x0+(int64_t)current->scissor[2]; y1=y0+(int64_t)current->scissor[3];
+    if(x0<0) x0=0;
+    if(y0<0) y0=0;
+    if(x1>current->width) x1=current->width;
+    if(y1>current->height) y1=current->height;
+  }
+  if(x1<=x0 || y1<=y0) return;
+  VkViewport vp={.x=v[0],.y=current->height-v[1]-v[3],.width=v[2],.height=v[3],.maxDepth=1};
+  VkRect2D sc={{(int32_t)x0,(int32_t)(current->height-y1)},
+              {(uint32_t)(x1-x0),(uint32_t)(y1-y0)}};
+  vkCmdBindPipeline(current->command,VK_PIPELINE_BIND_POINT_GRAPHICS,p->pipeline);
+  vkCmdSetViewport(current->command,0,1,&vp);
+  vkCmdSetScissor(current->command,0,1,&sc);
+  vkCmdDraw(current->command,(uint32_t)count,1,0,0);
+}
 PS4GLProc ps4glGetProcAddress(const char *name) {
   if (!name) return NULL;
 #define PROC(fn) if(!strcmp(name,#fn)) return (PS4GLProc)fn
   PROC(glClearColor); PROC(glClear); PROC(glScissor); PROC(glViewport);
   PROC(glEnable); PROC(glDisable); PROC(glIsEnabled); PROC(glGetError);
   PROC(glGetIntegerv); PROC(glGetFloatv);
+  PROC(glUseProgram); PROC(glDeleteProgram); PROC(glIsProgram);
+  PROC(glGetProgramiv); PROC(glDrawArrays);
 #undef PROC
   return NULL;
 }

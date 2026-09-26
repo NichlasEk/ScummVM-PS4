@@ -13,6 +13,8 @@ mkdir -p "$XDG_DATA_HOME/shadPS4" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$root/ar
 if [[ ! -f "$XDG_DATA_HOME/shadPS4/config.json" && -f "$root/.tools/xdg-vulkan/shadPS4/config.json" ]]; then
  cp "$root/.tools/xdg-vulkan/shadPS4/config.json" "$XDG_DATA_HOME/shadPS4/config.json"
 fi
+"$root/scripts/setup-scummvm-input.py" --vulkan
+echo "F7 captures/releases PC mouse; left/right mouse buttons click."
 log="$root/artifacts/scummvm-vulkan/run-$(date +%Y%m%d-%H%M%S).log"
 echo "Experimental startup; application log: $XDG_DATA_HOME/shadPS4/data/scummvm-vulkan"
 echo "Emulator log: $log"

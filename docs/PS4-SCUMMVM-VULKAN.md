@@ -180,3 +180,19 @@ for the storage/sRGB/cache fix, pixel tests, screenshot procedure and limitation
 Input, game startup and graceful application exit are not yet verified.
 Current experimental package SHA-256:
 `4d9c265a1a3edc70aa9b687bd97a0ce724d4a6a95144500b4fe6a8defbe22f67`.
+
+## Emulator mouse input (2026-09-26)
+
+The user confirmed desktop mouse control in the visible experimental launcher.
+The runner now seeds title SCVM00010 with the existing stable title's bindings
+and disables unified emulator bindings in the isolated experimental profile.
+F7 toggles mouse capture; mouse movement maps to the left stick, with left/right
+buttons mapped to Cross/Circle. WASD and physical stick bindings remain intact.
+No guest input backend or physical PS4 behavior was changed or newly validated.
+Existing per-title custom bindings are retained.
+
+Thimbleweed Park GOG/1.0.958 data matched the detection table (ggpack1 size
+502661439, first-5000-byte MD5 6180145221d18e9e9caac6459e840579) and was copied
+into the local experimental data directory under games/thimbleweedpark. A twp
+entry was added to the experimental launcher only. Game startup remains
+unverified; the explicit GL subset still does not advertise engine shaders.

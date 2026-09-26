@@ -39,7 +39,7 @@ struct Context {
 int main() {
  Context ok; ok.initialize();
  assert(ok.shadersSupported && ok.NPOTSupported && ok.textureEdgeClampSupported && ok.maxTextureSize==1024);
- assert(!ok.majorVersion && !ok.minorVersion && !ok.enginesShadersSupported && !ok.framebufferObjectSupported && !ok.multitextureSupported);
+ assert(!ok.majorVersion && !ok.minorVersion && ok.enginesShadersSupported && !ok.framebufferObjectSupported && ok.multitextureSupported && ok.glslVersion==120);
  assert(!GLAD_GL_VERSION_2_0 && !GLAD_GL_ARB_framebuffer_object && !glReadPixels);
  for(int failure=0;failure<4;++failure) {
   Context c;
@@ -50,5 +50,5 @@ int main() {
   try { c.initialize(); } catch(const std::runtime_error &) { rejected=true; }
   assert(rejected && !c.shadersSupported);
  }
- puts("PASS explicit GLAD subset, missing entry, renderer identity, limit and context rejection; no engine or version promotion");
+ puts("PASS explicit GLAD subset, missing entry, renderer identity, limit and context rejection; explicit engine shader subset without GL version promotion");
 }

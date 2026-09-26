@@ -44,9 +44,19 @@ int main(void) {
   assert(!ps4glLinkVulkanGLSL(vsource,bad[1],&words,&bytes,&fs,&fb,log,sizeof(log)));
   assert(!ps4glLinkVulkanGLSL(vsource,fsource,&words,&bytes,&words,&fb,log,sizeof(log)));
   PS4GLAttributeBinding bindings[]={ {"a_position",4},{"a_color",1},{"a_texCoords",6} };
-  const char *legacy_fragments[]={legacy_fragmentSrc,legacy_bwShader,legacy_ghostShader,legacy_sepiaShader,legacy_fadeShader,legacy_color};
+  const char *legacy_fragments[]={legacy_fragmentSrc,legacy_bwShader,legacy_ghostShader,legacy_sepiaShader,legacy_fadeShader,legacy_color,legacy_fshader,legacy_debug_fshader};
   for(unsigned i=0;i<sizeof(legacy_fragments)/sizeof(legacy_fragments[0]);++i) {
-    if(!ps4glLinkLegacyGLSL(legacy_vsrc,legacy_fragments[i],bindings,3,&words,&bytes,&fs,&fb,log,sizeof(log))) { fprintf(stderr,"legacy %u: %s\n",i,log); abort(); }
+    if(!ps4glLinkLegacyGLSL(i>=6 ? legacy_vshader : legacy_vsrc,legacy_fragments[i],bindings,3,&words,&bytes,&fs,&fb,log,sizeof(log))) { fprintf(stderr,"legacy %u: %s\n",i,log); abort(); }
+    if(i>=6) {
+      PS4GLProgram lighting={0};
+      assert(gl_reflect_uniforms(words,bytes,0,&lighting) && gl_reflect_uniforms(fs,fb,1,&lighting));
+      unsigned arrays=0;
+      for(unsigned u=0;u<lighting.uniform_count;++u) if(lighting.uniforms[u].array_length) {
+        assert(lighting.uniforms[u].array_length==50 && lighting.uniforms[u].array_stride[1]==16);
+        ++arrays;
+      }
+      assert(arrays==8);
+    }
     if(i==4 || i==5) {
       PS4GLProgram program={0};
       assert(gl_reflect_uniforms(words,bytes,0,&program) && gl_reflect_uniforms(fs,fb,1,&program));
@@ -72,6 +82,14 @@ int main(void) {
     }
     free(words); free(fs);
   }
+  const char *bv="#version 120\nuniform bool flipY; attribute vec2 position; void main(){vec2 p=position; if(flipY) p.y=-p.y; gl_Position=vec4(p,0.,1.);}";
+  const char *bf="#version 120\nvoid main(){gl_FragColor=vec4(1.);}";
+  PS4GLAttributeBinding ba={.index=0}; strcpy(ba.name,"position");
+  assert(ps4glLinkLegacyGLSL(bv,bf,&ba,1,&words,&bytes,&fs,&fb,log,sizeof(log)));
+  PS4GLProgram boolean_program={0};
+  assert(gl_reflect_uniforms(words,bytes,0,&boolean_program));
+  assert(boolean_program.uniform_count==1 && !strcmp(boolean_program.uniforms[0].name,"flipY") && boolean_program.uniforms[0].integer==2);
+  free(words); free(fs);
   /* Desktop compatibility macros must expand correctly too, not just ES100. */
   char *desktop_v=malloc(sizeof(legacy_vsrc)); assert(desktop_v);
   memcpy(desktop_v,legacy_vsrc,sizeof(legacy_vsrc)); desktop_v[10]='1';
@@ -80,7 +98,7 @@ int main(void) {
     memcpy(desktop_f,legacy_fragments[i],length); desktop_f[10]='1';
     /* The small probe-only ES shader contains an unconditional precision statement. */
     if(i==5) { free(desktop_f); continue; }
-    assert(ps4glLinkLegacyGLSL(desktop_v,desktop_f,NULL,0,&words,&bytes,&fs,&fb,log,sizeof(log)));
+    assert(ps4glLinkLegacyGLSL(i>=6 ? legacy_vshader : desktop_v,desktop_f,NULL,0,&words,&bytes,&fs,&fb,log,sizeof(log)));
     free(words); free(fs); free(desktop_f);
   }
   free(desktop_v);
@@ -99,6 +117,20 @@ int main(void) {
   assert(!ps4glCompileLegacyGLSL(1,builtin,&words,&bytes,log,sizeof(log)) && !words && !bytes && strstr(log,"builtin"));
   const char *missing="#version 110\nvarying vec2 absent;void main(){gl_FragColor=vec4(absent,0,1);}";
   assert(!ps4glLinkLegacyGLSL(legacy_vsrc,missing,bindings,3,&words,&bytes,&fs,&fb,log,sizeof(log)));
+  /* Eight std140 vec4[64] blocks exactly fill the 8 KiB stage budget. */
+  char blocks[2048]="#version 110\n";
+  for(unsigned i=0;i<9;++i) {
+    char decl[64]; snprintf(decl,sizeof(decl),"uniform vec4 block%u[64];\n",i);
+    strcat(blocks,decl);
+    if(i==7 || i==8) {
+      char source[2200]; snprintf(source,sizeof(source),"%svoid main(){gl_FragColor=block0[63];}",blocks);
+      assert(ps4glCompileLegacyGLSL(1,source,&words,&bytes,log,sizeof(log)));
+      PS4GLProgram bounded={0};
+      assert(gl_reflect_uniforms(words,bytes,1,&bounded)==(i==7));
+      free(words);
+    }
+  }
+  assert(!ps4glCompileLegacyGLSL(1,"#version 110\nuniform vec4 tooMany[65];void main(){gl_FragColor=tooMany[64];}",&words,&bytes,log,sizeof(log)));
   ps4glGLSLFinalize(); ps4glGLSLFinalize();
   assert(ps4glGLSLInitialize());
   assert(ps4glCompileVulkanGLSL(0,valid,&words,&bytes,log,sizeof(log))); free(words);

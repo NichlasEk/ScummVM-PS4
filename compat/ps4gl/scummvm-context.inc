@@ -1,6 +1,6 @@
 /* Injected only into the isolated experimental Context::initialize.
  * Load the explicit bridge subset without setting GLAD version/extension flags.
- * No engine shaders, GPU palettes, libretro or FBO capability is enabled here.
+ * Engine shaders use the validated desktop subset; no general GL version is advertised.
  */
 {
 	if (type != kContextGL) error("PS4GL subset requires the desktop shader path");
@@ -34,6 +34,8 @@
 	PS4GL_LOAD(glDisable);
 	PS4GL_LOAD(glIsEnabled);
 	PS4GL_LOAD(glGetError);
+	PS4GL_LOAD(glGetBooleanv);
+	PS4GL_LOAD(glDepthMask);
 	PS4GL_LOAD(glGetIntegerv);
 	PS4GL_LOAD(glGetString);
 	PS4GL_LOAD(glGetFloatv);
@@ -89,11 +91,13 @@
 		error("PS4GL subset loader used with the wrong renderer");
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, (GLint *)&maxTextureSize);
 	if (!maxTextureSize || glGetError() != GL_NO_ERROR) error("PS4GL invalid texture limit");
-	glslVersion = 110;
+	glslVersion = 120;
+	enginesShadersSupported = true;
+	multitextureSupported = true;
 	shadersSupported = true;
 	NPOTSupported = true;
 	textureEdgeClampSupported = true;
 	textureLookupPrecision = UINT_MAX;
-	debug(5, "PS4GL explicit launcher subset loaded; GL version and engine capabilities remain disabled");
+	debug(5, "PS4GL explicit desktop shader subset loaded; general GL version remains disabled");
 	return;
 }

@@ -178,7 +178,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
             if args.sdlgl:
                 sdl_log = guest_log.read_text()
-                sdl_markers = ('PASS SDL triangle strips arrays uint16 uint32 and retained indices',
+                sdl_markers = ('PASS SDL fresh shader link during active recording',
+                               'PASS SDL triangle strips arrays uint16 uint32 and retained indices',
                                'PASS SDL numeric framebuffer and shader limits',
                                'PASS SDL VideoOut full and partial sRGB attachment clears',
                                'PASS SDL launcher 2D startup state and separate pack alignment',
@@ -193,12 +194,12 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                                'PASS SDL failed quiesce retains context for retry')
                 if sdl_log.count('PASS SDL swap ') != 8 or any(m not in sdl_log for m in sdl_markers):
                     raise RuntimeError('SDL context/swap lifecycle incomplete')
-            if args.gllegacy and guest_log.read_text().count('PASS legacy source and attribute bindings 4 1 6') != 2:
+            if args.gllegacy and guest_log.read_text().count('PASS legacy source and attribute bindings 4 1 6') != (3 if args.sdlgl else 2):
                 raise RuntimeError('Legacy shader attribute checks incomplete')
             if args.gllegacy and 'PASS original TWP fade signed integer uniform' not in guest_log.read_text():
                 raise RuntimeError('TWP integer fade setup incomplete')
-            if args.glsl and (guest_log.read_text().count('GLSL runtime program=') != 2 or
-                              guest_log.read_text().count('PASS GL shader objects copied source and deferred deletion') != 2 or
+            if args.glsl and (guest_log.read_text().count('GLSL runtime program=') != (3 if args.sdlgl else 2) or
+                              guest_log.read_text().count('PASS GL shader objects copied source and deferred deletion') != (3 if args.sdlgl else 2) or
                               'PASS GL shader objects reject cross-stage mismatch' not in guest_log.read_text() or
                               'PASS GL shader objects native interface rejection' not in guest_log.read_text() or
                               guest_log.read_text().count('PASS GLSL runtime rejection ') != 3 or

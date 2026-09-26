@@ -51,6 +51,30 @@ for old,new in (
  assert s.count(old)==1, old
  s=s.replace(old,new)
 patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
+relative='backends/platform/sdl/sdl.cpp'
+p=root/relative
+original=p.read_text()
+s=original.replace('if (f == kFeatureShadersForGame) return _supportsShaders;',
+ 'if (f == kFeatureShadersForGame) return OpenGLContext.type == OpenGL::kContextGL && OpenGLContext.enginesShadersSupported;')
+anchor='void OSystem_SDL::detectOpenGLFeaturesSupport() {\n'
+assert s.count(anchor)==1
+s=s.replace(anchor,anchor+'\t// This backend owns one fixed window; query capabilities from its live context.\n\t_oglType = OpenGL::kContextGL; _supportsFrameBuffer = false; _supportsShaders = false; return;\n')
+patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
+relative='backends/graphics3d/openglsdl/openglsdl-graphics3d.cpp'
+p=root/relative
+original=p.read_text()
+s=original.replace('SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);','SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);').replace('SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);','SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);')
+s=s.replace('if (g_engine) {', 'if (g_engine && glReadPixels) {')
+anchor='\t\tif (_window->createOrUpdateWindow(effectiveWidth, effectiveHeight, sdlflags)) {'
+assert s.count(anchor)==1
+s=s.replace(anchor,'\t\teffectiveWidth = 1280; effectiveHeight = 720; sdlflags = SDL_WINDOW_OPENGL; _vsync = true;\n'+anchor)
+patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
+relative='gui/message.cpp'
+p=root/relative
+original=p.read_text()
+s=original.replace('#include "gui/widget.h"', '#include "gui/widget.h"\n#include "common/debug.h"')
+s=s.replace('\t_message = message;', '\tdebug(1, "PS4GL dialog: %s", message.encode().c_str());\n\t_message = message;')
+patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
 relative='graphics/opengl/context.cpp'
 p=root/relative
 original=p.read_text()

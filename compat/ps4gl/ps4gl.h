@@ -189,12 +189,12 @@ typedef struct PS4GLShader {
 /* Slots are retained through context teardown: recorded GPU commands may still
  * refer to programs after glDeleteProgram. Names are never recycled. */
 #define PS4GL_MAX_UNIFORMS 16
-#define PS4GL_UNIFORM_BYTES 256
+#define PS4GL_UNIFORM_BYTES 8192
 /* Imported default-uniform blocks: set 0, binding 0 vertex / 1 fragment. */
 typedef struct PS4GLUniform {
   char name[64];
   unsigned width; /* 1..4 floats or 16 for column-major mat4 */
-  unsigned integer; /* signed int32 scalar/array; zero means float */
+  unsigned integer; /* 0=float, 1=signed int32, 2=translated scalar bool */
   int offset[2];
   unsigned sampler_binding; /* 0 for block uniforms, 2/3 for sampler2D */
   unsigned array_length, array_stride[2]; /* zero length means non-array */
@@ -230,6 +230,7 @@ typedef struct PS4GLProgram {
 #define GL_STENCIL_BUFFER_BIT 0x0400
 #define GL_CULL_FACE 0x0b44
 #define GL_DEPTH_TEST 0x0b71
+#define GL_DEPTH_WRITEMASK 0x0b72
 #define GL_DITHER 0x0bd0
 #define GL_SCISSOR_TEST 0x0c11
 #define GL_SCISSOR_BOX 0x0c10
@@ -240,7 +241,7 @@ typedef struct PS4GLContext {
   GLint width, height, scissor[4], viewport[4];
   GLfloat clear[4];
   GLenum error;
-  GLboolean scissor_enabled;
+  GLboolean scissor_enabled, depth_write_mask;
   PS4GLBlend blend;
   GLuint program;
   VkDevice program_device;
@@ -383,6 +384,8 @@ void glBlendEquationSeparate(GLenum, GLenum);
 void glEnable(GLenum);
 void glDisable(GLenum);
 GLboolean glIsEnabled(GLenum);
+void glDepthMask(GLboolean);
+void glGetBooleanv(GLenum, GLboolean *);
 GLenum glGetError(void);
 void glGetIntegerv(GLenum, GLint *);
 void glGetFloatv(GLenum, GLfloat *);

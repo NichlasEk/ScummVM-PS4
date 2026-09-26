@@ -109,7 +109,7 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
   PS4GLContext *ctx=ps4glCurrentContext();
   if(!ctx) return 0;
   GLenum err=GL_INVALID_OPERATION;
-  if(!device || !pass || ctx->command || (ctx->program_device &&
+  if(!device || !pass || (ctx->program_device &&
       (ctx->program_device!=device || (ctx->program_pass && ctx->program_pass!=pass)))) goto fail;
   if(!vs || !fs || vs_size<20 || fs_size<20 || vs_size%4 || fs_size%4 ||
      vs[0]!=0x07230203 || fs[0]!=0x07230203) { err=GL_INVALID_VALUE; goto fail; }
@@ -269,7 +269,7 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
     if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
     return 0;
   }
-  /* Fixed 256-byte blocks match the native device's uniform offset alignment. */
+  /* Fixed blocks are multiples of 256 bytes, matching the native device's uniform offset alignment. */
   if(!upload_vertices(ctx,p->uniform_data,sizeof(p->uniform_data),0,0)) return 0;
   PS4GLSnapshot *snap=&ctx->snapshots[ctx->snapshot_count-1];
   VkDescriptorPoolSize sizes[]={{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,2},{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2}};

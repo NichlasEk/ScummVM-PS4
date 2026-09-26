@@ -76,7 +76,12 @@ static int gl_reflect_uniforms(const uint32_t *s, size_t bytes, unsigned stage, 
       for(size_t j=5;j<n;j+=s[j]>>16) if((s[j]&65535)==6 && (s[j]>>16)>=4 && s[j+1]==ptr[3] && s[j+2]==m) {
         const char *candidate=(const char *)(s+j+3);
         const char *end=memchr(candidate,0,((s[j]>>16)-3)*4);
-        if(!end || end==candidate || end-candidate>=64) return 0;
+        if(!end) return 0;
+        if(!strncmp(candidate,"ps4gl_bool_",11)) {
+          if(!is_integer || width!=1 || array) return 0;
+          is_integer=2; candidate+=11;
+        }
+        if(end==candidate || end-candidate>=64) return 0;
         name=candidate;
       }
       if(!name) return 0;

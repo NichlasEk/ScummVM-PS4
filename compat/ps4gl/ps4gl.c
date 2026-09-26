@@ -11,6 +11,7 @@ int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   if (!ctx || width <= 0 || height <= 0) return 0;
   memset(ctx, 0, sizeof(*ctx));
   ctx->blend=(PS4GLBlend){.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};
+  ctx->depth_write_mask=GL_TRUE;
   ctx->next_shader=65536;
   ctx->next_framebuffer=1;
   ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=ctx->pack_alignment=4;
@@ -101,11 +102,23 @@ GLboolean glIsEnabled(GLenum cap) {
   if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return GL_FALSE; }
   return current ? (cap==GL_BLEND ? current->blend.enabled : current->scissor_enabled) : GL_FALSE;
 }
+/* Depth writes are tracked for state restoration; color-only targets have no
+ * depth attachment, and enabling depth testing remains unsupported. */
+void glDepthMask(GLboolean enabled) {
+  if(current) current->depth_write_mask=enabled ? GL_TRUE : GL_FALSE;
+}
+void glGetBooleanv(GLenum pname, GLboolean *values) {
+  if(!current) return;
+  if(!values) { error(GL_INVALID_VALUE); return; }
+  if(pname==GL_DEPTH_WRITEMASK) *values=current->depth_write_mask;
+  else error(GL_INVALID_ENUM);
+}
 void glGetIntegerv(GLenum pname, GLint *values) {
   if (!current) return;
   if (!values) { error(GL_INVALID_VALUE); return; }
   if (pname==GL_SCISSOR_BOX || pname==GL_VIEWPORT)
     memcpy(values,pname==GL_SCISSOR_BOX ? current->scissor : current->viewport,4*sizeof(GLint));
+  else if(pname==GL_DEPTH_WRITEMASK) *values=current->depth_write_mask;
   else if(pname==GL_FRAMEBUFFER_BINDING) *values=current->framebuffer;
   else if(pname==GL_ACTIVE_TEXTURE) *values=GL_TEXTURE0+current->active_texture;
   else if(pname==GL_TEXTURE_BINDING_2D) *values=current->texture_bindings[current->active_texture];
@@ -390,14 +403,17 @@ static void uniform(GLint location, GLsizei count, unsigned width, GLboolean tra
   if(location<0 || member>=p->uniform_count) { error(GL_INVALID_OPERATION); return; }
   PS4GLUniform *u=&p->uniforms[member];
   unsigned available=u->array_length ? u->array_length : 1;
-  if(element>=available || u->integer!=integer || u->sampler_binding || u->width!=width || (!u->array_length && count>1)) { error(GL_INVALID_OPERATION); return; }
+  if(element>=available || (u->integer!=2 && u->integer!=integer) || u->sampler_binding || u->width!=width || (!u->array_length && count>1)) { error(GL_INVALID_OPERATION); return; }
   if(!count) return;
   if(!data) { error(GL_INVALID_VALUE); return; }
   /* GL ignores array writes beyond the last active element. */
   if((unsigned)count>available-element) count=(GLsizei)(available-element);
   for(GLsizei j=0;j<count;++j) {
     uint32_t value[16]; const unsigned char *input=(const unsigned char *)data+(size_t)j*width*4;
-    if(width==16 && transpose) {
+    if(u->integer==2) {
+      if(integer) { GLint v; memcpy(&v,input,4); value[0]=v!=0; }
+      else { GLfloat v; memcpy(&v,input,4); value[0]=v!=0.f; }
+    } else if(width==16 && transpose) {
       for(unsigned c=0;c<4;++c) for(unsigned r=0;r<4;++r) memcpy(value+c*4+r,input+(r*4+c)*4,4);
     } else memcpy(value,input,width*4);
     for(unsigned stage=0;stage<2;++stage) if(u->offset[stage]>=0)
@@ -549,7 +565,7 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glClearColor); PROC(glClear); PROC(glScissor); PROC(glViewport);
   PROC(glBlendFunc); PROC(glBlendFuncSeparate); PROC(glBlendEquation); PROC(glBlendEquationSeparate);
   PROC(glEnable); PROC(glDisable); PROC(glIsEnabled); PROC(glGetError);
-  PROC(glGetIntegerv); PROC(glGetString); PROC(glGetFloatv);
+  PROC(glDepthMask); PROC(glGetBooleanv); PROC(glGetIntegerv); PROC(glGetString); PROC(glGetFloatv);
   PROC(glUseProgram); PROC(glDeleteProgram); PROC(glIsProgram);
   PROC(glGenFramebuffers); PROC(glBindFramebuffer); PROC(glDeleteFramebuffers); PROC(glIsFramebuffer);
   PROC(glFramebufferTexture2D); PROC(glCheckFramebufferStatus);

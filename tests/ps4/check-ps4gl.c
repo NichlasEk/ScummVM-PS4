@@ -122,6 +122,15 @@ static void check_rgb_uploads(void) {
 static void check_launcher_state(void) {
   PS4GLContext a,b; assert(ps4glInit(&a,80,60) && ps4glInit(&b,80,60));
   ps4glMakeCurrent(&a);
+  GLboolean mask=99;
+  glGetBooleanv(GL_DEPTH_WRITEMASK,&mask); assert(mask==GL_TRUE);
+  glDepthMask(GL_FALSE); glGetBooleanv(GL_DEPTH_WRITEMASK,&mask); assert(mask==GL_FALSE);
+  ps4glMakeCurrent(&b); glGetBooleanv(GL_DEPTH_WRITEMASK,&mask); assert(mask==GL_TRUE);
+  ps4glMakeCurrent(&a); glGetBooleanv(GL_DEPTH_WRITEMASK,&mask); assert(mask==GL_FALSE);
+  glDepthMask(7); glGetBooleanv(GL_DEPTH_WRITEMASK,&mask); assert(mask==GL_TRUE);
+  GLint depth=-1; glGetIntegerv(GL_DEPTH_WRITEMASK,&depth); assert(depth==1);
+  glGetBooleanv(GL_DEPTH_WRITEMASK,NULL); assert(glGetError()==GL_INVALID_VALUE);
+  mask=99; glGetBooleanv(0xffff,&mask); assert(mask==99 && glGetError()==GL_INVALID_ENUM);
   const GLenum caps[]={GL_CULL_FACE,GL_DEPTH_TEST,GL_DITHER};
   glEnable(GL_BLEND); glEnable(GL_SCISSOR_TEST);
   for(unsigned i=0;i<3;++i) {
@@ -543,6 +552,13 @@ int main(void) {
   glUniform1iv(0,-1,values); assert(glGetError()==GL_INVALID_VALUE);
   glUniform1iv(0,0,NULL); glUniform1iv(-1,1,NULL); assert(!glGetError());
   assert(!memcmp(before,ip->uniform_data,sizeof(before)));
+  ip->uniforms[0].integer=2;
+  glUniform1i(0,-17); assert(!glGetError());
+  uint32_t boolean_bits=0; memcpy(&boolean_bits,ip->uniform_data[0],4); assert(boolean_bits==1);
+  glUniform1f(0,0.f); assert(!glGetError());
+  memcpy(&boolean_bits,ip->uniform_data[0],4); assert(boolean_bits==0);
+  glUniform1f(0,-.25f); assert(!glGetError());
+  memcpy(&boolean_bits,ip->uniform_data[0],4); assert(boolean_bits==1);
   PS4GLContext shaderctx;
   assert(ps4glInit(&shaderctx,80,60)); ps4glMakeCurrent(&shaderctx);
   shaderctx.program_device=(VkDevice)(uintptr_t)1; shaderctx.import_program=import_program;
@@ -577,6 +593,7 @@ int main(void) {
   glAttachShader(prog,vs); glAttachShader(prog,fs);
   glAttachShader(prog,vs); assert(glGetError()==GL_INVALID_OPERATION);
   glDeleteShader(vs); glDeleteShader(fs); assert(glIsShader(vs) && glIsShader(fs));
+  shaderctx.command=(VkCommandBuffer)(uintptr_t)1;
   glEnable(0xdead); glLinkProgram(prog); assert(glGetError()==GL_INVALID_ENUM);
   glGetProgramiv(prog,GL_LINK_STATUS,&value); assert(value);
   assert(shaderctx.programs[prog-1].binding_count==1 && shaderctx.programs[prog-1].bindings[0].index==4);
@@ -586,6 +603,7 @@ int main(void) {
   glGetProgramiv(prog,GL_INFO_LOG_LENGTH,&value); assert(!value);
   glGetProgramiv(prog,GL_ATTACHED_SHADERS,&value); assert(value==2);
   glLinkProgram(prog); assert(glGetError()==GL_INVALID_OPERATION); /* retained executable */
+  shaderctx.command=VK_NULL_HANDLE;
   glUseProgram(prog); glDeleteProgram(prog); assert(glIsProgram(prog) && glIsShader(vs));
   glUseProgram(0); assert(!glIsProgram(prog) && !glIsShader(vs) && !glIsShader(fs));
   GLuint shared=glCreateShader(GL_VERTEX_SHADER), p1=glCreateProgram(), p2=glCreateProgram();

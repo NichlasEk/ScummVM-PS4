@@ -124,7 +124,7 @@ void glLinkProgram(GLuint name) {
   if(!current) return;
   PS4GLProgram *p=program(name); if(!p) { error(GL_INVALID_VALUE); return; }
   /* Relinking live native executables needs versioned GPU storage, a later gate. */
-  if(p->pipeline || current->command) { error(GL_INVALID_OPERATION); return; }
+  if(p->pipeline) { error(GL_INVALID_OPERATION); return; }
   p->log[0]=0;
   PS4GLShader *vs=shader(p->attached[0]), *fs=shader(p->attached[1]);
   if(!vs || !fs || !vs->compiled || !fs->compiled) { snprintf(p->log,sizeof(p->log),"One compiled vertex and fragment shader required"); return; }

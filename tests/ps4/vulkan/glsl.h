@@ -6,7 +6,8 @@
 static GLuint compile_glsl_program(VkDevice device, VkRenderPass pass, const char *vertex, const char *fragment) {
   (void)device;
 #ifdef GLLEGACY_PROBE
-  ps4glConfigureShaderCompiler(pass,ps4glCompileLegacyGLSL,ps4glLinkLegacyGLSL);
+  if(!ps4glCurrentContext()->command)
+    ps4glConfigureShaderCompiler(pass,ps4glCompileLegacyGLSL,ps4glLinkLegacyGLSL);
 #else
   ps4glConfigureShaderCompiler(pass,ps4glCompileVulkanGLSL,ps4glLinkBoundVulkanGLSL);
 #endif

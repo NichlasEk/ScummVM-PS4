@@ -37,6 +37,9 @@ static int application_present(void *data) {
 }
 static int application_quiesce(void *data) {
   fprintf(log_file,"application quiesce: state=%u failed=%u frames=%u\n",frames.state,frames.failed,frames.frames);
+  /* Context replacement must return an acquired image before releasing its
+   * resources. Raw abort semantics remain in the frame-owner diagnostic. */
+  if(frames.state && !frames.failed && ps4glFramePresent(data)) return -1;
   return ps4glFrameQuiesce(data);
 }
 extern int __real_main(int, char **);
@@ -61,7 +64,14 @@ int __wrap_main(int argc, char **argv) {
   if(ps4glSDLSetOwner(&owner)) { fprintf(log_file,"FAIL application SDL owner\n"); return 2; }
   installed=1;
   fprintf(log_file,"PASS application Vulkan bootstrap; entering real ScummVM main\n");
-  /* Dedicated diagnostic launch: no game, user saves or normal settings. */
+  /* A one-shot marker enables repeatable startup probes in this isolated profile. */
+  FILE *probe=fopen("/data/scummvm-vulkan/start-twp-once", "r");
+  if(probe) {
+    fclose(probe); remove("/data/scummvm-vulkan/start-twp-once");
+    fprintf(log_file,"START diagnostic target twp\n");
+    char *args[]={"scummvm","--gfx-mode=opengl","--debuglevel=5","twp",NULL};
+    return __real_main(4,args);
+  }
   char *args[]={"scummvm","--gfx-mode=opengl","--debuglevel=5",NULL};
   return __real_main(3,args);
 }

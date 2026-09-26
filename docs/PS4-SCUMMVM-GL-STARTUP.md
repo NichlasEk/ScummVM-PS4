@@ -25,7 +25,7 @@ This is an intentionally conservative static inventory, not executed GLAD
 loading, reachable-call analysis or GL conformance. Fixed-function, libretro,
 other engines and indirect loader references are outside its scope.
 
-Current result: 76 resolver exports. Shared shader helpers use 26 names, all
+Current result: 78 resolver exports. Shared shader helpers use 26 names, all
 exported. Other scanned files still reference `glReadPixels`, `glBlendColor`,
 and the GLES-only `glGetShaderPrecisionFormat`. `glBlendColor` already has an
 explicit null-procedure fallback in ScummVM's framebuffer code; it is not by
@@ -47,7 +47,7 @@ itself a startup blocker.
    fixed 1280x720 GL 2.0 color-only window and preserves its GL flag through the
    old PS4 software-window branch. Depth/stencil, resize, context recreation and
    general game graphics negotiation remain unimplemented.
-4. **Explicit launcher loader implemented:** the isolated application loads 76
+4. **Explicit launcher loader implemented:** the isolated application loads 78
    checked entrypoints directly into GLAD's typed pointers, retaining version
    0.0 and a deliberately narrow capability set. It reaches real shader
    compilation and launcher draw calls. The swapchain attachment-clear blocker
@@ -92,3 +92,9 @@ and `artifacts/vulkan/glvbo/triangle-result.txt`.
 The experimental SDL package is rebuilt separately for the changed context
 layout. See `PS4-SDL-GL.md` for its lifecycle and framebuffer checks. No actual
 ScummVM GL game boot or physical PS4 result is claimed by these diagnostics.
+
+## Later actual-game checkpoint
+
+See [PS4-TWP-STARTUP.md](PS4-TWP-STARTUP.md): fresh links during recording,
+context replacement, boolean uniforms and engine shader discovery now work.
+Real TWP rendering currently exhausts the bounded recording buffer.

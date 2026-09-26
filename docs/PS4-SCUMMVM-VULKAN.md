@@ -1,7 +1,7 @@
 # Experimental ScummVM application integration (2026-09-26)
 
 This build links the real ScummVM SDL backend and GLAD against our native Vulkan
-bridge. It is a startup diagnostic, not yet a playable launcher or game build.
+bridge. The launcher is usable; game startup is still experimental and not yet playable.
 The GL bridge still reports experimental version 0.0; raising the version to
 bypass missing features is intentionally not part of this integration.
 
@@ -26,7 +26,7 @@ This entrypoint uses separate paths:
 
 The runner uses X11, so `xvfb-run` actually isolates its window even in a Wayland
 session. Default runtime limit is 45 seconds (`EMULATOR_TIMEOUT` overrides it).
-The application always requests the OpenGL launcher with debug level 5, no game.
+The application always requests the OpenGL launcher with debug level 5; a one-shot marker can select the local `twp` target.
 The ordinary build keeps OpenGL disabled and its own SDL archive, title,
 settings and package. Extra native dependencies are allowed only for this
 experimental package. Third-party licenses are included.
@@ -219,3 +219,10 @@ See [PS4-LARGE-FRAMEBUFFERS.md](PS4-LARGE-FRAMEBUFFERS.md) for the 1280x720
 offscreen test, command capacity/submission fix, measured memory cost and
 remaining engine shader discovery gate. The visible test window is not restarted
 by this build. Shader capabilities remain disabled for game startup.
+
+## Actual game startup
+
+The shader-feature gate is now passed. See [PS4-TWP-STARTUP.md](PS4-TWP-STARTUP.md)
+for the new isolated capabilities, original lighting shaders, context handoff,
+validation and the current command-buffer exhaustion during real game rendering.
+This supersedes the earlier disabled-capability checkpoints above.

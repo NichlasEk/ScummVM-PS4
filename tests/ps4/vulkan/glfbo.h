@@ -53,6 +53,17 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
 #ifdef SDLGL_PROBE
   glBindFramebuffer(GL_FRAMEBUFFER,0); glDisable(GL_SCISSOR_TEST);
   glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
+  GLuint live_programs[2]={programs[0],programs[1]}, linked_during_frame=0;
+  if(frame==0) {
+    PS4GLContext *ctx=ps4glCurrentContext();
+    if(!ctx->command) return 2;
+    const char *bool_vertex="#version 110\nattribute vec2 a_position; attribute vec4 a_color; attribute vec2 a_texCoords; uniform mat4 u_transform; uniform bool flipY; varying vec4 v_color; varying vec2 v_texCoords; void main(){v_color=a_color;v_texCoords=a_texCoords;vec4 p=u_transform*vec4(a_position,0.,1.);if(!flipY)p.y=-p.y;gl_Position=p;}";
+    linked_during_frame=compile_glsl_program(ctx->program_device,ctx->program_pass,bool_vertex,legacy_color);
+    glUniform1i(glGetUniformLocation(linked_during_frame,"flipY"),-7);
+    if(!linked_during_frame || glGetError()) return 2;
+    live_programs[0]=linked_during_frame; programs=live_programs;
+    fprintf(report,"PASS SDL fresh shader link during active recording\n");
+  }
 #endif
   GLuint texture, framebuffer;
   glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
@@ -125,6 +136,7 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glScissor(100,100,40,30); glClearColor(.002f,0,1,1); glClear(GL_COLOR_BUFFER_BIT);
   glDisable(GL_SCISSOR_TEST);
   if(glGetError()!=GL_NO_ERROR) return 2;
+  if(linked_during_frame) glDeleteProgram(linked_during_frame);
   fprintf(report,"PASS SDL VideoOut full and partial sRGB attachment clears\n");
   if(strip_modes!=7) return 2;
   fprintf(report,"PASS SDL triangle strips arrays uint16 uint32 and retained indices\n");

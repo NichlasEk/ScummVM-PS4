@@ -41,7 +41,7 @@ not relaxed. This capture requires a dedicated 1280x720 Xvfb display.
 Evidence is in `artifacts/vulkan/sdlgl/`, with a copied driver log showing chunk
 counts and the host results in `artifacts/vulkan/`.
 
-## Remaining Thimbleweed Park gate
+## Thimbleweed Park gate at this checkpoint
 
 The user's Start attempt reaches the game's explicit shader-feature check and
 returns its unsupported-shaders error. Shader support is deliberately still
@@ -56,3 +56,6 @@ Validated SDL fixture package SHA-256:
 `48425645a04bbbe1adddddd7d86068e5058b1b76d6d569b0d8a3c25745d1d5ca`.
 The stable 1.17 package remains unchanged:
 `c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.
+
+The later [actual-game checkpoint](PS4-TWP-STARTUP.md) passes this feature gate
+and reaches game rendering; it exposes a larger command-volume bottleneck.

@@ -87,12 +87,13 @@ static int legacy_preprocess(int fragment, const char *source, LegacySource *out
     if(!strcmp(token,"[")) {
       if(!legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;
       char *end; unsigned long count=strtoul(token,&end,10);
-      if(*end || !count || count>16) goto unsupported;
+      if(*end || !count || count>64) goto unsupported;
       d->count=(unsigned)count;
       if(!legacy_token(out->text,&at,token,sizeof(token)) || strcmp(token,"]") ||
          !legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;
     }
     if(strcmp(token,";") || (strcmp(d->kind,"uniform") && (d->count || !strcmp(d->type,"mat4") || !strcmp(d->type,"sampler2D") || !strcmp(d->type,"int") || !strcmp(d->type,"bool")))) goto unsupported;
+    if(!strcmp(d->type,"bool") && d->count) goto unsupported;
     if(!strcmp(d->type,"sampler2D") && (d->count || !fragment || strcmp(d->kind,"uniform"))) goto unsupported;
     if(fragment && !strcmp(d->kind,"attribute")) goto unsupported;
     for(unsigned i=0;i<out->count;++i) if(!strcmp(out->decl[i].name,d->name)) goto unsupported;
@@ -149,7 +150,8 @@ static char *legacy_rewrite(const LegacySource *source, int fragment, const Lega
     legacy_emit(&out,"layout(std140,set=0,binding=%d) uniform ps4gl_%s_defaults {\n",fragment ? 1 : 0,fragment ? "fragment" : "vertex");
     for(unsigned i=0;i<source->count;++i) { const LegacyDecl *d=&source->decl[i];
       if(!strcmp(d->kind,"uniform") && strcmp(d->type,"sampler2D")) {
-        legacy_emit(&out,"%s %s",d->type,d->name);
+        if(!strcmp(d->type,"bool")) legacy_emit(&out,"int ps4gl_bool_%s",d->name);
+        else legacy_emit(&out,"%s %s",d->type,d->name);
         if(d->count) legacy_emit(&out,"[%u]",d->count);
         legacy_emit(&out,";\n");
       }
@@ -164,7 +166,12 @@ static char *legacy_rewrite(const LegacySource *source, int fragment, const Lega
       if(!legacy_token(source->text,&at,token,sizeof(token))) goto fail;
       const char *replacement=!strcmp(token,"main") ? "ps4gl_main" : !strcmp(token,"texture2D") ? "texture" :
         !strcmp(token,"gl_FragColor") ? "ps4gl_fragment_color" : token;
-      legacy_emit(&out,"%s",replacement);
+      const LegacyDecl *boolean=NULL;
+      for(unsigned i=0;i<source->count;++i)
+        if(!strcmp(source->decl[i].kind,"uniform") && !strcmp(source->decl[i].type,"bool") &&
+           !strcmp(token,source->decl[i].name)) { boolean=&source->decl[i]; break; }
+      if(boolean) legacy_emit(&out,"(ps4gl_bool_%s != 0)",boolean->name);
+      else legacy_emit(&out,"%s",replacement);
     } else legacy_emit(&out,"%c",source->text[at++]);
   }
   legacy_emit(&out,"\nvoid main(){ps4gl_main();%s}\n",fragment ? "" : "gl_Position.y=-gl_Position.y;gl_Position.z=(gl_Position.z+gl_Position.w)*0.5;");

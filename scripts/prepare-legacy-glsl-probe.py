@@ -13,13 +13,13 @@ def preamble(name):
 vs='#version 100\n'+preamble('compatVertex')+preamble('compatUniformBool')
 fs='#version 100\n'+preamble('compatFragment')+preamble('compatUniformBool')
 bodies={}
-for filename in ('shaders.cpp','gfx.cpp'):
+for filename in ('shaders.cpp','gfx.cpp','lighting.cpp'):
     raw=(source/'engines/twp'/filename).read_text()
     for name,body in re.findall(r'const\s+char\s*\*\s*(\w+)\s*=\s*R"\((.*?)\)";',raw,re.S): bodies[name]=body
-assert set(bodies)=={'vsrc','fragmentSrc','bwShader','ghostShader','sepiaShader','fadeShader'}
+assert set(bodies)=={'vsrc','fragmentSrc','bwShader','ghostShader','sepiaShader','fadeShader','fshader','debug_fshader','vshader'}
 parts=[]; manifest={}
 for name,body in bodies.items():
-    text=(vs if name=='vsrc' else fs)+body
+    text=(vs if name in ('vsrc','vshader') else fs)+body
     parts.append(f'static const char legacy_{name}[] = {json.dumps(text)};\n')
     manifest[name]=hashlib.sha256(text.encode()).hexdigest()
 parts.append('static const char legacy_color[] = "#version 100\\nprecision mediump float;uniform vec4 color;uniform int mode;uniform int modes[2];void main(){gl_FragColor=(mode==-7 && modes[0]==3 && modes[1]==-11)?color:vec4(0.0);}";\n')

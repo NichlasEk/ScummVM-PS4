@@ -176,6 +176,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                                'PASS SDL empty swap preserves presented image',
                                'PASS SDL teardown discards unfinished frame',
                                'PASS reusable frame owner destruction',
+                               'PASS reusable display owner startup',
+                               'PASS reusable display owner destruction',
                                'PASS SDL context destruction after quiesce',
                                'PASS SDL context proc lookup',
                                'PASS SDL presentation failure propagation',

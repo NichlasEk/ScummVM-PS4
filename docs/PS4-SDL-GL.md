@@ -167,3 +167,14 @@ expectations; the SDL fixture retains the existing FBO/lifecycle checks.
 
 Startup requirements and the reproducible call inventory are documented in
 [PS4-SCUMMVM-GL-STARTUP.md](PS4-SCUMMVM-GL-STARTUP.md).
+
+## Display-owner continuation (2026-09-26)
+
+The SDL fixture now starts and releases the native Vulkan display through
+`PS4GLDisplayOwner`, including failure-safe partial initialization. All 2,553
+pixel checks and existing lifecycle checks pass in shadPS4 with this bootstrap.
+See [PS4-VULKAN-DISPLAY.md](PS4-VULKAN-DISPLAY.md) for ownership, tests and the
+next application integration step.
+
+Current package: `dist/ScummVM-PS4-SDL-GL.pkg`.
+SHA-256: `3946eacca4a6883d4b7fb19fd1ee722893be137395dcac9eb29c7a5cc815e333`.

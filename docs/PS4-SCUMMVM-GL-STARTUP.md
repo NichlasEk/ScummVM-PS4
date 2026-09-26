@@ -33,11 +33,11 @@ itself a startup blocker.
 
 ## Remaining integration gates, in dependency order
 
-1. Extract instance/device/swapchain/render-pass/image-view/framebuffer creation
-   from `tests/ps4/vulkan/draw.c` into a reusable native display owner. The frame
-   owner already handles command recording/submission, but borrows all of these
-   parent resources. Install that owner before SDL video initialization. Keep
-   the legacy SDL software VideoOut bootstrap out of this path.
+1. **Bootstrap extraction implemented:** `PS4GLDisplayOwner` now owns the native
+   instance/device/swapchain/render-pass/image-view/framebuffer startup and
+   teardown, and the SDL fixture uses it. See [PS4-VULKAN-DISPLAY.md](PS4-VULKAN-DISPLAY.md).
+   Application wiring must install this owner before SDL video initialization
+   and keep the legacy software VideoOut bootstrap out of this path.
 2. Create an isolated experimental ScummVM build/configuration. Stable
    `configure-scummvm.sh` still explicitly disables OpenGL. Its SDL config must
    select the experimental archive and native graphics/compiler dependencies.

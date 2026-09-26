@@ -1,6 +1,7 @@
 #include <SDL2/SDL.h>
 #include "ps4gl-sdl.h"
 #include "ps4gl-frame.c"
+#include "ps4gl-display.c"
 typedef struct SDLProbeOwner {
   PS4GLFrameOwner frames;
   VkDevice device;

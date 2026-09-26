@@ -64,6 +64,17 @@ int main(void) {
   setvbuf(report, NULL, _IONBF, 0);
   vk_ps4_log_open("/data/scummvm-vulkan-driver.log");
   fprintf(report, "START Vulkan draw probe\n");
+#ifdef SDLGL_PROBE
+  PS4GLDisplayOwner display={0};
+  if(ps4glDisplayInit(&display)) {
+    fprintf(report,"Display setup failed: %d\n",display.last_result); return 2;
+  }
+  fprintf(report,"PASS reusable display owner startup\n");
+  VkPhysicalDevice physical=display.physical;
+  VkDevice device=display.device; VkQueue queue=display.queue;
+  VkSwapchainKHR swap=display.swap; VkRenderPass pass=display.pass;
+  VkImage *images=display.images; VkFramebuffer *fb=display.targets;
+#else
   VkInstance instance;
   VkInstanceCreateInfo ici = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
   CHECK(vkCreateInstance(&ici, NULL, &instance));
@@ -146,6 +157,7 @@ int main(void) {
         .layers = 1};
     CHECK(vkCreateFramebuffer(device, &fci, NULL, &fb[i]));
   }
+#endif
 #ifdef COMPOSITE_PROBE
   if (create_offscreen(device, physical))
     return 2;
@@ -601,18 +613,22 @@ int main(void) {
 #endif
   vkDestroyFence(device, fence, NULL);
   vkDestroyCommandPool(device, pool, NULL);
+ #ifndef SDLGL_PROBE
   for (unsigned i = 0; i < 2; i++) {
 
     vkDestroyFramebuffer(device, fb[i], NULL);
     vkDestroyImageView(device, views[i], NULL);
   }
+ #endif
   for (unsigned i = 0; i < pipeline_count; ++i)
     vkDestroyPipeline(device, pipelines[i], NULL);
   for (unsigned i = 0; i < sizeof(codes)/sizeof(codes[0]); i++)
     vkDestroyShaderModule(device, modules[i], NULL);
   vkDestroyPipelineLayout(device, layout, NULL);
+#ifndef SDLGL_PROBE
   vkDestroyRenderPass(device, pass, NULL);
   vkDestroySwapchainKHR(device, swap, NULL);
+#endif
 #ifdef RESOURCE_PROBE
   #ifdef SPRITES_PROBE
   vkDestroyBuffer(device, sprite_buffer, NULL);
@@ -627,8 +643,13 @@ int main(void) {
 #ifdef TWP_PROBE
   destroy_twp(device);
 #endif
+#ifdef SDLGL_PROBE
+  if(ps4glDisplayDestroy(&display)) return 2;
+  fprintf(report,"PASS reusable display owner destruction\n");
+#else
   vkDestroyDevice(device, NULL);
   vkDestroyInstance(instance, NULL);
+#endif
   fprintf(report, "PASS Vulkan lifecycle\n");
   fclose(report);
   return 0;

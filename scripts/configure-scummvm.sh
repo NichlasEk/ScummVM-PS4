@@ -25,7 +25,7 @@ export LDFLAGS="--target=x86_64-pc-freebsd12-elf -fuse-ld=lld -nostdlib -Wl,-pie
 export LIBS="$root/build/ps4-storage/libscummvm-jbc.a -lc++ -lc++abi -lc -lkernel"
 gl_options=(--opengl-mode=none --disable-opengl-game --disable-opengl-game-classic --disable-opengl-game-shaders)
 if [[ ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} == 1 ]]; then
- gl_options=(--opengl-mode=gl --disable-opengl-game-classic)
+ gl_options=(--opengl-mode=gl --disable-opengl-game-classic --disable-imgui)
  # Experimental SDL config supplies the native dependencies and C++ runtime.
  export LIBS="$root/build/ps4-storage/libscummvm-jbc.a"
 fi

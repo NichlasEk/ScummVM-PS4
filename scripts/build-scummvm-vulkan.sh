@@ -14,7 +14,7 @@ if [[ -f "$overlay" ]]; then
 fi
 "$root/scripts/prepare-scummvm.sh"
 # Only dedicated source copy: preserve ordinary PS4 settings and saves.
-python3 - "$SCUMMVM_SOURCE_DIR" <<'PY'
+python3 - "$SCUMMVM_SOURCE_DIR" "$root/compat/ps4gl/scummvm-context.inc" <<'PY'
 from pathlib import Path
 import sys, difflib, subprocess
 root=Path(sys.argv[1])
@@ -50,6 +50,13 @@ for old,new in (
 ):
  assert s.count(old)==1, old
  s=s.replace(old,new)
+patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
+relative='graphics/opengl/context.cpp'
+p=root/relative
+original=p.read_text()
+anchor='\ttype = contextType;\n'
+assert original.count(anchor)==1
+s=original.replace(anchor,anchor+Path(sys.argv[2]).read_text())
 patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
 overlay=root/'.vulkan-overlay.patch'
 overlay.write_text(''.join(patch))

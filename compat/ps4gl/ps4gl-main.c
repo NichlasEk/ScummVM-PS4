@@ -25,6 +25,20 @@ static void cleanup(void) {
   }
   fprintf(log_file,"PASS application Vulkan cleanup\n"); fclose(log_file); log_file=NULL;
 }
+static int application_begin(void *data) {
+  int rc=ps4glFrameBegin(data);
+  if(rc) fprintf(log_file,"FAIL application begin: state=%u failed=%u result=%d frames=%u\n",frames.state,frames.failed,frames.last_result,frames.frames);
+  return rc;
+}
+static int application_present(void *data) {
+  int rc=ps4glFramePresent(data);
+  if(rc || frames.frames<=3) fprintf(log_file,"%s application present: state=%u failed=%u result=%d frames=%u\n",rc ? "FAIL" : "PASS",frames.state,frames.failed,frames.last_result,frames.frames);
+  return rc;
+}
+static int application_quiesce(void *data) {
+  fprintf(log_file,"application quiesce: state=%u failed=%u frames=%u\n",frames.state,frames.failed,frames.frames);
+  return ps4glFrameQuiesce(data);
+}
 extern int __real_main(int, char **);
 int __wrap_main(int argc, char **argv) {
   (void)argc; (void)argv;
@@ -42,8 +56,8 @@ int __wrap_main(int argc, char **argv) {
     fprintf(log_file,"FAIL application frame init: %d\n",frames.last_result); return 2;
   }
   PS4GLSDLOwner owner={.physical=display.physical,.device=display.device,.pass=display.pass,
-    .width=display.width,.height=display.height,.begin=ps4glFrameBegin,
-    .present=ps4glFramePresent,.quiesce=ps4glFrameQuiesce,.data=&frames};
+    .width=display.width,.height=display.height,.begin=application_begin,
+    .present=application_present,.quiesce=application_quiesce,.data=&frames};
   if(ps4glSDLSetOwner(&owner)) { fprintf(log_file,"FAIL application SDL owner\n"); return 2; }
   installed=1;
   fprintf(log_file,"PASS application Vulkan bootstrap; entering real ScummVM main\n");

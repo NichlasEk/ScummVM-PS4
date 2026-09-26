@@ -47,10 +47,13 @@ itself a startup blocker.
    fixed 1280x720 GL 2.0 color-only window and preserves its GL flag through the
    old PS4 software-window branch. Depth/stencil, resize, context recreation and
    general game graphics negotiation remain unimplemented.
-4. Exercise real GLAD/context initialization. Current `GL_VERSION=0.0` is an
-   intentional gate, not a usable engine version. Desktop engine shaders need
-   GLSL 1.20; FBO/NPOT/multitexture flags also depend on capability detection.
-   Do not raise version strings or claim full extensions just to bypass this.
+4. **Explicit launcher loader implemented:** the isolated application loads 76
+   checked entrypoints directly into GLAD's typed pointers, retaining version
+   0.0 and a deliberately narrow capability set. It reaches real shader
+   compilation and launcher draw calls. The first frame now fails at native
+   `CmdClearAttachments`: swapchain images have no owned VkDeviceMemory and use
+   SRGB, whereas the meta-clear currently requires owned UNORM storage. See
+   [PS4-SCUMMVM-VULKAN.md](PS4-SCUMMVM-VULKAN.md) for evidence and next steps.
 5. **Triangle strips implemented:** launcher-style four-corner surfaces now pass
    the native pixel oracle through array and uint16/uint32 index paths. See
    [PS4-GL-TRIANGLE-STRIPS.md](PS4-GL-TRIANGLE-STRIPS.md). TWP line strips/loops

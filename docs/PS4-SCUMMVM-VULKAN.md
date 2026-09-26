@@ -81,7 +81,7 @@ Follow-up requirements remain in [PS4-SCUMMVM-GL-STARTUP.md](PS4-SCUMMVM-GL-STAR
 capability negotiation, primitive/state/texture support, context recreation and
 input, then real launcher/game/save-load validation. Physical PS4 unverified.
 
-### Final checkpoint
+### Earlier GLAD checkpoint
 
 After preserving the GL window flag, the real application creates its GL context
 and reaches ScummVM's GLAD initialization. It stops with `Couldn't initialize
@@ -108,3 +108,65 @@ checks, frame replay and cleanup passed. Evidence:
 `artifacts/scummvm-vulkan/private-psbc-render.log`. The diagnostic driver's
 previous ELF/SELF/eboot files were restored afterward. Packaging rejection of a
 stable title/output under the experimental flag was checked before staging.
+
+## Explicit launcher subset (2026-09-26)
+
+The isolated source overlay injects `compat/ps4gl/scummvm-context.inc` into
+`Context::initialize`, after its normal reset. It assigns 76 explicitly required
+entrypoints to the real GLAD typed function pointers. Every lookup is checked;
+wrong context type, renderer identity, missing function or invalid texture limit
+is fatal. It neither changes GL_VERSION nor enables GLAD version/extension flags.
+
+Only shader-based launcher drawing, NPOT sampling and edge clamping are enabled.
+Engine shaders, libretro, GPU palette conversion, FBO capability, packed-pixel
+capability, extended unpack state and multisampling remain disabled. Available
+bridge functions are not equivalent to unrestricted engine capabilities. The
+experimental configure path now disables the optional ImGui debugger, whose
+separate modern loader is outside this launcher subset. Stable builds retain
+their previous configuration.
+
+`scripts/check-scummvm-subset.sh` checks the manifest against actual resolver
+exports and compiles the injected code against ScummVM's actual GLAD header.
+ASan/UBSan tests cover successful loading and rejection of missing functions,
+wrong renderer/context and zero texture limit, plus absent version and engine
+promotion. The real PS4 application builds and runs with this loader.
+
+### Observed result and next blocker
+
+Real ScummVM now passes the previous GLAD fatal error, compiles its launcher
+shaders into native pipelines, loads fonts/UI data, chooses a 1024x576 overlay
+within the advertised texture limit, and issues launcher clear/draw calls.
+However, **zero frames have been presented**. No visible or interactive launcher
+success is claimed.
+
+The first present fails while ending the command buffer with
+`VK_ERROR_FEATURE_NOT_PRESENT` (-8). Temporary driver breadcrumbs traced it to
+`vk_ps4_CmdClearAttachments`'s unsupported branch. Inspection shows why:
+
+- The meta-clear requires `img->memory` and RGBA8_UNORM storage.
+- Swapchain images deliberately have `memory == NULL`; VideoOut owns their
+  storage. The display owner requests RGBA8_SRGB.
+- Offscreen FBO pixel tests do not exercise this default-framebuffer clear.
+
+The poisoned frame owner then rejects subsequent clear/draw attempts. Its new
+application bootstrap log records begin/present failures, frame count and quiesce
+state, distinguishing this from GLAD or shader compilation failure. Runs were
+terminated by the diagnostic timeout; graceful application cleanup was not
+verified at this checkpoint. Two earlier texture-filter calls also report
+INVALID_OPERATION and should be revisited after first-frame presentation works.
+
+Next: implement default/swapchain attachment clears with correct borrowed
+VideoOut storage bounds and SRGB conversion, and add native clear/preservation
+pixel tests. Do not bypass the clear or suppress the poisoned command-buffer
+error. Then rerun the actual launcher and add real input/clean exit validation.
+
+Evidence under `artifacts/scummvm-vulkan/subset-loader/`: host test log, real
+ScummVM/bootstrap logs, the temporary driver trace and machine-readable result.
+Temporary driver instrumentation was removed and the driver rebuilt before
+producing the final experimental package. This milestone changes no native
+driver implementation and makes no physical PS4 or game-start claim.
+
+Current experimental package SHA-256:
+`2a994e0dfc15aa1f0f4b43c2e081ab96be2b5e1c7d28684cc694aa9bd1c8c059`.
+Stable package SHA-256 remains
+`c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.

@@ -20,6 +20,7 @@ variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
 variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
+variants.add_argument('--glindex', action='store_true')
 variants.add_argument('--glvbo', action='store_true')
 variants.add_argument('--gldraw', action='store_true')
 variants.add_argument('--glstate', action='store_true')
@@ -27,6 +28,8 @@ variants.add_argument('--twp', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
+if args.glindex:
+    args.glvbo = True
 if args.glvbo:
     args.gldraw = True
 if args.glstate:
@@ -57,7 +60,7 @@ if mode != 'triangle':
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
     if args.gldraw:
-        reports /= 'glvbo' if args.glvbo else 'gldraw'
+        reports /= 'glindex' if args.glindex else 'glvbo' if args.glvbo else 'gldraw'
     elif args.twp:
         reports /= 'twp'
     elif args.composite:
@@ -145,6 +148,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.glindex and guest_log.read_text().count('PASS GL index uint16 uint32 offset mutation') != 8:
+                raise RuntimeError('GL indexed draw checks incomplete')
             if args.glvbo and (guest_log.read_text().count('PASS GL vertex deleted-buffer rejection') != 8 or
                                'PASS GL vertex command buffer resubmission' not in guest_log.read_text()):
                 raise RuntimeError('GL vertex lifetime checks incomplete')

@@ -35,7 +35,9 @@ static FILE *report;
 #ifdef GLDRAW_PROBE
 #include "ps4gl.c"
 #include "ps4gl-vulkan.c"
-#ifdef GLVBO_PROBE
+#ifdef GLINDEX_PROBE
+#include "glindex.h"
+#elif defined(GLVBO_PROBE)
 #include "glvbo.h"
 #endif
 #endif

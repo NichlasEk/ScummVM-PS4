@@ -61,6 +61,7 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   if (!values) { error(GL_INVALID_VALUE); return; }
   if (pname==GL_SCISSOR_BOX || pname==GL_VIEWPORT)
     memcpy(values,pname==GL_SCISSOR_BOX ? current->scissor : current->viewport,4*sizeof(GLint));
+  else if (pname==GL_ELEMENT_ARRAY_BUFFER_BINDING) *values=(GLint)current->element_buffer;
   else if (pname==GL_ARRAY_BUFFER_BINDING) *values=(GLint)current->array_buffer;
   else if (pname==GL_CURRENT_PROGRAM) *values=current->program;
   else if (pname==GL_SCISSOR_TEST) *values=current->scissor_enabled;
@@ -121,7 +122,7 @@ void glGenBuffers(GLsizei n, GLuint *names) {
 }
 void glBindBuffer(GLenum target, GLuint name) {
   if(!current) return;
-  if(target!=GL_ARRAY_BUFFER) { error(GL_INVALID_ENUM); return; }
+  if(target!=GL_ARRAY_BUFFER && target!=GL_ELEMENT_ARRAY_BUFFER) { error(GL_INVALID_ENUM); return; }
   if(name) {
     PS4GLBuffer *b=find_buffer(current,name);
     if(!b) for(unsigned i=0;i<PS4GL_MAX_BUFFERS;++i) if(!current->buffers[i].name) {
@@ -130,7 +131,8 @@ void glBindBuffer(GLenum target, GLuint name) {
     if(!b) { error(GL_OUT_OF_MEMORY); return; }
     b->created=GL_TRUE;
   }
-  current->array_buffer=name;
+  if(target==GL_ARRAY_BUFFER) current->array_buffer=name;
+  else current->element_buffer=name;
 }
 GLboolean glIsBuffer(GLuint name) {
   PS4GLBuffer *b=current ? find_buffer(current,name) : NULL;
@@ -143,14 +145,15 @@ void glDeleteBuffers(GLsizei n, const GLuint *names) {
     PS4GLBuffer *b=find_buffer(current,names[j]);
     if(!b) continue;
     if(current->array_buffer==names[j]) current->array_buffer=0;
+    if(current->element_buffer==names[j]) current->element_buffer=0;
     for(unsigned a=0;a<PS4GL_MAX_ATTRIBS;++a)
       if(current->attribs[a].buffer==names[j]) current->attribs[a].buffer=0;
     free(b->data); *b=(PS4GLBuffer){0};
   }
 }
 static PS4GLBuffer *bound_buffer(GLenum target) {
-  if(target!=GL_ARRAY_BUFFER) { error(GL_INVALID_ENUM); return NULL; }
-  PS4GLBuffer *b=find_buffer(current,current->array_buffer);
+  if(target!=GL_ARRAY_BUFFER && target!=GL_ELEMENT_ARRAY_BUFFER) { error(GL_INVALID_ENUM); return NULL; }
+  PS4GLBuffer *b=find_buffer(current,target==GL_ARRAY_BUFFER ? current->array_buffer : current->element_buffer);
   if(!b || !b->created) { error(GL_INVALID_OPERATION); return NULL; }
   return b;
 }
@@ -230,7 +233,7 @@ int ps4glPackVertices(PS4GLContext *ctx, const PS4GLProgram *p, GLsizei count, v
 void ps4glDestroyBuffers(PS4GLContext *ctx) {
   if(!ctx) return;
   for(unsigned i=0;i<PS4GL_MAX_BUFFERS;++i) { free(ctx->buffers[i].data); ctx->buffers[i]=(PS4GLBuffer){0}; }
-  ctx->array_buffer=0;
+  ctx->array_buffer=ctx->element_buffer=0;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->attribs[i]=(PS4GLAttrib){.size=4};
 }
 static PS4GLProgram *program(GLuint name) {
@@ -262,7 +265,7 @@ void glGetProgramiv(GLuint name, GLenum pname, GLint *value) {
   else if (pname==GL_DELETE_STATUS) *value=p->deleted;
   else error(GL_INVALID_ENUM);
 }
-void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices) {
   if (!current) return;
   if (mode!=GL_TRIANGLES) { error(GL_INVALID_ENUM); return; }
   if (count<0 || first<0) { error(GL_INVALID_VALUE); return; }
@@ -286,21 +289,56 @@ void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
   VkViewport vp={.x=v[0],.y=current->height-v[1]-v[3],.width=v[2],.height=v[3],.maxDepth=1};
   VkRect2D sc={{(int32_t)x0,(int32_t)(current->height-y1)},
               {(uint32_t)(x1-x0),(uint32_t)(y1-y0)}};
-  if(p->vertex_stride) {
+  size_t index_bytes=0;
+  const unsigned char *index_data=NULL;
+  uint32_t vertices=(uint32_t)count;
+  if(type) {
+    PS4GLBuffer *ibo=bound_buffer(GL_ELEMENT_ARRAY_BUFFER);
+    if(!ibo) return;
+    size_t width=type==GL_UNSIGNED_SHORT ? 2 : 4;
+    uintptr_t offset=(uintptr_t)indices;
+    if(offset>ibo->size || (size_t)count>(ibo->size-offset)/width) {
+      error(GL_INVALID_OPERATION); return;
+    }
+    index_bytes=(size_t)count*width; index_data=ibo->data+offset;
+    uint32_t max_index=0;
+    for(GLsizei i=0;i<count;++i) {
+      uint32_t value=0;
+      if(width==2) { uint16_t v; memcpy(&v,index_data+(size_t)i*width,width); value=v; }
+      else memcpy(&value,index_data+(size_t)i*width,width);
+      if(value>max_index) max_index=value;
+    }
+    /* Pack a dense prefix, keeping the original gl_VertexIndex semantics. */
+    if(p->vertex_stride && max_index>=INT32_MAX) { error(GL_INVALID_OPERATION); return; }
+    vertices=p->vertex_stride ? max_index+1 : 0;
+  }
+  if(p->vertex_stride || type) {
     if(!current->upload_vertices) { error(GL_INVALID_OPERATION); return; }
-    if((size_t)count>PS4GL_MAX_BUFFER_BYTES/p->vertex_stride) { error(GL_OUT_OF_MEMORY); return; }
-    size_t bytes=(size_t)count*p->vertex_stride;
+    if(p->vertex_stride && vertices>PS4GL_MAX_BUFFER_BYTES/p->vertex_stride) { error(GL_OUT_OF_MEMORY); return; }
+    size_t vertex_bytes=(size_t)vertices*p->vertex_stride;
+    if(index_bytes>PS4GL_MAX_BUFFER_BYTES-vertex_bytes) { error(GL_OUT_OF_MEMORY); return; }
+    size_t bytes=vertex_bytes+index_bytes;
     void *packed=malloc(bytes);
     if(!packed) { error(GL_OUT_OF_MEMORY); return; }
-    int ok=ps4glPackVertices(current,p,count,packed);
-    if(ok) ok=current->upload_vertices(current,packed,bytes);
+    int ok=!p->vertex_stride || ps4glPackVertices(current,p,(GLsizei)vertices,packed);
+    if(ok && index_bytes) memcpy((unsigned char *)packed+vertex_bytes,index_data,index_bytes);
+    if(ok) ok=current->upload_vertices(current,packed,bytes,vertex_bytes,type);
     free(packed);
     if(!ok) return;
   }
   vkCmdBindPipeline(current->command,VK_PIPELINE_BIND_POINT_GRAPHICS,p->pipeline);
   vkCmdSetViewport(current->command,0,1,&vp);
   vkCmdSetScissor(current->command,0,1,&sc);
-  vkCmdDraw(current->command,(uint32_t)count,1,0,0);
+  if(type) vkCmdDrawIndexed(current->command,(uint32_t)count,1,0,0,0);
+  else vkCmdDraw(current->command,(uint32_t)count,1,0,0);
+}
+void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+  draw(mode,first,count,0,NULL);
+}
+void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices) {
+  if(!current) return;
+  if(type!=GL_UNSIGNED_SHORT && type!=GL_UNSIGNED_INT) { error(GL_INVALID_ENUM); return; }
+  draw(mode,0,count,type,indices);
 }
 PS4GLProc ps4glGetProcAddress(const char *name) {
   if (!name) return NULL;
@@ -309,7 +347,7 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glEnable); PROC(glDisable); PROC(glIsEnabled); PROC(glGetError);
   PROC(glGetIntegerv); PROC(glGetFloatv);
   PROC(glUseProgram); PROC(glDeleteProgram); PROC(glIsProgram);
-  PROC(glGetProgramiv); PROC(glDrawArrays);
+  PROC(glGetProgramiv); PROC(glDrawArrays); PROC(glDrawElements);
   PROC(glGenBuffers); PROC(glBindBuffer); PROC(glDeleteBuffers); PROC(glIsBuffer);
   PROC(glBufferData); PROC(glBufferSubData); PROC(glGetBufferParameteriv);
   PROC(glVertexAttribPointer); PROC(glEnableVertexAttribArray); PROC(glDisableVertexAttribArray);

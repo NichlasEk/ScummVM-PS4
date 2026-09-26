@@ -21,7 +21,7 @@ for name in names:
         filename = name.replace('triangle', 'resources')
     if name.startswith('triangle') and '--sprites' in sys.argv:
         filename = name.replace('triangle', 'sprites')
-    if name.startswith('triangle') and '--glvbo' in sys.argv:
+    if name.startswith('triangle') and ('--glvbo' in sys.argv or '--glindex' in sys.argv):
         filename = name.replace('triangle', 'glvbo')
     subprocess.run(['glslc', '-fshader-stage=' + stage, str(source / (filename + '.glsl')),
                     '-o', str(binary)], check=True)

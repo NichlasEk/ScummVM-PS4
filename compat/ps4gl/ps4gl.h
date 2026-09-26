@@ -16,6 +16,10 @@ typedef int GLint;
 typedef int GLsizei;
 typedef float GLfloat;
 typedef unsigned char GLboolean;
+#define GL_ELEMENT_ARRAY_BUFFER 0x8893
+#define GL_ELEMENT_ARRAY_BUFFER_BINDING 0x8895
+#define GL_UNSIGNED_SHORT 0x1403
+#define GL_UNSIGNED_INT 0x1405
 #define GL_ARRAY_BUFFER 0x8892
 #define GL_ARRAY_BUFFER_BINDING 0x8894
 #define GL_BUFFER_SIZE 0x8764
@@ -85,12 +89,13 @@ typedef struct PS4GLContext {
   PS4GLProgram programs[PS4GL_MAX_PROGRAMS];
   PS4GLBuffer buffers[PS4GL_MAX_BUFFERS];
   PS4GLAttrib attribs[PS4GL_MAX_ATTRIBS];
-  GLuint array_buffer, next_buffer;
+  GLuint array_buffer, element_buffer, next_buffer;
   VkPhysicalDevice physical;
   PS4GLSnapshot snapshots[PS4GL_MAX_SNAPSHOTS];
   unsigned snapshot_count;
   size_t snapshot_bytes;
-  int (*upload_vertices)(struct PS4GLContext *, const void *, size_t);
+  /* Immutable payload: packed vertices followed by indices; index type 0 for arrays. */
+  int (*upload_vertices)(struct PS4GLContext *, const void *, size_t, size_t, GLenum);
 } PS4GLContext;
 typedef void (*PS4GLProc)(void);
 int ps4glInit(PS4GLContext *, GLint width, GLint height);
@@ -128,6 +133,7 @@ void glDeleteProgram(GLuint);
 GLboolean glIsProgram(GLuint);
 void glGetProgramiv(GLuint, GLenum, GLint *);
 void glDrawArrays(GLenum, GLint, GLsizei);
+void glDrawElements(GLenum, GLsizei, GLenum, const void *);
 void glClearColor(GLfloat, GLfloat, GLfloat, GLfloat);
 void glClear(GLbitfield);
 void glScissor(GLint, GLint, GLsizei, GLsizei);

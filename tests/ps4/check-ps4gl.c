@@ -25,6 +25,19 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(VkCommandBuffer cmd, uint32_t first, 
 VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer cmd, uint32_t count, uint32_t instances, uint32_t first, uint32_t instance) {
   assert(cmd && count==3 && instances==1 && !first && !instance); ++draws;
 }
+static unsigned indexed_draws, uploads;
+static unsigned char snapshot[128];
+static size_t snapshot_size, snapshot_vertex_bytes;
+static GLenum snapshot_type;
+static int upload(PS4GLContext *ctx, const void *data, size_t size, size_t vb, GLenum type) {
+  assert(ctx && size<=sizeof(snapshot)); ++uploads;
+  memcpy(snapshot,data,size); snapshot_size=size; snapshot_vertex_bytes=vb; snapshot_type=type;
+  return 1;
+}
+VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(VkCommandBuffer cmd, uint32_t count,
+ uint32_t instances, uint32_t first, int32_t base, uint32_t instance) {
+  assert(cmd && count==3 && instances==1 && !first && !base && !instance); ++indexed_draws;
+}
 int main(void) {
   PS4GLContext a,b;
   assert(ps4glInit(&a,80,60) && ps4glInit(&b,20,10));
@@ -126,6 +139,51 @@ int main(void) {
   assert(glGetError()==GL_OUT_OF_MEMORY);
   glBindBuffer(GL_ARRAY_BUFFER,1000); assert(glIsBuffer(1000));
   ps4glDestroyBuffers(&vertices_ctx);
+  PS4GLContext indexed;
+  assert(ps4glInit(&indexed,80,60)); ps4glMakeCurrent(&indexed);
+  indexed.programs[0]=(PS4GLProgram){.pipeline=(VkPipeline)(uintptr_t)5,
+      .components={2},.vertex_stride=8};
+  indexed.upload_vertices=upload;
+  glUseProgram(1); ps4glBeginPass((VkCommandBuffer)(uintptr_t)1);
+  glBindBuffer(GL_ARRAY_BUFFER,10);
+  float positions[]={99,99, 1,2, 3,4, 5,6};
+  glBufferData(GL_ARRAY_BUFFER,sizeof(positions),positions,GL_STATIC_DRAW);
+  glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,NULL); glEnableVertexAttribArray(0);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,11);
+  glGetIntegerv(GL_ARRAY_BUFFER_BINDING,&value); assert(value==10);
+  glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING,&value); assert(value==11);
+  uint16_t ix16[]={65535,2,3,1};
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(ix16),ix16,GL_STREAM_DRAW);
+  glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_SHORT,(void *)2);
+  assert(!glGetError() && indexed_draws==1 && uploads==1);
+  assert(snapshot_size==38 && snapshot_vertex_bytes==32 && snapshot_type==GL_UNSIGNED_SHORT);
+  assert(!memcmp(snapshot,positions,32) && !memcmp(snapshot+32,ix16+1,6));
+  uint32_t ix32[]={UINT32_MAX,3,1,2};
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(ix32),ix32,GL_DYNAMIC_DRAW);
+  glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,(void *)4);
+  assert(!glGetError() && indexed_draws==2 && uploads==2);
+  assert(snapshot_size==44 && snapshot_type==GL_UNSIGNED_INT && !memcmp(snapshot+32,ix32+1,12));
+  glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,(void *)UINTPTR_MAX);
+  assert(glGetError()==GL_INVALID_OPERATION);
+  glDrawElements(GL_TRIANGLES,4,GL_UNSIGNED_INT,(void *)4);
+  assert(glGetError()==GL_INVALID_OPERATION);
+  glDrawElements(GL_TRIANGLES,-1,GL_UNSIGNED_INT,NULL); assert(glGetError()==GL_INVALID_VALUE);
+  glDrawElements(GL_TRIANGLES,3,GL_FLOAT,NULL); assert(glGetError()==GL_INVALID_ENUM);
+  glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,NULL); assert(glGetError()==GL_INVALID_OPERATION);
+  uint32_t outside=4; glBufferSubData(GL_ELEMENT_ARRAY_BUFFER,4,4,&outside);
+  glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,(void *)4); assert(glGetError()==GL_INVALID_OPERATION);
+  outside=PS4GL_MAX_BUFFER_BYTES/8;
+  glBufferSubData(GL_ELEMENT_ARRAY_BUFFER,4,4,&outside);
+  glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,(void *)4); assert(glGetError()==GL_OUT_OF_MEMORY);
+  glDrawElements(GL_TRIANGLES,0,GL_UNSIGNED_INT,NULL); assert(!glGetError());
+  assert(uploads==2 && indexed_draws==2);
+  GLuint deleted=11; glDeleteBuffers(1,&deleted);
+  glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING,&value); assert(!value);
+  glGetIntegerv(GL_ARRAY_BUFFER_BINDING,&value); assert(value==10);
+  glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_SHORT,NULL); assert(glGetError()==GL_INVALID_OPERATION);
+  assert(uploads==2 && indexed_draws==2);
+  assert(ps4glGetProcAddress("glDrawElements"));
+  ps4glEndPass(); ps4glDestroyBuffers(&indexed);
   ps4glMakeCurrent(NULL);
-  puts("PASS GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks");
+  puts("PASS GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

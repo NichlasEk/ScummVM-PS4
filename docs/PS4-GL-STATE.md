@@ -165,8 +165,9 @@ Current bounds: 32 GL buffer names at once; 16 MiB per CPU buffer and per packed
 draw; 64 retained GPU snapshots and 64 MiB of retained payload bytes per context
 (allocator alignment is additional). Exhaustion produces GL_OUT_OF_MEMORY.
 Source buffer overruns fail with GL_INVALID_OPERATION before recording a draw.
-Only TRIANGLES with first=0 are still supported. GL index buffers/draws, uniforms,
-textures and runtime GLSL compilation remain future work.
+Only TRIANGLES with first=0 are supported by glDrawArrays. Indexed drawing is
+added in the next checkpoint below; uniforms, textures and runtime GLSL
+compilation remain future work.
 
 Reproduce:
 
@@ -195,3 +196,53 @@ not yet validated.
 The earlier GL draw/program and GL clear/readback diagnostics also pass with the
 new frontend (`artifacts/vulkan/glvbo-regression-*.log`); the vertex diagnostic is
 restored afterward. Stable ScummVM's package hash is unchanged.
+
+
+## Indexed GL draw checkpoint (2026-09-26)
+
+`GL_ELEMENT_ARRAY_BUFFER` shares buffer names and storage operations with
+`GL_ARRAY_BUFFER`, with a separate binding and binding query. Deletion clears
+both bindings when they refer to the same object. `glDrawElements` supports
+TRIANGLES, UNSIGNED_SHORT and UNSIGNED_INT, with a byte offset into the bound
+index buffer. Client index pointers, byte indices, other topologies, instancing,
+base-vertex draws, primitive restart and VAOs are not implemented.
+
+Each indexed draw validates the index range, scans the maximum index, then packs
+the vertex prefix through that index. The original indices follow the vertices
+in one immutable Vulkan buffer; the driver binds both ranges and records a real
+`vkCmdDrawIndexed`. Indices are not expanded into a non-indexed draw, preserving
+vertex-index identity. Combined payload is bounded to 16 MiB per draw; the existing
+64-snapshot/64-MiB retained-payload cap and fence-plus-command-reset lifetime
+contract still apply. Sparse large indices can hit the dense-prefix limit.
+
+Reproduce:
+
+```sh
+scripts/build-vulkan-probe.sh --glindex
+xvfb-run -a -s '-screen 0 1280x720x24' \
+  python3 scripts/run-opengnm-probe.py --vulkan --glindex
+```
+
+The diagnostic shuffles vertex storage and puts a poison vertex at index zero.
+It draws the left triangle with 16-bit indices at byte offset 4, replaces the
+index store, updates vertex colors and draws the right triangle with 32-bit
+indices at offset 8. It then overwrites/deletes the buffers before submission.
+This checks both index addressing and retained vertex/index data; the last frame
+is submitted a second time from the same recorded command buffer.
+
+Actual shadPS4 framebuffer validation passes all 3,933 RGB samples (246 left,
+248 right, 3,439 background), all eight frames, buffer-deletion rejection,
+command-buffer resubmission and Vulkan cleanup. ASan/UBSan host tests cover
+independent bindings, both widths, offsets, captured payloads, malformed ranges,
+negative counts, unsupported types, missing/deleted buffers, oversized indices
+and the dense-prefix cap. This is still a diagnostic, not TWP startup or a
+physical PS4 validation. The next frontend slice is uniforms/texture binding;
+runtime GLSL and SDL context integration remain separate gates.
+
+Package: `dist/ScummVM-PS4-GL-Index.pkg`.
+Reports: `artifacts/vulkan/glindex/`.
+SHA-256: `a69dd5cf35cfa932e8ff74be9c84f52d6c8c5074d5e6027c834474077517fca1`.
+The prior GL vertex, procedural draw/program and clear/readback probes also pass
+with this frontend (`artifacts/vulkan/glindex-regression-*.log`). The indexed
+diagnostic binary is restored after regression testing. Stable ScummVM 1.17
+retains SHA-256 `c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.

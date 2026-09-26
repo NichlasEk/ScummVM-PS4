@@ -138,7 +138,7 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
   ctx->program=0; ctx->program_device=VK_NULL_HANDLE; ctx->program_pass=VK_NULL_HANDLE;
 }
 
-static int upload_vertices(PS4GLContext *ctx, const void *data, size_t bytes) {
+static int upload_vertices(PS4GLContext *ctx, const void *data, size_t bytes, size_t vertex_bytes, GLenum index_type) {
   if(!ctx->physical || !ctx->program_device) {
     if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
     return 0;
@@ -148,7 +148,7 @@ static int upload_vertices(PS4GLContext *ctx, const void *data, size_t bytes) {
     return 0;
   }
   PS4GLSnapshot snap={0}; VkDevice device=ctx->program_device;
-  VkBufferCreateInfo ci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_VERTEX_BUFFER_BIT};
+  VkBufferCreateInfo ci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT};
   VkResult result=vkCreateBuffer(device,&ci,NULL,&snap.buffer);
   if(result!=VK_SUCCESS) goto fail_upload;
   VkMemoryRequirements req;
@@ -169,7 +169,9 @@ static int upload_vertices(PS4GLContext *ctx, const void *data, size_t bytes) {
   memcpy(mapped,data,bytes); vkUnmapMemory(device,snap.memory);
   ctx->snapshots[ctx->snapshot_count++]=snap; ctx->snapshot_bytes+=bytes;
   VkDeviceSize offset=0;
-  vkCmdBindVertexBuffers(ctx->command,0,1,&snap.buffer,&offset);
+  if(vertex_bytes) vkCmdBindVertexBuffers(ctx->command,0,1,&snap.buffer,&offset);
+  if(index_type) vkCmdBindIndexBuffer(ctx->command,snap.buffer,vertex_bytes,
+      index_type==GL_UNSIGNED_SHORT ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
   return 1;
 fail_upload:
   if(snap.buffer) vkDestroyBuffer(device,snap.buffer,NULL);

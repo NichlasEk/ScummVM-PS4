@@ -10,7 +10,7 @@ clears are now in [PS4-VULKAN.md](PS4-VULKAN.md). TWP shader translation and
 reflection pass offline, and all five original fragment effects now render in
 the native Vulkan diagnostic with bounded RGB checks. A first bounded
 [GL state/draw frontend](PS4-GL-STATE.md) now exists, with SPIR-V program import
-and streamed float vertex attributes. Runtime GLSL, indexed GL draws, uniforms,
+and streamed float vertex attributes plus 16/32-bit indexed draws. Runtime GLSL, uniforms,
 textures and SDL context integration are still missing. The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 

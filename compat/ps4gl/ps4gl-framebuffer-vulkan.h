@@ -80,7 +80,7 @@ static int create_target(PS4GLContext *c, PS4GLTexture *texture) {
   if(texture->cpu_contents_defined && !c->discard_target_contents) {
     if(!upload_vertices(c,texture->pixels,bytes,0,0)) goto cleanup;
     target_barrier(c,&t,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={(uint32_t)t.width,(uint32_t)t.height,1}};
+    VkBufferImageCopy copy={.bufferOffset=c->snapshots[c->snapshot_count-1].offset,.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={(uint32_t)t.width,(uint32_t)t.height,1}};
     vkCmdCopyBufferToImage(c->command,c->snapshots[c->snapshot_count-1].buffer,t.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
   }
   target_barrier(c,&t,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);

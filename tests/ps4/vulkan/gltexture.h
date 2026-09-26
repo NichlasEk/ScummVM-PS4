@@ -53,9 +53,16 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
   elements(GL_TRIANGLES,3,GL_UNSIGNED_SHORT,(const void *)4);
   PS4GLContext *ctx=ps4glCurrentContext();
   unsigned cached=ctx->texture_snapshot_reuses, uploaded=ctx->texture_snapshot_uploads;
-  /* Repeat exactly the same opaque draw; it must reuse both texture copies. */
-  elements(GL_TRIANGLES,3,GL_UNSIGNED_SHORT,(const void *)4);
-  if(ctx->texture_snapshot_reuses!=cached+2 || ctx->texture_snapshot_uploads!=uploaded) return 2;
+  /* A text/sprite-heavy frame must not exhaust a small bookkeeping table. */
+  for(unsigned repeat=0;repeat<80;++repeat) {
+    elements(GL_TRIANGLES,3,GL_UNSIGNED_SHORT,(const void *)4);
+    GLenum err=glGetError();
+    if(err) {
+      fprintf(report,"FAIL GL many draws: repeat=%u error=%x snapshots=%u bytes=%zu\n",repeat,err,ctx->snapshot_count,ctx->snapshot_bytes);
+      return 2;
+    }
+  }
+  if(ctx->texture_snapshot_reuses!=cached+160 || ctx->texture_snapshot_uploads!=uploaded) return 2;
   glBindBuffer(GL_ARRAY_BUFFER,buffers[0]);
   /* Change one texel after the left draw; switch the second sampler's unit. */
   glActiveTexture(GL_TEXTURE0); unsigned char red[]={128,0,0,255};
@@ -80,6 +87,19 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
   elements(GL_TRIANGLES,3,GL_UNSIGNED_INT,(const void *)8);
   if(ctx->texture_snapshot_reuses!=cached+2) return 2;
   fprintf(report,"PASS GL versioned texture snapshot reuse and mutation\n");
+  if(ctx->snapshot_count<=64 || ctx->upload_page_count!=1 ||
+     ctx->upload_memory_bytes>PS4GL_UPLOAD_PAGE_BYTES || ctx->snapshot_bytes>128u*1024u) return 2;
+  fprintf(report,"PASS GL many draws: snapshots=%u payload=%zu reserved=%zu pages=%u\n",
+    ctx->snapshot_count,ctx->snapshot_bytes,ctx->upload_memory_bytes,ctx->upload_page_count);
+  /* Budget failures must happen before reading client bytes or changing storage. */
+  unsigned before_count=ctx->snapshot_count; size_t before_bytes=ctx->snapshot_bytes;
+  unsigned char one=0;
+  if(ctx->upload_vertices(ctx,&one,PS4GL_UPLOAD_BUDGET+1u,0,0) || glGetError()!=GL_OUT_OF_MEMORY ||
+     ctx->snapshot_count!=before_count || ctx->snapshot_bytes!=before_bytes) return 2;
+  ctx->snapshot_count=PS4GL_MAX_SNAPSHOTS;
+  int accepted=ctx->upload_vertices(ctx,&one,1,0,0); ctx->snapshot_count=before_count;
+  if(accepted || glGetError()!=GL_OUT_OF_MEMORY || ctx->snapshot_bytes!=before_bytes) return 2;
+  fprintf(report,"PASS GL upload budgets reject atomically\n");
   /* Poison/reallocate and delete texture names before the main queue submission. */
   unsigned char poison_texture[16]={0};
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2,2,0,GL_RGBA,GL_UNSIGNED_BYTE,poison_texture);

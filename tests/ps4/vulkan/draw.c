@@ -568,6 +568,8 @@ int main(void) {
     CHECK(vkResetCommandBuffer(cmd, 0));
 #ifdef GLDRAW_PROBE
     ps4glReleaseVertexSnapshots(glctx);
+    if(glctx->snapshots || glctx->snapshot_capacity || glctx->upload_page_count || glctx->upload_memory_bytes) return 2;
+    fprintf(report,"PASS GL upload pages retired after fence\n");
 #ifdef GLFBO_PROBE
     if(glctx->target_bytes!=(frame==7 ? 0 : 256) || glctx->snapshot_count || glctx->texture_bytes!=(frame==7 ? 0 : 256)) return 2;
     fprintf(report,"PASS GL framebuffer storage collected\n");

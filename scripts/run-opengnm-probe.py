@@ -178,7 +178,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
             if args.sdlgl:
                 sdl_log = guest_log.read_text()
-                sdl_markers = ('PASS SDL full target clear skips obsolete upload',
+                sdl_markers = ('PASS GL framebuffer import from upload page offset',
+                               'PASS SDL full target clear skips obsolete upload',
                                'PASS GL undefined target skips initialization copy',
                                'PASS SDL fresh shader link during active recording',
                                'PASS SDL triangle strips arrays uint16 uint32 and retained indices',
@@ -214,7 +215,10 @@ with (reports / 'triangle-emulator.log').open('w') as log:
             if args.glblend and (guest_log.read_text().count('PASS GL blend variants=8 and state snapshots') != 8 or
                                  'PASS GL vertex command buffer resubmission' not in guest_log.read_text()):
                 raise RuntimeError('GL blend state/lifetime checks incomplete')
-            if args.gltexture and (guest_log.read_text().count('PASS GL versioned texture snapshot reuse and mutation') != 8 or
+            if args.gltexture and (guest_log.read_text().count('PASS GL many draws:') != 8 or
+                                   guest_log.read_text().count('PASS GL upload budgets reject atomically') != 8 or
+                                   guest_log.read_text().count('PASS GL upload pages retired after fence') != 8 or
+                                   guest_log.read_text().count('PASS GL versioned texture snapshot reuse and mutation') != 8 or
                                    guest_log.read_text().count('PASS GL texture units updates filtering and deletion') != 8 or
                                    guest_log.read_text().count('PASS GL RGB8 RGB565 uploads and RGB subimage snapshots') != 8):
                 raise RuntimeError('GL texture checks incomplete')

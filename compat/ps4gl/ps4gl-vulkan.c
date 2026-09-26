@@ -1,5 +1,7 @@
 #include "ps4gl.h"
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include "ps4gl-reflect.h"
 #include "ps4gl-texture-vulkan.h"
 static void collect_targets(PS4GLContext *, int);
@@ -211,46 +213,81 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
   ctx->program=0; ctx->program_device=VK_NULL_HANDLE; ctx->program_pass=VK_NULL_HANDLE;
 }
 
+static int allocation_failure(PS4GLContext *ctx, const char *reason) {
+  if(!ctx->allocation_failure) {
+    ctx->allocation_failure=reason;
+    fprintf(stderr,"PS4GL allocation rejected: %s snapshots=%u payload=%zu reserved=%zu pages=%u textures=%zu targets=%zu\n",
+      reason,ctx->snapshot_count,ctx->snapshot_bytes,ctx->upload_memory_bytes,ctx->upload_page_count,ctx->texture_bytes,ctx->target_bytes);
+  }
+  if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
+  return 0;
+}
+static int reserve_snapshot(PS4GLContext *ctx) {
+  if(ctx->snapshot_count==PS4GL_MAX_SNAPSHOTS) return allocation_failure(ctx,"snapshot record limit");
+  if(ctx->snapshot_count<ctx->snapshot_capacity) return 1;
+  unsigned capacity=ctx->snapshot_capacity ? ctx->snapshot_capacity*2 : 64;
+  if(capacity>PS4GL_MAX_SNAPSHOTS) capacity=PS4GL_MAX_SNAPSHOTS;
+  PS4GLSnapshot *records=realloc(ctx->snapshots,capacity*sizeof(*records));
+  if(!records) return allocation_failure(ctx,"snapshot host allocation");
+  ctx->snapshots=records; ctx->snapshot_capacity=capacity;
+  return 1;
+}
+static PS4GLUploadPage *create_upload_page(PS4GLContext *ctx, size_t bytes) {
+  if(ctx->upload_page_count==PS4GL_MAX_UPLOAD_PAGES || bytes>PS4GL_UPLOAD_BUDGET) {
+    allocation_failure(ctx,"upload page limit"); return NULL;
+  }
+  size_t size=bytes<PS4GL_UPLOAD_PAGE_BYTES ? PS4GL_UPLOAD_PAGE_BYTES : (bytes+65535u)&~(size_t)65535u;
+  PS4GLUploadPage page={.size=size}; VkDevice device=ctx->program_device;
+  VkBufferCreateInfo ci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=size,
+    .usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
+  if(vkCreateBuffer(device,&ci,NULL,&page.buffer)!=VK_SUCCESS) goto fail;
+  VkMemoryRequirements req; vkGetBufferMemoryRequirements(device,page.buffer,&req);
+  if(req.size>PS4GL_UPLOAD_BUDGET-ctx->upload_memory_bytes) {
+    allocation_failure(ctx,"upload reserved-byte budget"); goto fail;
+  }
+  VkPhysicalDeviceMemoryProperties properties; vkGetPhysicalDeviceMemoryProperties(ctx->physical,&properties);
+  uint32_t type=UINT32_MAX;
+  for(uint32_t i=0;i<properties.memoryTypeCount;++i) if((req.memoryTypeBits&(1u<<i)) &&
+      (properties.memoryTypes[i].propertyFlags&(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))==
+      (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) { type=i; break; }
+  if(type==UINT32_MAX) goto fail;
+  VkMemoryAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=req.size,.memoryTypeIndex=type};
+  if(vkAllocateMemory(device,&ai,NULL,&page.memory)!=VK_SUCCESS ||
+     vkBindBufferMemory(device,page.buffer,page.memory,0)!=VK_SUCCESS ||
+     vkMapMemory(device,page.memory,0,VK_WHOLE_SIZE,0,&page.mapped)!=VK_SUCCESS) goto fail;
+  page.allocation_bytes=(size_t)req.size;
+  ctx->upload_memory_bytes+=page.allocation_bytes;
+  ctx->upload_pages[ctx->upload_page_count++]=page;
+  return &ctx->upload_pages[ctx->upload_page_count-1];
+fail:
+  if(page.buffer) vkDestroyBuffer(device,page.buffer,NULL);
+  if(page.memory) vkFreeMemory(device,page.memory,NULL);
+  allocation_failure(ctx,"Vulkan upload allocation"); return NULL;
+}
 static int upload_vertices(PS4GLContext *ctx, const void *data, size_t bytes, size_t vertex_bytes, GLenum index_type) {
-  if(!ctx->physical || !ctx->program_device) {
+  if(!ctx->physical || !ctx->program_device || !bytes || !data) {
     if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
     return 0;
   }
-  if(ctx->snapshot_count==PS4GL_MAX_SNAPSHOTS || bytes>64u*1024u*1024u-ctx->snapshot_bytes) {
-    if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
-    return 0;
+  if(bytes>PS4GL_UPLOAD_BUDGET-ctx->snapshot_bytes) return allocation_failure(ctx,"frame payload budget");
+  if(!reserve_snapshot(ctx)) return 0;
+  PS4GLUploadPage *page=NULL; size_t offset=0;
+  for(unsigned i=0;i<ctx->upload_page_count;++i) {
+    size_t aligned=(ctx->upload_pages[i].used+255u)&~(size_t)255u;
+    if(aligned<=ctx->upload_pages[i].size && bytes<=ctx->upload_pages[i].size-aligned) {
+      page=&ctx->upload_pages[i]; offset=aligned; break;
+    }
   }
-  PS4GLSnapshot snap={0}; VkDevice device=ctx->program_device;
-  VkBufferCreateInfo ci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
-  VkResult result=vkCreateBuffer(device,&ci,NULL,&snap.buffer);
-  if(result!=VK_SUCCESS) goto fail_upload;
-  VkMemoryRequirements req;
-  vkGetBufferMemoryRequirements(device,snap.buffer,&req);
-  VkPhysicalDeviceMemoryProperties properties;
-  vkGetPhysicalDeviceMemoryProperties(ctx->physical,&properties);
-  uint32_t type=UINT32_MAX;
-  for(uint32_t i=0;i<properties.memoryTypeCount;++i)
-    if((req.memoryTypeBits&(1u<<i)) && (properties.memoryTypes[i].propertyFlags &
-        (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
-        (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) { type=i; break; }
-  if(type==UINT32_MAX) goto fail_upload;
-  VkMemoryAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=req.size,.memoryTypeIndex=type};
-  if(vkAllocateMemory(device,&ai,NULL,&snap.memory)!=VK_SUCCESS) goto fail_upload;
-  if(vkBindBufferMemory(device,snap.buffer,snap.memory,0)!=VK_SUCCESS) goto fail_upload;
-  void *mapped;
-  if(vkMapMemory(device,snap.memory,0,VK_WHOLE_SIZE,0,&mapped)!=VK_SUCCESS) goto fail_upload;
-  memcpy(mapped,data,bytes); vkUnmapMemory(device,snap.memory);
+  if(!page) { page=create_upload_page(ctx,bytes); if(!page) return 0; }
+  memcpy((unsigned char *)page->mapped+offset,data,bytes);
+  page->used=offset+bytes;
+  PS4GLSnapshot snap={.buffer=page->buffer,.offset=offset};
   ctx->snapshots[ctx->snapshot_count++]=snap; ctx->snapshot_bytes+=bytes;
-  VkDeviceSize offset=0;
-  if(vertex_bytes) vkCmdBindVertexBuffers(ctx->command,0,1,&snap.buffer,&offset);
-  if(index_type) vkCmdBindIndexBuffer(ctx->command,snap.buffer,vertex_bytes,
+  VkDeviceSize native_offset=offset;
+  if(vertex_bytes) vkCmdBindVertexBuffers(ctx->command,0,1,&snap.buffer,&native_offset);
+  if(index_type) vkCmdBindIndexBuffer(ctx->command,snap.buffer,offset+vertex_bytes,
       index_type==GL_UNSIGNED_SHORT ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
   return 1;
-fail_upload:
-  if(snap.buffer) vkDestroyBuffer(device,snap.buffer,NULL);
-  if(snap.memory) vkFreeMemory(device,snap.memory,NULL);
-  if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
-  return 0;
 }
 #include "ps4gl-framebuffer-vulkan.h"
 static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
@@ -267,12 +304,28 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
        !(i && sources[0]==sources[i]))
       texture_bytes+=(size_t)sources[i]->width*sources[i]->height*4;
   }
-  if(texture_bytes+sizeof(p->uniform_data)>64u*1024u*1024u-ctx->snapshot_bytes) {
-    if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
-    return 0;
+  /* Compact each reflected stage separately, preserving std140 offsets and
+   * the native device's 256-byte uniform-buffer offset alignment. */
+  size_t stage_bytes[2]={0,0};
+  for(unsigned i=0;i<p->uniform_count;++i) {
+    const PS4GLUniform *u=&p->uniforms[i];
+    if(u->sampler_binding) continue;
+    for(unsigned st=0;st<2;++st) if(u->offset[st]>=0) {
+      size_t end=(size_t)u->offset[st]+u->width*4;
+      if(u->array_length) end+=(u->array_length-1)*u->array_stride[st];
+      if(end>PS4GL_UNIFORM_BYTES) return allocation_failure(ctx,"uniform reflection bounds");
+      if(end>stage_bytes[st]) stage_bytes[st]=end;
+    }
   }
-  /* Fixed blocks are multiples of 256 bytes, matching the native device's uniform offset alignment. */
-  if(!upload_vertices(ctx,p->uniform_data,sizeof(p->uniform_data),0,0)) return 0;
+  for(unsigned st=0;st<2;++st) stage_bytes[st]=(stage_bytes[st]+255u)&~(size_t)255u;
+  size_t uniform_bytes=stage_bytes[0]+stage_bytes[1];
+  if(!uniform_bytes) uniform_bytes=256; /* Sampler-only descriptor owner. */
+  if(texture_bytes+uniform_bytes>PS4GL_UPLOAD_BUDGET-ctx->snapshot_bytes)
+    return allocation_failure(ctx,"texture/uniform frame budget");
+  unsigned char packed[2*PS4GL_UNIFORM_BYTES]={0};
+  memcpy(packed,p->uniform_data[0],stage_bytes[0]);
+  memcpy(packed+stage_bytes[0],p->uniform_data[1],stage_bytes[1]);
+  if(!upload_vertices(ctx,packed,uniform_bytes,0,0)) return 0;
   PS4GLSnapshot *snap=&ctx->snapshots[ctx->snapshot_count-1];
   VkDescriptorPoolSize sizes[]={{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,2},{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2}};
   VkDescriptorPoolCreateInfo ci={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -283,7 +336,7 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
     .descriptorPool=snap->pool,.descriptorSetCount=1,.pSetLayouts=&p->descriptors};
   if(vkAllocateDescriptorSets(ctx->program_device,&ai,&set)!=VK_SUCCESS) goto fail;
   for(unsigned stage=0;stage<2;++stage) if(p->uniform_stages&(1u<<stage)) {
-    VkDescriptorBufferInfo info={snap->buffer,stage*PS4GL_UNIFORM_BYTES,PS4GL_UNIFORM_BYTES};
+    VkDescriptorBufferInfo info={snap->buffer,snap->offset+(stage ? stage_bytes[0] : 0),stage_bytes[stage]};
     VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=set,
       .dstBinding=stage,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.pBufferInfo=&info};
     vkUpdateDescriptorSets(ctx->program_device,1,&write,0,NULL);
@@ -301,11 +354,9 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
 fail:
   for(unsigned i=0;i<2;++i) destroy_texture_snapshot(ctx->program_device,&snap->textures[i]);
   if(snap->pool) vkDestroyDescriptorPool(ctx->program_device,snap->pool,NULL);
-  vkDestroyBuffer(ctx->program_device,snap->buffer,NULL);
-  vkFreeMemory(ctx->program_device,snap->memory,NULL);
-  *snap=(PS4GLSnapshot){0}; --ctx->snapshot_count; ctx->snapshot_bytes-=sizeof(p->uniform_data);
-  if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
-  return 0;
+  /* The page slice is not reused until frame retirement, even on failure. */
+  *snap=(PS4GLSnapshot){0}; --ctx->snapshot_count;
+  return allocation_failure(ctx,"uniform descriptors or texture snapshot");
 }
 static VkPipeline select_pipeline(PS4GLContext *ctx, PS4GLProgram *p) {
   VkRenderPass pass=ctx->active_pass ? ctx->active_pass : ctx->program_pass;
@@ -343,10 +394,17 @@ void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
   for(unsigned i=0;i<ctx->snapshot_count;++i) {
     if(ctx->snapshots[i].pool) vkDestroyDescriptorPool(ctx->program_device,ctx->snapshots[i].pool,NULL);
     for(unsigned t=0;t<2;++t) destroy_texture_snapshot(ctx->program_device,&ctx->snapshots[i].textures[t]);
-    vkDestroyBuffer(ctx->program_device,ctx->snapshots[i].buffer,NULL);
-    vkFreeMemory(ctx->program_device,ctx->snapshots[i].memory,NULL);
     ctx->snapshots[i]=(PS4GLSnapshot){0};
   }
+  free(ctx->snapshots); ctx->snapshots=NULL; ctx->snapshot_capacity=0;
+  for(unsigned i=0;i<ctx->upload_page_count;++i) {
+    PS4GLUploadPage *p=&ctx->upload_pages[i];
+    if(p->mapped) vkUnmapMemory(ctx->program_device,p->memory);
+    vkDestroyBuffer(ctx->program_device,p->buffer,NULL);
+    vkFreeMemory(ctx->program_device,p->memory,NULL);
+    *p=(PS4GLUploadPage){0};
+  }
+  ctx->upload_page_count=0; ctx->upload_memory_bytes=0; ctx->allocation_failure=NULL;
   ctx->snapshot_count=0; ctx->snapshot_bytes=0;
   ctx->texture_snapshot_uploads=ctx->texture_snapshot_reuses=0;
   collect_targets(ctx,0);

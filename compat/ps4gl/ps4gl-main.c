@@ -32,8 +32,8 @@ static int application_begin(void *data) {
 }
 static int application_present(void *data) {
   PS4GLContext *c=ps4glCurrentContext();
-  if(c && frames.frames<12) fprintf(log_file,"FRAME %u: snapshots=%u bytes=%zu texture_uploads=%u reuses=%u\n",
-    frames.frames,c->snapshot_count,c->snapshot_bytes,c->texture_snapshot_uploads,c->texture_snapshot_reuses);
+  if(c && (frames.frames<12 || frames.frames%120==0 || c->allocation_failure)) fprintf(log_file,"FRAME %u: snapshots=%u bytes=%zu texture_uploads=%u reuses=%u reserved=%zu pages=%u failure=%s\n",
+    frames.frames,c->snapshot_count,c->snapshot_bytes,c->texture_snapshot_uploads,c->texture_snapshot_reuses,c->upload_memory_bytes,c->upload_page_count,c->allocation_failure ? c->allocation_failure : "none");
   int rc=ps4glFramePresent(data);
   if(rc || frames.frames<=3) fprintf(log_file,"%s application present: state=%u failed=%u result=%d frames=%u\n",rc ? "FAIL" : "PASS",frames.state,frames.failed,frames.last_result,frames.frames);
   return rc;

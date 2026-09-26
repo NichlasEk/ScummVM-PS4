@@ -143,7 +143,10 @@ typedef struct PS4GLTextureSnapshot {
 #define GL_FLOAT 0x1406
 #define PS4GL_MAX_BUFFERS 32
 #define PS4GL_MAX_ATTRIBS 8
-#define PS4GL_MAX_SNAPSHOTS 64
+#define PS4GL_MAX_SNAPSHOTS 4096
+#define PS4GL_UPLOAD_PAGE_BYTES (1024u*1024u)
+#define PS4GL_UPLOAD_BUDGET (64u*1024u*1024u)
+#define PS4GL_MAX_UPLOAD_PAGES 64
 #define PS4GL_MAX_BUFFER_BYTES (16u*1024u*1024u)
 typedef struct PS4GLBuffer {
   GLuint name;
@@ -160,10 +163,16 @@ typedef struct PS4GLAttrib {
   GLboolean enabled;
   GLfloat constant[4]; /* Current generic value when the array is disabled. */
 } PS4GLAttrib;
-typedef struct PS4GLSnapshot {
+typedef struct PS4GLUploadPage {
   VkBuffer buffer;
   VkDeviceMemory memory;
+  void *mapped;
+  size_t size,used,allocation_bytes;
+} PS4GLUploadPage;
+typedef struct PS4GLSnapshot {
+  VkBuffer buffer;
   VkDescriptorPool pool;
+  VkDeviceSize offset; /* Slice in a frame-owned upload page. */
   PS4GLTextureSnapshot textures[2];
 } PS4GLSnapshot;
 #define GL_TRIANGLES 0x0004
@@ -279,8 +288,12 @@ typedef struct PS4GLContext {
   uint64_t next_texture_revision;
   unsigned texture_snapshot_uploads, texture_snapshot_reuses;
   VkPhysicalDevice physical;
-  PS4GLSnapshot snapshots[PS4GL_MAX_SNAPSHOTS];
-  unsigned snapshot_count;
+  PS4GLSnapshot *snapshots;
+  unsigned snapshot_count,snapshot_capacity;
+  PS4GLUploadPage upload_pages[PS4GL_MAX_UPLOAD_PAGES];
+  unsigned upload_page_count;
+  size_t upload_memory_bytes;
+  const char *allocation_failure;
   size_t snapshot_bytes;
   /* Immutable payload: packed vertices followed by indices; index type 0 for arrays. */
   VkPipeline (*select_pipeline)(struct PS4GLContext *, PS4GLProgram *);

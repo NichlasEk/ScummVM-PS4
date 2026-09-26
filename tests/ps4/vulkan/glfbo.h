@@ -140,6 +140,24 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   }
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(0,656,64,64);
   glUseProgram(programs[1]); draw_gl_surface();
+  /* Import client pixels from a nonzero arena offset, preserving the same
+   * magenta oracle in this corner. Zero-area clear opens the target but leaves
+   * all imported texels untouched. */
+  GLuint offset_texture,offset_fbo;
+  unsigned char magenta[8*8*4];
+  for(unsigned i=0;i<sizeof(magenta);i+=4) { magenta[i]=255; magenta[i+1]=0; magenta[i+2]=255; magenta[i+3]=255; }
+  glGenTextures(1,&offset_texture); glBindTexture(GL_TEXTURE_2D,offset_texture);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,8,8,0,GL_RGBA,GL_UNSIGNED_BYTE,magenta);
+  glGenFramebuffers(1,&offset_fbo); glBindFramebuffer(GL_FRAMEBUFFER,offset_fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,offset_texture,0);
+  glEnable(GL_SCISSOR_TEST); glScissor(0,0,0,0); glClear(GL_COLOR_BUFFER_BIT); glDisable(GL_SCISSOR_TEST);
+  PS4GLContext *offset_ctx=ps4glCurrentContext();
+  if(!offset_ctx->snapshots[offset_ctx->snapshot_count-1].offset) return 2;
+  glBindFramebuffer(GL_FRAMEBUFFER,0); draw_gl_surface();
+  glDeleteTextures(1,&offset_texture); glDeleteFramebuffers(1,&offset_fbo);
+  fprintf(report,"PASS GL framebuffer import from upload page offset\n");
   if(frame==7) { glDeleteFramebuffers(1,&persistent_framebuffer); glDeleteTextures(1,&persistent_texture); }
   if(glGetError()!=GL_NO_ERROR) return 2;
 #ifdef SDLGL_PROBE

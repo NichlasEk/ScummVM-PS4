@@ -15,7 +15,9 @@ shader blocks with immutable per-draw snapshots. Bounded uniform arrays (includi
 fragment sampler2D parameters now work as well. GL blending now supports separate RGB/alpha factors and equations with
 retained pipeline variants. Managed color-only GL framebuffers now support GPU
 render-to-texture sampling, target switches and retained storage across frames.
-Runtime GLSL, remaining GL state and SDL context integration are still missing. The alternatives below preserve the earlier
+An explicit [runtime Vulkan GLSL compiler](PS4-GLSL.md) now works in the native
+diagnostic. Legacy GL shader objects/source translation, remaining GL state and
+SDL context integration are still missing. The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 
 ## Capability probe checkpoint

@@ -1,0 +1,71 @@
+diff --git a/SPIRV/SpvBuilder.h b/SPIRV/SpvBuilder.h
+index 08057f4..8e1426c 100644
+--- a/SPIRV/SpvBuilder.h
++++ b/SPIRV/SpvBuilder.h
+@@ -47,6 +47,7 @@
+ #ifndef SpvBuilder_H
+ #define SpvBuilder_H
+ 
++#include <cstdint>
+ #include "Logger.h"
+ #include "spirv.hpp"
+ #include "spvIR.h"
+diff --git a/glslang/CInterface/glslang_c_interface.cpp b/glslang/CInterface/glslang_c_interface.cpp
+index cea965d..bf00618 100644
+--- a/glslang/CInterface/glslang_c_interface.cpp
++++ b/glslang/CInterface/glslang_c_interface.cpp
+@@ -143,7 +143,15 @@ private:
+ 
+ GLSLANG_EXPORT int glslang_initialize_process() { return static_cast<int>(glslang::InitializeProcess()); }
+ 
+-GLSLANG_EXPORT void glslang_finalize_process() { glslang::FinalizeProcess(); }
++#ifdef __ORBIS__
++namespace glslang { void ReleaseDefaultThreadPoolAllocator(); }
++#endif
++GLSLANG_EXPORT void glslang_finalize_process() {
++    glslang::FinalizeProcess();
++#ifdef __ORBIS__
++    glslang::ReleaseDefaultThreadPoolAllocator();
++#endif
++}
+ 
+ static EShLanguage c_shader_stage(glslang_stage_t stage)
+ {
+diff --git a/glslang/MachineIndependent/PoolAlloc.cpp b/glslang/MachineIndependent/PoolAlloc.cpp
+index 5d7173c..4f508b7 100644
+--- a/glslang/MachineIndependent/PoolAlloc.cpp
++++ b/glslang/MachineIndependent/PoolAlloc.cpp
+@@ -38,14 +38,33 @@
+ namespace glslang {
+ 
+ namespace {
++#ifdef __ORBIS__
++// PS4 frontend owns one compiler thread; OpenOrbis lacks TLS destructors.
++TPoolAllocator* threadPoolAllocator = nullptr;
++TPoolAllocator* defaultAllocator = nullptr;
++#else
+ thread_local TPoolAllocator* threadPoolAllocator = nullptr;
++#endif
+ 
+ TPoolAllocator* GetDefaultThreadPoolAllocator()
+ {
++#ifdef __ORBIS__
++    if (!defaultAllocator) defaultAllocator = new TPoolAllocator;
++    return defaultAllocator;
++#else
+     thread_local TPoolAllocator defaultAllocator;
+     return &defaultAllocator;
++#endif
+ }
+ } // anonymous namespace
++#ifdef __ORBIS__
++void ReleaseDefaultThreadPoolAllocator()
++{
++    threadPoolAllocator = nullptr;
++    delete defaultAllocator;
++    defaultAllocator = nullptr;
++}
++#endif
+ 
+ // Return the thread-specific current pool.
+ TPoolAllocator& GetThreadPoolAllocator()

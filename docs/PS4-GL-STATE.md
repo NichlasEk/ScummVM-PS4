@@ -612,3 +612,10 @@ Final package SHA-256:
 The final oracle passes 2,553 pixel checks including the persistent texture.
 Stable ScummVM 1.17 remains unchanged at
 `c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.
+
+
+## Runtime compiler continuation
+
+The next standalone milestone is documented in [PS4-GLSL.md](PS4-GLSL.md):
+explicit Vulkan GLSL text now compiles on target and drives this framebuffer
+probe. Legacy GL shader objects/linking and SDL integration are still pending.

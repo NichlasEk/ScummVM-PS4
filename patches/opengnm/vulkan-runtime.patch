@@ -1,8 +1,17 @@
 diff --git a/Makefile.orbis b/Makefile.orbis
-index e104443..d31c329 100644
+index e104443..37b93e6 100644
 --- a/Makefile.orbis
 +++ b/Makefile.orbis
-@@ -105,10 +105,7 @@ LIB_STATIC := lib$(LIB_NAME).a
+@@ -69,6 +69,8 @@ CXXFLAGS := $(ARCHFLAGS) $(INCDIRS) $(DEFINES) -std=c++17 -O2 -g \
+             -Wall -Wextra -Wno-unused-function \
+             -Wno-macro-redefined -Wno-typedef-redefinition
+
++CFLAGS += $(EXTRA_CFLAGS)
++
+ # === Sources ===
+ # libpsbc is linked from the orbis-targeted archive above so shader modules
+ # compile SPIR-V to PS4 GCN binaries at runtime.
+@@ -105,10 +107,7 @@ LIB_STATIC := lib$(LIB_NAME).a
  # === Test program (PS4 .self) ===
  TEST_SRC := tests/test_triangle_ps4.c
  TEST_OBJ := $(TEST_SRC:.c=.orbis.o)
@@ -14,7 +23,16 @@ index e104443..d31c329 100644
  TEST_ELF := test_triangle_ps4.elf
  TEST_OELF := test_triangle_ps4.oelf
  TEST_SELF := test_triangle_ps4.self
-@@ -182,6 +179,8 @@ pkg: $(PKG_CONTENT_ID).pkg
+@@ -148,7 +147,7 @@ APP_LDFLAGS := -m elf_x86_64 --script $(OO_PS4_TOOLCHAIN)/link.x --eh-frame-hdr
+ # 477 Mesa objects with unresolved SIMD/format dependencies.
+ # Use deferred assignment (=) so OPENGNM_LIB (defined below) is resolved at use time.
+ APP_LIBS = --whole-archive $(LIB_STATIC) $(OPENGNM_LIB) --no-whole-archive \
+-           $(PSBC_LIB) $(PS4_LIBS)
++           $(PSBC_LIB) $(EXTRA_LIBS) $(PS4_LIBS)
+
+ # === Link flags ===
+ # Link against opengnm (orbis build), libpsbc, and OpenOrbis firmware stubs
+@@ -182,6 +181,8 @@ pkg: $(PKG_CONTENT_ID).pkg
  	@echo "  CC $<"
  	@$(CC) $(CFLAGS) -c $< -o $@
  
@@ -23,7 +41,7 @@ index e104443..d31c329 100644
  # === Static library ===
  $(LIB_STATIC): $(VK_PS4_OBJS)
  	@echo "  AR $@"
-@@ -200,11 +199,11 @@ $(TEST_OBJ): $(TEST_SRC)
+@@ -200,11 +201,11 @@ $(TEST_OBJ): $(TEST_SRC)
  	@$(CC) $(CFLAGS) -c $< -o $@
  
  # Link the test ELF against libvulkan_ps4.a (static) + opengnm + libpsbc + PS4 libs
@@ -37,7 +55,7 @@ index e104443..d31c329 100644
  	    $(OO_PS4_TOOLCHAIN)/lib/crtn.o
  
  # Create the OELF (orbis ELF) from the plain ELF
-@@ -271,7 +270,7 @@ $(PKG_CONTENT_ID).pkg: pkg.gp4
+@@ -271,7 +272,7 @@ $(PKG_CONTENT_ID).pkg: pkg.gp4
  # === Clean ===
  clean:
  	rm -f $(VK_PS4_OBJS) $(LIB_SHARED) $(LIB_STATIC) \

@@ -20,6 +20,7 @@ variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
 variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
+variants.add_argument('--glsl', action='store_true')
 variants.add_argument('--glfbo', action='store_true')
 variants.add_argument('--glblend', action='store_true')
 variants.add_argument('--gltexture', action='store_true')
@@ -33,6 +34,8 @@ variants.add_argument('--twp', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
+if args.glsl:
+    args.glfbo = True
 if args.glblend or args.glfbo:
     args.gldraw = True
 if args.gltexture:
@@ -73,7 +76,7 @@ if mode != 'triangle':
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
     if args.gldraw:
-        reports /= 'glfbo' if args.glfbo else 'glblend' if args.glblend else 'gltexture' if args.gltexture else 'glarray' if args.glarray else 'gluniform' if args.gluniform else 'glindex' if args.glindex else 'glvbo' if args.glvbo else 'gldraw'
+        reports /= 'glsl' if args.glsl else 'glfbo' if args.glfbo else 'glblend' if args.glblend else 'gltexture' if args.gltexture else 'glarray' if args.glarray else 'gluniform' if args.gluniform else 'glindex' if args.glindex else 'glvbo' if args.glvbo else 'gldraw'
     elif args.twp:
         reports /= 'twp'
     elif args.composite:
@@ -161,6 +164,10 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.glsl and (guest_log.read_text().count('GLSL runtime program=') != 2 or
+                              guest_log.read_text().count('PASS GLSL runtime rejection ') != 3 or
+                              'PASS GLSL runtime compiler finalized' not in guest_log.read_text()):
+                raise RuntimeError('Runtime GLSL compiler checks incomplete')
             if args.glfbo and (guest_log.read_text().count('PASS GL framebuffer targets orientation lifetime and rejected feedback') != 8 or
                                 guest_log.read_text().count('PASS GL framebuffer storage collected') != 8 or
                                 'PASS GL vertex command buffer resubmission' not in guest_log.read_text()):

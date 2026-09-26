@@ -3,10 +3,11 @@
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 case "${1:-}" in
- ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo) ;;
- *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo]' >&2; exit 2 ;;
+ ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo|--glsl) ;;
+ *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo|--glsl]' >&2; exit 2 ;;
 esac
 variant=${1:-}
+if [[ "$variant" == --glsl ]]; then set -- --glfbo; fi
 if [[ "$variant" == --glstate ]]; then
  set -- --rectclear
 fi
@@ -49,7 +50,7 @@ if [[ "$variant" == --glstate ]]; then
  sed -i '1i#define GLSTATE_PROBE 1' "$probe/draw.c"
  cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$probe/"
 fi
-if [[ "$variant" == --glfbo || "$variant" == --glblend || "$variant" == --gldraw || "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
+if [[ "$variant" == --glsl || "$variant" == --glfbo || "$variant" == --glblend || "$variant" == --gldraw || "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLDRAW_PROBE 1' "$probe/draw.c"
  cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$root/compat/ps4gl/ps4gl-framebuffer-vulkan.h" "$probe/"
 fi
@@ -77,7 +78,7 @@ if [[ "$variant" == --glblend ]]; then
  sed -i '1i#define GLBLEND_PROBE 1' "$probe/draw.c"
  cp "$root/tests/ps4/vulkan/glblend.h" "$probe/"
 fi
-if [[ "$variant" == --glfbo ]]; then
+if [[ "$variant" == --glfbo || "$variant" == --glsl ]]; then
  sed -i '1i#define GLFBO_PROBE 1' "$probe/draw.c"
  cp "$root/tests/ps4/vulkan/glfbo.h" "$probe/"
 fi
@@ -86,7 +87,16 @@ driver="$root/.tools/opengnm-stack/vulkan-ps4"
 if [[ -f "$driver/sce_sys/param.sfo" ]]; then
  mv "$driver/sce_sys/param.sfo" "$driver/sce_sys/param.sfo.previous"
 fi
-make -C "$driver" -f Makefile.orbis -j"${JOBS:-8}" pkg \
+extra_make=()
+if [[ "$variant" == --glsl ]]; then
+ "$root/scripts/build-ps4-glslang.sh"
+ sed -i '1i#define GLSL_PROBE 1' "$probe/draw.c"
+ cp "$root/compat/ps4gl/ps4gl-glsl.c" "$root/compat/ps4gl/ps4gl-glsl.h" "$root/tests/ps4/vulkan/glsl.h" "$probe/"
+ python3 "$root/scripts/prepare-glsl-probe.py" "$probe"
+ extra_make+=("EXTRA_CFLAGS=-I$root/.tools/glslang" "EXTRA_LIBS=$root/build/glslang-orbis/libglslang-ps4.a"
+  "PKG_FILES=eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx glslang-LICENSE.txt")
+fi
+make -C "$driver" -f Makefile.orbis "${extra_make[@]}" -j"${JOBS:-8}" pkg \
  TEST_SRC="$probe/draw.c" TEST_OBJ="$probe/draw.o" \
  PKG_TITLE_ID=SCVM00009 PKG_CONTENT_ID="$content" PKG_TITLE='ScummVM Vulkan Probe' \
  SAMPLE_DIR="$OO_PS4_TOOLCHAIN/samples/SDL2" > "$reports/package.log" 2>&1
@@ -140,9 +150,10 @@ fi
 if [[ "$variant" == --glblend ]]; then
  package=ScummVM-PS4-GL-Blend.pkg
 fi
-if [[ "$variant" == --glfbo ]]; then
+if [[ "$variant" == --glfbo || "$variant" == --glsl ]]; then
  package=ScummVM-PS4-GL-Framebuffer.pkg
 fi
+if [[ "$variant" == --glsl ]]; then package=ScummVM-PS4-GLSL.pkg; fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"
 sha256sum "$package" > "$package.sha256"

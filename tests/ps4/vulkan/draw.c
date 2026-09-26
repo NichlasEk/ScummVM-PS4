@@ -35,6 +35,9 @@ static FILE *report;
 #ifdef GLDRAW_PROBE
 #include "ps4gl.c"
 #include "ps4gl-vulkan.c"
+#ifdef GLSL_PROBE
+#include "glsl.h"
+#endif
 #ifdef GLFBO_PROBE
 #include "glfbo.h"
 #elif defined(GLBLEND_PROBE)
@@ -320,8 +323,14 @@ int main(void) {
   PS4GLContext gl;
   if(!ps4glInit(&gl,1280,720)) return 2;
   ps4glMakeCurrent(&gl);
+#ifdef GLSL_PROBE
+  if(!ps4glGLSLInitialize() || reject_glsl()) return 2;
+  GLuint glprograms[]={compile_glsl_program(device,pass,glsl_vertex,glsl_color),
+    compile_glsl_program(device,pass,glsl_vertex,glsl_texture)};
+#else
   GLuint glprograms[]={ps4glCreateProgramSPIRV(device,pass,background_vert,sizeof(background_vert),background_frag,sizeof(background_frag)),
     ps4glCreateProgramSPIRV(device,pass,triangle_vert,sizeof(triangle_vert),triangle_frag,sizeof(triangle_frag))};
+#endif
   ps4glConfigureVertexDevice(physical,device);
   if(!glprograms[0] || !glprograms[1] || glGetError()!=GL_NO_ERROR) return 2;
   uint32_t rejected_spv[]={0x07230203,0x00010000,0,10,0,(4u<<16)|59,1,2,0};
@@ -518,6 +527,10 @@ int main(void) {
   ps4glDestroyFramebuffers(&gl); ps4glDestroyTextures(&gl); ps4glDestroyBuffers(&gl);
   ps4glDestroyPrograms(device,&gl);
   ps4glMakeCurrent(NULL);
+#ifdef GLSL_PROBE
+  ps4glGLSLFinalize();
+  fprintf(report,"PASS GLSL runtime compiler finalized\n");
+#endif
 #endif
   vkDestroyFence(device, fence, NULL);
   vkDestroyCommandPool(device, pool, NULL);

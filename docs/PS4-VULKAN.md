@@ -432,3 +432,61 @@ Those GPU tests exercise existing diagnostic shaders with the corrected compiler
 they do not render the six TWP effects yet. The prior runnable diagnostic is
 restored after the tests. No package is replaced by this offline milestone;
 stable ScummVM retains the SHA-256 recorded above. Physical hardware is untested.
+
+## Native original TWP effect draws (2026-09-26)
+
+The `--twp` diagnostic now feeds the six translated original SPIR-V modules to
+`vkCreateShaderModule` and compiles five pipelines inside the PS4 executable.
+It draws the original texture, grayscale, ghost, sepia and fade fragment bodies
+using TWP's vertex shader and interleaved attributes. Two independent 2x2 RGBA
+textures, ten descriptor sets and two rows of different uniform/UV values test
+resource selection. Uniform payloads are packed by the reflected member offsets,
+array strides and types from the previous checkpoint, not C struct assumptions.
+
+The screenshot oracle independently computes RGB for each tile, including
+vertex tint, grayscale luminance, ghost shadow/midtone/highlight weights, sepia
+flicker and both fade branches (ordinary second texture versus sepia second
+texture), followed by sRGB output encoding. All 90 samples pass within 2/255.
+The eight-frame draw loop and destruction of pipelines, buffers, descriptors,
+textures, device and instance complete successfully in shadPS4.
+
+The first native attempt exposed missing `S_OR_SAVEEXEC_B64` support in the
+pinned shadPS4 recompiler. The vendored ACO WQM transition lowering now emits
+`S_MOV_B64` to save EXEC followed by `S_OR_B64` for GFX7/GFX8, but only when the
+saved mask and source mask do not overlap. EXEC, saved-mask and SCC semantics
+are preserved; overlapping registers retain the original instruction. Other
+OR_SAVEEXEC emission paths are unchanged. This is a compiler compatibility
+change for the emulator, not a claim that PS4 hardware lacks that instruction.
+No shader effect math is changed or replaced with constants.
+
+Reproduce:
+
+```sh
+scripts/build-vulkan-probe.sh --twp
+xvfb-run -a -s '-screen 0 1280x720x24' python3 scripts/run-opengnm-probe.py --vulkan --twp
+```
+
+Package: `dist/ScummVM-PS4-Vulkan-TWP.pkg` (SCVM00009, separate from ScummVM).
+Reports: `artifacts/vulkan/twp/`; translated shader provenance and binaries:
+`artifacts/vulkan/twp-shaders/`. The generated fixture lives in
+`build/vulkan-probe/`, including the reflected uniform byte payload.
+
+Coverage remains deliberately bounded: the oracle checks RGB, not target alpha;
+UVs are constant per tile; wobble/movement are zero; sepia scratches are disabled
+by RandomValue[0]=0.8; both sampled UVs lie in the vignette's full-intensity area.
+This validates actual shader execution with selected nonzero effect parameters,
+not every animated/noise/derivative branch. It does not implement GL context,
+GL state tracking, runtime GLSL translation or TWP startup. Physical PS4 remains
+untested. Next integration gate is the GL-facing context/state adapter, with
+broader animated-effect validation still needed alongside it.
+
+TWP diagnostic package SHA-256:
+`7d93d4509e55807e3a7a37febb051b8bd1b7ab65513e273b5ab02362731cfb4f`.
+A complete `build-vulkan-probe.sh --twp` rebuild and subsequent GPU rerun pass
+with the persisted compiler patch. Stable ScummVM's package hash is unchanged.
+All six existing native Vulkan regressions (basic, upload, composition, sprites,
+readback and rectangle clear), plus the host compiler acceptance/rejection and
+TWP reflection checks, pass with the WQM change. Regression logs are
+`artifacts/vulkan/twp-regression-*.log` and
+`artifacts/vulkan/twp-effect-compiler-regression.log`. The TWP diagnostic
+executable is restored after those serial tests.

@@ -20,6 +20,7 @@ variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
 variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
+variants.add_argument('--twp', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
@@ -29,7 +30,7 @@ if args.readback:
     args.composite = True
 if args.upload or args.sprites:
     args.resources = True
-if (args.resources or args.composite) and not args.vulkan:
+if (args.resources or args.composite or args.twp) and not args.vulkan:
     parser.error('Vulkan probe variants require --vulkan')
 mode = 'vulkan' if args.vulkan else 'textures' if args.textures else 'uniforms' if args.uniforms else 'triangle'
 title_id = 'SCVM00009' if args.vulkan else 'SCVM00008' if args.textures else 'SCVM00007' if args.uniforms else 'SCVM00006'
@@ -48,7 +49,9 @@ if mode != 'triangle':
     reports /= mode
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
-    if args.composite:
+    if args.twp:
+        reports /= 'twp'
+    elif args.composite:
         reports /= 'rectclear' if args.rectclear else 'readback' if args.readback else 'composite'
     elif args.resources:
         reports /= 'sprites' if args.sprites else 'upload' if args.upload else 'resources'
@@ -116,7 +119,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 screenshot = max(candidates, key=lambda f: f.stat().st_mtime)
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
                 shutil.copy2(guest_log, reports / 'triangle-result.txt')
-                check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-vulkan-composite.py' if args.composite else 'tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
+                check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-vulkan-twp.py' if args.twp else 'tests/ps4/check-vulkan-composite.py' if args.composite else 'tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
                                         str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else []), *(['--upload'] if args.upload else []), *(['--rectclear'] if args.rectclear else [])],
                                        capture_output=True, text=True)
                 (reports / 'pixel-test.log').write_text(check.stdout + check.stderr)

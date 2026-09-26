@@ -29,6 +29,9 @@ static FILE *report;
 #ifdef COMPOSITE_PROBE
 #include "composite.h"
 #endif
+#ifdef TWP_PROBE
+#include "twp.h"
+#endif
 int main(void) {
   report = fopen("/data/scummvm-vulkan-probe.log", "w");
   if (!report)
@@ -118,8 +121,12 @@ int main(void) {
   if (create_offscreen(device, physical))
     return 2;
 #endif
-  VkShaderModule modules[4];
-#ifdef COMPOSITE_PROBE
+  VkShaderModule modules[6];
+#ifdef TWP_PROBE
+  const uint32_t *codes[]={twp_vsrc,twp_fragmentSrc,twp_bwShader,twp_ghostShader,twp_sepiaShader,twp_fadeShader};
+  const size_t sizes[]={sizeof(twp_vsrc),sizeof(twp_fragmentSrc),sizeof(twp_bwShader),
+    sizeof(twp_ghostShader),sizeof(twp_sepiaShader),sizeof(twp_fadeShader)};
+#elif defined(COMPOSITE_PROBE)
   const uint32_t *codes[] = {background_vert, composite_base_frag,
                              composite_overlay_frag, composite_sample_frag};
   const size_t sizes[] = {sizeof(background_vert), sizeof(composite_base_frag),
@@ -131,7 +138,7 @@ int main(void) {
   const size_t sizes[] = {sizeof(background_vert), sizeof(background_frag),
                           sizeof(triangle_vert), sizeof(triangle_frag)};
 #endif
-  for (unsigned i = 0; i < 4; i++) {
+  for (unsigned i = 0; i < sizeof(codes)/sizeof(codes[0]); i++) {
     VkShaderModuleCreateInfo mci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = sizes[i],
@@ -145,6 +152,9 @@ int main(void) {
   if (create_resources(device, physical))
     return 2;
 #endif
+#ifdef TWP_PROBE
+  if (create_twp(device, physical)) return 2;
+#endif
   VkPipelineLayout layout;
   VkPipelineLayoutCreateInfo lci = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
@@ -156,15 +166,22 @@ int main(void) {
   lci.setLayoutCount = 1;
   lci.pSetLayouts = &off_set_layout;
 #endif
+#ifdef TWP_PROBE
+  lci.setLayoutCount=1; lci.pSetLayouts=&twp_set_layout;
+#endif
   CHECK(vkCreatePipelineLayout(device, &lci, NULL, &layout));
-#ifdef COMPOSITE_PROBE
+#ifdef TWP_PROBE
+  const unsigned pipeline_count = 5;
+#elif defined(COMPOSITE_PROBE)
   const unsigned pipeline_count = 4;
 #else
   const unsigned pipeline_count = 2;
 #endif
-  VkPipeline pipelines[4];
+  VkPipeline pipelines[5];
   for (unsigned i = 0; i < pipeline_count; i++) {
-#ifdef COMPOSITE_PROBE
+#ifdef TWP_PROBE
+    unsigned vs_index=0, fs_index=i+1;
+#elif defined(COMPOSITE_PROBE)
     unsigned vs_index = 0, fs_index = i == 0 ? 1 : (i < 3 ? 2 : 3);
 #else
     unsigned vs_index = i * 2, fs_index = i * 2 + 1;
@@ -180,13 +197,19 @@ int main(void) {
          .pName = "main"}};
     VkPipelineVertexInputStateCreateInfo vi = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-#ifdef SPRITES_PROBE
+#if defined(SPRITES_PROBE) || defined(TWP_PROBE)
     VkVertexInputBindingDescription vb = {0, 32, VK_VERTEX_INPUT_RATE_VERTEX};
     VkVertexInputAttributeDescription attrs[] = {
       {0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
       {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 8},
       {2, 0, VK_FORMAT_R32G32_SFLOAT, 24}};
-    if (i == 1) {
+    if (
+#ifdef TWP_PROBE
+        1
+#else
+        i == 1
+#endif
+    ) {
       vi.vertexBindingDescriptionCount = 1; vi.pVertexBindingDescriptions = &vb;
       vi.vertexAttributeDescriptionCount = 3; vi.pVertexAttributeDescriptions = attrs;
     }
@@ -324,6 +347,9 @@ int main(void) {
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
                             &off_set, 0, NULL);
 #endif
+#ifdef TWP_PROBE
+    twp_barrier(cmd, frame);
+#endif
     VkRenderPassBeginInfo rpbegin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = pass,
@@ -334,6 +360,9 @@ int main(void) {
     VkRect2D scissor = {{0, 0}, {1280, 720}};
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
+#ifdef TWP_PROBE
+    draw_twp(cmd, layout, pipelines);
+#else
 #ifdef COMPOSITE_PROBE
     for (unsigned i = 3; i < 4; i++) {
 #else
@@ -353,6 +382,7 @@ int main(void) {
 #endif
       vkCmdDraw(cmd, 3, 1, 0, 0);
     }
+#endif
     vkCmdEndRenderPass(cmd);
     CHECK(vkEndCommandBuffer(cmd));
 #ifdef UPLOAD_PROBE
@@ -404,7 +434,7 @@ int main(void) {
   }
   for (unsigned i = 0; i < pipeline_count; ++i)
     vkDestroyPipeline(device, pipelines[i], NULL);
-  for (unsigned i = 0; i < 4; i++)
+  for (unsigned i = 0; i < sizeof(codes)/sizeof(codes[0]); i++)
     vkDestroyShaderModule(device, modules[i], NULL);
   vkDestroyPipelineLayout(device, layout, NULL);
   vkDestroyRenderPass(device, pass, NULL);
@@ -419,6 +449,9 @@ int main(void) {
 #endif
 #ifdef COMPOSITE_PROBE
   destroy_offscreen(device);
+#endif
+#ifdef TWP_PROBE
+  destroy_twp(device);
 #endif
   vkDestroyDevice(device, NULL);
   vkDestroyInstance(instance, NULL);

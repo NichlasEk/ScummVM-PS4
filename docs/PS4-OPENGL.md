@@ -7,7 +7,9 @@ The probe is implemented; a working PS4 graphics port is not yet validated.
 or Piglet. The native GNM baseline is in [PS4-OPENGNM.md](PS4-OPENGNM.md); validated Vulkan
 texture uploads, offscreen composition, indexed vertices, readback and partial
 clears are now in [PS4-VULKAN.md](PS4-VULKAN.md). TWP shader translation and
-reflection also pass offline; running those effects on the native GPU is next. The alternatives below preserve the earlier
+reflection pass offline, and all five original fragment effects now render in
+the native Vulkan diagnostic with bounded RGB checks. The GL-facing context and
+state adapter are still missing. The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 
 ## Capability probe checkpoint

@@ -440,6 +440,32 @@ index 000e7e1..4a378a9 100644
  /* === API === */
  
  /*
+diff --git a/src/amd/compiler/aco_insert_exec_mask.cpp b/src/amd/compiler/aco_insert_exec_mask.cpp
+index 3de3ba7..dd1e870 100644
+--- a/src/amd/compiler/aco_insert_exec_mask.cpp
++++ b/src/amd/compiler/aco_insert_exec_mask.cpp
+@@ -782,8 +782,19 @@ disable_wqm_block(Program* program, Block* block)
+       }
+ 
+       if (local_exact_and) {
+-         bld.sop1(Builder::s_or_saveexec, Definition(exact_mask.physReg(), bld.lm),
+-                  Definition(scc, s1), Definition(exec, bld.lm), wqm_mask, Operand(exec, bld.lm));
++         /* The pinned shadPS4 recompiler does not implement GCN OR_SAVEEXEC.
++          * Separate the save and OR when the saved mask cannot alias the source.
++          * This preserves EXEC and SCC semantics on hardware as well. */
++         if (program->gfx_level <= GFX8 &&
++             !regs_intersect(exact_mask, wqm_mask)) {
++            bld.sop1(Builder::s_mov, Definition(exact_mask.physReg(), bld.lm),
++                     Operand(exec, bld.lm));
++            bld.sop2(Builder::s_or, Definition(exec, bld.lm), Definition(scc, s1),
++                     wqm_mask, Operand(exec, bld.lm));
++         } else {
++            bld.sop1(Builder::s_or_saveexec, Definition(exact_mask.physReg(), bld.lm),
++                     Definition(scc, s1), Definition(exec, bld.lm), wqm_mask, Operand(exec, bld.lm));
++         }
+ 
+          if (local_wqm_mov && local_wqm_mov_idx < local_exact_and_idx) {
+             instructions.erase(instructions.begin() + local_exact_and_idx);
 diff --git a/src/amd/vulkan/nir/radv_nir_lower_descriptors.c b/src/amd/vulkan/nir/radv_nir_lower_descriptors.c
 index 2412880..863ea10 100644
 --- a/src/amd/vulkan/nir/radv_nir_lower_descriptors.c

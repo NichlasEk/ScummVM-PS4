@@ -3,8 +3,8 @@
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 case "${1:-}" in
- ""|--resources|--upload|--composite|--sprites|--readback|--rectclear) ;;
- *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear]' >&2; exit 2 ;;
+ ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp) ;;
+ *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp]' >&2; exit 2 ;;
 esac
 export OO_PS4_TOOLCHAIN=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
 "$root/scripts/build-opengnm-probe.sh"
@@ -34,7 +34,13 @@ fi
 if [[ "${1:-}" == --rectclear ]]; then
  sed -i '1i#define RECTCLEAR_PROBE 1' "$probe/draw.c"
 fi
-python3 "$root/scripts/prepare-vulkan-shaders.py" "$probe" "$@"
+if [[ "${1:-}" == --twp ]]; then
+ sed -i '1i#define TWP_PROBE 1' "$probe/draw.c"
+ cp "$root/tests/ps4/vulkan/twp.h" "$probe/twp.h"
+ python3 "$root/scripts/prepare-twp-probe.py" "$probe" > "$reports/twp-prepare.log" 2>&1
+else
+ python3 "$root/scripts/prepare-vulkan-shaders.py" "$probe" "$@"
+fi
 content=IV0000-SCVM00009_00-SCUMMVMVULKAN001
 driver="$root/.tools/opengnm-stack/vulkan-ps4"
 if [[ -f "$driver/sce_sys/param.sfo" ]]; then
@@ -66,6 +72,9 @@ if [[ "${1:-}" == --readback || "${1:-}" == --rectclear ]]; then
 fi
 if [[ "${1:-}" == --rectclear ]]; then
  package=ScummVM-PS4-Vulkan-RectClear.pkg
+fi
+if [[ "${1:-}" == --twp ]]; then
+ package=ScummVM-PS4-Vulkan-TWP.pkg
 fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"

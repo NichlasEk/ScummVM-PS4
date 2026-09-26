@@ -2,6 +2,7 @@
 #include <string.h>
 #include "ps4gl-reflect.h"
 #include "ps4gl-texture-vulkan.h"
+static void collect_targets(PS4GLContext *, int);
 /* Explicit bootstrap import. The caller supplies a compatible color render pass.
  * Program code is compiled to GCN by the native Vulkan driver, not by the host. */
 /* Structural/interface guard only; callers still supply validated Vulkan SPIR-V.
@@ -186,6 +187,9 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
     ctx->programs[i]=(PS4GLProgram){0};
   }
   ps4glReleaseVertexSnapshots(ctx);
+  collect_targets(ctx,1);
+  if(ctx->offscreen_pass) vkDestroyRenderPass(device,ctx->offscreen_pass,NULL);
+  ctx->offscreen_pass=VK_NULL_HANDLE; ctx->prepare_target=NULL; ctx->end_target=NULL;
   ctx->physical=VK_NULL_HANDLE; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL; ctx->select_pipeline=NULL;
   ctx->program=0; ctx->program_device=VK_NULL_HANDLE; ctx->program_pass=VK_NULL_HANDLE;
 }
@@ -200,7 +204,7 @@ static int upload_vertices(PS4GLContext *ctx, const void *data, size_t bytes, si
     return 0;
   }
   PS4GLSnapshot snap={0}; VkDevice device=ctx->program_device;
-  VkBufferCreateInfo ci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
+  VkBufferCreateInfo ci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
   VkResult result=vkCreateBuffer(device,&ci,NULL,&snap.buffer);
   if(result!=VK_SUCCESS) goto fail_upload;
   VkMemoryRequirements req;
@@ -231,12 +235,13 @@ fail_upload:
   if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
   return 0;
 }
+#include "ps4gl-framebuffer-vulkan.h"
 static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
   size_t texture_bytes=0;
   const PS4GLTexture *sources[2]={0};
   for(unsigned i=0;i<2;++i) if(p->sampler_mask&(1u<<i)) {
     sources[i]=ps4glTextureAtUnit(ctx,(unsigned)p->sampler_units[i]);
-    if(!sources[i] || !sources[i]->pixels || sources[i]->width<=0 || sources[i]->height<=0 ||
+    if((sources[i] && ctx->framebuffer && sources[i]->name==ps4glFramebufferTexture(ctx)) || !sources[i] || !sources[i]->pixels || sources[i]->width<=0 || sources[i]->height<=0 ||
         (sources[i]->min_filter!=GL_NEAREST && sources[i]->min_filter!=GL_LINEAR)) {
       if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
       return 0;
@@ -284,20 +289,22 @@ fail:
   return 0;
 }
 static VkPipeline select_pipeline(PS4GLContext *ctx, PS4GLProgram *p) {
+  VkRenderPass pass=ctx->active_pass ? ctx->active_pass : ctx->program_pass;
+  if(!ctx->blend.enabled && pass==ctx->program_pass) return p->pipeline;
   for(unsigned i=0;i<p->variant_count;++i)
-    if(!memcmp(&p->variants[i].state,&ctx->blend,sizeof(ctx->blend))) return p->variants[i].pipeline;
+    if(p->variants[i].pass==pass && !memcmp(&p->variants[i].state,&ctx->blend,sizeof(ctx->blend))) return p->variants[i].pipeline;
   if(p->variant_count==PS4GL_BLEND_VARIANTS) {
     if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
     return VK_NULL_HANDLE;
   }
   VkPipeline pipeline=VK_NULL_HANDLE;
-  VkResult result=create_pipeline(ctx->program_device,ctx->program_pass,p,p->modules,&ctx->blend,&pipeline);
+  VkResult result=create_pipeline(ctx->program_device,pass,p,p->modules,&ctx->blend,&pipeline);
   if(result!=VK_SUCCESS) {
     if(pipeline) vkDestroyPipeline(ctx->program_device,pipeline,NULL);
     if(!ctx->error) ctx->error=result==VK_ERROR_OUT_OF_HOST_MEMORY || result==VK_ERROR_OUT_OF_DEVICE_MEMORY ? GL_OUT_OF_MEMORY : GL_INVALID_OPERATION;
     return VK_NULL_HANDLE;
   }
-  p->variants[p->variant_count++]=(PS4GLBlendVariant){ctx->blend,pipeline};
+  p->variants[p->variant_count++]=(PS4GLBlendVariant){ctx->blend,pipeline,pass};
   return pipeline;
 }
 void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
@@ -308,6 +315,7 @@ void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
     if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
     return;
   }
+  ctx->prepare_target=prepare_render_target; ctx->end_target=end_render_target;
   ctx->physical=physical; ctx->program_device=device; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms; ctx->select_pipeline=select_pipeline;
 }
 void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
@@ -321,4 +329,5 @@ void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
     ctx->snapshots[i]=(PS4GLSnapshot){0};
   }
   ctx->snapshot_count=0; ctx->snapshot_bytes=0;
+  collect_targets(ctx,0);
 }

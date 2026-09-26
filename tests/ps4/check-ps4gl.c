@@ -313,6 +313,41 @@ int main(void) {
   unsigned clears_before=calls; glClear(GL_COLOR_BUFFER_BIT); assert(calls==clears_before+1 && !glGetError());
   ps4glEndPass(); glDisable(GL_BLEND); assert(!glIsEnabled(GL_BLEND));
   assert(ps4glGetProcAddress("glBlendFuncSeparate") && ps4glGetProcAddress("glBlendEquationSeparate"));
+  PS4GLContext fboctx;
+  assert(ps4glInit(&fboctx,80,60)); ps4glMakeCurrent(&fboctx);
+  GLuint fbo, ft;
+  glGenFramebuffers(1,&fbo); assert(!glIsFramebuffer(fbo));
+  glBindFramebuffer(GL_FRAMEBUFFER,fbo); assert(glIsFramebuffer(fbo));
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING,&value); assert(value==(GLint)fbo);
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
+  glGenTextures(1,&ft);
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,ft,0);
+  assert(glGetError()==GL_INVALID_OPERATION); /* reserved texture is not created */
+  glBindTexture(GL_TEXTURE_2D,ft);
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,ft,0);
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,8,6,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
+  glDeleteTextures(1,&ft); assert(glGetError()==GL_INVALID_OPERATION && glIsTexture(ft));
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,ft,1);
+  assert(glGetError()==GL_INVALID_VALUE && ps4glFramebufferTexture(&fboctx)==ft);
+  glBindFramebuffer(0xdead,0); assert(glGetError()==GL_INVALID_ENUM && fboctx.framebuffer==fbo);
+  ps4glBeginPass((VkCommandBuffer)(uintptr_t)1);
+  glClear(GL_COLOR_BUFFER_BIT); assert(glGetError()==GL_INVALID_OPERATION); /* borrowed pass cannot switch */
+  ps4glEndPass();
+  glBindFramebuffer(GL_FRAMEBUFFER,0);
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
+  glDeleteTextures(1,&ft); assert(glGetError()==GL_INVALID_OPERATION); /* attachment in unbound FBO */
+  glDeleteFramebuffers(1,&fbo); glDeleteTextures(1,&ft);
+  assert(!glIsFramebuffer(fbo) && !glIsTexture(ft));
+  GLuint full[PS4GL_MAX_FRAMEBUFFERS]; glGenFramebuffers(PS4GL_MAX_FRAMEBUFFERS,full);
+  GLuint unchanged=123; glGenFramebuffers(1,&unchanged);
+  assert(glGetError()==GL_OUT_OF_MEMORY && unchanged==123);
+  glDeleteFramebuffers(PS4GL_MAX_FRAMEBUFFERS,full);
+  glBindFramebuffer(GL_FRAMEBUFFER,345); glDeleteFramebuffers(1,(GLuint[]){345});
+  assert(!fboctx.framebuffer && !glGetError());
+  ps4glDestroyFramebuffers(&fboctx); ps4glDestroyTextures(&fboctx);
+  assert(ps4glGetProcAddress("glBindFramebuffer") && ps4glGetProcAddress("glCheckFramebufferStatus"));
   ps4glMakeCurrent(NULL);
-  puts("PASS blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
+  puts("PASS framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

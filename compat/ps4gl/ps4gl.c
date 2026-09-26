@@ -10,6 +10,7 @@ int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   if (!ctx || width <= 0 || height <= 0) return 0;
   memset(ctx, 0, sizeof(*ctx));
   ctx->blend=(PS4GLBlend){.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};
+  ctx->next_framebuffer=1;
   ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=4;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->attribs[i].size=4;
   ctx->width=width; ctx->height=height;
@@ -22,9 +23,21 @@ void ps4glMakeCurrent(PS4GLContext *ctx) { current=ctx; }
 void ps4glBeginPass(VkCommandBuffer command) {
   if (!current) return;
   if (!command || current->command) { error(GL_INVALID_OPERATION); return; }
-  current->command=command;
+  current->command=command; current->active_pass=current->program_pass;
 }
-void ps4glEndPass(void) { if (current) current->command=VK_NULL_HANDLE; }
+void ps4glEndPass(void) {
+  if(!current) return;
+  if(current->managed_frame) { error(GL_INVALID_OPERATION); return; }
+  current->command=VK_NULL_HANDLE;
+}
+static int prepare_target(void) {
+  if(current->prepare_target) return current->prepare_target(current);
+  if(current->framebuffer) { error(GL_INVALID_OPERATION); return 0; }
+  return 1;
+}
+static void end_target(void) {
+  if(current && current->managed_frame && current->end_target) current->end_target(current);
+}
 GLenum glGetError(void) {
   if (!current) return GL_INVALID_OPERATION;
   GLenum result=current->error; current->error=GL_NO_ERROR; return result;
@@ -80,6 +93,7 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   if (!values) { error(GL_INVALID_VALUE); return; }
   if (pname==GL_SCISSOR_BOX || pname==GL_VIEWPORT)
     memcpy(values,pname==GL_SCISSOR_BOX ? current->scissor : current->viewport,4*sizeof(GLint));
+  else if(pname==GL_FRAMEBUFFER_BINDING) *values=current->framebuffer;
   else if(pname==GL_ACTIVE_TEXTURE) *values=GL_TEXTURE0+current->active_texture;
   else if(pname==GL_TEXTURE_BINDING_2D) *values=current->texture_bindings[current->active_texture];
   else if(pname==GL_UNPACK_ALIGNMENT) *values=current->unpack_alignment;
@@ -111,6 +125,7 @@ void glClear(GLbitfield mask) {
    * bits rather than rejecting a valid request for an absent buffer. */
   if (!(mask & GL_COLOR_BUFFER_BIT)) return;
   if (!current->command) { error(GL_INVALID_OPERATION); return; }
+  if(!prepare_target()) return;
   int64_t x0=0,y0=0,x1=current->width,y1=current->height;
   if (current->scissor_enabled) {
     x0=current->scissor[0]; y0=current->scissor[1];
@@ -124,7 +139,7 @@ void glClear(GLbitfield mask) {
   VkClearAttachment clear={.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,.colorAttachment=0};
   memcpy(clear.clearValue.color.float32,current->clear,sizeof(current->clear));
   /* GL is bottom-left; the native attachment's rows are top-left. */
-  VkClearRect rect={{{(int32_t)x0,(int32_t)(current->height-y1)},
+  VkClearRect rect={{{(int32_t)x0,(int32_t)(current->active_target ? y0 : current->height-y1)},
                     {(uint32_t)(x1-x0),(uint32_t)(y1-y0)}},0,1};
   vkCmdClearAttachments(current->command,1,&clear,1,&rect);
 }
@@ -368,6 +383,7 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   if (count<0 || first<0) { error(GL_INVALID_VALUE); return; }
   PS4GLProgram *p=program(current->program);
   if (!p || !current->command || first) { error(GL_INVALID_OPERATION); return; }
+  if(!prepare_target()) return;
   GLint *v=current->viewport;
   /* The initial native subset deliberately rejects out-of-target viewports. */
   if(v[0]<0 || v[1]<0 || (int64_t)v[0]+v[2]>current->width ||
@@ -384,10 +400,12 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   }
   if(x1<=x0 || y1<=y0) return;
   VkViewport vp={.x=v[0],.y=current->height-v[1]-v[3],.width=v[2],.height=v[3],.maxDepth=1};
-  VkRect2D sc={{(int32_t)x0,(int32_t)(current->height-y1)},
+  /* Offscreen row zero is GL texture v=0: signed viewport cancels imported VS Y flip. */
+  if(current->active_target) { vp.y=v[1]+v[3]; vp.height=-v[3]; }
+  VkRect2D sc={{(int32_t)x0,(int32_t)(current->active_target ? y0 : current->height-y1)},
               {(uint32_t)(x1-x0),(uint32_t)(y1-y0)}};
   VkPipeline pipeline=p->pipeline;
-  if(current->blend.enabled) {
+  if(current->blend.enabled || current->managed_frame) {
     if(!current->select_pipeline) { error(GL_INVALID_OPERATION); return; }
     pipeline=current->select_pipeline(current,p); if(!pipeline) return;
   }
@@ -454,6 +472,8 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glEnable); PROC(glDisable); PROC(glIsEnabled); PROC(glGetError);
   PROC(glGetIntegerv); PROC(glGetFloatv);
   PROC(glUseProgram); PROC(glDeleteProgram); PROC(glIsProgram);
+  PROC(glGenFramebuffers); PROC(glBindFramebuffer); PROC(glDeleteFramebuffers); PROC(glIsFramebuffer);
+  PROC(glFramebufferTexture2D); PROC(glCheckFramebufferStatus);
   PROC(glGenTextures); PROC(glBindTexture); PROC(glDeleteTextures); PROC(glIsTexture);
   PROC(glActiveTexture); PROC(glPixelStorei); PROC(glTexParameteri); PROC(glTexImage2D); PROC(glTexSubImage2D);
   PROC(glUniform1i); PROC(glUniform1iv);
@@ -516,6 +536,9 @@ GLboolean glIsTexture(GLuint name) {
 void glDeleteTextures(GLsizei count, const GLuint *names) {
   if(!current) return;
   if(count<0 || (count && !names)) { error(GL_INVALID_VALUE); return; }
+  /* Attached deletion is outside the current subset; reject atomically. */
+  for(GLsizei n=0;n<count;++n) if(names[n])
+    for(unsigned f=0;f<PS4GL_MAX_FRAMEBUFFERS;++f) if(current->framebuffers[f].texture==names[n]) { error(GL_INVALID_OPERATION); return; }
   for(GLsizei n=0;n<count;++n) {
     PS4GLTexture *t=texture_name(current,names[n]); if(!t) continue;
     for(unsigned u=0;u<PS4GL_TEXTURE_UNITS;++u) if(current->texture_bindings[u]==names[n]) current->texture_bindings[u]=0;
@@ -564,6 +587,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width, GLs
   if(bytes && !copy) { error(GL_OUT_OF_MEMORY); return; }
   size_t row=(size_t)width*4, stride=(row+current->unpack_alignment-1)&~(size_t)(current->unpack_alignment-1);
   if(pixels && row) for(GLsizei y=0;y<height;++y) memcpy(copy+(size_t)y*row,(const unsigned char *)pixels+(size_t)y*stride,row);
+  end_target(); t->render_target=0;
   free(t->pixels); t->pixels=copy; t->width=width; t->height=height; current->texture_bytes+=bytes; current->texture_bytes-=old;
 }
 void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width, GLsizei height,
@@ -573,7 +597,82 @@ void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width
   if(format!=GL_RGBA || type!=GL_UNSIGNED_BYTE) { error(GL_INVALID_ENUM); return; }
   if(level || x<0 || y<0 || width<0 || height<0 || x>t->width || y>t->height || width>t->width-x || height>t->height-y) { error(GL_INVALID_VALUE); return; }
   if(!width || !height) return;
+  if(t->render_target) { error(GL_INVALID_OPERATION); return; }
   if(!pixels || !t->pixels) { error(GL_INVALID_OPERATION); return; }
   size_t row=(size_t)width*4, stride=(row+current->unpack_alignment-1)&~(size_t)(current->unpack_alignment-1);
   for(GLsizei r=0;r<height;++r) memcpy(t->pixels+((size_t)(y+r)*t->width+x)*4,(const unsigned char *)pixels+(size_t)r*stride,row);
+}
+
+static PS4GLFramebuffer *framebuffer_name(PS4GLContext *ctx, GLuint name) {
+  if(!name) return NULL;
+  for(unsigned i=0;i<PS4GL_MAX_FRAMEBUFFERS;++i) if(ctx->framebuffers[i].name==name) return &ctx->framebuffers[i];
+  return NULL;
+}
+GLuint ps4glFramebufferTexture(const PS4GLContext *ctx) {
+  if(!ctx || !ctx->framebuffer) return 0;
+  for(unsigned i=0;i<PS4GL_MAX_FRAMEBUFFERS;++i) if(ctx->framebuffers[i].name==ctx->framebuffer) return ctx->framebuffers[i].texture;
+  return 0;
+}
+void glGenFramebuffers(GLsizei count, GLuint *names) {
+  if(!current) return;
+  if(count<0 || (count && !names)) { error(GL_INVALID_VALUE); return; }
+  unsigned available=0;
+  for(unsigned i=0;i<PS4GL_MAX_FRAMEBUFFERS;++i) available+=!current->framebuffers[i].name;
+  if((unsigned)count>available) { error(GL_OUT_OF_MEMORY); return; }
+  for(GLsizei n=0;n<count;++n) {
+    while(current->next_framebuffer && framebuffer_name(current,current->next_framebuffer)) ++current->next_framebuffer;
+    if(!current->next_framebuffer) { error(GL_OUT_OF_MEMORY); return; }
+    for(unsigned i=0;i<PS4GL_MAX_FRAMEBUFFERS;++i) if(!current->framebuffers[i].name) {
+      names[n]=current->framebuffers[i].name=current->next_framebuffer++; break;
+    }
+  }
+}
+void glBindFramebuffer(GLenum target, GLuint name) {
+  if(!current) return;
+  if(target!=GL_FRAMEBUFFER) { error(GL_INVALID_ENUM); return; }
+  if(name) {
+    PS4GLFramebuffer *f=framebuffer_name(current,name);
+    if(!f) for(unsigned i=0;i<PS4GL_MAX_FRAMEBUFFERS;++i) if(!current->framebuffers[i].name) {
+      f=&current->framebuffers[i]; f->name=name; break;
+    }
+    if(!f) { error(GL_OUT_OF_MEMORY); return; }
+    f->created=1;
+  }
+  if(current->framebuffer!=name) end_target();
+  current->framebuffer=name;
+}
+GLboolean glIsFramebuffer(GLuint name) {
+  PS4GLFramebuffer *f=current ? framebuffer_name(current,name) : NULL; return f && f->created;
+}
+void glDeleteFramebuffers(GLsizei count, const GLuint *names) {
+  if(!current) return;
+  if(count<0 || (count && !names)) { error(GL_INVALID_VALUE); return; }
+  for(GLsizei n=0;n<count;++n) {
+    PS4GLFramebuffer *f=framebuffer_name(current,names[n]); if(!f) continue;
+    if(current->framebuffer==names[n]) { end_target(); current->framebuffer=0; }
+    *f=(PS4GLFramebuffer){0};
+  }
+}
+void glFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) {
+  if(!current) return;
+  if(target!=GL_FRAMEBUFFER || attachment!=GL_COLOR_ATTACHMENT0 || textarget!=GL_TEXTURE_2D) { error(GL_INVALID_ENUM); return; }
+  if(level) { error(GL_INVALID_VALUE); return; }
+  PS4GLFramebuffer *f=framebuffer_name(current,current->framebuffer);
+  if(!f || (texture && !glIsTexture(texture))) { error(GL_INVALID_OPERATION); return; }
+  if(f->texture!=texture) end_target();
+  f->texture=texture;
+}
+GLenum glCheckFramebufferStatus(GLenum target) {
+  if(!current) return 0;
+  if(target!=GL_FRAMEBUFFER) { error(GL_INVALID_ENUM); return 0; }
+  if(!current->framebuffer) return GL_FRAMEBUFFER_COMPLETE;
+  GLuint name=ps4glFramebufferTexture(current);
+  if(!name) return GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
+  PS4GLTexture *t=texture_name(current,name);
+  return t && t->pixels && t->width>0 && t->height>0 ? GL_FRAMEBUFFER_COMPLETE : GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+}
+void ps4glDestroyFramebuffers(PS4GLContext *ctx) {
+  if(!ctx) return;
+  if(ctx->command) { if(!ctx->error) ctx->error=GL_INVALID_OPERATION; return; }
+  memset(ctx->framebuffers,0,sizeof(ctx->framebuffers)); ctx->framebuffer=0;
 }

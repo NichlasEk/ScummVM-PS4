@@ -520,3 +520,95 @@ The texture, array, indexed-draw and clear/readback GPU probes also pass with
 the refactored pipeline creation/lifetime (`artifacts/vulkan/glblend-regression-*.log`).
 The final blend diagnostic remains in the isolated probe build; stable ScummVM
 1.17 retains its prior package hash.
+
+## Managed framebuffer checkpoint (2026-09-26)
+
+The GL frontend now renders into a level-zero RGBA8 texture and samples that
+GPU image in later draws. `--glfbo` exercises this through native Vulkan/OpenGNM
+in shadPS4. This is still a diagnostic, not a completed ScummVM GL backend or a
+physical-console result.
+
+The bounded API includes glGen/Bind/Delete/IsFramebuffer,
+glFramebufferTexture2D, glCheckFramebufferStatus and FRAMEBUFFER_BINDING.
+There is one COLOR_ATTACHMENT0, with 16 framebuffer names and 32 retained
+native target allocations. Texture dimensions retain the existing 1024 limit;
+native target logical payload has a separate 64 MiB budget. Memory alignment,
+command storage and other native allocations are additional costs. No depth,
+stencil, renderbuffers, multiple attachments, multisampling, mip attachments,
+read/draw framebuffer split or blit API is claimed.
+
+The owner begins Vulkan command recording outside any render pass, calls
+`ps4glBeginFrame(command, pass, framebuffer, width, height)`, records GL work,
+and finishes with `ps4glEndFrame()`. The supplied default pass must be the
+imported programs' pass, LOAD/STORE, with GENERAL initial/final layouts. The
+owner transitions the default image before/after the managed frame and owns
+submission and fences. The frontend starts passes lazily and ends them on target
+changes. Offscreen passes LOAD/STORE; attachment writes and sampling have
+explicit barriers. The older borrowed `ps4glBeginPass` interface remains valid
+for default-target drawing, but rejects drawing to a nonzero GL framebuffer.
+Viewport/scissor values remain GL state across bindings; the current attachment
+supplies the bounds. A viewport extending outside those bounds is still rejected.
+
+Texture row zero must mean GL v=0 for both CPU uploads and GPU rendering.
+Offscreen draws therefore use a negative viewport height and direct GL scissor
+rows; the default framebuffer keeps the existing top-left conversion. This
+requires the native backend's signed-height viewport support, already present
+in OpenGNM. Imported vertex shaders still use the existing GL-to-Vulkan clip-Y
+conversion. The asymmetric screenshot oracle checks this combination, including
+scissored clears; no shader-specific UV workaround or CPU readback is used.
+
+Initial CPU pixels are staged into the target before its first render pass.
+The driver upload path now accepts color targets using their actual GNM surface
+layout and checks both logical image bounds and bound-memory ranges. Subsequent
+sampling borrows the native image view and snapshots sampler/descriptor state.
+Pipeline variants are keyed by render pass as well as blend state, so an UNORM
+offscreen attachment does not reuse an incompatible SRGB default pipeline.
+The 16-variant cap now covers these combined keys; the disabled default-target
+pipeline remains the uncached base pipeline.
+
+Full glTexImage2D redefinition creates a new storage generation on demand;
+previously recorded references keep the old image alive. Partial CPU updates
+of a GPU-rendered texture return INVALID_OPERATION because its CPU shadow is
+stale. Sampling the currently attached output is rejected as feedback. Texture
+deletion while attached to any framebuffer is also explicitly rejected in this
+subset: detach it or delete the framebuffer first. This is a temporary API
+restriction, not full GL deletion semantics. Incomplete targets reject clear
+and draw recording with INVALID_FRAMEBUFFER_OPERATION.
+
+The owner may release snapshots only after **all referencing commands have
+completed and been reset/discarded**, just as for vertices and uniforms. That
+release now collects only target storage no longer owned by a live texture;
+live GPU contents survive across frames. Program teardown destroys remaining
+native targets and the offscreen pass. Final context teardown should destroy
+framebuffer names and textures too. Single-threaded, ordered queue use remains
+part of the frontend contract.
+
+Reproduce:
+
+```sh
+scripts/build-vulkan-probe.sh --glfbo
+xvfb-run -a -s '-screen 0 1280x720x24' \
+  python3 scripts/run-opengnm-probe.py --vulkan --glfbo
+```
+
+The probe renders and samples three versions of a texture, preserves pixels
+when returning to an attachment, blends into an UNORM target, rejects feedback
+and incomplete attachments, and deletes/redefines objects before submission.
+A small magenta image stays GPU-resident across frames and snapshot collection.
+The final command buffer is resubmitted before releasing its storage. The runner
+requires eight error-free frames, eight storage-collection checks, resubmission,
+pixel validation and lifecycle cleanup. Host ASan/UBSan tests also cover FBO
+names, completeness, attachment validation, deletion restrictions and exhaustion.
+Regression evidence for blend, CPU textures, clear/readback and staging uploads
+is in `artifacts/vulkan/glfbo-regression-*.log`.
+
+Package: `dist/ScummVM-PS4-GL-Framebuffer.pkg`.
+Reports: `artifacts/vulkan/glfbo/`.
+Next integration gate: runtime GLSL and SDL context/procedure wiring, with the
+remaining GL state required by the real engine audited against this subset.
+
+Final package SHA-256:
+`b410e137f2593543240953139c550c9ab7a86647bf73b158dacc02677f8d10d3`.
+The final oracle passes 2,553 pixel checks including the persistent texture.
+Stable ScummVM 1.17 remains unchanged at
+`c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.

@@ -31,6 +31,8 @@ for name in names:
         filename = 'glvbo_vert' if name.endswith('_vert') else 'gltexture_frag'
     if name.startswith('triangle') and '--glblend' in sys.argv:
         filename = 'background_vert' if name.endswith('_vert') else 'glblend_frag'
+    if '--glfbo' in sys.argv:
+        filename = 'glfbo_vert' if name.endswith('_vert') else 'glblend_frag' if name.startswith('background') else 'glfbo_frag'
     subprocess.run(['glslc', '-fshader-stage=' + stage, str(source / (filename + '.glsl')),
                     '-o', str(binary)], check=True)
     subprocess.run(['spirv-val', str(binary)], check=True)

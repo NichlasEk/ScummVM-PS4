@@ -110,7 +110,7 @@ index 7634d6b..0339d62 100644
  void *vk_ps4_alloc(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
  void *vk_ps4_alloc_zero(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
 diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
-index 168c1f3..a29e061 100644
+index 168c1f3..ef92185 100644
 --- a/src/vk_ps4_command.c
 +++ b/src/vk_ps4_command.c
 @@ -11,6 +11,7 @@
@@ -572,7 +572,7 @@ index 168c1f3..a29e061 100644
  
      if (!buf->memory || !buf->memory->gnm_mem.mapped) return;
  
-@@ -2046,117 +2121,183 @@ vk_ps4_CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, V
+@@ -2046,117 +2121,187 @@ vk_ps4_CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, V
      if (!src || !dst || !src->memory || !dst->memory) return;
      if (!src->memory->gnm_mem.mapped || !dst->memory->gnm_mem.mapped) return;
  
@@ -583,7 +583,7 @@ index 168c1f3..a29e061 100644
 +    /* Bounded RGBA8 2D upload. Address calculation uses the same surface
 +     * description as the texture descriptor; the GPU reads the staging buffer
 +     * at execution time. Never read/upload its contents while recording. */
-+    if (dst->is_render_target || dst->is_depth_target ||
++    if (dst->is_depth_target ||
 +        dst->create_info.imageType != VK_IMAGE_TYPE_2D ||
 +        dst->create_info.mipLevels != 1 || dst->create_info.arrayLayers != 1 ||
 +        dst->create_info.samples != VK_SAMPLE_COUNT_1_BIT ||
@@ -594,9 +594,13 @@ index 168c1f3..a29e061 100644
 +        (dstImageLayout != VK_IMAGE_LAYOUT_GENERAL && dstImageLayout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)) {
 +        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
 +    }
-+    GpaTextureInfo info = sceGnmTexBuildInfo(&dst->gnm_texture);
++    GpaTextureInfo info = dst->is_render_target ? sceGnmRtBuildInfo(&dst->gnm_rt) : sceGnmTexBuildInfo(&dst->gnm_texture);
 +    GpaTilingParams tp = {0};
 +    GpaSurfaceContext context = {0};
++    if (dst->memory_offset > dst->memory->size || src->memory_offset > src->memory->size ||
++        src->create_info.size > src->memory->size - src->memory_offset) {
++        cmd->resource_error = VK_ERROR_INITIALIZATION_FAILED; return;
++    }
 +    uint64_t available = dst->memory->size - dst->memory_offset;
 +    if (sceGpaTpInit(&tp, &info, 0, 0) != GPA_ERR_OK ||
 +        sceGpaInitSurfaceContext(&context, available, &tp) != GPA_ERR_OK) {
@@ -652,8 +656,8 @@ index 168c1f3..a29e061 100644
 +            r->imageSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
 +            r->imageSubresource.mipLevel || r->imageSubresource.baseArrayLayer ||
 +            r->imageSubresource.layerCount != 1 || (r->bufferOffset & 3) ||
-+            (uint64_t)r->imageOffset.x + width > info.width ||
-+            (uint64_t)r->imageOffset.y + height > info.height ||
++            (uint64_t)r->imageOffset.x + width > dst->create_info.extent.width ||
++            (uint64_t)r->imageOffset.y + height > dst->create_info.extent.height ||
 +            (r->bufferRowLength && r->bufferRowLength < width) ||
 +            (r->bufferImageHeight && r->bufferImageHeight < height)) {
 +            cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
@@ -849,7 +853,7 @@ index 168c1f3..a29e061 100644
  /* === Render pass commands === */
  
  /* Check if attachment `att_idx` is used by subpass `subpass` (via any
-@@ -2516,19 +2657,40 @@ vk_ps4_CmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags sr
+@@ -2516,19 +2661,40 @@ vk_ps4_CmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags sr
      if (!commandBuffer) return;
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
  
@@ -900,7 +904,7 @@ index 168c1f3..a29e061 100644
  
      (void)srcStageMask;
      (void)dstStageMask;
-@@ -2609,117 +2771,55 @@ VKAPI_ATTR void VKAPI_CALL
+@@ -2609,117 +2775,55 @@ VKAPI_ATTR void VKAPI_CALL
  vk_ps4_CmdClearColorImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout,
                            const VkClearColorValue *pColor, uint32_t rangeCount,
                            const VkImageSubresourceRange *pRanges) {
@@ -1065,7 +1069,7 @@ index 168c1f3..a29e061 100644
  }
  
  VKAPI_ATTR void VKAPI_CALL
-@@ -2773,122 +2873,101 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
+@@ -2773,122 +2877,101 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
      (void)imageLayout;
  }
  

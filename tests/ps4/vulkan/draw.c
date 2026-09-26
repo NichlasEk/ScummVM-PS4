@@ -35,7 +35,9 @@ static FILE *report;
 #ifdef GLDRAW_PROBE
 #include "ps4gl.c"
 #include "ps4gl-vulkan.c"
-#ifdef GLBLEND_PROBE
+#ifdef GLFBO_PROBE
+#include "glfbo.h"
+#elif defined(GLBLEND_PROBE)
 #include "glblend.h"
 #elif defined(GLTEXTURE_PROBE)
 #include "gltexture.h"
@@ -100,6 +102,10 @@ int main(void) {
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
+#ifdef GLFBO_PROBE
+  attachment.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;
+  attachment.initialLayout=attachment.finalLayout=VK_IMAGE_LAYOUT_GENERAL;
+#endif
   VkAttachmentReference reference = {
       .attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
   VkSubpassDescription subpass = {.pipelineBindPoint =
@@ -326,7 +332,9 @@ int main(void) {
        glGetError()!=GL_INVALID_OPERATION) return 2;
     fprintf(report,"PASS GL program rejection %u\n",test);
   }
+#ifndef GLFBO_PROBE
   void (*draw_gl)(GLenum,GLint,GLsizei)=(void (*)(GLenum,GLint,GLsizei))ps4glGetProcAddress("glDrawArrays");
+#endif
 #endif
   VkCommandPool pool;
   VkCommandPoolCreateInfo cpci = {
@@ -387,6 +395,14 @@ int main(void) {
 #ifdef TWP_PROBE
     twp_barrier(cmd, frame);
 #endif
+#ifdef GLFBO_PROBE
+    frame_image_barrier(cmd,images[index],0);
+    ps4glBeginFrame(cmd,pass,fb[index],1280,720);
+    if(draw_gl_framebuffer(glprograms,frame)) return 2;
+    ps4glEndFrame();
+    fprintf(report,"GL draw frame %u error=%u\n",frame,glGetError());
+    frame_image_barrier(cmd,images[index],1);
+#else
     VkRenderPassBeginInfo rpbegin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = pass,
@@ -439,6 +455,7 @@ int main(void) {
     }
 #endif
     vkCmdEndRenderPass(cmd);
+#endif
     CHECK(vkEndCommandBuffer(cmd));
 #ifdef UPLOAD_PROBE
     /* Write after recording: a CPU copy during recording would sample zeros. */
@@ -449,7 +466,7 @@ int main(void) {
                            .pCommandBuffers = &cmd};
     CHECK(vkQueueSubmit(queue, 1, &submit, fence));
     CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ULL));
-#if defined(GLVBO_PROBE) || defined(GLBLEND_PROBE)
+#if defined(GLVBO_PROBE) || defined(GLBLEND_PROBE) || defined(GLFBO_PROBE)
     if(frame==7) {
       CHECK(vkResetFences(device,1,&fence));
       CHECK(vkQueueSubmit(queue,1,&submit,fence));
@@ -485,6 +502,10 @@ int main(void) {
     CHECK(vkResetCommandBuffer(cmd, 0));
 #ifdef GLDRAW_PROBE
     ps4glReleaseVertexSnapshots(&gl);
+#ifdef GLFBO_PROBE
+    if(gl.target_bytes!=(frame==7 ? 0 : 256) || gl.snapshot_count || gl.texture_bytes!=(frame==7 ? 0 : 256)) return 2;
+    fprintf(report,"PASS GL framebuffer storage collected\n");
+#endif
 #endif
     sceKernelUsleep(100000); /* Give the native screenshot hotkey a present. */
   }
@@ -494,7 +515,7 @@ int main(void) {
 #ifdef GLDRAW_PROBE
   glDeleteProgram(glprograms[0]); glDeleteProgram(glprograms[1]); glUseProgram(0);
   if(glIsProgram(glprograms[0]) || glIsProgram(glprograms[1]) || glGetError()!=GL_NO_ERROR) return 2;
-  ps4glDestroyTextures(&gl); ps4glDestroyBuffers(&gl);
+  ps4glDestroyFramebuffers(&gl); ps4glDestroyTextures(&gl); ps4glDestroyBuffers(&gl);
   ps4glDestroyPrograms(device,&gl);
   ps4glMakeCurrent(NULL);
 #endif

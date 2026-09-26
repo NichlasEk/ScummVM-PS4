@@ -16,6 +16,21 @@ typedef int GLint;
 typedef int GLsizei;
 typedef float GLfloat;
 typedef unsigned char GLboolean;
+#define GL_FRAMEBUFFER 0x8d40
+#define GL_FRAMEBUFFER_BINDING 0x8ca6
+#define GL_COLOR_ATTACHMENT0 0x8ce0
+#define GL_FRAMEBUFFER_COMPLETE 0x8cd5
+#define GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT 0x8cd6
+#define GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT 0x8cd7
+#define GL_INVALID_FRAMEBUFFER_OPERATION 0x0506
+#define PS4GL_MAX_FRAMEBUFFERS 16
+#define PS4GL_MAX_TARGETS 32
+typedef struct PS4GLFramebuffer { GLuint name, texture; GLboolean created; } PS4GLFramebuffer;
+typedef struct PS4GLRenderTarget {
+  VkImage image; VkDeviceMemory memory; VkImageView view; VkFramebuffer framebuffer;
+  GLsizei width,height;
+  VkImageLayout layout;
+} PS4GLRenderTarget;
 #define GL_BLEND 0x0be2
 #define GL_ZERO 0
 #define GL_ONE 1
@@ -43,7 +58,7 @@ typedef struct PS4GLBlend {
   unsigned enabled;
   GLenum src_rgb,dst_rgb,src_alpha,dst_alpha,equation_rgb,equation_alpha;
 } PS4GLBlend;
-typedef struct PS4GLBlendVariant { PS4GLBlend state; VkPipeline pipeline; } PS4GLBlendVariant;
+typedef struct PS4GLBlendVariant { PS4GLBlend state; VkPipeline pipeline; VkRenderPass pass; } PS4GLBlendVariant;
 #define GL_TEXTURE_2D 0x0de1
 #define GL_TEXTURE0 0x84c0
 #define GL_ACTIVE_TEXTURE 0x84e0
@@ -71,12 +86,14 @@ typedef struct PS4GLTexture {
   unsigned char *pixels;
   GLsizei width,height;
   GLenum min_filter,mag_filter,wrap_s,wrap_t;
+  unsigned render_target;
 } PS4GLTexture;
 typedef struct PS4GLTextureSnapshot {
   VkImage image;
   VkDeviceMemory memory;
   VkImageView view;
   VkSampler sampler;
+  GLboolean borrowed_view;
 } PS4GLTextureSnapshot;
 #define GL_ELEMENT_ARRAY_BUFFER 0x8893
 #define GL_ELEMENT_ARRAY_BUFFER_BINDING 0x8895
@@ -174,6 +191,17 @@ typedef struct PS4GLContext {
   PS4GLAttrib attribs[PS4GL_MAX_ATTRIBS];
   GLuint array_buffer, element_buffer, next_buffer;
   PS4GLTexture textures[PS4GL_MAX_TEXTURES];
+  PS4GLFramebuffer framebuffers[PS4GL_MAX_FRAMEBUFFERS];
+  GLuint framebuffer, next_framebuffer;
+  PS4GLRenderTarget targets[PS4GL_MAX_TARGETS];
+  size_t target_bytes;
+  VkRenderPass offscreen_pass, active_pass, default_pass;
+  VkFramebuffer default_framebuffer;
+  GLint default_width,default_height;
+  unsigned active_target;
+  GLboolean managed_frame,pass_open;
+  int (*prepare_target)(struct PS4GLContext *);
+  void (*end_target)(struct PS4GLContext *);
   GLuint texture_bindings[PS4GL_TEXTURE_UNITS], next_texture;
   unsigned active_texture, unpack_alignment;
   size_t texture_bytes;
@@ -192,6 +220,19 @@ void ps4glMakeCurrent(PS4GLContext *);
 /* Attach/detach only while the caller owns the command buffer's recording. */
 void ps4glBeginPass(VkCommandBuffer);
 void ps4glEndPass(void);
+/* Managed frame: command recording is active, but no Vulkan render pass is open.
+ * Default pass must LOAD/STORE in GENERAL; owner transitions default image.
+ * Native backend must support signed viewport heights (OpenGNM does). */
+void ps4glBeginFrame(VkCommandBuffer, VkRenderPass, VkFramebuffer, GLint, GLint);
+void ps4glEndFrame(void);
+void glGenFramebuffers(GLsizei, GLuint *);
+void glBindFramebuffer(GLenum, GLuint);
+void glDeleteFramebuffers(GLsizei, const GLuint *);
+GLboolean glIsFramebuffer(GLuint);
+void glFramebufferTexture2D(GLenum, GLenum, GLenum, GLuint, GLint);
+GLenum glCheckFramebufferStatus(GLenum);
+GLuint ps4glFramebufferTexture(const PS4GLContext *);
+void ps4glDestroyFramebuffers(PS4GLContext *);
 PS4GLProc ps4glGetProcAddress(const char *);
 PS4GLContext *ps4glCurrentContext(void);
 /* Explicit Vulkan-SPIR-V import, not glCompileShader/glLinkProgram. Bounded float default-uniform blocks;

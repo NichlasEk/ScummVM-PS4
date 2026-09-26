@@ -13,8 +13,9 @@ the native Vulkan diagnostic with bounded RGB checks. A first bounded
 and streamed float vertex attributes plus 16/32-bit indexed draws. Named float/vector/mat4 uniforms now reach native vertex and fragment
 shader blocks with immutable per-draw snapshots. Bounded uniform arrays (including TWP's float[5]) and RGBA8 textures with named
 fragment sampler2D parameters now work as well. GL blending now supports separate RGB/alpha factors and equations with
-retained pipeline variants. Runtime GLSL, remaining GL draw/FBO state and SDL
-context integration are still missing. The alternatives below preserve the earlier
+retained pipeline variants. Managed color-only GL framebuffers now support GPU
+render-to-texture sampling, target switches and retained storage across frames.
+Runtime GLSL, remaining GL state and SDL context integration are still missing. The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 
 ## Capability probe checkpoint

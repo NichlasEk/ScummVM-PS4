@@ -3,13 +3,17 @@
  * Single-threaded queue 0 is shared with the owning renderer. */
 static void destroy_texture_snapshot(VkDevice device, PS4GLTextureSnapshot *t) {
   if(t->sampler) vkDestroySampler(device,t->sampler,NULL);
-  if(t->view) vkDestroyImageView(device,t->view,NULL);
+  if(t->view && !t->borrowed_view) vkDestroyImageView(device,t->view,NULL);
   if(t->image) vkDestroyImage(device,t->image,NULL);
   if(t->memory) vkFreeMemory(device,t->memory,NULL);
   *t=(PS4GLTextureSnapshot){0};
 }
 static int texture_snapshot(PS4GLContext *ctx, const PS4GLTexture *source, PS4GLTextureSnapshot *t) {
   VkDevice device=ctx->program_device;
+  if(source->render_target) {
+    t->view=ctx->targets[source->render_target-1].view; t->borrowed_view=1;
+    goto sampler;
+  }
   VkImageCreateInfo ci={.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,.imageType=VK_IMAGE_TYPE_2D,
     .format=VK_FORMAT_R8G8B8A8_UNORM,.extent={(uint32_t)source->width,(uint32_t)source->height,1},
     .mipLevels=1,.arrayLayers=1,.samples=VK_SAMPLE_COUNT_1_BIT,.tiling=VK_IMAGE_TILING_LINEAR,
@@ -36,6 +40,7 @@ static int texture_snapshot(PS4GLContext *ctx, const PS4GLTexture *source, PS4GL
   VkImageViewCreateInfo vi={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,.image=t->image,
     .viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_UNORM,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
   if(vkCreateImageView(device,&vi,NULL,&t->view)!=VK_SUCCESS) return 0;
+sampler:;
   VkSamplerCreateInfo si={.sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
     .minFilter=source->min_filter==GL_LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
     .magFilter=source->mag_filter==GL_LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
@@ -44,6 +49,7 @@ static int texture_snapshot(PS4GLContext *ctx, const PS4GLTexture *source, PS4GL
     .addressModeV=source->wrap_t==GL_REPEAT ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
     .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
   if(vkCreateSampler(device,&si,NULL,&t->sampler)!=VK_SUCCESS) return 0;
+  if(t->borrowed_view) return 1;
   VkCommandPool pool=VK_NULL_HANDLE; VkFence fence=VK_NULL_HANDLE; int ok=0;
   VkCommandPoolCreateInfo pc={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,.queueFamilyIndex=0};
   if(vkCreateCommandPool(device,&pc,NULL,&pool)!=VK_SUCCESS) return 0;

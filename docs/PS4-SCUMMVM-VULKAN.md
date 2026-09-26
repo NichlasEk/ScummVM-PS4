@@ -196,3 +196,19 @@ Thimbleweed Park GOG/1.0.958 data matched the detection table (ggpack1 size
 into the local experimental data directory under games/thimbleweedpark. A twp
 entry was added to the experimental launcher only. Game startup remains
 unverified; the explicit GL subset still does not advertise engine shaders.
+
+### Mouse tuning and first game-start attempt
+
+The initial mouse mapping could produce barely visible movement through the
+PS4 cubic stick response. A live trial at `0.65, 6.0, 0.125` was too sensitive;
+the current experimental default is `0.40, 3.0, 0.05`. It was reloaded with F8
+without restarting. Existing custom profiles are not overwritten. Physical
+stick mappings and guest sensitivity remain unchanged. Final feel still needs
+user confirmation; this is not a proven fix for intermittent capture behavior.
+
+Coordinate diagnostics observed movement across the 1024x576 virtual overlay,
+and the user reached Start. Thimbleweed Park then reported that OpenGL with
+shaders is unsupported. The next gate is the engine shader capability and its
+actual required GL operations, not game detection. Temporary coordinate logging
+was removed from source and the package rebuilt; the live diagnostic instance
+retains it until the next restart.

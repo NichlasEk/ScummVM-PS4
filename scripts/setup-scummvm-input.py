@@ -20,6 +20,12 @@ input_dir.mkdir(exist_ok=True)
 bindings = input_dir / ('SCVM00010.ini' if args.vulkan else 'SCVM00002.ini')
 if not bindings.exists():
     shutil.copyfile(root / 'config/emulator/SCVM00002.ini', bindings)
+    if args.vulkan:
+        # Mouse deltas become stick deflections before ScummVM's cubic curve.
+        # Keep physical stick mappings and existing user profiles unchanged.
+        bindings.write_text(bindings.read_text().replace(
+            'mouse_movement_params = 0.15, 3.0, 0.0',
+            'mouse_movement_params = 0.40, 3.0, 0.05'))
 
 # shadPS4 supplies external mounts directly and does not emulate the HEN kernel service.
 import configparser

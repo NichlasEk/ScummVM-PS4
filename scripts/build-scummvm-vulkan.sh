@@ -69,6 +69,17 @@ anchor='\t\tif (_window->createOrUpdateWindow(effectiveWidth, effectiveHeight, s
 assert s.count(anchor)==1
 s=s.replace(anchor,'\t\teffectiveWidth = 1280; effectiveHeight = 720; sdlflags = SDL_WINDOW_OPENGL; _vsync = true;\n'+anchor)
 patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
+relative='engines/twp/metaengine.cpp'
+p=root/relative
+original=p.read_text()
+s=original
+# Keep the backend analog virtual mouse active; TWP's digital stick mappings
+# consume even sub-threshold axes, including shadPS4 mouse-to-stick movement.
+for key,axis in (('LEFT','X-'),('RIGHT','X+'),('UP','Y-'),('DOWN','Y+')):
+ old='"'+key+'|JOY_LEFT_STICK_'+axis+'"'
+ assert s.count(old)==1
+ s=s.replace(old,'"'+key+'"')
+patch.extend(difflib.unified_diff(original.splitlines(True),s.splitlines(True),fromfile='a/'+relative,tofile='b/'+relative))
 relative='gui/message.cpp'
 p=root/relative
 original=p.read_text()

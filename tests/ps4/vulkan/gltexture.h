@@ -51,6 +51,11 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
   /* Binding B must not redirect the attribute pointers captured from A. */
   glViewport(0,0,640,720);
   elements(GL_TRIANGLES,3,GL_UNSIGNED_SHORT,(const void *)4);
+  PS4GLContext *ctx=ps4glCurrentContext();
+  unsigned cached=ctx->texture_snapshot_reuses, uploaded=ctx->texture_snapshot_uploads;
+  /* Repeat exactly the same opaque draw; it must reuse both texture copies. */
+  elements(GL_TRIANGLES,3,GL_UNSIGNED_SHORT,(const void *)4);
+  if(ctx->texture_snapshot_reuses!=cached+2 || ctx->texture_snapshot_uploads!=uploaded) return 2;
   glBindBuffer(GL_ARRAY_BUFFER,buffers[0]);
   /* Change one texel after the left draw; switch the second sampler's unit. */
   glActiveTexture(GL_TEXTURE0); unsigned char red[]={128,0,0,255};
@@ -70,6 +75,11 @@ static int draw_gl_vertices(void (*draw_gl)(GLenum,GLint,GLsizei)) {
   glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(indices32),indices32,GL_DYNAMIC_DRAW);
   glViewport(640,0,640,720);
   elements(GL_TRIANGLES,3,GL_UNSIGNED_INT,(const void *)8);
+  if(ctx->texture_snapshot_uploads!=uploaded+2) return 2;
+  cached=ctx->texture_snapshot_reuses;
+  elements(GL_TRIANGLES,3,GL_UNSIGNED_INT,(const void *)8);
+  if(ctx->texture_snapshot_reuses!=cached+2) return 2;
+  fprintf(report,"PASS GL versioned texture snapshot reuse and mutation\n");
   /* Poison/reallocate and delete texture names before the main queue submission. */
   unsigned char poison_texture[16]={0};
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2,2,0,GL_RGBA,GL_UNSIGNED_BYTE,poison_texture);

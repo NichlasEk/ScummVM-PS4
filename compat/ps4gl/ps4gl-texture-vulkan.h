@@ -2,13 +2,33 @@
  * so its layout transition is recorded outside the caller's active render pass.
  * Single-threaded queue 0 is shared with the owning renderer. */
 static void destroy_texture_snapshot(VkDevice device, PS4GLTextureSnapshot *t) {
+  if(t->borrowed_snapshot) { *t=(PS4GLTextureSnapshot){0}; return; }
   if(t->sampler) vkDestroySampler(device,t->sampler,NULL);
   if(t->view && !t->borrowed_view) vkDestroyImageView(device,t->view,NULL);
   if(t->image) vkDestroyImage(device,t->image,NULL);
   if(t->memory) vkFreeMemory(device,t->memory,NULL);
   *t=(PS4GLTextureSnapshot){0};
 }
+/* Owners and borrowers live until the complete frame has retired. CPU content
+ * revision and sampler state are independent; GPU render targets keep ordered
+ * access to their existing view instead of pretending to be immutable copies. */
+static const PS4GLTextureSnapshot *find_texture_snapshot(const PS4GLContext *ctx, const PS4GLTexture *source) {
+  for(unsigned i=0;i<ctx->snapshot_count;++i) for(unsigned j=0;j<2;++j) {
+    const PS4GLTextureSnapshot *t=&ctx->snapshots[i].textures[j];
+    if(t->sampler && t->source_name==source->name && t->source_revision==source->revision &&
+       t->source_target==source->render_target && t->min_filter==source->min_filter &&
+       t->mag_filter==source->mag_filter && t->wrap_s==source->wrap_s && t->wrap_t==source->wrap_t) return t;
+  }
+  return NULL;
+}
+static void texture_snapshot_key(PS4GLTextureSnapshot *t, const PS4GLTexture *source) {
+  t->source_name=source->name; t->source_revision=source->revision; t->source_target=source->render_target;
+  t->min_filter=source->min_filter; t->mag_filter=source->mag_filter;
+  t->wrap_s=source->wrap_s; t->wrap_t=source->wrap_t;
+}
 static int texture_snapshot(PS4GLContext *ctx, const PS4GLTexture *source, PS4GLTextureSnapshot *t) {
+  const PS4GLTextureSnapshot *cached=find_texture_snapshot(ctx,source);
+  if(cached) { *t=*cached; t->borrowed_snapshot=1; ++ctx->texture_snapshot_reuses; return 1; }
   VkDevice device=ctx->program_device;
   if(source->render_target) {
     t->view=ctx->targets[source->render_target-1].view; t->borrowed_view=1;
@@ -49,7 +69,7 @@ sampler:;
     .addressModeV=source->wrap_t==GL_REPEAT ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
     .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
   if(vkCreateSampler(device,&si,NULL,&t->sampler)!=VK_SUCCESS) return 0;
-  if(t->borrowed_view) return 1;
+  if(t->borrowed_view) { texture_snapshot_key(t,source); return 1; }
   VkCommandPool pool=VK_NULL_HANDLE; VkFence fence=VK_NULL_HANDLE; int ok=0;
   VkCommandPoolCreateInfo pc={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,.queueFamilyIndex=0};
   if(vkCreateCommandPool(device,&pc,NULL,&pool)!=VK_SUCCESS) return 0;
@@ -75,5 +95,6 @@ sampler:;
 done:
   if(fence) vkDestroyFence(device,fence,NULL);
   vkDestroyCommandPool(device,pool,NULL);
+  if(ok) { texture_snapshot_key(t,source); ++ctx->texture_snapshot_uploads; }
   return ok;
 }

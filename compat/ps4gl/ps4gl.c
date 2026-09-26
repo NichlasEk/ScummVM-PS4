@@ -173,7 +173,11 @@ void glClear(GLbitfield mask) {
   if (!(mask & GL_COLOR_BUFFER_BIT)) return;
   if (!current->command && current->begin_frame && !current->begin_frame(current)) { error(GL_INVALID_OPERATION); return; }
   if (!current->command) { error(GL_INVALID_OPERATION); return; }
-  if(!prepare_target()) return;
+  /* A complete color clear overwrites every texel. A new offscreen target
+   * can skip importing its CPU shadow only for this operation. */
+  current->discard_target_contents=!current->scissor_enabled;
+  int prepared=prepare_target(); current->discard_target_contents=GL_FALSE;
+  if(!prepared) return;
   int64_t x0=0,y0=0,x1=current->width,y1=current->height;
   if (current->scissor_enabled) {
     x0=current->scissor[0]; y0=current->scissor[1];
@@ -585,7 +589,7 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
 
 static PS4GLTexture *texture_name(PS4GLContext *ctx, GLuint name) {
   if(!name) return NULL;
-  for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) if(ctx->textures[i].name==name) return &ctx->textures[i];
+  for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) if(ctx->textures[i].name==name && !ctx->textures[i].deleted) return &ctx->textures[i];
   return NULL;
 }
 const PS4GLTexture *ps4glTextureAtUnit(PS4GLContext *ctx, unsigned unit) {
@@ -629,17 +633,33 @@ void glBindTexture(GLenum target, GLuint name) {
 GLboolean glIsTexture(GLuint name) {
   PS4GLTexture *t=current ? texture_name(current,name) : NULL; return t && t->created;
 }
+/* An unbound FBO retains the object, even after its name becomes reusable. */
+static void collect_deleted_textures(PS4GLContext *ctx) {
+  for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) if(ctx->textures[i].deleted) {
+    int attached=0;
+    for(unsigned f=0;f<PS4GL_MAX_FRAMEBUFFERS;++f) if(ctx->framebuffers[f].texture_slot==i+1) attached=1;
+    if(attached) continue;
+    PS4GLTexture *t=&ctx->textures[i];
+    ctx->texture_bytes-=(size_t)t->width*t->height*4;
+    free(t->pixels); *t=(PS4GLTexture){0};
+  }
+}
 void glDeleteTextures(GLsizei count, const GLuint *names) {
   if(!current) return;
   if(count<0 || (count && !names)) { error(GL_INVALID_VALUE); return; }
-  /* Attached deletion is outside the current subset; reject atomically. */
-  for(GLsizei n=0;n<count;++n) if(names[n])
-    for(unsigned f=0;f<PS4GL_MAX_FRAMEBUFFERS;++f) if(current->framebuffers[f].texture==names[n]) { error(GL_INVALID_OPERATION); return; }
   for(GLsizei n=0;n<count;++n) {
     PS4GLTexture *t=texture_name(current,names[n]); if(!t) continue;
+    unsigned slot=(unsigned)(t-current->textures)+1;
+    for(unsigned f=0;f<PS4GL_MAX_FRAMEBUFFERS;++f) {
+      PS4GLFramebuffer *fb=&current->framebuffers[f];
+      if(fb->name==current->framebuffer && fb->texture_slot==slot) {
+        end_target(); fb->texture=0; fb->texture_slot=0;
+      }
+    }
     for(unsigned u=0;u<PS4GL_TEXTURE_UNITS;++u) if(current->texture_bindings[u]==names[n]) current->texture_bindings[u]=0;
-    current->texture_bytes-=(size_t)t->width*t->height*4; free(t->pixels); *t=(PS4GLTexture){0};
+    t->deleted=GL_TRUE;
   }
+  collect_deleted_textures(current);
 }
 void ps4glDestroyTextures(PS4GLContext *ctx) {
   if(!ctx) return;
@@ -713,12 +733,13 @@ void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width, GLs
   GLboolean rgb=internal==GL_RGB || internal==GL_RGB8;
   size_t bytes=(size_t)width*height*4, old=(size_t)t->width*t->height*4;
   if(bytes>PS4GL_TEXTURE_BUDGET-(current->texture_bytes-old)) { error(GL_OUT_OF_MEMORY); return; }
+  if(current->next_texture_revision==UINT64_MAX) { error(GL_OUT_OF_MEMORY); return; }
   unsigned char *copy=bytes ? calloc(1,bytes) : NULL;
   if(bytes && !copy) { error(GL_OUT_OF_MEMORY); return; }
   if(pixels && bytes) texture_copy(copy,(size_t)width*4,pixels,width,height,bpp,rgb);
   else if(rgb) for(size_t i=3;i<bytes;i+=4) copy[i]=255;
-  end_target(); t->render_target=0;
-  free(t->pixels); t->rgb_storage=rgb; t->pixels=copy; t->width=width; t->height=height; current->texture_bytes+=bytes; current->texture_bytes-=old;
+  end_target(); t->render_target=0; t->revision=++current->next_texture_revision;
+  free(t->pixels); t->cpu_contents_defined=pixels!=NULL; t->rgb_storage=rgb; t->pixels=copy; t->width=width; t->height=height; current->texture_bytes+=bytes; current->texture_bytes-=old;
 }
 void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width, GLsizei height,
                      GLenum format, GLenum type, const void *pixels) {
@@ -729,12 +750,22 @@ void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width
   if(!width || !height) return;
   if(t->render_target) { error(GL_INVALID_OPERATION); return; }
   if(!pixels || !t->pixels) { error(GL_INVALID_OPERATION); return; }
+  if(current->next_texture_revision==UINT64_MAX) { error(GL_OUT_OF_MEMORY); return; }
+  t->revision=++current->next_texture_revision; t->cpu_contents_defined=GL_TRUE;
   texture_copy(t->pixels+((size_t)y*t->width+x)*4,(size_t)t->width*4,pixels,width,height,bpp,t->rgb_storage);
 }
 
 static PS4GLFramebuffer *framebuffer_name(PS4GLContext *ctx, GLuint name) {
   if(!name) return NULL;
   for(unsigned i=0;i<PS4GL_MAX_FRAMEBUFFERS;++i) if(ctx->framebuffers[i].name==name) return &ctx->framebuffers[i];
+  return NULL;
+}
+PS4GLTexture *ps4glFramebufferTextureObject(PS4GLContext *ctx) {
+  if(!ctx || !ctx->framebuffer) return NULL;
+  for(unsigned i=0;i<PS4GL_MAX_FRAMEBUFFERS;++i) if(ctx->framebuffers[i].name==ctx->framebuffer) {
+    unsigned slot=ctx->framebuffers[i].texture_slot;
+    return slot && slot<=PS4GL_MAX_TEXTURES ? &ctx->textures[slot-1] : NULL;
+  }
   return NULL;
 }
 GLuint ps4glFramebufferTexture(const PS4GLContext *ctx) {
@@ -781,6 +812,7 @@ void glDeleteFramebuffers(GLsizei count, const GLuint *names) {
     if(current->framebuffer==names[n]) { end_target(); current->framebuffer=0; }
     *f=(PS4GLFramebuffer){0};
   }
+  collect_deleted_textures(current);
 }
 void glFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) {
   if(!current) return;
@@ -788,8 +820,11 @@ void glFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, 
   if(level) { error(GL_INVALID_VALUE); return; }
   PS4GLFramebuffer *f=framebuffer_name(current,current->framebuffer);
   if(!f || (texture && !glIsTexture(texture))) { error(GL_INVALID_OPERATION); return; }
-  if(f->texture!=texture) end_target();
-  f->texture=texture;
+  PS4GLTexture *t=texture ? texture_name(current,texture) : NULL;
+  unsigned slot=t ? (unsigned)(t-current->textures)+1 : 0;
+  if(f->texture_slot!=slot) end_target();
+  f->texture=texture; f->texture_slot=slot;
+  collect_deleted_textures(current);
 }
 GLenum glCheckFramebufferStatus(GLenum target) {
   if(!current) return 0;
@@ -797,7 +832,7 @@ GLenum glCheckFramebufferStatus(GLenum target) {
   if(!current->framebuffer) return GL_FRAMEBUFFER_COMPLETE;
   GLuint name=ps4glFramebufferTexture(current);
   if(!name) return GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
-  PS4GLTexture *t=texture_name(current,name);
+  PS4GLTexture *t=ps4glFramebufferTextureObject(current);
   if(!t || !t->pixels || t->width<=0 || t->height<=0) return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
   /* RGB render targets need alpha swizzling; keep this upload-only for now. */
   return t->rgb_storage ? GL_FRAMEBUFFER_UNSUPPORTED : GL_FRAMEBUFFER_COMPLETE;
@@ -806,4 +841,5 @@ void ps4glDestroyFramebuffers(PS4GLContext *ctx) {
   if(!ctx) return;
   if(ctx->command) { if(!ctx->error) ctx->error=GL_INVALID_OPERATION; return; }
   memset(ctx->framebuffers,0,sizeof(ctx->framebuffers)); ctx->framebuffer=0;
+  collect_deleted_textures(ctx);
 }

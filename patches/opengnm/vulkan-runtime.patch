@@ -175,7 +175,7 @@ index 0000000..91cfc34
 +}
 +#endif
 diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
-index 168c1f3..9d7bee5 100644
+index 168c1f3..6f69739 100644
 --- a/src/vk_ps4_command.c
 +++ b/src/vk_ps4_command.c
 @@ -11,15 +11,18 @@
@@ -953,14 +953,14 @@ index 168c1f3..9d7bee5 100644
 -            if (img) img->layout = b->newLayout;
 +        if (b->srcQueueFamilyIndex != b->dstQueueFamilyIndex) {
 +            cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
-+        }
-+    }
+         }
+     }
 +    for (uint32_t i = 0; i < bufferMemoryBarrierCount; ++i) {
 +        const VkBufferMemoryBarrier *b = &pBufferMemoryBarriers[i];
 +        if (b->srcQueueFamilyIndex != b->dstQueueFamilyIndex) {
 +            cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
-         }
-     }
++        }
++    }
 +    if (!cmd->barrier_label.allocated &&
 +        sceGnmDirectMemoryAllocate(&cmd->barrier_label, 4, 65536,
 +            GNM_DIRECT_MEMORY_TYPE_WC_GARLIC, GNM_PROT_CPU_GPU_RW) != GNM_ERROR_OK) {
@@ -1147,7 +1147,7 @@ index 168c1f3..9d7bee5 100644
  }
  
  VKAPI_ATTR void VKAPI_CALL
-@@ -2773,122 +2880,115 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
+@@ -2773,122 +2880,125 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
      (void)imageLayout;
  }
  
@@ -1326,22 +1326,32 @@ index 168c1f3..9d7bee5 100644
 +        if (cmd->resource_error != VK_SUCCESS) return;
 +        sceGnmDrawCmdWaitGraphicsWrite(&cmd->gnm_cmd, 0x3fc0);
 +        uint64_t scratch_addr = (uint64_t)scratch->mapped;
-+        if (!sceGnmDrawCmdCopyMemory(&cmd->gnm_cmd, scratch_addr, image_addr, (uint32_t)size)) goto exhausted;
-+        for (uint32_t r = 0; r < rectCount; ++r) {
-+            const VkRect2D *rect = &pRects[r].rect;
-+            for (uint32_t y = 0; y < rect->extent.height; ++y) {
-+                uint64_t start = 0; uint32_t bytes = 0;
-+                for (uint32_t x = 0; x <= rect->extent.width; ++x) {
-+                    uint64_t offset = 0, bit = 0;
-+                    if (x < rect->extent.width &&
-+                        (sceGpaComputeSurfaceCoord(&offset, &bit, &context,
-+                            rect->offset.x + x, rect->offset.y + y, 0, 0) != GPA_ERR_OK ||
-+                         bit || offset > size || size - offset < 4)) goto unsupported;
-+                    if (bytes && (x == rect->extent.width || offset != start + bytes)) {
-+                        if (!sceGnmDrawCmdFillMemory(&cmd->gnm_cmd, scratch_addr + start, bytes, packed)) goto exhausted;
-+                        bytes = 0;
++        /* A full RGBA8 surface has the same packed texel at every tiled
++         * address. Fill its backing allocation once, including padding. Keep
++         * the existing scratch/copy and cache ordering for attachment writes. */
++        bool full_clear = rectCount == 1 && !pRects[0].rect.offset.x && !pRects[0].rect.offset.y &&
++            pRects[0].rect.extent.width == img->create_info.extent.width &&
++            pRects[0].rect.extent.height == img->create_info.extent.height;
++        if (full_clear) {
++            if (!sceGnmDrawCmdFillMemory(&cmd->gnm_cmd, scratch_addr, (uint32_t)size, packed)) goto exhausted;
++        } else {
++            if (!sceGnmDrawCmdCopyMemory(&cmd->gnm_cmd, scratch_addr, image_addr, (uint32_t)size)) goto exhausted;
++            for (uint32_t r = 0; r < rectCount; ++r) {
++                const VkRect2D *rect = &pRects[r].rect;
++                for (uint32_t y = 0; y < rect->extent.height; ++y) {
++                    uint64_t start = 0; uint32_t bytes = 0;
++                    for (uint32_t x = 0; x <= rect->extent.width; ++x) {
++                        uint64_t offset = 0, bit = 0;
++                        if (x < rect->extent.width &&
++                            (sceGpaComputeSurfaceCoord(&offset, &bit, &context,
++                                rect->offset.x + x, rect->offset.y + y, 0, 0) != GPA_ERR_OK ||
++                             bit || offset > size || size - offset < 4)) goto unsupported;
++                        if (bytes && (x == rect->extent.width || offset != start + bytes)) {
++                            if (!sceGnmDrawCmdFillMemory(&cmd->gnm_cmd, scratch_addr + start, bytes, packed)) goto exhausted;
++                            bytes = 0;
++                        }
++                        if (x < rect->extent.width) { if (!bytes) start = offset; bytes += 4; }
                      }
-+                    if (x < rect->extent.width) { if (!bytes) start = offset; bytes += 4; }
                  }
              }
          }

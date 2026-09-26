@@ -3,9 +3,10 @@
 ## 2026-09-26: experimental native Vulkan reaches TWP rendering
 
 The isolated SCVM00010 build has a usable ScummVM launcher and now passes the
-TWP shader gate. Its real lighting shaders compile; game rendering exhausts
-the command buffer and is not yet playable. The SDL fixture passes 2,553 pixel
-checks. See [startup evidence and next work](PS4-TWP-STARTUP.md).
+TWP shader gate. Its real menu renders, the analog pointer works, and the user
+started the game. Eliminating redundant initialization raised the menu from
+about 2.4 to 11 fps in emulator tests; sustained play remains unverified.
+The SDL fixture passes 2,553 pixel checks. See [rendering evidence and next work](PS4-TWP-RENDERING.md).
 
 ## 2026-09-25: PNG/zlib and Theora, package 1.17
 

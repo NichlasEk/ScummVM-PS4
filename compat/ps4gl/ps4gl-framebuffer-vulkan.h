@@ -74,10 +74,15 @@ static int create_target(PS4GLContext *c, PS4GLTexture *texture) {
   VkFramebufferCreateInfo fi={.sType=VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,.renderPass=c->offscreen_pass,
     .attachmentCount=1,.pAttachments=&t.view,.width=t.width,.height=t.height,.layers=1};
   if(vkCreateFramebuffer(c->program_device,&fi,NULL,&t.framebuffer)!=VK_SUCCESS) goto cleanup;
-  if(!upload_vertices(c,texture->pixels,bytes,0,0)) goto cleanup;
-  target_barrier(c,&t,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-  VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={(uint32_t)t.width,(uint32_t)t.height,1}};
-  vkCmdCopyBufferToImage(c->command,c->snapshots[c->snapshot_count-1].buffer,t.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+  /* glTexImage2D(NULL) leaves contents undefined. No CPU import is needed
+   * until client texels were supplied; partial uploads conservatively import
+   * their full CPU shadow. A complete clear also makes prior contents dead. */
+  if(texture->cpu_contents_defined && !c->discard_target_contents) {
+    if(!upload_vertices(c,texture->pixels,bytes,0,0)) goto cleanup;
+    target_barrier(c,&t,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkBufferImageCopy copy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={(uint32_t)t.width,(uint32_t)t.height,1}};
+    vkCmdCopyBufferToImage(c->command,c->snapshots[c->snapshot_count-1].buffer,t.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
+  }
   target_barrier(c,&t,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
   c->targets[slot]=t; c->target_bytes+=bytes; texture->render_target=slot+1;
   return 1;
@@ -100,8 +105,7 @@ static int prepare_render_target(PS4GLContext *c) {
   VkFramebuffer fb=c->default_framebuffer;
   c->width=c->default_width; c->height=c->default_height; c->active_pass=c->default_pass;
   if(c->framebuffer) {
-    GLuint name=ps4glFramebufferTexture(c); PS4GLTexture *texture=NULL;
-    for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) if(c->textures[i].name==name) texture=&c->textures[i];
+    PS4GLTexture *texture=ps4glFramebufferTextureObject(c);
     if(!texture || (!texture->render_target && !create_target(c,texture))) return 0;
     c->active_target=texture->render_target;
     PS4GLRenderTarget *t=&c->targets[c->active_target-1];

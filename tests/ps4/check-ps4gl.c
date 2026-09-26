@@ -509,7 +509,7 @@ int main(void) {
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,8,6,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
-  glDeleteTextures(1,&ft); assert(glGetError()==GL_INVALID_OPERATION && glIsTexture(ft));
+
   glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,ft,1);
   assert(glGetError()==GL_INVALID_VALUE && ps4glFramebufferTexture(&fboctx)==ft);
   glBindFramebuffer(0xdead,0); assert(glGetError()==GL_INVALID_ENUM && fboctx.framebuffer==fbo);
@@ -518,8 +518,23 @@ int main(void) {
   ps4glEndPass();
   glBindFramebuffer(GL_FRAMEBUFFER,0);
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
-  glDeleteTextures(1,&ft); assert(glGetError()==GL_INVALID_OPERATION); /* attachment in unbound FBO */
-  glDeleteFramebuffers(1,&fbo); glDeleteTextures(1,&ft);
+  size_t retained=fboctx.texture_bytes;
+  glDeleteTextures(1,&ft); assert(!glGetError() && !glIsTexture(ft) && retained==fboctx.texture_bytes);
+  glBindFramebuffer(GL_FRAMEBUFFER,fbo);
+  PS4GLTexture *orphan=ps4glFramebufferTextureObject(&fboctx);
+  assert(orphan && orphan->deleted && glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
+  glBindTexture(GL_TEXTURE_2D,ft); /* Same name now denotes a different object. */
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  assert(ps4glTextureAtUnit(&fboctx,0)!=orphan && orphan->width==8);
+  glDeleteTextures(1,&ft); /* Must not detach the old object with the same name. */
+  assert(ps4glFramebufferTextureObject(&fboctx)==orphan && fboctx.texture_bytes==retained);
+  glDeleteFramebuffers(1,&fbo); assert(fboctx.texture_bytes==0);
+  glBindFramebuffer(GL_FRAMEBUFFER,fbo); glBindTexture(GL_TEXTURE_2D,ft);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,ft,0);
+  glDeleteTextures(1,&ft); /* Bound FBO is detached automatically. */
+  assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT && fboctx.texture_bytes==0);
+  glDeleteFramebuffers(1,&fbo);
   assert(!glIsFramebuffer(fbo) && !glIsTexture(ft));
   GLuint full[PS4GL_MAX_FRAMEBUFFERS]; glGenFramebuffers(PS4GL_MAX_FRAMEBUFFERS,full);
   GLuint unchanged=123; glGenFramebuffers(1,&unchanged);

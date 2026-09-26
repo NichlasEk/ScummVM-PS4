@@ -258,12 +258,14 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
   const PS4GLTexture *sources[2]={0};
   for(unsigned i=0;i<2;++i) if(p->sampler_mask&(1u<<i)) {
     sources[i]=ps4glTextureAtUnit(ctx,(unsigned)p->sampler_units[i]);
-    if((sources[i] && ctx->framebuffer && sources[i]->name==ps4glFramebufferTexture(ctx)) || !sources[i] || !sources[i]->pixels || sources[i]->width<=0 || sources[i]->height<=0 ||
+    if((sources[i] && ctx->framebuffer && sources[i]==ps4glFramebufferTextureObject(ctx)) || !sources[i] || !sources[i]->pixels || sources[i]->width<=0 || sources[i]->height<=0 ||
         (sources[i]->min_filter!=GL_NEAREST && sources[i]->min_filter!=GL_LINEAR)) {
       if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
       return 0;
     }
-    texture_bytes+=(size_t)sources[i]->width*sources[i]->height*4;
+    if(!sources[i]->render_target && !find_texture_snapshot(ctx,sources[i]) &&
+       !(i && sources[0]==sources[i]))
+      texture_bytes+=(size_t)sources[i]->width*sources[i]->height*4;
   }
   if(texture_bytes+sizeof(p->uniform_data)>64u*1024u*1024u-ctx->snapshot_bytes) {
     if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
@@ -346,5 +348,6 @@ void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
     ctx->snapshots[i]=(PS4GLSnapshot){0};
   }
   ctx->snapshot_count=0; ctx->snapshot_bytes=0;
+  ctx->texture_snapshot_uploads=ctx->texture_snapshot_reuses=0;
   collect_targets(ctx,0);
 }

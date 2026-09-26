@@ -47,7 +47,7 @@ typedef unsigned char GLboolean;
 #define GL_INVALID_FRAMEBUFFER_OPERATION 0x0506
 #define PS4GL_MAX_FRAMEBUFFERS 16
 #define PS4GL_MAX_TARGETS 32
-typedef struct PS4GLFramebuffer { GLuint name, texture; GLboolean created; } PS4GLFramebuffer;
+typedef struct PS4GLFramebuffer { GLuint name, texture; unsigned texture_slot; GLboolean created; } PS4GLFramebuffer;
 typedef struct PS4GLRenderTarget {
   VkImage image; VkDeviceMemory memory; VkImageView view; VkFramebuffer framebuffer;
   GLsizei width,height;
@@ -113,15 +113,21 @@ typedef struct PS4GLTexture {
   unsigned char *pixels;
   GLsizei width,height;
   GLenum min_filter,mag_filter,wrap_s,wrap_t;
-  GLboolean rgb_storage;
+  GLboolean rgb_storage, cpu_contents_defined;
   unsigned render_target;
+  uint64_t revision;
+  GLboolean deleted;
 } PS4GLTexture;
 typedef struct PS4GLTextureSnapshot {
   VkImage image;
   VkDeviceMemory memory;
   VkImageView view;
   VkSampler sampler;
-  GLboolean borrowed_view;
+  GLboolean borrowed_view, borrowed_snapshot;
+  GLuint source_name;
+  uint64_t source_revision;
+  unsigned source_target;
+  GLenum min_filter,mag_filter,wrap_s,wrap_t;
 } PS4GLTextureSnapshot;
 #define GL_ELEMENT_ARRAY_BUFFER 0x8893
 #define GL_ELEMENT_ARRAY_BUFFER_BINDING 0x8895
@@ -264,12 +270,14 @@ typedef struct PS4GLContext {
   VkFramebuffer default_framebuffer;
   GLint default_width,default_height;
   unsigned active_target;
-  GLboolean managed_frame,pass_open;
+  GLboolean managed_frame,pass_open,discard_target_contents;
   int (*prepare_target)(struct PS4GLContext *);
   void (*end_target)(struct PS4GLContext *);
   GLuint texture_bindings[PS4GL_TEXTURE_UNITS], next_texture;
   unsigned active_texture, unpack_alignment, pack_alignment;
   size_t texture_bytes;
+  uint64_t next_texture_revision;
+  unsigned texture_snapshot_uploads, texture_snapshot_reuses;
   VkPhysicalDevice physical;
   PS4GLSnapshot snapshots[PS4GL_MAX_SNAPSHOTS];
   unsigned snapshot_count;
@@ -298,6 +306,7 @@ GLboolean glIsFramebuffer(GLuint);
 void glFramebufferTexture2D(GLenum, GLenum, GLenum, GLuint, GLint);
 GLenum glCheckFramebufferStatus(GLenum);
 GLuint ps4glFramebufferTexture(const PS4GLContext *);
+PS4GLTexture *ps4glFramebufferTextureObject(PS4GLContext *);
 void ps4glDestroyFramebuffers(PS4GLContext *);
 void ps4glConfigureShaderCompiler(VkRenderPass, PS4GLCompileSource, PS4GLLinkSources);
 GLuint glCreateShader(GLenum);

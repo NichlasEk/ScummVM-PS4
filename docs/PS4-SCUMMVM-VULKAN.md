@@ -226,3 +226,9 @@ The shader-feature gate is now passed. See [PS4-TWP-STARTUP.md](PS4-TWP-STARTUP.
 for the new isolated capabilities, original lighting shaders, context handoff,
 validation and the current command-buffer exhaustion during real game rendering.
 This supersedes the earlier disabled-capability checkpoints above.
+
+## Later rendering and input checkpoint
+
+[PS4-TWP-RENDERING.md](PS4-TWP-RENDERING.md) supersedes the buffer-exhaustion
+status: the game menu is visible, analog pointer input works and the user
+started the game. Rendering is faster but not yet smooth.

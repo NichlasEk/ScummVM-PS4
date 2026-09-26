@@ -82,6 +82,14 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   if(glGetError()!=GL_INVALID_FRAMEBUFFER_OPERATION) return 2;
   glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);
   if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return 2;
+#ifdef SDLGL_PROBE
+  if(frame%2) {
+    unsigned before=ps4glCurrentContext()->snapshot_count;
+    glDisable(GL_SCISSOR_TEST); glClearColor(0,0,1,1); glClear(GL_COLOR_BUFFER_BIT);
+    if(glGetError() || ps4glCurrentContext()->snapshot_count!=before) return 2;
+    fprintf(report,"PASS SDL full target clear skips obsolete upload\n");
+  }
+#endif
   glViewport(0,0,target_width,target_height/2); glDisable(GL_BLEND); glDisable(GL_SCISSOR_TEST);
   glUseProgram(programs[0]); GLint color=glGetUniformLocation(programs[0],"color");
   if(color<0) return 2;
@@ -90,8 +98,6 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   if(glGetError()!=GL_INVALID_OPERATION) return 2; /* feedback */
   glTexSubImage2D(GL_TEXTURE_2D,0,0,0,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
   if(glGetError()!=GL_INVALID_OPERATION) return 2; /* stale CPU shadow */
-  glDeleteTextures(1,&texture);
-  if(glGetError()!=GL_INVALID_OPERATION || !glIsTexture(texture)) return 2;
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(0,0,320,720); draw_gl_surface();
   glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
   glEnable(GL_SCISSOR_TEST); glScissor(target_width/2,target_height/2,target_width/2,target_height/2); glClearColor(0,1,0,1); glClear(GL_COLOR_BUFFER_BIT);
@@ -105,7 +111,11 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glUniform4f(color,0,1,1,.5f); draw_gl_color(programs[0]); glDisable(GL_BLEND);
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(640,0,640,720);
   glUseProgram(programs[1]); draw_gl_surface();
-  glDeleteFramebuffers(1,&framebuffer); glDeleteTextures(1,&texture);
+  glDeleteTextures(1,&texture);
+  if(glGetError() || glIsTexture(texture)) return 2;
+  glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
+  if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return 2;
+  glDeleteFramebuffers(1,&framebuffer);
   if(glGetError()!=GL_NO_ERROR) return 2;
   /* Keep a GPU-only result alive across fences and snapshot collection. */
   static GLuint persistent_texture, persistent_framebuffer;
@@ -117,7 +127,11 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
     glGenFramebuffers(1,&persistent_framebuffer); glBindFramebuffer(GL_FRAMEBUFFER,persistent_framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,persistent_texture,0);
     glViewport(0,0,8,8); glUseProgram(programs[0]);
+    unsigned before=ps4glCurrentContext()->snapshot_count;
     glUniform4f(color,1,0,1,1); draw_gl_color(programs[0]);
+    /* One vertex and one uniform snapshot; no upload of undefined texels. */
+    if(ps4glCurrentContext()->snapshot_count!=before+2) return 2;
+    fprintf(report,"PASS GL undefined target skips initialization copy\n");
   } else {
     glBindTexture(GL_TEXTURE_2D,persistent_texture);
     glBindFramebuffer(GL_FRAMEBUFFER,persistent_framebuffer);

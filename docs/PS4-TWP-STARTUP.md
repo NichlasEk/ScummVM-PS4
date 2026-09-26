@@ -48,3 +48,9 @@ Next: measure and reduce initialization/copy command volume and redundant
 texture snapshots. Increasing command capacity alone is not the intended fix.
 Later gates include texture/FBO deletion ordering, readback, line primitives,
 program-slot lifetime and longer gameplay. The normal 1.17 build is unchanged.
+
+## Later rendering and input checkpoint
+
+[PS4-TWP-RENDERING.md](PS4-TWP-RENDERING.md) supersedes the buffer-exhaustion
+status: the game menu is visible, analog pointer input works and the user
+started the game. Rendering is faster but not yet smooth.

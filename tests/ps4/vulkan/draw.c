@@ -324,7 +324,10 @@ int main(void) {
   if(!ps4glInit(&gl,1280,720)) return 2;
   ps4glMakeCurrent(&gl);
 #ifdef GLSL_PROBE
-  if(!ps4glGLSLInitialize() || reject_glsl()) return 2;
+  ps4glConfigureVertexDevice(physical,device);
+  if(!ps4glGLSLInitialize()) return 2;
+  ps4glConfigureShaderCompiler(pass,ps4glCompileVulkanGLSL,ps4glLinkVulkanGLSL);
+  if(reject_glsl()) return 2;
   GLuint glprograms[]={compile_glsl_program(device,pass,glsl_vertex,glsl_color),
     compile_glsl_program(device,pass,glsl_vertex,glsl_texture)};
 #else

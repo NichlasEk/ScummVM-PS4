@@ -119,7 +119,10 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
   if(!gl_reflect_uniforms(vs,vs_size,0,&reflected) || !gl_reflect_uniforms(fs,fs_size,1,&reflected)) goto fail;
   if(!gl_reflect_samplers(fs,fs_size,1,&reflected)) goto fail;
   unsigned slot;
-  for(slot=0;slot<PS4GL_MAX_PROGRAMS;++slot) if(!ctx->programs[slot].pipeline) break;
+  if(ctx->link_destination) {
+    slot=ctx->link_destination-1;
+    if(slot>=PS4GL_MAX_PROGRAMS || ctx->programs[slot].pipeline || !ctx->programs[slot].allocated) goto fail;
+  } else for(slot=0;slot<PS4GL_MAX_PROGRAMS;++slot) if(!ctx->programs[slot].pipeline && !ctx->programs[slot].allocated) break;
   if(slot==PS4GL_MAX_PROGRAMS) { err=GL_OUT_OF_MEMORY; goto fail; }
   VkShaderModule modules[2]={VK_NULL_HANDLE,VK_NULL_HANDLE};
   VkPipelineLayout layout=VK_NULL_HANDLE;
@@ -178,6 +181,7 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
     if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
     return;
   }
+  ps4glDestroyShaderObjects(ctx);
   for(unsigned i=0;i<PS4GL_MAX_PROGRAMS;++i) {
     for(unsigned v=0;v<ctx->programs[i].variant_count;++v) vkDestroyPipeline(device,ctx->programs[i].variants[v].pipeline,NULL);
     for(unsigned stage=0;stage<2;++stage) if(ctx->programs[i].modules[stage]) vkDestroyShaderModule(device,ctx->programs[i].modules[stage],NULL);
@@ -190,7 +194,7 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
   collect_targets(ctx,1);
   if(ctx->offscreen_pass) vkDestroyRenderPass(device,ctx->offscreen_pass,NULL);
   ctx->offscreen_pass=VK_NULL_HANDLE; ctx->prepare_target=NULL; ctx->end_target=NULL;
-  ctx->physical=VK_NULL_HANDLE; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL; ctx->select_pipeline=NULL;
+  ctx->physical=VK_NULL_HANDLE; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL; ctx->select_pipeline=NULL; ctx->import_program=NULL;
   ctx->program=0; ctx->program_device=VK_NULL_HANDLE; ctx->program_pass=VK_NULL_HANDLE;
 }
 
@@ -316,7 +320,7 @@ void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
     return;
   }
   ctx->prepare_target=prepare_render_target; ctx->end_target=end_render_target;
-  ctx->physical=physical; ctx->program_device=device; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms; ctx->select_pipeline=select_pipeline;
+  ctx->physical=physical; ctx->program_device=device; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms; ctx->select_pipeline=select_pipeline; ctx->import_program=ps4glCreateProgramSPIRV;
 }
 void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
   if(!ctx) return;

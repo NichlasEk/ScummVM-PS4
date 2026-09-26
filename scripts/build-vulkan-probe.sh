@@ -48,11 +48,11 @@ else
 fi
 if [[ "$variant" == --glstate ]]; then
  sed -i '1i#define GLSTATE_PROBE 1' "$probe/draw.c"
- cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$probe/"
+ cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$probe/"
 fi
 if [[ "$variant" == --glsl || "$variant" == --glfbo || "$variant" == --glblend || "$variant" == --gldraw || "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLDRAW_PROBE 1' "$probe/draw.c"
- cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$root/compat/ps4gl/ps4gl-framebuffer-vulkan.h" "$probe/"
+ cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$root/compat/ps4gl/ps4gl-framebuffer-vulkan.h" "$probe/"
 fi
 if [[ "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLVBO_PROBE 1' "$probe/draw.c"
@@ -91,7 +91,7 @@ extra_make=()
 if [[ "$variant" == --glsl ]]; then
  "$root/scripts/build-ps4-glslang.sh"
  sed -i '1i#define GLSL_PROBE 1' "$probe/draw.c"
- cp "$root/compat/ps4gl/ps4gl-glsl.c" "$root/compat/ps4gl/ps4gl-glsl.h" "$root/tests/ps4/vulkan/glsl.h" "$probe/"
+ cp "$root/compat/ps4gl/ps4gl-glsl.c" "$root/compat/ps4gl/ps4gl-glsl.h" "$root/compat/ps4gl/ps4gl-stage-interface.h" "$root/tests/ps4/vulkan/glsl.h" "$probe/"
  python3 "$root/scripts/prepare-glsl-probe.py" "$probe"
  extra_make+=("EXTRA_CFLAGS=-I$root/.tools/glslang" "EXTRA_LIBS=$root/build/glslang-orbis/libglslang-ps4.a"
   "PKG_FILES=eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx glslang-LICENSE.txt")

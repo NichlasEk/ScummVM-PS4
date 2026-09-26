@@ -165,6 +165,9 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
             if args.glsl and (guest_log.read_text().count('GLSL runtime program=') != 2 or
+                              guest_log.read_text().count('PASS GL shader objects copied source and deferred deletion') != 2 or
+                              'PASS GL shader objects reject cross-stage mismatch' not in guest_log.read_text() or
+                              'PASS GL shader objects native interface rejection' not in guest_log.read_text() or
                               guest_log.read_text().count('PASS GLSL runtime rejection ') != 3 or
                               'PASS GLSL runtime compiler finalized' not in guest_log.read_text()):
                 raise RuntimeError('Runtime GLSL compiler checks incomplete')

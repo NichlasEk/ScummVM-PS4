@@ -29,9 +29,20 @@ int main(void) {
   assert(!ps4glCompileVulkanGLSL(1,valid,&words,&bytes,log,sizeof(log))); /* wrong stage */
   char *large=malloc(262146); assert(large); memset(large,' ',262145); large[262145]=0;
   assert(!ps4glCompileVulkanGLSL(0,large,&words,&bytes,log,sizeof(log))); free(large);
+  uint32_t *fs=NULL; size_t fb=0;
+  const char *vsource="#version 450\nlayout(location=0) out vec2 varyingValue; void main(){varyingValue=vec2(1); gl_Position=vec4(0,0,0,1);}";
+  const char *fsource="#version 450\nlayout(location=0) in vec2 varyingValue; layout(location=0) out vec4 result; void main(){result=vec4(varyingValue,0,1);}";
+  assert(ps4glLinkVulkanGLSL(vsource,fsource,&words,&bytes,&fs,&fb,log,sizeof(log)));
+  assert(words && fs && bytes>=20 && fb>=20); free(words); free(fs);
+  const char *mismatch="#version 450\nlayout(location=0) in vec3 varyingValue; layout(location=0) out vec4 result; void main(){result=vec4(varyingValue,1);}";
+  assert(!ps4glLinkVulkanGLSL(vsource,mismatch,&words,&bytes,&fs,&fb,log,sizeof(log)));
+  assert(!words && !fs && !bytes && !fb && log[0]);
+  assert(!ps4glLinkVulkanGLSL(valid,fsource,&words,&bytes,&fs,&fb,log,sizeof(log)));
+  assert(!ps4glLinkVulkanGLSL(vsource,bad[1],&words,&bytes,&fs,&fb,log,sizeof(log)));
+  assert(!ps4glLinkVulkanGLSL(vsource,fsource,&words,&bytes,&words,&fb,log,sizeof(log)));
   ps4glGLSLFinalize(); ps4glGLSLFinalize();
   assert(ps4glGLSLInitialize());
   assert(ps4glCompileVulkanGLSL(0,valid,&words,&bytes,log,sizeof(log))); free(words);
   ps4glGLSLFinalize();
-  puts("PASS runtime GLSL compilation, diagnostics, bounds, stage rejection and reinitialization");
+  puts("PASS cross-stage link and varying mismatch rejection; runtime GLSL compilation, diagnostics, bounds, stage rejection and reinitialization");
 }

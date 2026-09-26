@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 static unsigned calls;
 static VkClearRect last;
 static VkClearAttachment color;
@@ -38,12 +39,26 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(VkCommandBuffer cmd, uint32_t count,
  uint32_t instances, uint32_t first, int32_t base, uint32_t instance) {
   assert(cmd && count==3 && instances==1 && !first && !base && !instance); ++indexed_draws;
 }
+static int compile_source(int fragment, const char *source, uint32_t **out, size_t *bytes, char *log, size_t capacity) {
+  (void)fragment; *out=NULL; *bytes=0;
+  if(strstr(source,"bad")) { snprintf(log,capacity,"rejected source"); return 0; }
+  *out=malloc(4); assert(*out); **out=1; *bytes=4; return 1;
+}
+static int link_sources(const char *vs, const char *fs, uint32_t **v, size_t *vb, uint32_t **f, size_t *fb, char *log, size_t cap) {
+  assert(!strcmp(vs,"vertex") && !strcmp(fs,"fragment"));
+  return compile_source(0,vs,v,vb,log,cap) && compile_source(1,fs,f,fb,log,cap);
+}
+static GLuint import_program(VkDevice device, VkRenderPass pass, const uint32_t *vs, size_t vb, const uint32_t *fs, size_t fb) {
+  assert(device && pass && vs && fs && vb==4 && fb==4);
+  PS4GLContext *c=ps4glCurrentContext(); GLuint name=c->link_destination; assert(name);
+  c->programs[name-1]=(PS4GLProgram){.pipeline=(VkPipeline)(uintptr_t)1}; return name;
+}
 int main(void) {
   PS4GLContext a,b;
   assert(ps4glInit(&a,80,60) && ps4glInit(&b,20,10));
   assert(!ps4glInit(NULL,80,60) && !ps4glInit(&b,0,60));
   ps4glMakeCurrent(&a);
-  assert(ps4glGetProcAddress("glClear") && ps4glGetProcAddress("glDrawArrays") && !ps4glGetProcAddress("glShaderSource"));
+  assert(ps4glGetProcAddress("glClear") && ps4glGetProcAddress("glDrawArrays") && ps4glGetProcAddress("glShaderSource"));
   glClear(GL_COLOR_BUFFER_BIT); assert(glGetError()==GL_INVALID_OPERATION);
   ps4glBeginPass((VkCommandBuffer)(uintptr_t)1);
   glViewport(1,2,3,4);
@@ -348,6 +363,51 @@ int main(void) {
   assert(!fboctx.framebuffer && !glGetError());
   ps4glDestroyFramebuffers(&fboctx); ps4glDestroyTextures(&fboctx);
   assert(ps4glGetProcAddress("glBindFramebuffer") && ps4glGetProcAddress("glCheckFramebufferStatus"));
+  PS4GLContext shaderctx;
+  assert(ps4glInit(&shaderctx,80,60)); ps4glMakeCurrent(&shaderctx);
+  shaderctx.program_device=(VkDevice)(uintptr_t)1; shaderctx.import_program=import_program;
+  ps4glConfigureShaderCompiler((VkRenderPass)(uintptr_t)1,compile_source,link_sources);
+  assert(!glCreateShader(GL_TRIANGLES) && glGetError()==GL_INVALID_ENUM);
+  GLuint vs=glCreateShader(GL_VERTEX_SHADER), fs=glCreateShader(GL_FRAGMENT_SHADER), prog=glCreateProgram();
+  assert(vs!=prog && fs!=prog && glIsProgram(prog) && glIsShader(vs));
+  glGetProgramiv(prog,GL_LINK_STATUS,&value); assert(!value);
+  glUseProgram(prog); assert(glGetError()==GL_INVALID_OPERATION);
+  glLinkProgram(prog); assert(!glGetError());
+  glGetProgramiv(prog,GL_INFO_LOG_LENGTH,&value); assert(value>1);
+  char src[]="vertex--tail"; const char *pieces[]={src,""}; GLint lengths[]={6,0};
+  glShaderSource(vs,2,pieces,lengths); src[0]='x';
+  char textbuf[32]; GLsizei written=99;
+  glGetShaderSource(vs,sizeof(textbuf),&written,textbuf); assert(written==6 && !strcmp(textbuf,"vertex"));
+  glShaderSource(vs,-1,NULL,NULL); assert(glGetError()==GL_INVALID_VALUE);
+  const char embedded[]={'a',0,'b'}; const char *embed[]={embedded}; GLint three=3;
+  glShaderSource(vs,1,embed,&three); assert(glGetError()==GL_INVALID_VALUE);
+  glGetShaderSource(vs,4,&written,textbuf); assert(written==3 && !strcmp(textbuf,"ver"));
+  glGetShaderSource(vs,0,&written,NULL); assert(written==0);
+  glCompileShader(vs); glGetShaderiv(vs,GL_COMPILE_STATUS,&value); assert(value);
+  const char *bad="bad", *fragment="fragment";
+  glShaderSource(vs,1,&bad,NULL); glGetShaderiv(vs,GL_COMPILE_STATUS,&value); assert(value);
+  glShaderSource(fs,1,&bad,NULL); glCompileShader(fs);
+  glGetShaderiv(fs,GL_COMPILE_STATUS,&value); assert(!value && !glGetError());
+  glGetShaderInfoLog(fs,5,&written,textbuf); assert(written==4 && !strcmp(textbuf,"reje"));
+  glShaderSource(fs,1,&fragment,NULL); glCompileShader(fs);
+  glAttachShader(prog,vs); glAttachShader(prog,fs);
+  glAttachShader(prog,vs); assert(glGetError()==GL_INVALID_OPERATION);
+  glDeleteShader(vs); glDeleteShader(fs); assert(glIsShader(vs) && glIsShader(fs));
+  glEnable(0xdead); glLinkProgram(prog); assert(glGetError()==GL_INVALID_ENUM);
+  glGetProgramiv(prog,GL_LINK_STATUS,&value); assert(value);
+  glGetProgramiv(prog,GL_INFO_LOG_LENGTH,&value); assert(!value);
+  glGetProgramiv(prog,GL_ATTACHED_SHADERS,&value); assert(value==2);
+  glLinkProgram(prog); assert(glGetError()==GL_INVALID_OPERATION); /* retained executable */
+  glUseProgram(prog); glDeleteProgram(prog); assert(glIsProgram(prog) && glIsShader(vs));
+  glUseProgram(0); assert(!glIsProgram(prog) && !glIsShader(vs) && !glIsShader(fs));
+  GLuint shared=glCreateShader(GL_VERTEX_SHADER), p1=glCreateProgram(), p2=glCreateProgram();
+  glAttachShader(p1,shared); glAttachShader(p2,shared); glDeleteShader(shared);
+  glDeleteProgram(p1); assert(glIsShader(shared)); glDetachShader(p2,shared); assert(!glIsShader(shared)); glDeleteProgram(p2);
+  GLuint allshaders[PS4GL_MAX_SHADERS];
+  for(unsigned i=0;i<PS4GL_MAX_SHADERS;++i) allshaders[i]=glCreateShader(GL_VERTEX_SHADER);
+  assert(!glCreateShader(GL_VERTEX_SHADER) && glGetError()==GL_OUT_OF_MEMORY);
+  for(unsigned i=0;i<PS4GL_MAX_SHADERS;++i) glDeleteShader(allshaders[i]);
+  ps4glDestroyShaderObjects(&shaderctx); assert(!glGetError());
   ps4glMakeCurrent(NULL);
-  puts("PASS framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
+  puts("PASS shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

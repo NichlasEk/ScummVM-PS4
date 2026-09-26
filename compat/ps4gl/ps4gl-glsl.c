@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "ps4gl-stage-interface.h"
 static int initialized;
 static glsl_include_result_t *reject_include(void *ctx, const char *name, const char *from, size_t depth) {
   (void)ctx; (void)name; (void)from; (void)depth; return NULL;
@@ -66,5 +67,65 @@ shader_error:
 done:
   if(program) glslang_program_delete(program);
   glslang_shader_delete(shader);
+  return ok;
+}
+
+int ps4glLinkVulkanGLSL(const char *vertex, const char *fragment,
+                       uint32_t **vs, size_t *vs_bytes, uint32_t **fs, size_t *fs_bytes,
+                       char *log, size_t capacity) {
+  if(vs) *vs=NULL;
+  if(fs) *fs=NULL;
+  if(vs_bytes) *vs_bytes=0;
+  if(fs_bytes) *fs_bytes=0;
+  diagnostic(log,capacity,"");
+  if(!initialized || !vertex || !fragment || !vs || !fs || !vs_bytes || !fs_bytes || vs==fs || vs_bytes==fs_bytes) {
+    diagnostic(log,capacity,"Invalid linker state or arguments"); return 0;
+  }
+  const char *sources[]={vertex,fragment};
+  glslang_shader_t *shaders[2]={NULL,NULL}; glslang_program_t *program=NULL;
+  uint32_t *output[2]={NULL,NULL}; size_t sizes[2]={0,0}; int ok=0;
+  for(unsigned stage=0;stage<2;++stage) {
+    size_t length=0; while(length<=256u*1024u && sources[stage][length]) ++length;
+    if(!length || length>256u*1024u) { diagnostic(log,capacity,"Shader source size outside 1..262144 bytes"); goto done; }
+    glslang_input_t input={.language=GLSLANG_SOURCE_GLSL,
+      .stage=stage ? GLSLANG_STAGE_FRAGMENT : GLSLANG_STAGE_VERTEX,
+      .client=GLSLANG_CLIENT_VULKAN,.client_version=GLSLANG_TARGET_VULKAN_1_0,
+      .target_language=GLSLANG_TARGET_SPV,.target_language_version=GLSLANG_TARGET_SPV_1_0,
+      .code=sources[stage],.default_version=450,.default_profile=GLSLANG_CORE_PROFILE,
+      .messages=GLSLANG_MSG_SPV_RULES_BIT|GLSLANG_MSG_VULKAN_RULES_BIT,.resource=glslang_default_resource(),
+      .callbacks={.include_local=reject_include,.include_system=reject_include}};
+    shaders[stage]=glslang_shader_create(&input);
+    if(!shaders[stage]) { diagnostic(log,capacity,"Cannot allocate shader"); goto done; }
+    if(!glslang_shader_preprocess(shaders[stage],&input)) {
+      diagnostic(log,capacity,glslang_shader_get_info_log(shaders[stage])); goto done;
+    }
+    input.code=glslang_shader_get_preprocessed_code(shaders[stage]);
+    if(!glslang_shader_parse(shaders[stage],&input)) {
+      diagnostic(log,capacity,glslang_shader_get_info_log(shaders[stage])); goto done;
+    }
+  }
+  program=glslang_program_create();
+  if(!program) { diagnostic(log,capacity,"Cannot allocate program"); goto done; }
+  for(unsigned i=0;i<2;++i) glslang_program_add_shader(program,shaders[i]);
+  if(!glslang_program_link(program,GLSLANG_MSG_SPV_RULES_BIT|GLSLANG_MSG_VULKAN_RULES_BIT)) {
+    diagnostic(log,capacity,glslang_program_get_info_log(program)); goto done;
+  }
+  for(unsigned i=0;i<2;++i) {
+    glslang_spv_options_t options={.disable_optimizer=true};
+    glslang_program_SPIRV_generate_with_options(program,i ? GLSLANG_STAGE_FRAGMENT : GLSLANG_STAGE_VERTEX,&options);
+    size_t count=glslang_program_SPIRV_get_size(program);
+    if(count<5 || count>256u*1024u) { diagnostic(log,capacity,"SPIR-V size outside supported range"); goto done; }
+    sizes[i]=count*sizeof(uint32_t); output[i]=malloc(sizes[i]);
+    if(!output[i]) { diagnostic(log,capacity,"Cannot allocate SPIR-V"); goto done; }
+    glslang_program_SPIRV_get(program,output[i]);
+  }
+  if(!compatible_stages(output[0],sizes[0],output[1],sizes[1])) {
+    diagnostic(log,capacity,"Missing, incompatible or unsupported inter-stage interface (float locations 0..15 required)"); goto done;
+  }
+  *vs=output[0]; *fs=output[1]; *vs_bytes=sizes[0]; *fs_bytes=sizes[1]; ok=1;
+done:
+  if(!ok) { free(output[0]); free(output[1]); }
+  if(program) glslang_program_delete(program);
+  for(unsigned i=0;i<2;++i) if(shaders[i]) glslang_shader_delete(shaders[i]);
   return ok;
 }

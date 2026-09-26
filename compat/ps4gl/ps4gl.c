@@ -1,6 +1,7 @@
 #include "ps4gl.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 /* Deliberately single-threaded: SDL/thread ownership is a later integration gate. */
 static PS4GLContext *current;
 static void error(GLenum value) {
@@ -10,6 +11,7 @@ int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   if (!ctx || width <= 0 || height <= 0) return 0;
   memset(ctx, 0, sizeof(*ctx));
   ctx->blend=(PS4GLBlend){.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};
+  ctx->next_shader=65536;
   ctx->next_framebuffer=1;
   ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=4;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->attribs[i].size=4;
@@ -283,15 +285,17 @@ void ps4glDestroyBuffers(PS4GLContext *ctx) {
 static PS4GLProgram *program(GLuint name) {
   if (!current || !name || name>PS4GL_MAX_PROGRAMS) return NULL;
   PS4GLProgram *p=&current->programs[name-1];
-  return p->pipeline && !p->retired ? p : NULL;
+  return (p->pipeline || p->allocated) && !p->retired ? p : NULL;
 }
+#include "ps4gl-shaders.inc"
 GLboolean glIsProgram(GLuint name) { return program(name) ? GL_TRUE : GL_FALSE; }
 void glUseProgram(GLuint name) {
   if (!current) return;
   if (name && !program(name)) { error(GL_INVALID_VALUE); return; }
+  if(name && !program(name)->pipeline) { error(GL_INVALID_OPERATION); return; }
   if (current->program==name) return;
   PS4GLProgram *old=program(current->program);
-  if (old && old->deleted) old->retired=GL_TRUE;
+  if (old && old->deleted) { detach_all(old); old->retired=GL_TRUE; }
   current->program=name;
 }
 void glDeleteProgram(GLuint name) {
@@ -299,13 +303,15 @@ void glDeleteProgram(GLuint name) {
   PS4GLProgram *p=program(name);
   if (!p) { error(GL_INVALID_VALUE); return; }
   p->deleted=GL_TRUE;
-  if (current->program!=name) p->retired=GL_TRUE;
+  if (current->program!=name) { detach_all(p); p->retired=GL_TRUE; }
 }
 void glGetProgramiv(GLuint name, GLenum pname, GLint *value) {
   if (!current) return;
   PS4GLProgram *p=program(name);
   if (!p || !value) { error(GL_INVALID_VALUE); return; }
-  if (pname==GL_LINK_STATUS) *value=GL_TRUE;
+  if (pname==GL_LINK_STATUS) *value=p->pipeline!=VK_NULL_HANDLE;
+  else if(pname==GL_INFO_LOG_LENGTH) *value=p->log[0] ? (GLint)strlen(p->log)+1 : 0;
+  else if(pname==GL_ATTACHED_SHADERS) *value=!!p->attached[0]+!!p->attached[1];
   else if (pname==GL_DELETE_STATUS) *value=p->deleted;
   else error(GL_INVALID_ENUM);
 }
@@ -313,6 +319,7 @@ GLint glGetUniformLocation(GLuint name, const char *uniform) {
   if(!current) return -1;
   PS4GLProgram *p=program(name);
   if(!p || !uniform) { error(GL_INVALID_VALUE); return -1; }
+  if(!p->pipeline) { error(GL_INVALID_OPERATION); return -1; }
   for(unsigned i=0;i<p->uniform_count;++i) {
     PS4GLUniform *u=&p->uniforms[i]; size_t len=strlen(u->name);
     if(!strcmp(uniform,u->name)) return (GLint)i;
@@ -467,6 +474,9 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices
 PS4GLProc ps4glGetProcAddress(const char *name) {
   if (!name) return NULL;
 #define PROC(fn) if(!strcmp(name,#fn)) return (PS4GLProc)fn
+  PROC(glCreateShader); PROC(glShaderSource); PROC(glCompileShader); PROC(glDeleteShader); PROC(glIsShader);
+  PROC(glGetShaderiv); PROC(glGetShaderInfoLog); PROC(glGetShaderSource);
+  PROC(glCreateProgram); PROC(glAttachShader); PROC(glDetachShader); PROC(glLinkProgram); PROC(glGetProgramInfoLog);
   PROC(glClearColor); PROC(glClear); PROC(glScissor); PROC(glViewport);
   PROC(glBlendFunc); PROC(glBlendFuncSeparate); PROC(glBlendEquation); PROC(glBlendEquationSeparate);
   PROC(glEnable); PROC(glDisable); PROC(glIsEnabled); PROC(glGetError);

@@ -4,7 +4,7 @@ The standalone `--glsl` probe compiles shader **text on the PS4 target**, then
 passes the generated SPIR-V through the existing native Vulkan/GCN compiler.
 The resulting programs run the GL framebuffer diagnostic in shadPS4. There is
 no host `glslc` invocation in this runtime path and no Piglet/Shacc dependency.
-This does not yet implement ScummVM's legacy GL shader API or establish game
+This does not yet accept ScummVM's legacy shader sources or establish game
 startup or physical-console support.
 
 ## Reproduce
@@ -61,8 +61,8 @@ wrapper and host test; the upstream compiler itself is a Release build.
 
 ## Next integration gate
 
-The current ScummVM source under `.tools/scummvm-src` still needs a GL-facing
-shader-object and linked-program layer. `graphics/opengl/shader.cpp` supplies
+The current ScummVM source under `.tools/scummvm-src` uses a GL-facing
+shader-object and linked-program layer (implemented in the checkpoint below). `graphics/opengl/shader.cpp` supplies
 source as multiple strings, checks compile/link status and logs, binds attribute
 locations before linking, and detaches/deletes shaders after linking. Its
 compatibility path prepends GLSL 110/120 or ES 100 macros. These inputs cannot
@@ -88,3 +88,75 @@ path also passes (`artifacts/vulkan/glsl-regression-glfbo.log`). The final runti
 GLSL diagnostic remains in the isolated probe build after regression testing.
 The stable ScummVM 1.17 package retains SHA-256
 `c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.
+
+## Shader-object and linked-program checkpoint (2026-09-26)
+
+The native `--glsl` diagnostic now creates its programs through glCreateShader,
+glShaderSource, glCompileShader, glCreateProgram, glAttachShader and glLinkProgram.
+Status, source/log queries, detach and deferred deletion are implemented too.
+`ps4glConfigureShaderCompiler` connects the explicit compiler/linker callbacks to
+an initialized native device and compatible render pass. This replaces direct
+SPIR-V import in the rendering test, while preserving that older import API.
+
+Source fragments are copied and concatenated with optional explicit lengths;
+negative lengths use NUL-terminated strings. Caller mutation does not alter the
+stored source. Replacement source does not change the last compilation result
+until glCompileShader is called. Successful compilation retains a separate
+source snapshot; linking parses those compiled snapshots together with glslang
+and emits both stages from the linked program. It does not link a newer source
+that the application has not compiled. The second parse at link time is
+intentional; retaining compiler ASTs/optimized shader caches is a later concern.
+
+The post-link interface check requires every fragment user input to have a
+matching vertex output at the same location and float/vector width. Missing
+producers are explicitly rejected: Vulkan glslang linking alone allowed that
+case. The current check accepts float scalars/vec2/vec3/vec4 at locations 0–15,
+skips builtins and rejects unsupported user interface shapes. Unused vertex
+outputs remain legal. This is an interface guard over generated SPIR-V, not a
+general SPIR-V validator. Native descriptor/uniform/input limits remain a second
+check; their rejection becomes a failed GL link with a program info log.
+
+Shader objects have a separate name range and reference counts. A deleted
+shader attached to one or more programs stays queryable until the last reference
+is detached or its program is destroyed. Linked GPU executables remain valid
+after shader source replacement, detach and deletion. A deleted current program
+is retained until unbound, and native executable resources continue to follow
+the established fence/command-discard teardown contract. Existing sticky GL
+errors survive successful linking. Compile/link diagnostics themselves are
+reported through status and logs instead of setting a generic GL error.
+
+Bounds and remaining restrictions:
+
+- 32 live shader objects, 256 KiB source per object plus its compiled snapshot;
+  names increase monotonically. Program slots retain the existing 16-name
+  lifetime limit, including reserved/deleted unlinked programs, until teardown.
+- One vertex and one fragment shader per program. Multiple compilation units of
+  the same stage are rejected. Embedded NUL in an explicitly sized source
+  fragment is rejected atomically; this is a text-only subset.
+- Failed initial links can be retried. Relinking a successfully linked native
+  executable is explicitly rejected with INVALID_OPERATION and preserves the
+  executable/status. Supporting GL relink semantics requires retained executable
+  generations and uniform-location handling. Linking during command recording
+  is also rejected.
+- Sources are still **explicit Vulkan GLSL**, with locations/bindings supplied.
+  glBindAttribLocation/glGetAttribLocation and the legacy source translation are
+  not implemented by this milestone. No complete GL version is advertised.
+
+The native probe checks split source strings, compiled-vs-replacement source,
+shader deletion before link and final release after detach, varying mismatch,
+and native integer-uniform rejection after successful GLSL compilation. Both
+rendered programs then pass the same 2,553-pixel framebuffer oracle, eight
+frames, resubmission and lifecycle cleanup. Host ASan/UBSan tests cover copied
+source, explicit lengths, bounded queries, retry/error status, sticky errors,
+shared/deferred deletion and shader exhaustion. The compiler host suite also
+checks missing producers and incompatible varyings with real glslang.
+
+Next: bounded legacy GLSL source translation and attribute bindings, then SDL
+context/frame ownership. The earlier engine API audit still applies; this
+checkpoint is not a real-game boot result.
+
+Current shader-object package: `dist/ScummVM-PS4-GLSL.pkg`, SHA-256
+`614a4e46fcca4c00dff172dccaee9bc31a5f4f3d02488296c0f7125691a08300`.
+Reports remain in `artifacts/vulkan/glsl/`, with host object-state checks in
+`artifacts/glslang/shader-object-host.log`. Framebuffer, texture, blend and
+clear/readback regressions are in `artifacts/vulkan/globjects-regression-*.log`.

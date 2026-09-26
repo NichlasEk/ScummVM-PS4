@@ -15,6 +15,7 @@ typedef unsigned int GLbitfield;
 typedef int GLint;
 typedef int GLsizei;
 typedef float GLfloat;
+typedef char GLchar;
 typedef unsigned char GLboolean;
 #define GL_FRAMEBUFFER 0x8d40
 #define GL_FRAMEBUFFER_BINDING 0x8ca6
@@ -133,6 +134,25 @@ typedef struct PS4GLSnapshot {
 } PS4GLSnapshot;
 #define GL_TRIANGLES 0x0004
 #define GL_CURRENT_PROGRAM 0x8b8d
+#define GL_VERTEX_SHADER 0x8b31
+#define GL_FRAGMENT_SHADER 0x8b30
+#define GL_COMPILE_STATUS 0x8b81
+#define GL_INFO_LOG_LENGTH 0x8b84
+#define GL_SHADER_SOURCE_LENGTH 0x8b88
+#define GL_SHADER_TYPE 0x8b4f
+#define GL_ATTACHED_SHADERS 0x8b85
+#define PS4GL_MAX_SHADERS 32
+#define PS4GL_SHADER_SOURCE_LIMIT (256u*1024u)
+typedef int (*PS4GLCompileSource)(int, const char *, uint32_t **, size_t *, char *, size_t);
+typedef int (*PS4GLLinkSources)(const char *, const char *, uint32_t **, size_t *, uint32_t **, size_t *, char *, size_t);
+typedef struct PS4GLShader {
+  GLuint name;
+  GLenum type;
+  char *source, *compiled_source;
+  char log[2048];
+  unsigned references;
+  GLboolean deleted, compiled;
+} PS4GLShader;
 #define GL_LINK_STATUS 0x8b82
 #define GL_DELETE_STATUS 0x8b80
 #define GL_OUT_OF_MEMORY 0x0505
@@ -150,6 +170,9 @@ typedef struct PS4GLUniform {
   unsigned array_length, array_stride[2]; /* zero length means non-array */
 } PS4GLUniform;
 typedef struct PS4GLProgram {
+  GLboolean allocated;
+  GLuint attached[2];
+  char log[2048];
   VkPipeline pipeline;
   VkShaderModule modules[2];
   PS4GLBlendVariant variants[PS4GL_BLEND_VARIANTS];
@@ -187,6 +210,11 @@ typedef struct PS4GLContext {
   VkDevice program_device;
   VkRenderPass program_pass;
   PS4GLProgram programs[PS4GL_MAX_PROGRAMS];
+  PS4GLShader shaders[PS4GL_MAX_SHADERS];
+  GLuint next_shader, link_destination;
+  PS4GLCompileSource compile_source;
+  PS4GLLinkSources link_sources;
+  GLuint (*import_program)(VkDevice, VkRenderPass, const uint32_t *, size_t, const uint32_t *, size_t);
   PS4GLBuffer buffers[PS4GL_MAX_BUFFERS];
   PS4GLAttrib attribs[PS4GL_MAX_ATTRIBS];
   GLuint array_buffer, element_buffer, next_buffer;
@@ -233,6 +261,21 @@ void glFramebufferTexture2D(GLenum, GLenum, GLenum, GLuint, GLint);
 GLenum glCheckFramebufferStatus(GLenum);
 GLuint ps4glFramebufferTexture(const PS4GLContext *);
 void ps4glDestroyFramebuffers(PS4GLContext *);
+void ps4glConfigureShaderCompiler(VkRenderPass, PS4GLCompileSource, PS4GLLinkSources);
+GLuint glCreateShader(GLenum);
+void glShaderSource(GLuint, GLsizei, const char *const *, const GLint *);
+void glCompileShader(GLuint);
+void glDeleteShader(GLuint);
+GLboolean glIsShader(GLuint);
+void glGetShaderiv(GLuint, GLenum, GLint *);
+void glGetShaderInfoLog(GLuint, GLsizei, GLsizei *, char *);
+void glGetShaderSource(GLuint, GLsizei, GLsizei *, char *);
+GLuint glCreateProgram(void);
+void glAttachShader(GLuint, GLuint);
+void glDetachShader(GLuint, GLuint);
+void glLinkProgram(GLuint);
+void glGetProgramInfoLog(GLuint, GLsizei, GLsizei *, char *);
+void ps4glDestroyShaderObjects(PS4GLContext *);
 PS4GLProc ps4glGetProcAddress(const char *);
 PS4GLContext *ps4glCurrentContext(void);
 /* Explicit Vulkan-SPIR-V import, not glCompileShader/glLinkProgram. Bounded float default-uniform blocks;

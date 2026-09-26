@@ -20,12 +20,15 @@ variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
 variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
+variants.add_argument('--glvbo', action='store_true')
 variants.add_argument('--gldraw', action='store_true')
 variants.add_argument('--glstate', action='store_true')
 variants.add_argument('--twp', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
+if args.glvbo:
+    args.gldraw = True
 if args.glstate:
     args.rectclear = True
 if args.rectclear:
@@ -54,7 +57,7 @@ if mode != 'triangle':
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
     if args.gldraw:
-        reports /= 'gldraw'
+        reports /= 'glvbo' if args.glvbo else 'gldraw'
     elif args.twp:
         reports /= 'twp'
     elif args.composite:
@@ -125,7 +128,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 screenshot = max(candidates, key=lambda f: f.stat().st_mtime)
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
                 shutil.copy2(guest_log, reports / 'triangle-result.txt')
-                check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-ps4gl-draw.py' if args.gldraw else 'tests/ps4/check-vulkan-twp.py' if args.twp else 'tests/ps4/check-vulkan-composite.py' if args.composite else 'tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
+                check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-ps4gl-vertex.py' if args.glvbo else 'tests/ps4/check-ps4gl-draw.py' if args.gldraw else 'tests/ps4/check-vulkan-twp.py' if args.twp else 'tests/ps4/check-vulkan-composite.py' if args.composite else 'tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
                                         str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else []), *(['--upload'] if args.upload else []), *(['--rectclear'] if args.rectclear else [])],
                                        capture_output=True, text=True)
                 (reports / 'pixel-test.log').write_text(check.stdout + check.stderr)
@@ -142,6 +145,9 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.glvbo and (guest_log.read_text().count('PASS GL vertex deleted-buffer rejection') != 8 or
+                               'PASS GL vertex command buffer resubmission' not in guest_log.read_text()):
+                raise RuntimeError('GL vertex lifetime checks incomplete')
             if args.gldraw and guest_log.read_text().count('PASS GL program rejection ') != 3:
                 raise RuntimeError('GL program rejection checks incomplete')
             if args.gldraw and guest_log.read_text().count('GL draw frame ') != 8:

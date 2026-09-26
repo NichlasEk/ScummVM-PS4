@@ -35,6 +35,9 @@ static FILE *report;
 #ifdef GLDRAW_PROBE
 #include "ps4gl.c"
 #include "ps4gl-vulkan.c"
+#ifdef GLVBO_PROBE
+#include "glvbo.h"
+#endif
 #endif
 int main(void) {
   report = fopen("/data/scummvm-vulkan-probe.log", "w");
@@ -174,7 +177,9 @@ int main(void) {
   lci.setLayoutCount=1; lci.pSetLayouts=&twp_set_layout;
 #endif
   CHECK(vkCreatePipelineLayout(device, &lci, NULL, &layout));
-#ifdef TWP_PROBE
+#ifdef GLDRAW_PROBE
+  const unsigned pipeline_count = 0;
+#elif defined(TWP_PROBE)
   const unsigned pipeline_count = 5;
 #elif defined(COMPOSITE_PROBE)
   const unsigned pipeline_count = 4;
@@ -301,6 +306,7 @@ int main(void) {
   ps4glMakeCurrent(&gl);
   GLuint glprograms[]={ps4glCreateProgramSPIRV(device,pass,background_vert,sizeof(background_vert),background_frag,sizeof(background_frag)),
     ps4glCreateProgramSPIRV(device,pass,triangle_vert,sizeof(triangle_vert),triangle_frag,sizeof(triangle_frag))};
+  ps4glConfigureVertexDevice(physical,device);
   if(!glprograms[0] || !glprograms[1] || glGetError()!=GL_NO_ERROR) return 2;
   uint32_t rejected_spv[]={0x07230203,0x00010000,0,10,0,(4u<<16)|59,1,2,0};
   for(unsigned test=0;test<3;++test) {
@@ -386,11 +392,15 @@ int main(void) {
     glDisable(GL_SCISSOR_TEST);
     glViewport(0,0,1280,720);
     glUseProgram(glprograms[0]); draw_gl(GL_TRIANGLES,0,3);
-    glViewport(160,90,960,540);
-    glEnable(GL_SCISSOR_TEST); glScissor(500,180,300,260);
     glUseProgram(glprograms[1]);
     if(frame==7) glDeleteProgram(glprograms[1]);
+#ifdef GLVBO_PROBE
+    if(draw_gl_vertices(draw_gl)) return 2;
+#else
+    glViewport(160,90,960,540);
+    glEnable(GL_SCISSOR_TEST); glScissor(500,180,300,260);
     draw_gl(GL_TRIANGLES,0,3);
+#endif
     fprintf(report,"GL draw frame %u error=%u\n",frame,glGetError());
     ps4glEndPass();
 #elif defined(TWP_PROBE)
@@ -427,6 +437,14 @@ int main(void) {
                            .pCommandBuffers = &cmd};
     CHECK(vkQueueSubmit(queue, 1, &submit, fence));
     CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ULL));
+#ifdef GLVBO_PROBE
+    if(frame==7) {
+      CHECK(vkResetFences(device,1,&fence));
+      CHECK(vkQueueSubmit(queue,1,&submit,fence));
+      CHECK(vkWaitForFences(device,1,&fence,VK_TRUE,5000000000ULL));
+      fprintf(report,"PASS GL vertex command buffer resubmission\n");
+    }
+#endif
 #ifdef READBACK_PROBE
     if (check_readback(frame)) return 2;
     if (frame == 7) {
@@ -453,6 +471,9 @@ int main(void) {
     CHECK(vkQueuePresentKHR(queue, &present));
     fprintf(report, "FRAME %u Vulkan submitted and presented\n", frame);
     CHECK(vkResetCommandBuffer(cmd, 0));
+#ifdef GLDRAW_PROBE
+    ps4glReleaseVertexSnapshots(&gl);
+#endif
     sceKernelUsleep(100000); /* Give the native screenshot hotkey a present. */
   }
   CHECK(vkDeviceWaitIdle(device));
@@ -461,6 +482,7 @@ int main(void) {
 #ifdef GLDRAW_PROBE
   glDeleteProgram(glprograms[0]); glDeleteProgram(glprograms[1]); glUseProgram(0);
   if(glIsProgram(glprograms[0]) || glIsProgram(glprograms[1]) || glGetError()!=GL_NO_ERROR) return 2;
+  ps4glDestroyBuffers(&gl);
   ps4glDestroyPrograms(device,&gl);
   ps4glMakeCurrent(NULL);
 #endif

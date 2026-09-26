@@ -7,6 +7,8 @@
 #include <vulkan/vulkan.h>
 #include <stdint.h>
 #include <stddef.h>
+typedef ptrdiff_t GLsizeiptr;
+typedef ptrdiff_t GLintptr;
 typedef unsigned int GLuint;
 typedef unsigned int GLenum;
 typedef unsigned int GLbitfield;
@@ -14,6 +16,36 @@ typedef int GLint;
 typedef int GLsizei;
 typedef float GLfloat;
 typedef unsigned char GLboolean;
+#define GL_ARRAY_BUFFER 0x8892
+#define GL_ARRAY_BUFFER_BINDING 0x8894
+#define GL_BUFFER_SIZE 0x8764
+#define GL_BUFFER_USAGE 0x8765
+#define GL_STATIC_DRAW 0x88e4
+#define GL_DYNAMIC_DRAW 0x88e8
+#define GL_STREAM_DRAW 0x88e0
+#define GL_FLOAT 0x1406
+#define PS4GL_MAX_BUFFERS 32
+#define PS4GL_MAX_ATTRIBS 8
+#define PS4GL_MAX_SNAPSHOTS 64
+#define PS4GL_MAX_BUFFER_BYTES (16u*1024u*1024u)
+typedef struct PS4GLBuffer {
+  GLuint name;
+  unsigned char *data;
+  size_t size;
+  GLenum usage;
+  GLboolean created;
+} PS4GLBuffer;
+typedef struct PS4GLAttrib {
+  GLuint buffer;
+  GLint size;
+  GLsizei stride;
+  uintptr_t offset;
+  GLboolean enabled;
+} PS4GLAttrib;
+typedef struct PS4GLSnapshot {
+  VkBuffer buffer;
+  VkDeviceMemory memory;
+} PS4GLSnapshot;
 #define GL_TRIANGLES 0x0004
 #define GL_CURRENT_PROGRAM 0x8b8d
 #define GL_LINK_STATUS 0x8b82
@@ -26,6 +58,7 @@ typedef struct PS4GLProgram {
   VkPipeline pipeline;
   VkPipelineLayout layout;
   GLboolean deleted, retired;
+  unsigned components[PS4GL_MAX_ATTRIBS], vertex_stride;
 } PS4GLProgram;
 #define GL_FALSE 0
 #define GL_TRUE 1
@@ -50,6 +83,14 @@ typedef struct PS4GLContext {
   VkDevice program_device;
   VkRenderPass program_pass;
   PS4GLProgram programs[PS4GL_MAX_PROGRAMS];
+  PS4GLBuffer buffers[PS4GL_MAX_BUFFERS];
+  PS4GLAttrib attribs[PS4GL_MAX_ATTRIBS];
+  GLuint array_buffer, next_buffer;
+  VkPhysicalDevice physical;
+  PS4GLSnapshot snapshots[PS4GL_MAX_SNAPSHOTS];
+  unsigned snapshot_count;
+  size_t snapshot_bytes;
+  int (*upload_vertices)(struct PS4GLContext *, const void *, size_t);
 } PS4GLContext;
 typedef void (*PS4GLProc)(void);
 int ps4glInit(PS4GLContext *, GLint width, GLint height);
@@ -59,13 +100,29 @@ void ps4glBeginPass(VkCommandBuffer);
 void ps4glEndPass(void);
 PS4GLProc ps4glGetProcAddress(const char *);
 PS4GLContext *ps4glCurrentContext(void);
-/* Explicit Vulkan-SPIR-V import, not glCompileShader/glLinkProgram. No resources
- * or vertex attributes in this first draw subset. Clip coordinates must already
+/* Explicit Vulkan-SPIR-V import, not glCompileShader/glLinkProgram. No descriptor resources;
+ * plain float vertex inputs at locations 0..7 are supported. Clip coordinates must already
  * use Vulkan conventions (Y flipped and depth mapped to [0,1]). */
 GLuint ps4glCreateProgramSPIRV(VkDevice, VkRenderPass,
                              const uint32_t *, size_t, const uint32_t *, size_t);
 /* Owner must end recording and retire ALL commands using these objects first. */
 void ps4glDestroyPrograms(VkDevice, PS4GLContext *);
+void glGenBuffers(GLsizei, GLuint *);
+void glBindBuffer(GLenum, GLuint);
+void glDeleteBuffers(GLsizei, const GLuint *);
+GLboolean glIsBuffer(GLuint);
+void glBufferData(GLenum, GLsizeiptr, const void *, GLenum);
+void glBufferSubData(GLenum, GLintptr, GLsizeiptr, const void *);
+void glGetBufferParameteriv(GLenum, GLenum, GLint *);
+void glVertexAttribPointer(GLuint, GLint, GLenum, GLboolean, GLsizei, const void *);
+void glEnableVertexAttribArray(GLuint);
+void glDisableVertexAttribArray(GLuint);
+/* Pack active inputs into the imported program's canonical float layout. */
+int ps4glPackVertices(PS4GLContext *, const PS4GLProgram *, GLsizei, void *);
+void ps4glDestroyBuffers(PS4GLContext *);
+void ps4glConfigureVertexDevice(VkPhysicalDevice, VkDevice);
+/* Only after fences complete AND all referencing command buffers are reset. */
+void ps4glReleaseVertexSnapshots(PS4GLContext *);
 void glUseProgram(GLuint);
 void glDeleteProgram(GLuint);
 GLboolean glIsProgram(GLuint);

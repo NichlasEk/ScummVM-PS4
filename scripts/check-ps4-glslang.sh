@@ -14,7 +14,7 @@ cmake --build "$work" -j"${JOBS:-8}" >> artifacts/glslang/host-build.log 2>&1
 python3 scripts/prepare-legacy-glsl-probe.py "$work"
 cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Icompat/ps4gl -I"$src" \
  -c compat/ps4gl/ps4gl-glsl.c -o "$work/wrapper.o"
-cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Icompat/ps4gl -I"$work" \
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Icompat/ps4gl -I"$work" -I"$root/.tools/opengnm-stack/Vulkan-Headers/include" \
  -c tests/ps4/check-ps4gl-glsl.c -o "$work/check.o"
 c++ -fsanitize=address,undefined "$work/check.o" "$work/wrapper.o" -Wl,--start-group \
  "$work/glslang/libglslang.a" "$work/glslang/libMachineIndependent.a" "$work/glslang/libGenericCodeGen.a" \

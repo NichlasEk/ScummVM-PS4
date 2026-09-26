@@ -169,6 +169,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
             if args.gllegacy and guest_log.read_text().count('PASS legacy source and attribute bindings 4 1 6') != 2:
                 raise RuntimeError('Legacy shader attribute checks incomplete')
+            if args.gllegacy and 'PASS original TWP fade signed integer uniform' not in guest_log.read_text():
+                raise RuntimeError('TWP integer fade setup incomplete')
             if args.glsl and (guest_log.read_text().count('GLSL runtime program=') != 2 or
                               guest_log.read_text().count('PASS GL shader objects copied source and deferred deletion') != 2 or
                               'PASS GL shader objects reject cross-stage mismatch' not in guest_log.read_text() or

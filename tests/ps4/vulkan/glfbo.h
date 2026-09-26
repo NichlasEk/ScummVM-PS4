@@ -8,6 +8,21 @@ static void frame_image_barrier(VkCommandBuffer cmd, VkImage image, int end) {
     .image=image,.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
   vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,NULL,0,NULL,1,&b);
 }
+static void draw_gl_color(GLuint program) {
+#ifdef GLLEGACY_PROBE
+  GLint mode=glGetUniformLocation(program,"mode"), modes=glGetUniformLocation(program,"modes"), last=glGetUniformLocation(program,"modes[1]");
+  if(mode<0 || modes<0 || last<0) return;
+  const GLint values[]={3,0};
+  glUniform1i(mode,-7); glUniform1iv(modes,2,values); glUniform1i(last,-11);
+#else
+  (void)program;
+#endif
+  glDrawArrays(GL_TRIANGLES,0,3);
+#ifdef GLLEGACY_PROBE
+  /* Later CPU mutations must not alter already recorded draw snapshots. */
+  glUniform1i(mode,0); glUniform1i(last,99);
+#endif
+}
 static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   GLuint texture, framebuffer;
   glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
@@ -24,7 +39,7 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glViewport(0,0,64,32); glDisable(GL_BLEND); glDisable(GL_SCISSOR_TEST);
   glUseProgram(programs[0]); GLint color=glGetUniformLocation(programs[0],"color");
   if(color<0) return 2;
-  glUniform4f(color,1,0,0,1); glDrawArrays(GL_TRIANGLES,0,3);
+  glUniform4f(color,1,0,0,1); draw_gl_color(programs[0]);
   glUseProgram(programs[1]); glDrawArrays(GL_TRIANGLES,0,3);
   if(glGetError()!=GL_INVALID_OPERATION) return 2; /* feedback */
   glTexSubImage2D(GL_TEXTURE_2D,0,0,0,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
@@ -41,7 +56,7 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,64,64,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
   glBindFramebuffer(GL_FRAMEBUFFER,framebuffer); glViewport(0,0,64,32);
   glUseProgram(programs[0]); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
-  glUniform4f(color,0,1,1,.5f); glDrawArrays(GL_TRIANGLES,0,3); glDisable(GL_BLEND);
+  glUniform4f(color,0,1,1,.5f); draw_gl_color(programs[0]); glDisable(GL_BLEND);
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(640,0,640,720);
   glUseProgram(programs[1]); glDrawArrays(GL_TRIANGLES,0,3);
   glDeleteFramebuffers(1,&framebuffer); glDeleteTextures(1,&texture);
@@ -56,7 +71,7 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
     glGenFramebuffers(1,&persistent_framebuffer); glBindFramebuffer(GL_FRAMEBUFFER,persistent_framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,persistent_texture,0);
     glViewport(0,0,8,8); glUseProgram(programs[0]);
-    glUniform4f(color,1,0,1,1); glDrawArrays(GL_TRIANGLES,0,3);
+    glUniform4f(color,1,0,1,1); draw_gl_color(programs[0]);
   } else {
     glBindTexture(GL_TEXTURE_2D,persistent_texture);
     glBindFramebuffer(GL_FRAMEBUFFER,persistent_framebuffer);

@@ -330,7 +330,7 @@ int main(void) {
   if(reject_glsl()) return 2;
 #ifdef GLLEGACY_PROBE
   GLuint glprograms[]={compile_glsl_program(device,pass,legacy_vsrc,legacy_color),
-    compile_glsl_program(device,pass,legacy_vsrc,legacy_fragmentSrc)};
+    compile_glsl_program(device,pass,legacy_vsrc,legacy_fadeShader)};
   if(legacy_vertices()) return 2;
 #else
   GLuint glprograms[]={compile_glsl_program(device,pass,glsl_vertex,glsl_color),

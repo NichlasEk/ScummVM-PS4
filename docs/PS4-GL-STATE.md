@@ -5,7 +5,7 @@ single-threaded C frontend for clear color, scissor, viewport state, selected
 queries, error handling and procedure lookup. It forwards color clears to the
 existing Vulkan attachment-clear implementation. It does not yet own an SDL
 context or compile/link GLSL. Bounded RGBA8 textures, float vertex/index-buffer
-uploads, and named float/vector/mat4 uniforms and arrays are supported by the snapshot paths described below. The imported-program
+uploads, and named float/vector/mat4 plus signed scalar integer uniforms and arrays are supported by the snapshot paths described below. The imported-program
 draw subset added below is separate from runtime GLSL compilation.
 No OpenGL version or extension strings are advertised. Unknown procedure names
 return NULL, so the partial frontend cannot silently stand in for a complete GL.
@@ -622,3 +622,9 @@ probe. Shader objects, cross-stage linking and deferred shader deletion now
 work in that diagnostic as well. Bounded legacy GLSL translation and named
 attribute bindings now render original TWP shader sources there too. SDL
 integration and the remaining engine API gaps are still pending.
+
+
+Signed scalar integer uniforms and arrays now use the same retained snapshot
+path; see the latest [compiler checkpoint](PS4-GLSL.md). The original TWP fade
+shader renders through the GL API with `glUniform1i` selecting its normal branch.
+Unsigned/vector/bool uniform storage still fails import explicitly.

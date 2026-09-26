@@ -337,7 +337,7 @@ GLint glGetUniformLocation(GLuint name, const char *uniform) {
   }
   return -1;
 }
-static void uniform(GLint location, GLsizei count, unsigned width, GLboolean transpose, const GLfloat *data) {
+static void uniform(GLint location, GLsizei count, unsigned width, GLboolean transpose, const void *data, unsigned integer) {
   if(!current) return;
   PS4GLProgram *p=program(current->program);
   if(!p) { error(GL_INVALID_OPERATION); return; }
@@ -347,15 +347,15 @@ static void uniform(GLint location, GLsizei count, unsigned width, GLboolean tra
   if(location<0 || member>=p->uniform_count) { error(GL_INVALID_OPERATION); return; }
   PS4GLUniform *u=&p->uniforms[member];
   unsigned available=u->array_length ? u->array_length : 1;
-  if(element>=available || u->width!=width || (!u->array_length && count>1)) { error(GL_INVALID_OPERATION); return; }
+  if(element>=available || u->integer!=integer || u->sampler_binding || u->width!=width || (!u->array_length && count>1)) { error(GL_INVALID_OPERATION); return; }
   if(!count) return;
   if(!data) { error(GL_INVALID_VALUE); return; }
   /* GL ignores array writes beyond the last active element. */
   if((unsigned)count>available-element) count=(GLsizei)(available-element);
   for(GLsizei j=0;j<count;++j) {
-    float value[16]; const float *input=data+(size_t)j*width;
+    uint32_t value[16]; const unsigned char *input=(const unsigned char *)data+(size_t)j*width*4;
     if(width==16 && transpose) {
-      for(unsigned c=0;c<4;++c) for(unsigned r=0;r<4;++r) value[c*4+r]=input[r*4+c];
+      for(unsigned c=0;c<4;++c) for(unsigned r=0;r<4;++r) memcpy(value+c*4+r,input+(r*4+c)*4,4);
     } else memcpy(value,input,width*4);
     for(unsigned stage=0;stage<2;++stage) if(u->offset[stage]>=0)
       memcpy(p->uniform_data[stage]+u->offset[stage]+(element+(unsigned)j)*u->array_stride[stage],value,width*4);
@@ -367,6 +367,10 @@ void glUniform1iv(GLint location, GLsizei count, const GLint *value) {
   if(!p) { error(GL_INVALID_OPERATION); return; }
   if(count<0) { error(GL_INVALID_VALUE); return; }
   if(location==-1) return;
+  if(location>=0 && (unsigned)location%PS4GL_MAX_UNIFORMS<p->uniform_count &&
+     !p->uniforms[(unsigned)location%PS4GL_MAX_UNIFORMS].sampler_binding) {
+    uniform(location,count,1,0,value,1); return;
+  }
   if(location<0 || (unsigned)location>=p->uniform_count || !p->uniforms[location].sampler_binding || count>1) {
     error(GL_INVALID_OPERATION); return;
   }
@@ -375,11 +379,11 @@ void glUniform1iv(GLint location, GLsizei count, const GLint *value) {
   p->sampler_units[p->uniforms[location].sampler_binding-2]=*value;
 }
 void glUniform1i(GLint location, GLint value) { glUniform1iv(location,1,&value); }
-void glUniform1fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,1,0,v); }
-void glUniform2fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,2,0,v); }
-void glUniform3fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,3,0,v); }
-void glUniform4fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,4,0,v); }
-void glUniformMatrix4fv(GLint l, GLsizei n, GLboolean t, const GLfloat *v) { uniform(l,n,16,t,v); }
+void glUniform1fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,1,0,v,0); }
+void glUniform2fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,2,0,v,0); }
+void glUniform3fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,3,0,v,0); }
+void glUniform4fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,4,0,v,0); }
+void glUniformMatrix4fv(GLint l, GLsizei n, GLboolean t, const GLfloat *v) { uniform(l,n,16,t,v,0); }
 void glUniform1f(GLint l, GLfloat x) { glUniform1fv(l,1,&x); }
 void glUniform2f(GLint l, GLfloat x, GLfloat y) { float v[]={x,y}; glUniform2fv(l,1,v); }
 void glUniform3f(GLint l, GLfloat x, GLfloat y, GLfloat z) { float v[]={x,y,z}; glUniform3fv(l,1,v); }

@@ -365,6 +365,29 @@ int main(void) {
   assert(!fboctx.framebuffer && !glGetError());
   ps4glDestroyFramebuffers(&fboctx); ps4glDestroyTextures(&fboctx);
   assert(ps4glGetProcAddress("glBindFramebuffer") && ps4glGetProcAddress("glCheckFramebufferStatus"));
+  PS4GLContext ints; assert(ps4glInit(&ints,80,60)); ps4glMakeCurrent(&ints);
+  PS4GLProgram *ip=&ints.programs[0];
+  ip->pipeline=(VkPipeline)(uintptr_t)1; ip->uniform_count=2;
+  ip->uniforms[0]=(PS4GLUniform){.name="mode",.width=1,.integer=1,.offset={0,16}};
+  ip->uniforms[1]=(PS4GLUniform){.name="modes",.width=1,.integer=1,.offset={16,32},.array_length=3,.array_stride={16,32}};
+  glUseProgram(1); GLint iv=0, values[]={INT32_MIN,INT32_MAX,-7};
+  glUniform1i(0,-17); glUniform1iv(1,3,values);
+  for(unsigned st=0;st<2;++st) {
+    memcpy(&iv,ip->uniform_data[st]+ip->uniforms[0].offset[st],4); assert(iv==-17);
+    for(unsigned j=0;j<3;++j) { memcpy(&iv,ip->uniform_data[st]+ip->uniforms[1].offset[st]+j*ip->uniforms[1].array_stride[st],4); assert(iv==values[j]); }
+  }
+  GLint integer_tail=glGetUniformLocation(1,"modes[2]"); glUniform1iv(integer_tail,3,values);
+  memcpy(&iv,ip->uniform_data[1]+96,4); assert(iv==INT32_MIN); /* clipped */
+  unsigned char before[sizeof(ip->uniform_data)]; memcpy(before,ip->uniform_data,sizeof(before));
+  glUniform1f(0,2); assert(glGetError()==GL_INVALID_OPERATION);
+  ip->uniforms[0].integer=0;
+  glUniform1i(0,2); assert(glGetError()==GL_INVALID_OPERATION);
+  ip->uniforms[0].integer=1;
+  glUniform1iv(0,2,values); assert(glGetError()==GL_INVALID_OPERATION);
+  glUniform1iv(0,1,NULL); assert(glGetError()==GL_INVALID_VALUE);
+  glUniform1iv(0,-1,values); assert(glGetError()==GL_INVALID_VALUE);
+  glUniform1iv(0,0,NULL); glUniform1iv(-1,1,NULL); assert(!glGetError());
+  assert(!memcmp(before,ip->uniform_data,sizeof(before)));
   PS4GLContext shaderctx;
   assert(ps4glInit(&shaderctx,80,60)); ps4glMakeCurrent(&shaderctx);
   shaderctx.program_device=(VkDevice)(uintptr_t)1; shaderctx.import_program=import_program;
@@ -419,5 +442,5 @@ int main(void) {
   for(unsigned i=0;i<PS4GL_MAX_SHADERS;++i) glDeleteShader(allshaders[i]);
   ps4glDestroyShaderObjects(&shaderctx); assert(!glGetError());
   ps4glMakeCurrent(NULL);
-  puts("PASS shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
+  puts("PASS signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

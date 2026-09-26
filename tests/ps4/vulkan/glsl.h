@@ -40,6 +40,14 @@ static GLuint compile_glsl_program(VkDevice device, VkRenderPass pass, const cha
   const float matrix[]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
   GLint transform=glGetUniformLocation(result,"u_transform"); if(transform<0) return 0;
   glUniformMatrix4fv(transform,1,GL_FALSE,matrix);
+  GLint fade_mode=glGetUniformLocation(result,"u_fadeToSep");
+  if(fade_mode>=0) {
+    glUniform1i(fade_mode,-7); glUniform1i(fade_mode,0);
+    glUniform1f(glGetUniformLocation(result,"u_fade"),1);
+    glUniform1i(glGetUniformLocation(result,"u_texture2"),0);
+    if(glGetError()) return 0;
+    fprintf(report,"PASS original TWP fade signed integer uniform\n");
+  }
   fprintf(report,"PASS legacy source and attribute bindings 4 1 6\n");
 #endif
   fprintf(report,"GLSL runtime program=%u via shader objects and cross-stage link\n",result);
@@ -66,7 +74,7 @@ static int reject_glsl(void) {
   glGetProgramiv(p,GL_LINK_STATUS,&status); if(status || glGetError()) return 2;
   char log[256]; glGetProgramInfoLog(p,sizeof(log),NULL,log); if(!log[0]) return 2;
   glUseProgram(p); if(glGetError()!=GL_INVALID_OPERATION) return 2;
-  const char *unsupported="#version 450\nlayout(set=0,binding=1) uniform Defaults{int count;};layout(location=0) out vec4 result;void main(){result=vec4(float(count));}";
+  const char *unsupported="#version 450\nlayout(set=0,binding=1) uniform Defaults{uint count;};layout(location=0) out vec4 result;void main(){result=vec4(float(count));}";
   glShaderSource(fs,1,&unsupported,NULL); glCompileShader(fs);
   glGetShaderiv(fs,GL_COMPILE_STATUS,&status); if(!status) return 2;
   glLinkProgram(p); glGetProgramiv(p,GL_LINK_STATUS,&status);

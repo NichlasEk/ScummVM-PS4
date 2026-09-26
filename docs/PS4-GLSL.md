@@ -238,3 +238,43 @@ Next: close the real engine's remaining uniform/state requirements and connect
 SDL context/procedure/frame ownership, then attempt an actual TWP boot. This
 checkpoint validates the shader bridge in an isolated diagnostic; physical PS4
 and real-game execution through this frontend remain unverified.
+
+
+## Signed integer uniform checkpoint (2026-09-26)
+
+The GL frontend now accepts signed 32-bit scalar uniforms and arrays through
+`glUniform1i`/`glUniform1iv`. Reflection retains their type separately from float
+members and samplers, including type agreement for shared stage members.
+Uploads copy integer bits directly into the existing per-stage std140 storage;
+there is no float conversion. Array locations, stage-specific strides, clipped
+writes and immutable per-draw snapshots use the existing uniform machinery.
+Invalid counts, pointers and float/int setter mismatches leave values intact.
+Sampler setters still validate texture-unit numbers separately.
+
+The `--gllegacy` diagnostic now uses the **original TWP fade fragment shader**
+with its original vertex shader. It sets `u_fadeToSep=0`, `u_fade=1` and both
+samplers to the same texture, so the established framebuffer RGB oracle remains
+applicable. This validates the normal fade branch; it does not establish a
+pixel oracle for that shader's sepia branch. The small color program now uses
+one signed scalar and an int[2] array to gate its output. Each draw supplies
+negative values and a partial array update, then mutates CPU values immediately
+after recording. Correct pixels therefore also verify retained integer snapshots.
+
+Host ASan/UBSan checks cover INT32_MIN/MAX, shared stages with different offsets
+and array strides, clipped writes, atomic errors and original fade-shader
+reflection. Existing float/matrix/array reflection tests pass. The native run
+passes 2,553 pixel checks, eight frames, resubmission and lifecycle cleanup.
+Regressions for explicit Vulkan GLSL, float/matrix arrays and sampler textures
+are recorded in `artifacts/vulkan/glinteger-regression-*.log`; integer state
+checks are in `artifacts/glslang/integer-state-host.log`.
+
+Unsigned integers, integer vectors and native bool uniform storage remain
+unsupported and fail import. The native rejection fixture now uses `uint`
+instead of the newly supported `int`. This supersedes the earlier blanket
+integer rejection, without advertising a complete GL implementation.
+
+Current package: `dist/ScummVM-PS4-GL-Legacy.pkg`.
+SHA-256: `cc0c63da5909f73b60ba893b6ea53232d738a019f64f525591904fab3ca15edf`.
+The stable 1.17 package is unchanged. Next: SDL context/procedure/frame ownership
+and the remaining engine state gaps, followed by a real TWP startup attempt.
+Physical console and real-game execution through this frontend remain unverified.

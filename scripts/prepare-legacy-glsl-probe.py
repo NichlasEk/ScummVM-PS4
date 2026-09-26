@@ -22,7 +22,7 @@ for name,body in bodies.items():
     text=(vs if name=='vsrc' else fs)+body
     parts.append(f'static const char legacy_{name}[] = {json.dumps(text)};\n')
     manifest[name]=hashlib.sha256(text.encode()).hexdigest()
-parts.append('static const char legacy_color[] = "#version 100\\nprecision mediump float;uniform vec4 color;void main(){gl_FragColor=color;}";\n')
+parts.append('static const char legacy_color[] = "#version 100\\nprecision mediump float;uniform vec4 color;uniform int mode;uniform int modes[2];void main(){gl_FragColor=(mode==-7 && modes[0]==3 && modes[1]==-11)?color:vec4(0.0);}";\n')
 (out/'legacy-sources.h').write_text(''.join(parts))
 (out/'legacy-sources.json').write_text(json.dumps(manifest,indent=2)+'\n')
 # The package carries the shader source used for reproduction and its notices.

@@ -166,8 +166,9 @@ typedef struct PS4GLShader {
 typedef struct PS4GLUniform {
   char name[64];
   unsigned width; /* 1..4 floats or 16 for column-major mat4 */
+  unsigned integer; /* signed int32 scalar/array; zero means float */
   int offset[2];
-  unsigned sampler_binding; /* 0 for float uniforms, 2/3 for sampler2D */
+  unsigned sampler_binding; /* 0 for block uniforms, 2/3 for sampler2D */
   unsigned array_length, array_stride[2]; /* zero length means non-array */
 } PS4GLUniform;
 typedef struct PS4GLProgram {

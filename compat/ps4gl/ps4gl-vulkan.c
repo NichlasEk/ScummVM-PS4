@@ -1,6 +1,7 @@
 #include "ps4gl.h"
 #include <string.h>
 #include "ps4gl-reflect.h"
+#include "ps4gl-texture-vulkan.h"
 /* Explicit bootstrap import. The caller supplies a compatible color render pass.
  * Program code is compiled to GCN by the native Vulkan driver, not by the host. */
 /* Structural/interface guard only; callers still supply validated Vulkan SPIR-V.
@@ -18,7 +19,7 @@ static int supported_interface(const uint32_t *code, size_t bytes, unsigned *com
     if(op!=59) continue; /* OpVariable */
     if(count<4) return 0;
     uint32_t storage=code[i+3];
-    if(storage==0 || storage==9 || storage==12) return 0;
+    if((storage==0 && components) || storage==9 || storage==12) return 0;
     if(components && storage==1) {
       int builtin=0; unsigned location=PS4GL_MAX_ATTRIBS;
       for(size_t j=5;j<words;j+=code[j]>>16)
@@ -62,6 +63,7 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
   if(!supported_interface(vs,vs_size,components) || !supported_interface(fs,fs_size,NULL)) goto fail;
   PS4GLProgram reflected={0};
   if(!gl_reflect_uniforms(vs,vs_size,0,&reflected) || !gl_reflect_uniforms(fs,fs_size,1,&reflected)) goto fail;
+  if(!gl_reflect_samplers(fs,fs_size,1,&reflected)) goto fail;
   unsigned slot;
   for(slot=0;slot<PS4GL_MAX_PROGRAMS;++slot) if(!ctx->programs[slot].pipeline) break;
   if(slot==PS4GL_MAX_PROGRAMS) { err=GL_OUT_OF_MEMORY; goto fail; }
@@ -77,11 +79,14 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
     if(result!=VK_SUCCESS) goto cleanup;
   }
   VkPipelineLayoutCreateInfo lci={.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-  if(reflected.uniform_stages) {
-    VkDescriptorSetLayoutBinding bindings[2]; unsigned count=0;
+  if(reflected.uniform_stages || reflected.sampler_mask) {
+    VkDescriptorSetLayoutBinding bindings[4]; unsigned count=0;
     for(unsigned stage=0;stage<2;++stage) if(reflected.uniform_stages&(1u<<stage))
       bindings[count++]=(VkDescriptorSetLayoutBinding){.binding=stage,.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount=1,.stageFlags=stage ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT};
+    for(unsigned sampler=0;sampler<2;++sampler) if(reflected.sampler_mask&(1u<<sampler))
+      bindings[count++]=(VkDescriptorSetLayoutBinding){.binding=sampler+2,.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount=1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
     VkDescriptorSetLayoutCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
       .bindingCount=count,.pBindings=bindings};
     result=vkCreateDescriptorSetLayout(device,&dci,NULL,&descriptors);
@@ -198,12 +203,27 @@ fail_upload:
   return 0;
 }
 static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
+  size_t texture_bytes=0;
+  const PS4GLTexture *sources[2]={0};
+  for(unsigned i=0;i<2;++i) if(p->sampler_mask&(1u<<i)) {
+    sources[i]=ps4glTextureAtUnit(ctx,(unsigned)p->sampler_units[i]);
+    if(!sources[i] || !sources[i]->pixels || sources[i]->width<=0 || sources[i]->height<=0 ||
+        (sources[i]->min_filter!=GL_NEAREST && sources[i]->min_filter!=GL_LINEAR)) {
+      if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
+      return 0;
+    }
+    texture_bytes+=(size_t)sources[i]->width*sources[i]->height*4;
+  }
+  if(texture_bytes+sizeof(p->uniform_data)>64u*1024u*1024u-ctx->snapshot_bytes) {
+    if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
+    return 0;
+  }
   /* Fixed 256-byte blocks match the native device's uniform offset alignment. */
   if(!upload_vertices(ctx,p->uniform_data,sizeof(p->uniform_data),0,0)) return 0;
   PS4GLSnapshot *snap=&ctx->snapshots[ctx->snapshot_count-1];
-  VkDescriptorPoolSize size={VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,2};
+  VkDescriptorPoolSize sizes[]={{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,2},{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2}};
   VkDescriptorPoolCreateInfo ci={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-    .maxSets=1,.poolSizeCount=1,.pPoolSizes=&size};
+    .maxSets=1,.poolSizeCount=2,.pPoolSizes=sizes};
   if(vkCreateDescriptorPool(ctx->program_device,&ci,NULL,&snap->pool)!=VK_SUCCESS) goto fail;
   VkDescriptorSet set;
   VkDescriptorSetAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -215,9 +235,18 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
       .dstBinding=stage,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.pBufferInfo=&info};
     vkUpdateDescriptorSets(ctx->program_device,1,&write,0,NULL);
   }
+  for(unsigned i=0;i<2;++i) if(sources[i]) {
+    if(!texture_snapshot(ctx,sources[i],&snap->textures[i])) goto fail;
+    VkDescriptorImageInfo info={snap->textures[i].sampler,snap->textures[i].view,VK_IMAGE_LAYOUT_GENERAL};
+    VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=set,.dstBinding=i+2,
+      .descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.pImageInfo=&info};
+    vkUpdateDescriptorSets(ctx->program_device,1,&write,0,NULL);
+  }
+  ctx->snapshot_bytes+=texture_bytes;
   vkCmdBindDescriptorSets(ctx->command,VK_PIPELINE_BIND_POINT_GRAPHICS,p->layout,0,1,&set,0,NULL);
   return 1;
 fail:
+  for(unsigned i=0;i<2;++i) destroy_texture_snapshot(ctx->program_device,&snap->textures[i]);
   if(snap->pool) vkDestroyDescriptorPool(ctx->program_device,snap->pool,NULL);
   vkDestroyBuffer(ctx->program_device,snap->buffer,NULL);
   vkFreeMemory(ctx->program_device,snap->memory,NULL);
@@ -240,6 +269,7 @@ void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
   if(ctx->command) { if(!ctx->error) ctx->error=GL_INVALID_OPERATION; return; }
   for(unsigned i=0;i<ctx->snapshot_count;++i) {
     if(ctx->snapshots[i].pool) vkDestroyDescriptorPool(ctx->program_device,ctx->snapshots[i].pool,NULL);
+    for(unsigned t=0;t<2;++t) destroy_texture_snapshot(ctx->program_device,&ctx->snapshots[i].textures[t]);
     vkDestroyBuffer(ctx->program_device,ctx->snapshots[i].buffer,NULL);
     vkFreeMemory(ctx->program_device,ctx->snapshots[i].memory,NULL);
     ctx->snapshots[i]=(PS4GLSnapshot){0};

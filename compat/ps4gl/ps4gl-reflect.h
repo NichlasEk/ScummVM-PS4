@@ -92,3 +92,36 @@ static int gl_reflect_uniforms(const uint32_t *s, size_t bytes, unsigned stage, 
   }
   return 1;
 }
+/* Fragment-only, non-array, float sampler2D at set 0 bindings 2/3. */
+static inline int gl_reflect_samplers(const uint32_t *s, size_t bytes, unsigned stage, PS4GLProgram *p) {
+  size_t n=bytes/4;
+  for(size_t i=5;i<n;) { unsigned wc=s[i]>>16; if(!wc || wc>n-i) return 0; i+=wc; }
+  for(size_t i=5;i<n;i+=s[i]>>16) {
+    if((s[i]&65535)!=59) continue;
+    if((s[i]>>16)<4) return 0;
+    if(s[i+3]!=0) continue;
+    if(stage!=1 || gl_spv_dec(s,n,s[i+2],-1,34)!=0) return 0;
+    int binding=gl_spv_dec(s,n,s[i+2],-1,33);
+    if(binding<2 || binding>3 || (p->sampler_mask&(1u<<(binding-2)))) return 0;
+    const uint32_t *ptr=gl_spv_type(s,n,32,s[i+1]);
+    if(!ptr || (ptr[0]>>16)!=4 || ptr[2]!=0) return 0;
+    const uint32_t *sampled=gl_spv_type(s,n,27,ptr[3]);
+    if(!sampled || (sampled[0]>>16)!=3) return 0;
+    const uint32_t *image=gl_spv_type(s,n,25,sampled[2]);
+    if(!image || (image[0]>>16)!=9 || image[3]!=1 || image[4] || image[5] || image[6] || image[7]!=1 || image[8]) return 0;
+    const uint32_t *scalar=gl_spv_type(s,n,22,image[2]);
+    if(!scalar || (scalar[0]>>16)!=3 || scalar[2]!=32) return 0;
+    const char *name=NULL;
+    for(size_t j=5;j<n;j+=s[j]>>16) if((s[j]&65535)==5 && (s[j]>>16)>=3 && s[j+1]==s[i+2]) {
+      const char *candidate=(const char *)(s+j+2), *end=memchr(candidate,0,((s[j]>>16)-2)*4);
+      if(!end || end==candidate || end-candidate>=64) return 0;
+      name=candidate;
+    }
+    if(!name || p->uniform_count==PS4GL_MAX_UNIFORMS) return 0;
+    for(unsigned u=0;u<p->uniform_count;++u) if(!strcmp(p->uniforms[u].name,name)) return 0;
+    PS4GLUniform *u=&p->uniforms[p->uniform_count++];
+    *u=(PS4GLUniform){.offset={-1,-1},.sampler_binding=(unsigned)binding}; strcpy(u->name,name);
+    p->sampler_mask|=1u<<(binding-2);
+  }
+  return 1;
+}

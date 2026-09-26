@@ -4,8 +4,8 @@ The next small integration slice is in `compat/ps4gl/`. It is a reusable,
 single-threaded C frontend for clear color, scissor, viewport state, selected
 queries, error handling and procedure lookup. It forwards color clears to the
 existing Vulkan attachment-clear implementation. It does not yet own an SDL
-context, compile/link GLSL, or upload GL textures. Float vertex/index-buffer uploads and bounded named float/vector/mat4 uniforms and arrays
-are supported by the snapshot paths described below. The imported-program
+context or compile/link GLSL. Bounded RGBA8 textures, float vertex/index-buffer
+uploads, and named float/vector/mat4 uniforms and arrays are supported by the snapshot paths described below. The imported-program
 draw subset added below is separate from runtime GLSL compilation.
 No OpenGL version or extension strings are advertised. Unknown procedure names
 return NULL, so the partial frontend cannot silently stand in for a complete GL.
@@ -371,3 +371,86 @@ The final loop-based shader passes all 3,933 RGB samples, eight frames, deletion
 checks, recorded-command resubmission and Vulkan cleanup in shadPS4. SPIR-V
 contains OpLoopMerge and an OpAccessChain with a variable array index. This does
 not validate all TWP effect branches or physical PS4 execution.
+
+
+## GL texture and sampler checkpoint (2026-09-26)
+
+The frontend now supports `glGenTextures`, `glBindTexture`, `glDeleteTextures`,
+`glIsTexture`, `glActiveTexture`, `glTexImage2D`, `glTexSubImage2D`,
+`glTexParameteri` and `glPixelStorei(UNPACK_ALIGNMENT)`. Texture names and bindings
+are separate from buffers. There are 32 texture names, four texture units,
+1024x1024 maximum dimensions and a 64 MiB CPU texture payload budget. Deletion
+unbinds the name from every unit; recorded draws retain independent GPU images.
+Binding queries for ACTIVE_TEXTURE, TEXTURE_BINDING_2D and UNPACK_ALIGNMENT are
+available. Uploads honour alignments 1/2/4/8, preserving RGBA row order.
+
+This is a bounded 2D, level-zero, RGBA/RGBA8 + UNSIGNED_BYTE path. Border must be
+zero; mipmaps, compressed formats, RGB conversion, pixel-buffer objects, unpack
+row-length/skips, texture arrays and the default texture object's storage are
+not implemented. NULL TexImage data is initialized to zero. Supported filters
+are NEAREST and LINEAR, with REPEAT or CLAMP_TO_EDGE addressing. New textures
+retain GL's mipmapped default min filter; select a supported non-mip filter
+before drawing. Missing/empty textures or unsupported mip completeness cause an
+explicit INVALID_OPERATION in this prototype, not a silent black fallback.
+
+The SPIR-V importer accepts at most two non-array floating-point fragment
+`sampler2D` resources, named via OpName, at set 0 bindings 2/3. Uniform blocks
+remain at bindings 0/1. `glGetUniformLocation` and `glUniform1i/1iv` assign the
+sampler to one of the four texture units; default assignment is unit zero.
+Wrong setter types and out-of-range units are rejected without changing state.
+Vertex samplers, separate GLSL texture/sampler resources, integer/depth/cube
+samplers and sampler arrays reject import. There are no GL sampler objects;
+texture-object sampling parameters create the native Vulkan sampler snapshots.
+
+Each textured draw snapshots the required CPU images and sampler parameters into
+coherent linear Vulkan images and retained image views/samplers. Memory layout
+uses vkGetImageSubresourceLayout, including row pitch. PREINITIALIZED-to-GENERAL
+transitions and HOST_WRITE-to-SHADER_READ visibility use separate, synchronous
+upload command buffers on queue 0, outside the owner's recording render pass.
+The frontend and owning renderer must serialize queue use on one thread. Each
+upload fence completes before its transient upload pool is destroyed. GPU image
+resources and descriptors remain alive through the owning draw's fence AND
+command reset/discard, including resubmission. CPU edits/deletion cannot alter
+earlier recorded draws. Snapshot payload shares the existing 64 MiB budget;
+physical allocation alignment adds overhead. This correctness-first path copies
+images per draw and is not yet a batched/cached texture uploader.
+
+Reproduce:
+
+```sh
+scripts/build-vulkan-probe.sh --gltexture
+xvfb-run -a -s '-screen 0 1280x720x24' \
+  python3 scripts/run-opengnm-probe.py --vulkan --gltexture
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  -Icompat/ps4gl -I.tools/opengnm-stack/Vulkan-Headers/include \
+  tests/ps4/check-ps4gl-textures.c -o build/check-ps4gl-textures
+build/check-ps4gl-textures build/vulkan-probe/triangle_frag.spv
+```
+
+The actual shadPS4 framebuffer passes 3,933 RGB checks. Left and right indexed
+triangles sample two 2x2 textures through different units. Between draws, one
+texel is replaced, one sampler changes units, filtering changes from nearest to
+linear and wrapping changes from clamp to repeat. The right red value requires
+linear averaging of 0/128; the left red value requires retaining nearest
+filtering at UV x=0.6. The blue value requires wrapping UV (1.25,1.75)
+to the correct texel in the newly selected unit. Thus wrong filtering, row order,
+wrapping, units or mutable prior resources produce a pixel mismatch. Texture
+storage is then overwritten and all texture names deleted before submission;
+the final command is submitted twice. All eight frames, deletion checks and
+Vulkan cleanup pass. Alpha sampling/blending and large-texture performance are
+not established by this RGB fixture.
+
+Host ASan/UBSan checks cover row alignment, dimensions/offset overflow, partial
+updates, preservation after invalid calls, texture units, sampler setters,
+zero initialization, deletion/unbinding and reflection rejection of unsupported
+bindings/types/stages. This remains a diagnostic rather than a game boot or
+physical PS4 validation. Next: GL blending/offscreen framebuffer state and
+runtime shader/context integration using the now-connected resource paths.
+
+Package: `dist/ScummVM-PS4-GL-Texture.pkg`.
+Reports: `artifacts/vulkan/gltexture/`.
+SHA-256: `4f3b0766098297c8357476faf6d85387db93a438e907cd3c4a4879a37d9c7f0f`.
+The previous array, uniform and indexed-draw GPU probes all pass with the new
+frontend (`artifacts/vulkan/gltexture-regression-*.log`), as do both earlier
+uniform/array reflection tests. The final texture diagnostic remains installed
+in the isolated probe build; stable ScummVM 1.17 is unchanged.

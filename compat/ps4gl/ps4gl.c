@@ -9,7 +9,7 @@ static void error(GLenum value) {
 int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   if (!ctx || width <= 0 || height <= 0) return 0;
   memset(ctx, 0, sizeof(*ctx));
-  ctx->next_buffer=1;
+  ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=4;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->attribs[i].size=4;
   ctx->width=width; ctx->height=height;
   ctx->scissor[2]=ctx->viewport[2]=width;
@@ -61,6 +61,9 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   if (!values) { error(GL_INVALID_VALUE); return; }
   if (pname==GL_SCISSOR_BOX || pname==GL_VIEWPORT)
     memcpy(values,pname==GL_SCISSOR_BOX ? current->scissor : current->viewport,4*sizeof(GLint));
+  else if(pname==GL_ACTIVE_TEXTURE) *values=GL_TEXTURE0+current->active_texture;
+  else if(pname==GL_TEXTURE_BINDING_2D) *values=current->texture_bindings[current->active_texture];
+  else if(pname==GL_UNPACK_ALIGNMENT) *values=current->unpack_alignment;
   else if (pname==GL_ELEMENT_ARRAY_BUFFER_BINDING) *values=(GLint)current->element_buffer;
   else if (pname==GL_ARRAY_BUFFER_BINDING) *values=(GLint)current->array_buffer;
   else if (pname==GL_CURRENT_PROGRAM) *values=current->program;
@@ -310,6 +313,20 @@ static void uniform(GLint location, GLsizei count, unsigned width, GLboolean tra
       memcpy(p->uniform_data[stage]+u->offset[stage]+(element+(unsigned)j)*u->array_stride[stage],value,width*4);
   }
 }
+void glUniform1iv(GLint location, GLsizei count, const GLint *value) {
+  if(!current) return;
+  PS4GLProgram *p=program(current->program);
+  if(!p) { error(GL_INVALID_OPERATION); return; }
+  if(count<0) { error(GL_INVALID_VALUE); return; }
+  if(location==-1) return;
+  if(location<0 || (unsigned)location>=p->uniform_count || !p->uniforms[location].sampler_binding || count>1) {
+    error(GL_INVALID_OPERATION); return;
+  }
+  if(!count) return;
+  if(!value || *value<0 || *value>=PS4GL_TEXTURE_UNITS) { error(GL_INVALID_VALUE); return; }
+  p->sampler_units[p->uniforms[location].sampler_binding-2]=*value;
+}
+void glUniform1i(GLint location, GLint value) { glUniform1iv(location,1,&value); }
 void glUniform1fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,1,0,v); }
 void glUniform2fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,2,0,v); }
 void glUniform3fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,3,0,v); }
@@ -380,7 +397,7 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     free(packed);
     if(!ok) return;
   }
-  if(p->uniform_stages) {
+  if(p->uniform_stages || p->sampler_mask) {
     if(!current->upload_uniforms) { error(GL_INVALID_OPERATION); return; }
     if(!current->upload_uniforms(current,p)) return;
   }
@@ -405,6 +422,9 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glEnable); PROC(glDisable); PROC(glIsEnabled); PROC(glGetError);
   PROC(glGetIntegerv); PROC(glGetFloatv);
   PROC(glUseProgram); PROC(glDeleteProgram); PROC(glIsProgram);
+  PROC(glGenTextures); PROC(glBindTexture); PROC(glDeleteTextures); PROC(glIsTexture);
+  PROC(glActiveTexture); PROC(glPixelStorei); PROC(glTexParameteri); PROC(glTexImage2D); PROC(glTexSubImage2D);
+  PROC(glUniform1i); PROC(glUniform1iv);
   PROC(glGetUniformLocation); PROC(glUniform1f); PROC(glUniform2f); PROC(glUniform3f); PROC(glUniform4f);
   PROC(glUniform1fv); PROC(glUniform2fv); PROC(glUniform3fv); PROC(glUniform4fv); PROC(glUniformMatrix4fv);
   PROC(glGetProgramiv); PROC(glDrawArrays); PROC(glDrawElements);
@@ -413,4 +433,115 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glVertexAttribPointer); PROC(glEnableVertexAttribArray); PROC(glDisableVertexAttribArray);
 #undef PROC
   return NULL;
+}
+
+static PS4GLTexture *texture_name(PS4GLContext *ctx, GLuint name) {
+  if(!name) return NULL;
+  for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) if(ctx->textures[i].name==name) return &ctx->textures[i];
+  return NULL;
+}
+const PS4GLTexture *ps4glTextureAtUnit(PS4GLContext *ctx, unsigned unit) {
+  return ctx && unit<PS4GL_TEXTURE_UNITS ? texture_name(ctx,ctx->texture_bindings[unit]) : NULL;
+}
+void glGenTextures(GLsizei count, GLuint *names) {
+  if(!current) return;
+  if(count<0 || (count && !names)) { error(GL_INVALID_VALUE); return; }
+  unsigned available=0;
+  for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) available+=!current->textures[i].name;
+  if((unsigned)count>available) { error(GL_OUT_OF_MEMORY); return; }
+  for(GLsizei n=0;n<count;++n) {
+    while(current->next_texture && texture_name(current,current->next_texture)) ++current->next_texture;
+    if(!current->next_texture) { error(GL_OUT_OF_MEMORY); return; }
+    for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) if(!current->textures[i].name) {
+      names[n]=current->textures[i].name=current->next_texture++; break;
+    }
+  }
+}
+void glActiveTexture(GLenum unit) {
+  if(!current) return;
+  if(unit<GL_TEXTURE0 || unit>=GL_TEXTURE0+PS4GL_TEXTURE_UNITS) { error(GL_INVALID_ENUM); return; }
+  current->active_texture=unit-GL_TEXTURE0;
+}
+void glBindTexture(GLenum target, GLuint name) {
+  if(!current) return;
+  if(target!=GL_TEXTURE_2D) { error(GL_INVALID_ENUM); return; }
+  if(name) {
+    PS4GLTexture *t=texture_name(current,name);
+    if(!t) for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) if(!current->textures[i].name) {
+      t=&current->textures[i]; t->name=name; break;
+    }
+    if(!t) { error(GL_OUT_OF_MEMORY); return; }
+    if(!t->created) {
+      t->created=1; t->min_filter=GL_NEAREST_MIPMAP_LINEAR; t->mag_filter=GL_LINEAR;
+      t->wrap_s=t->wrap_t=GL_REPEAT;
+    }
+  }
+  current->texture_bindings[current->active_texture]=name;
+}
+GLboolean glIsTexture(GLuint name) {
+  PS4GLTexture *t=current ? texture_name(current,name) : NULL; return t && t->created;
+}
+void glDeleteTextures(GLsizei count, const GLuint *names) {
+  if(!current) return;
+  if(count<0 || (count && !names)) { error(GL_INVALID_VALUE); return; }
+  for(GLsizei n=0;n<count;++n) {
+    PS4GLTexture *t=texture_name(current,names[n]); if(!t) continue;
+    for(unsigned u=0;u<PS4GL_TEXTURE_UNITS;++u) if(current->texture_bindings[u]==names[n]) current->texture_bindings[u]=0;
+    current->texture_bytes-=(size_t)t->width*t->height*4; free(t->pixels); *t=(PS4GLTexture){0};
+  }
+}
+void ps4glDestroyTextures(PS4GLContext *ctx) {
+  if(!ctx) return;
+  for(unsigned i=0;i<PS4GL_MAX_TEXTURES;++i) { free(ctx->textures[i].pixels); ctx->textures[i]=(PS4GLTexture){0}; }
+  memset(ctx->texture_bindings,0,sizeof(ctx->texture_bindings)); ctx->texture_bytes=0;
+}
+static PS4GLTexture *bound_texture(GLenum target) {
+  if(target!=GL_TEXTURE_2D) { error(GL_INVALID_ENUM); return NULL; }
+  PS4GLTexture *t=texture_name(current,current->texture_bindings[current->active_texture]);
+  if(!t) error(GL_INVALID_OPERATION);
+  return t;
+}
+void glPixelStorei(GLenum pname, GLint value) {
+  if(!current) return;
+  if(pname!=GL_UNPACK_ALIGNMENT) { error(GL_INVALID_ENUM); return; }
+  if(value!=1 && value!=2 && value!=4 && value!=8) { error(GL_INVALID_VALUE); return; }
+  current->unpack_alignment=(unsigned)value;
+}
+void glTexParameteri(GLenum target, GLenum pname, GLint value) {
+  if(!current) return;
+  PS4GLTexture *t=bound_texture(target); if(!t) return;
+  if(pname==GL_TEXTURE_MIN_FILTER || pname==GL_TEXTURE_MAG_FILTER) {
+    if(value!=GL_NEAREST && value!=GL_LINEAR && !(pname==GL_TEXTURE_MIN_FILTER && value==GL_NEAREST_MIPMAP_LINEAR)) {
+      error(GL_INVALID_ENUM); return;
+    }
+    if(pname==GL_TEXTURE_MIN_FILTER) t->min_filter=value; else t->mag_filter=value;
+  } else if(pname==GL_TEXTURE_WRAP_S || pname==GL_TEXTURE_WRAP_T) {
+    if(value!=GL_REPEAT && value!=GL_CLAMP_TO_EDGE) { error(GL_INVALID_ENUM); return; }
+    if(pname==GL_TEXTURE_WRAP_S) t->wrap_s=value; else t->wrap_t=value;
+  } else error(GL_INVALID_ENUM);
+}
+void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width, GLsizei height,
+                  GLint border, GLenum format, GLenum type, const void *pixels) {
+  if(!current) return;
+  PS4GLTexture *t=bound_texture(target); if(!t) return;
+  if(level || border || width<0 || height<0 || width>PS4GL_TEXTURE_LIMIT || height>PS4GL_TEXTURE_LIMIT) { error(GL_INVALID_VALUE); return; }
+  if((internal!=GL_RGBA && internal!=GL_RGBA8) || format!=GL_RGBA || type!=GL_UNSIGNED_BYTE) { error(GL_INVALID_ENUM); return; }
+  size_t bytes=(size_t)width*height*4, old=(size_t)t->width*t->height*4;
+  if(bytes>PS4GL_TEXTURE_BUDGET-(current->texture_bytes-old)) { error(GL_OUT_OF_MEMORY); return; }
+  unsigned char *copy=bytes ? calloc(1,bytes) : NULL;
+  if(bytes && !copy) { error(GL_OUT_OF_MEMORY); return; }
+  size_t row=(size_t)width*4, stride=(row+current->unpack_alignment-1)&~(size_t)(current->unpack_alignment-1);
+  if(pixels && row) for(GLsizei y=0;y<height;++y) memcpy(copy+(size_t)y*row,(const unsigned char *)pixels+(size_t)y*stride,row);
+  free(t->pixels); t->pixels=copy; t->width=width; t->height=height; current->texture_bytes+=bytes; current->texture_bytes-=old;
+}
+void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width, GLsizei height,
+                     GLenum format, GLenum type, const void *pixels) {
+  if(!current) return;
+  PS4GLTexture *t=bound_texture(target); if(!t) return;
+  if(format!=GL_RGBA || type!=GL_UNSIGNED_BYTE) { error(GL_INVALID_ENUM); return; }
+  if(level || x<0 || y<0 || width<0 || height<0 || x>t->width || y>t->height || width>t->width-x || height>t->height-y) { error(GL_INVALID_VALUE); return; }
+  if(!width || !height) return;
+  if(!pixels || !t->pixels) { error(GL_INVALID_OPERATION); return; }
+  size_t row=(size_t)width*4, stride=(row+current->unpack_alignment-1)&~(size_t)(current->unpack_alignment-1);
+  for(GLsizei r=0;r<height;++r) memcpy(t->pixels+((size_t)(y+r)*t->width+x)*4,(const unsigned char *)pixels+(size_t)r*stride,row);
 }

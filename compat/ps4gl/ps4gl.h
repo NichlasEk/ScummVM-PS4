@@ -16,6 +16,40 @@ typedef int GLint;
 typedef int GLsizei;
 typedef float GLfloat;
 typedef unsigned char GLboolean;
+#define GL_TEXTURE_2D 0x0de1
+#define GL_TEXTURE0 0x84c0
+#define GL_ACTIVE_TEXTURE 0x84e0
+#define GL_TEXTURE_BINDING_2D 0x8069
+#define GL_TEXTURE_MIN_FILTER 0x2801
+#define GL_TEXTURE_MAG_FILTER 0x2800
+#define GL_TEXTURE_WRAP_S 0x2802
+#define GL_TEXTURE_WRAP_T 0x2803
+#define GL_NEAREST 0x2600
+#define GL_LINEAR 0x2601
+#define GL_NEAREST_MIPMAP_LINEAR 0x2702
+#define GL_REPEAT 0x2901
+#define GL_CLAMP_TO_EDGE 0x812f
+#define GL_RGBA 0x1908
+#define GL_RGBA8 0x8058
+#define GL_UNSIGNED_BYTE 0x1401
+#define GL_UNPACK_ALIGNMENT 0x0cf5
+#define PS4GL_TEXTURE_UNITS 4
+#define PS4GL_MAX_TEXTURES 32
+#define PS4GL_TEXTURE_LIMIT 1024
+#define PS4GL_TEXTURE_BUDGET (64u*1024u*1024u)
+typedef struct PS4GLTexture {
+  GLuint name;
+  GLboolean created;
+  unsigned char *pixels;
+  GLsizei width,height;
+  GLenum min_filter,mag_filter,wrap_s,wrap_t;
+} PS4GLTexture;
+typedef struct PS4GLTextureSnapshot {
+  VkImage image;
+  VkDeviceMemory memory;
+  VkImageView view;
+  VkSampler sampler;
+} PS4GLTextureSnapshot;
 #define GL_ELEMENT_ARRAY_BUFFER 0x8893
 #define GL_ELEMENT_ARRAY_BUFFER_BINDING 0x8895
 #define GL_UNSIGNED_SHORT 0x1403
@@ -50,6 +84,7 @@ typedef struct PS4GLSnapshot {
   VkBuffer buffer;
   VkDeviceMemory memory;
   VkDescriptorPool pool;
+  PS4GLTextureSnapshot textures[2];
 } PS4GLSnapshot;
 #define GL_TRIANGLES 0x0004
 #define GL_CURRENT_PROGRAM 0x8b8d
@@ -66,13 +101,15 @@ typedef struct PS4GLUniform {
   char name[64];
   unsigned width; /* 1..4 floats or 16 for column-major mat4 */
   int offset[2];
+  unsigned sampler_binding; /* 0 for float uniforms, 2/3 for sampler2D */
   unsigned array_length, array_stride[2]; /* zero length means non-array */
 } PS4GLUniform;
 typedef struct PS4GLProgram {
   VkPipeline pipeline;
   VkPipelineLayout layout;
   VkDescriptorSetLayout descriptors;
-  unsigned uniform_stages, uniform_count;
+  unsigned uniform_stages, uniform_count, sampler_mask;
+  GLint sampler_units[2];
   PS4GLUniform uniforms[PS4GL_MAX_UNIFORMS];
   unsigned char uniform_data[2][PS4GL_UNIFORM_BYTES];
   GLboolean deleted, retired;
@@ -104,6 +141,10 @@ typedef struct PS4GLContext {
   PS4GLBuffer buffers[PS4GL_MAX_BUFFERS];
   PS4GLAttrib attribs[PS4GL_MAX_ATTRIBS];
   GLuint array_buffer, element_buffer, next_buffer;
+  PS4GLTexture textures[PS4GL_MAX_TEXTURES];
+  GLuint texture_bindings[PS4GL_TEXTURE_UNITS], next_texture;
+  unsigned active_texture, unpack_alignment;
+  size_t texture_bytes;
   VkPhysicalDevice physical;
   PS4GLSnapshot snapshots[PS4GL_MAX_SNAPSHOTS];
   unsigned snapshot_count;
@@ -148,6 +189,19 @@ void glDeleteProgram(GLuint);
 GLboolean glIsProgram(GLuint);
 void glGetProgramiv(GLuint, GLenum, GLint *);
 GLint glGetUniformLocation(GLuint, const char *);
+void glUniform1i(GLint, GLint);
+void glUniform1iv(GLint, GLsizei, const GLint *);
+void glGenTextures(GLsizei, GLuint *);
+void glBindTexture(GLenum, GLuint);
+void glDeleteTextures(GLsizei, const GLuint *);
+GLboolean glIsTexture(GLuint);
+void glActiveTexture(GLenum);
+void glPixelStorei(GLenum, GLint);
+void glTexParameteri(GLenum, GLenum, GLint);
+void glTexImage2D(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *);
+void glTexSubImage2D(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void *);
+const PS4GLTexture *ps4glTextureAtUnit(PS4GLContext *, unsigned);
+void ps4glDestroyTextures(PS4GLContext *);
 void glUniform1f(GLint, GLfloat);
 void glUniform2f(GLint, GLfloat, GLfloat);
 void glUniform3f(GLint, GLfloat, GLfloat, GLfloat);

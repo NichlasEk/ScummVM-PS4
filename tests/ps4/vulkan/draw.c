@@ -35,7 +35,9 @@ static FILE *report;
 #ifdef GLDRAW_PROBE
 #include "ps4gl.c"
 #include "ps4gl-vulkan.c"
-#ifdef GLARRAY_PROBE
+#ifdef GLTEXTURE_PROBE
+#include "gltexture.h"
+#elif defined(GLARRAY_PROBE)
 #include "glarray.h"
 #elif defined(GLUNIFORM_PROBE)
 #include "gluniform.h"
@@ -488,7 +490,7 @@ int main(void) {
 #ifdef GLDRAW_PROBE
   glDeleteProgram(glprograms[0]); glDeleteProgram(glprograms[1]); glUseProgram(0);
   if(glIsProgram(glprograms[0]) || glIsProgram(glprograms[1]) || glGetError()!=GL_NO_ERROR) return 2;
-  ps4glDestroyBuffers(&gl);
+  ps4glDestroyTextures(&gl); ps4glDestroyBuffers(&gl);
   ps4glDestroyPrograms(device,&gl);
   ps4glMakeCurrent(NULL);
 #endif

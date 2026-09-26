@@ -3,8 +3,8 @@
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 case "${1:-}" in
- ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray) ;;
- *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray]' >&2; exit 2 ;;
+ ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture) ;;
+ *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture]' >&2; exit 2 ;;
 esac
 variant=${1:-}
 if [[ "$variant" == --glstate ]]; then
@@ -49,25 +49,29 @@ if [[ "$variant" == --glstate ]]; then
  sed -i '1i#define GLSTATE_PROBE 1' "$probe/draw.c"
  cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$probe/"
 fi
-if [[ "$variant" == --gldraw || "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray ]]; then
+if [[ "$variant" == --gldraw || "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLDRAW_PROBE 1' "$probe/draw.c"
- cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$probe/"
+ cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$probe/"
 fi
-if [[ "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray ]]; then
+if [[ "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLVBO_PROBE 1' "$probe/draw.c"
  cp "$root/tests/ps4/vulkan/glvbo.h" "$probe/"
 fi
-if [[ "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray ]]; then
+if [[ "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLINDEX_PROBE 1' "$probe/draw.c"
  cp "$root/tests/ps4/vulkan/glindex.h" "$probe/glindex.h"
 fi
-if [[ "$variant" == --gluniform || "$variant" == --glarray ]]; then
+if [[ "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLUNIFORM_PROBE 1' "$probe/draw.c"
  cp "$root/tests/ps4/vulkan/gluniform.h" "$probe/"
 fi
-if [[ "$variant" == --glarray ]]; then
+if [[ "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLARRAY_PROBE 1' "$probe/draw.c"
  cp "$root/tests/ps4/vulkan/glarray.h" "$probe/"
+fi
+if [[ "$variant" == --gltexture ]]; then
+ sed -i '1i#define GLTEXTURE_PROBE 1' "$probe/draw.c"
+ cp "$root/tests/ps4/vulkan/gltexture.h" "$probe/"
 fi
 content=IV0000-SCVM00009_00-SCUMMVMVULKAN001
 driver="$root/.tools/opengnm-stack/vulkan-ps4"
@@ -113,14 +117,17 @@ fi
 if [[ "$variant" == --glvbo ]]; then
  package=ScummVM-PS4-GL-Vertex.pkg
 fi
-if [[ "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray ]]; then
+if [[ "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  package=ScummVM-PS4-GL-Index.pkg
 fi
-if [[ "$variant" == --gluniform || "$variant" == --glarray ]]; then
+if [[ "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  package=ScummVM-PS4-GL-Uniform.pkg
 fi
-if [[ "$variant" == --glarray ]]; then
+if [[ "$variant" == --glarray || "$variant" == --gltexture ]]; then
  package=ScummVM-PS4-GL-Array.pkg
+fi
+if [[ "$variant" == --gltexture ]]; then
+ package=ScummVM-PS4-GL-Texture.pkg
 fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"

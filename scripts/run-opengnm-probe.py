@@ -20,6 +20,7 @@ variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
 variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
+variants.add_argument('--gltexture', action='store_true')
 variants.add_argument('--glarray', action='store_true')
 variants.add_argument('--gluniform', action='store_true')
 variants.add_argument('--glindex', action='store_true')
@@ -30,6 +31,8 @@ variants.add_argument('--twp', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
+if args.gltexture:
+    args.glindex = True
 if args.glarray:
     args.gluniform = True
 if args.gluniform:
@@ -66,7 +69,7 @@ if mode != 'triangle':
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
     if args.gldraw:
-        reports /= 'glarray' if args.glarray else 'gluniform' if args.gluniform else 'glindex' if args.glindex else 'glvbo' if args.glvbo else 'gldraw'
+        reports /= 'gltexture' if args.gltexture else 'glarray' if args.glarray else 'gluniform' if args.gluniform else 'glindex' if args.glindex else 'glvbo' if args.glvbo else 'gldraw'
     elif args.twp:
         reports /= 'twp'
     elif args.composite:
@@ -154,6 +157,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.gltexture and guest_log.read_text().count('PASS GL texture units updates filtering and deletion') != 8:
+                raise RuntimeError('GL texture checks incomplete')
             if args.glarray and guest_log.read_text().count('PASS GL array snapshots and indexed updates') != 8:
                 raise RuntimeError('GL array checks incomplete')
             if args.gluniform and guest_log.read_text().count('PASS GL uniform snapshots and names') != 8:

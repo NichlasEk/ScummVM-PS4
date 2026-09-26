@@ -27,6 +27,8 @@ for name in names:
         filename = name.replace('triangle', 'gluniform')
     if name.startswith('triangle') and '--glarray' in sys.argv:
         filename = name.replace('triangle', 'glarray')
+    if name.startswith('triangle') and '--gltexture' in sys.argv:
+        filename = 'glvbo_vert' if name.endswith('_vert') else 'gltexture_frag'
     subprocess.run(['glslc', '-fshader-stage=' + stage, str(source / (filename + '.glsl')),
                     '-o', str(binary)], check=True)
     subprocess.run(['spirv-val', str(binary)], check=True)

@@ -174,6 +174,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 sdl_log = guest_log.read_text()
                 sdl_markers = ('PASS SDL triangle strips arrays uint16 uint32 and retained indices',
                                'PASS SDL numeric framebuffer and shader limits',
+                               'PASS SDL launcher 2D startup state and separate pack alignment',
                                'PASS SDL empty swap preserves presented image',
                                'PASS SDL teardown discards unfinished frame',
                                'PASS reusable frame owner destruction',

@@ -54,9 +54,10 @@ itself a startup blocker.
 5. **Triangle strips implemented:** launcher-style four-corner surfaces now pass
    the native pixel oracle through array and uint16/uint32 index paths. See
    [PS4-GL-TRIANGLE-STRIPS.md](PS4-GL-TRIANGLE-STRIPS.md). TWP line strips/loops
-   remain unsupported. Launcher setup also disables cull, depth and dither,
-   which the current state API rejects. Distinguish disable semantics from
-   claiming working depth/cull support.
+   remain unsupported. Launcher setup now accepts disabling cull, depth and
+   dither under the existing fixed-disabled Vulkan policy. Enabling them is
+   still rejected; this does not add depth/cull support. Pack alignment is
+   separately tracked. See [PS4-GL-LAUNCHER-STATE.md](PS4-GL-LAUNCHER-STATE.md).
 6. Validate real texture sizes/formats and object lifetime. The current 1024
    texture limit is below TWP's 1280x720 screen width. RGB8 and RGB565 uploads
    now work alongside RGBA8, but other packed/BGRA/indexed formats remain. See

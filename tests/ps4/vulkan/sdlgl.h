@@ -48,6 +48,19 @@ static SDL_GLContext sdl_create(SDL_Window **window) {
   GLint limit=0; glGetIntegerv(GL_MAX_TEXTURE_SIZE,&limit); if(limit!=PS4GL_TEXTURE_LIMIT) return NULL;
   glGetIntegerv(GL_MAX_VERTEX_ATTRIBS,&limit); if(limit!=PS4GL_MAX_ATTRIBS) return NULL;
   fprintf(report,"PASS SDL numeric framebuffer and shader limits\n");
+  /* Replay the actual launcher's 2D startup state before any frame acquisition. */
+  glDisable(GL_CULL_FACE); glDisable(GL_DEPTH_TEST); glDisable(GL_DITHER);
+  glPixelStorei(GL_PACK_ALIGNMENT,4);
+  glGetIntegerv(GL_PACK_ALIGNMENT,&limit);
+  if(limit!=4 || glIsEnabled(GL_CULL_FACE) || glIsEnabled(GL_DEPTH_TEST) ||
+     glIsEnabled(GL_DITHER) || glGetError()!=GL_NO_ERROR || ps4glCurrentContext()->command) return NULL;
+  /* Pack state must never change texture upload row layout. */
+  glPixelStorei(GL_PACK_ALIGNMENT,8); glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+  glGetIntegerv(GL_PACK_ALIGNMENT,&limit); if(limit!=8) return NULL;
+  glGetIntegerv(GL_UNPACK_ALIGNMENT,&limit); if(limit!=1) return NULL;
+  glPixelStorei(GL_PACK_ALIGNMENT,4); glPixelStorei(GL_UNPACK_ALIGNMENT,4);
+  glEnable(GL_CULL_FACE); if(glGetError()!=GL_INVALID_OPERATION) return NULL;
+  fprintf(report,"PASS SDL launcher 2D startup state and separate pack alignment\n");
   int w=0,h=0; SDL_GL_GetDrawableSize(*window,&w,&h); if(w!=1280 || h!=720) return NULL;
   if(SDL_GL_SetSwapInterval(0)!=-1 || SDL_GL_SetSwapInterval(1) || SDL_GL_GetSwapInterval()!=1) return NULL;
   if(SDL_GL_MakeCurrent(NULL,NULL) || ps4glCurrentContext() || SDL_GL_GetCurrentContext()) return NULL;

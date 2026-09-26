@@ -102,6 +102,7 @@ typedef struct PS4GLBlendVariant { PS4GLBlend state; VkPipeline pipeline; VkRend
 #define GL_RGBA8 0x8058
 #define GL_UNSIGNED_BYTE 0x1401
 #define GL_UNPACK_ALIGNMENT 0x0cf5
+#define GL_PACK_ALIGNMENT 0x0d05
 #define PS4GL_TEXTURE_UNITS 4
 #define PS4GL_MAX_TEXTURES 32
 #define PS4GL_TEXTURE_LIMIT 1024
@@ -227,6 +228,9 @@ typedef struct PS4GLProgram {
 #define GL_COLOR_BUFFER_BIT 0x4000
 #define GL_DEPTH_BUFFER_BIT 0x0100
 #define GL_STENCIL_BUFFER_BIT 0x0400
+#define GL_CULL_FACE 0x0b44
+#define GL_DEPTH_TEST 0x0b71
+#define GL_DITHER 0x0bd0
 #define GL_SCISSOR_TEST 0x0c11
 #define GL_SCISSOR_BOX 0x0c10
 #define GL_VIEWPORT 0x0ba2
@@ -263,7 +267,7 @@ typedef struct PS4GLContext {
   int (*prepare_target)(struct PS4GLContext *);
   void (*end_target)(struct PS4GLContext *);
   GLuint texture_bindings[PS4GL_TEXTURE_UNITS], next_texture;
-  unsigned active_texture, unpack_alignment;
+  unsigned active_texture, unpack_alignment, pack_alignment;
   size_t texture_bytes;
   VkPhysicalDevice physical;
   PS4GLSnapshot snapshots[PS4GL_MAX_SNAPSHOTS];

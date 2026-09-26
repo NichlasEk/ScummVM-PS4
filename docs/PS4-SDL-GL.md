@@ -197,3 +197,12 @@ Current package SHA-256:
 `89e6d250cdeb7d2baf1ae1d150552b70594a0cdf12ab573ac47f24511c7a8927`.
 The stable package remains unchanged; actual application startup is still gated
 at GLAD and has not been rebuilt for this upload-format milestone.
+
+## Launcher-state continuation (2026-09-26)
+
+The fixture now replays ScummVM's 2D startup disables and pack-alignment setup
+before acquiring a frame. All 2,553 pixel checks and native cleanup pass. See
+[PS4-GL-LAUNCHER-STATE.md](PS4-GL-LAUNCHER-STATE.md) for the bounded state policy
+and the distinction from actual launcher startup.
+Current package SHA-256:
+`b1c5394b705d441a3b252cdb7526e1d85ee3d6b4f106fec0a477117176cae1a0`.

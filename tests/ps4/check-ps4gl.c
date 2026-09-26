@@ -119,7 +119,45 @@ static void check_rgb_uploads(void) {
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
   glDeleteFramebuffers(1,&fbo); ps4glDestroyTextures(&ctx); ps4glMakeCurrent(NULL);
 }
+static void check_launcher_state(void) {
+  PS4GLContext a,b; assert(ps4glInit(&a,80,60) && ps4glInit(&b,80,60));
+  ps4glMakeCurrent(&a);
+  const GLenum caps[]={GL_CULL_FACE,GL_DEPTH_TEST,GL_DITHER};
+  glEnable(GL_BLEND); glEnable(GL_SCISSOR_TEST);
+  for(unsigned i=0;i<3;++i) {
+    GLint value=-1; glDisable(caps[i]); glDisable(caps[i]);
+    assert(!glIsEnabled(caps[i])); glGetIntegerv(caps[i],&value);
+    assert(!value && glGetError()==GL_NO_ERROR);
+    glEnable(caps[i]); assert(glGetError()==GL_INVALID_OPERATION);
+    assert(!glIsEnabled(caps[i]) && glIsEnabled(GL_BLEND) && glIsEnabled(GL_SCISSOR_TEST));
+  }
+  glDisable(0xffff); glEnable(GL_CULL_FACE);
+  assert(glGetError()==GL_INVALID_ENUM && !glGetError());
+  assert(!glIsEnabled(0xffff) && glGetError()==GL_INVALID_ENUM);
+  GLint value=-1;
+  glGetIntegerv(GL_PACK_ALIGNMENT,&value); assert(value==4);
+  glGetIntegerv(GL_UNPACK_ALIGNMENT,&value); assert(value==4);
+  glPixelStorei(GL_UNPACK_ALIGNMENT,2);
+  for(unsigned align=1;align<=8;align*=2) {
+    glPixelStorei(GL_PACK_ALIGNMENT,align);
+    glGetIntegerv(GL_PACK_ALIGNMENT,&value); assert(value==(GLint)align);
+    glGetIntegerv(GL_UNPACK_ALIGNMENT,&value); assert(value==2);
+  }
+  const GLint bad[]={-1,0,3,16};
+  for(unsigned i=0;i<4;++i) {
+    glPixelStorei(GL_PACK_ALIGNMENT,bad[i]); assert(glGetError()==GL_INVALID_VALUE);
+    glGetIntegerv(GL_PACK_ALIGNMENT,&value); assert(value==8);
+  }
+  glPixelStorei(0xffff,4); assert(glGetError()==GL_INVALID_ENUM);
+  ps4glMakeCurrent(&b);
+  glGetIntegerv(GL_PACK_ALIGNMENT,&value); assert(value==4);
+  glGetIntegerv(GL_UNPACK_ALIGNMENT,&value); assert(value==4);
+  assert(!glIsEnabled(GL_BLEND) && !glIsEnabled(GL_SCISSOR_TEST));
+  ps4glMakeCurrent(&a); assert(a.pack_alignment==8 && a.unpack_alignment==2 && !a.command);
+  ps4glMakeCurrent(NULL);
+}
 int main(void) {
+  check_launcher_state();
   PS4GLContext a,b;
   assert(ps4glInit(&a,80,60) && ps4glInit(&b,20,10));
   assert(!ps4glInit(NULL,80,60) && !ps4glInit(&b,0,60));
@@ -577,5 +615,5 @@ int main(void) {
   assert(uploads==old_uploads && indexed_draws==old_draws);
   ps4glDestroyBuffers(&strips);
   ps4glMakeCurrent(NULL);
-  puts("PASS triangle strips, winding, degenerates, index widths, bounds and snapshots; constant vertex attributes, array precedence, context isolation and atomic errors; signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; RGB8/RGB565 conversion, opaque RGB storage, padded rows and subimages; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
+  puts("PASS launcher fixed-disabled state, independent pack alignment and isolation; triangle strips, winding, degenerates, index widths, bounds and snapshots; constant vertex attributes, array precedence, context isolation and atomic errors; signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; RGB8/RGB565 conversion, opaque RGB storage, padded rows and subimages; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

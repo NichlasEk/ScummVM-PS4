@@ -13,7 +13,7 @@ int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   ctx->blend=(PS4GLBlend){.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};
   ctx->next_shader=65536;
   ctx->next_framebuffer=1;
-  ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=4;
+  ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=ctx->pack_alignment=4;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) {
     ctx->attribs[i].size=4; ctx->attribs[i].constant[3]=1;
   }
@@ -80,15 +80,24 @@ void glBlendEquationSeparate(GLenum rgb, GLenum alpha) {
   current->blend.equation_rgb=rgb; current->blend.equation_alpha=alpha;
 }
 void glBlendEquation(GLenum equation) { glBlendEquationSeparate(equation,equation); }
+/* Fixed raster policy of the bounded color-only backend, not general GL state.
+ * Disabling these features is supported; enabling them must remain explicit
+ * failure until the corresponding rendering behavior is implemented. */
+static int fixed_disabled_cap(GLenum cap) {
+  return cap==GL_CULL_FACE || cap==GL_DEPTH_TEST || cap==GL_DITHER;
+}
 void glEnable(GLenum cap) {
+  if(fixed_disabled_cap(cap)) { error(GL_INVALID_OPERATION); return; }
   if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return; }
   if(current) { if(cap==GL_BLEND) current->blend.enabled=1; else current->scissor_enabled=GL_TRUE; }
 }
 void glDisable(GLenum cap) {
+  if(fixed_disabled_cap(cap)) return;
   if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return; }
   if(current) { if(cap==GL_BLEND) current->blend.enabled=0; else current->scissor_enabled=GL_FALSE; }
 }
 GLboolean glIsEnabled(GLenum cap) {
+  if(fixed_disabled_cap(cap)) return GL_FALSE;
   if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return GL_FALSE; }
   return current ? (cap==GL_BLEND ? current->blend.enabled : current->scissor_enabled) : GL_FALSE;
 }
@@ -101,6 +110,8 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   else if(pname==GL_ACTIVE_TEXTURE) *values=GL_TEXTURE0+current->active_texture;
   else if(pname==GL_TEXTURE_BINDING_2D) *values=current->texture_bindings[current->active_texture];
   else if(pname==GL_UNPACK_ALIGNMENT) *values=current->unpack_alignment;
+  else if(pname==GL_PACK_ALIGNMENT) *values=current->pack_alignment;
+  else if(fixed_disabled_cap(pname)) *values=GL_FALSE;
   else if (pname==GL_ELEMENT_ARRAY_BUFFER_BINDING) *values=(GLint)current->element_buffer;
   else if (pname==GL_ARRAY_BUFFER_BINDING) *values=(GLint)current->array_buffer;
   else if (pname==GL_CURRENT_PROGRAM) *values=current->program;
@@ -627,9 +638,10 @@ static PS4GLTexture *bound_texture(GLenum target) {
 }
 void glPixelStorei(GLenum pname, GLint value) {
   if(!current) return;
-  if(pname!=GL_UNPACK_ALIGNMENT) { error(GL_INVALID_ENUM); return; }
+  if(pname!=GL_UNPACK_ALIGNMENT && pname!=GL_PACK_ALIGNMENT) { error(GL_INVALID_ENUM); return; }
   if(value!=1 && value!=2 && value!=4 && value!=8) { error(GL_INVALID_VALUE); return; }
-  current->unpack_alignment=(unsigned)value;
+  if(pname==GL_PACK_ALIGNMENT) current->pack_alignment=(unsigned)value;
+  else current->unpack_alignment=(unsigned)value;
 }
 void glTexParameteri(GLenum target, GLenum pname, GLint value) {
   if(!current) return;

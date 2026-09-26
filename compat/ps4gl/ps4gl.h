@@ -8,10 +8,30 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "ps4gl-bindings.h"
+#define GL_VENDOR 0x1F00
+#define GL_RENDERER 0x1F01
+#define GL_VERSION 0x1F02
+#define GL_EXTENSIONS 0x1F03
+#define GL_SHADING_LANGUAGE_VERSION 0x8B8C
+#define GL_MAX_TEXTURE_SIZE 0x0D33
+#define GL_MAX_TEXTURE_IMAGE_UNITS 0x8872
+#define GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS 0x8B4D
+#define GL_MAX_VERTEX_ATTRIBS 0x8869
+#define GL_RED_BITS 0x0D52
+#define GL_GREEN_BITS 0x0D53
+#define GL_BLUE_BITS 0x0D54
+#define GL_ALPHA_BITS 0x0D55
+#define GL_DEPTH_BITS 0x0D56
+#define GL_STENCIL_BITS 0x0D57
+#define GL_DOUBLEBUFFER 0x0C32
+#define GL_STEREO 0x0C33
+#define GL_SAMPLE_BUFFERS 0x80A8
+#define GL_SAMPLES 0x80A9
 typedef ptrdiff_t GLsizeiptr;
 typedef ptrdiff_t GLintptr;
 typedef unsigned int GLuint;
 typedef unsigned int GLenum;
+const unsigned char *glGetString(GLenum);
 typedef unsigned int GLbitfield;
 typedef int GLint;
 typedef int GLsizei;
@@ -245,6 +265,7 @@ typedef struct PS4GLContext {
   /* Immutable payload: packed vertices followed by indices; index type 0 for arrays. */
   VkPipeline (*select_pipeline)(struct PS4GLContext *, PS4GLProgram *);
   int (*upload_uniforms)(struct PS4GLContext *, const PS4GLProgram *);
+  int (*begin_frame)(struct PS4GLContext *); /* optional lazy owner: 1 success */
   int (*upload_vertices)(struct PS4GLContext *, const void *, size_t, size_t, GLenum);
 } PS4GLContext;
 typedef void (*PS4GLProc)(void);

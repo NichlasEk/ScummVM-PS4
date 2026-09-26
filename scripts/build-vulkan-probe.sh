@@ -109,6 +109,7 @@ if (( sdlgl )); then
  cp "$root/.tools/sdl-input-src/COPYING.txt" "$driver/SDL-LICENSE.txt"
  extra_make+=("PKG_FILES=eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx glslang-LICENSE.txt scummvm-shaders.txt SDL-LICENSE.txt")
  sed -i '1i#define SDLGL_PROBE 1' "$probe/draw.c"
+ cp "$root/compat/ps4gl/ps4gl-frame.c" "$root/compat/ps4gl/ps4gl-frame.h" "$probe/"
  cp "$root/tests/ps4/vulkan/sdlgl.h" "$root/compat/ps4gl/ps4gl-sdl.h" "$probe/"
  extra_make+=("EXTRA_LIBS=$root/build/ps4-sdlgl/libSDL2.a $root/build/glslang-orbis/libglslang-ps4.a -lSceUserService -lSceAudioOut -lScePad -lSceSysmodule")
 fi

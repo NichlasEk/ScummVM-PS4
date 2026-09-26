@@ -325,8 +325,9 @@ int main(void) {
 #ifdef GLDRAW_PROBE
 #ifdef SDLGL_PROBE
   SDLProbeOwner sdl_state={.device=device,.queue=queue,.swap=swap};
+  if(ps4glFrameInit(&sdl_state.frames,device,queue,swap,pass,images,fb,1280,720)) return 2;
   PS4GLSDLOwner sdl_owner={.physical=physical,.device=device,.pass=pass,.width=1280,.height=720,
-    .present=sdl_present,.quiesce=sdl_quiesce,.data=&sdl_state};
+    .begin=sdl_begin,.present=sdl_present,.quiesce=sdl_quiesce,.data=&sdl_state};
   if(ps4glSDLSetOwner(&sdl_owner)) return 2;
   SDL_Window *sdl_window=NULL; SDL_GLContext sdl_context=sdl_create(&sdl_window);
   if(!sdl_context) { fprintf(report,"SDL setup failed: %s\n",SDL_GetError()); return 2; }
@@ -394,6 +395,28 @@ int main(void) {
     return 2;
 #endif
   for (unsigned frame = 0; frame < 8; frame++) {
+#ifdef SDLGL_PROBE
+    if(glctx->command || sdl_state.frames.state) return 2;
+    if(draw_gl_framebuffer(glprograms,frame)) return 2; /* first clear/draw acquires lazily */
+    fprintf(report,"GL draw frame %u error=%u\n",frame,glGetError());
+    if(!sdl_state.frames.state) return 2;
+    if(frame==7) {
+      if(ps4glFrameSubmit(&sdl_state.frames) || ps4glFrameSubmit(&sdl_state.frames)) return 2;
+      fprintf(report,"PASS GL vertex command buffer resubmission\n");
+    }
+    if(frame==0) {
+      sdl_state.fail_present=1; SDL_ClearError(); SDL_GL_SwapWindow(sdl_window);
+      if(!*SDL_GetError() || sdl_state.presented) return 2;
+      sdl_state.fail_present=0;
+      fprintf(report,"PASS SDL presentation failure propagation\n");
+    }
+    SDL_ClearError(); SDL_GL_SwapWindow(sdl_window);
+    if(*SDL_GetError() || sdl_state.frames.frames!=frame+1 || glctx->command || sdl_state.frames.state) return 2;
+    if(glctx->target_bytes!=(frame==7 ? 0u : 256u) || glctx->snapshot_count || glctx->texture_bytes!=(frame==7 ? 0u : 256u)) return 2;
+    fprintf(report,"PASS SDL swap %u\nPASS GL framebuffer storage collected\nFRAME %u Vulkan submitted and presented\n",frame,frame);
+    sceKernelUsleep(100000);
+    continue;
+#endif
 #ifdef UPLOAD_PROBE
     memset(staging_data, 0, 8192);
 #endif
@@ -524,25 +547,11 @@ int main(void) {
       fprintf(report, "PASS upload command buffer resubmission\n");
     }
 #endif
-#ifdef SDLGL_PROBE
-    sdl_state.index=index; sdl_state.command=cmd;
-    if(frame==0) {
-      sdl_state.fail_present=1; SDL_ClearError(); SDL_GL_SwapWindow(sdl_window);
-      if(!*SDL_GetError() || sdl_state.presented) return 2;
-      sdl_state.fail_present=0;
-      fprintf(report,"PASS SDL presentation failure propagation\n");
-    }
-    SDL_ClearError();
-    SDL_GL_SwapWindow(sdl_window);
-    if(*SDL_GetError() || sdl_state.presented!=frame+1) { fprintf(report,"SDL swap failed: %s\n",SDL_GetError()); return 2; }
-    fprintf(report,"PASS SDL swap %u\n",frame);
-#else
     VkPresentInfoKHR present = {.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
                                 .swapchainCount = 1,
                                 .pSwapchains = &swap,
                                 .pImageIndices = &index};
     CHECK(vkQueuePresentKHR(queue, &present));
-#endif
     fprintf(report, "FRAME %u Vulkan submitted and presented\n", frame);
     CHECK(vkResetCommandBuffer(cmd, 0));
 #ifdef GLDRAW_PROBE
@@ -561,6 +570,11 @@ int main(void) {
   glDeleteProgram(glprograms[0]); glDeleteProgram(glprograms[1]); glUseProgram(0);
   if(glIsProgram(glprograms[0]) || glIsProgram(glprograms[1]) || glGetError()!=GL_NO_ERROR) return 2;
 #ifdef SDLGL_PROBE
+  SDL_ClearError(); SDL_GL_SwapWindow(sdl_window);
+  if(*SDL_GetError() || sdl_state.frames.frames!=8 || sdl_state.frames.state) return 2;
+  fprintf(report,"PASS SDL empty swap preserves presented image\n");
+  glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
+  if(glGetError() || !glctx->managed_frame || sdl_state.frames.state!=1) return 2;
   sdl_state.fail_quiesce=1; SDL_ClearError(); SDL_GL_DeleteContext(sdl_context);
   if(!*SDL_GetError() || sdl_state.quiesced || ps4glCurrentContext()) return 2;
   if(SDL_GL_MakeCurrent(sdl_window,sdl_context) || ps4glCurrentContext()!=sdl_context) return 2;
@@ -569,6 +583,10 @@ int main(void) {
   SDL_ClearError(); SDL_GL_DeleteContext(sdl_context);
   if(*SDL_GetError() || ps4glCurrentContext() || SDL_GL_GetCurrentContext() || sdl_state.quiesced!=1) return 2;
   SDL_DestroyWindow(sdl_window); SDL_Quit();
+  if(!sdl_state.frames.failed || sdl_state.frames.state || sdl_state.frames.context) return 2;
+  fprintf(report,"PASS SDL teardown discards unfinished frame\n");
+  if(ps4glFrameDestroy(&sdl_state.frames)) return 2;
+  fprintf(report,"PASS reusable frame owner destruction\n");
   if(ps4glSDLSetOwner(NULL)) return 2;
   fprintf(report,"PASS SDL context destruction after quiesce\n");
 #else

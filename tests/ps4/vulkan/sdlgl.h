@@ -1,6 +1,8 @@
 #include <SDL2/SDL.h>
 #include "ps4gl-sdl.h"
+#include "ps4gl-frame.c"
 typedef struct SDLProbeOwner {
+  PS4GLFrameOwner frames;
   VkDevice device;
   VkQueue queue;
   VkSwapchainKHR swap;
@@ -12,17 +14,16 @@ typedef struct SDLProbeOwner {
 static int sdl_present(void *data) {
   SDLProbeOwner *state=data;
   if(state->fail_present) return -1;
-  VkPresentInfoKHR info={.sType=VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,.swapchainCount=1,
-    .pSwapchains=&state->swap,.pImageIndices=&state->index};
-  CHECK(vkQueuePresentKHR(state->queue,&info)); ++state->presented; return 0;
+  if(ps4glFramePresent(&state->frames)) return -1;
+  ++state->presented; return 0;
 }
 static int sdl_quiesce(void *data) {
   SDLProbeOwner *state=data;
   if(state->fail_quiesce) return -1;
-  CHECK(vkDeviceWaitIdle(state->device));
-  if(state->command) CHECK(vkResetCommandBuffer(state->command,0));
+  if(ps4glFrameQuiesce(&state->frames)) return -1;
   ++state->quiesced; return 0;
 }
+static int sdl_begin(void *data) { return ps4glFrameBegin(&((SDLProbeOwner *)data)->frames); }
 static SDL_GLContext sdl_create(SDL_Window **window) {
   if(SDL_Init(SDL_INIT_VIDEO)) return NULL;
   if(SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE,0) || SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE,0)) return NULL;
@@ -38,6 +39,14 @@ static SDL_GLContext sdl_create(SDL_Window **window) {
   if(!context || SDL_GL_GetCurrentContext()!=context || SDL_GL_GetCurrentWindow()!=*window) return NULL;
   if(SDL_GL_GetProcAddress("glUniform1i")!=(void *)ps4glGetProcAddress("glUniform1i") ||
      SDL_GL_GetProcAddress("glNotImplemented") || SDL_GL_CreateContext(*window)) return NULL;
+  const SDL_GLattr attrs[]={SDL_GL_RED_SIZE,SDL_GL_GREEN_SIZE,SDL_GL_BLUE_SIZE,SDL_GL_ALPHA_SIZE,SDL_GL_DEPTH_SIZE,SDL_GL_STENCIL_SIZE,SDL_GL_DOUBLEBUFFER,SDL_GL_MULTISAMPLEBUFFERS,SDL_GL_MULTISAMPLESAMPLES};
+  const int expected[]={8,8,8,8,0,0,1,0,0};
+  for(unsigned i=0;i<sizeof(attrs)/sizeof(attrs[0]);++i) { int value=-1;
+    if(SDL_GL_GetAttribute(attrs[i],&value) || value!=expected[i]) return NULL;
+  }
+  GLint limit=0; glGetIntegerv(GL_MAX_TEXTURE_SIZE,&limit); if(limit!=PS4GL_TEXTURE_LIMIT) return NULL;
+  glGetIntegerv(GL_MAX_VERTEX_ATTRIBS,&limit); if(limit!=PS4GL_MAX_ATTRIBS) return NULL;
+  fprintf(report,"PASS SDL numeric framebuffer and shader limits\n");
   int w=0,h=0; SDL_GL_GetDrawableSize(*window,&w,&h); if(w!=1280 || h!=720) return NULL;
   if(SDL_GL_SetSwapInterval(0)!=-1 || SDL_GL_SetSwapInterval(1) || SDL_GL_GetSwapInterval()!=1) return NULL;
   if(SDL_GL_MakeCurrent(NULL,NULL) || ps4glCurrentContext() || SDL_GL_GetCurrentContext()) return NULL;

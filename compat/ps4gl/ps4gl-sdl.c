@@ -52,6 +52,7 @@ static void *get_proc(_THIS, const char *name) {
   if(!proc) SDL_SetError("Unsupported GL procedure: %s",name ? name : "(null)");
   return (void *)proc;
 }
+static int begin_frame(PS4GLContext *c) { (void)c; return owner.begin && !owner.begin(owner.data); }
 static SDL_GLContext create_context(_THIS, SDL_Window *window) {
   if(!on_thread() || window!=owned_window || context || _this->gl_config.share_with_current_context) {
     SDL_SetError("Only one unshared GL context is supported"); return NULL;
@@ -66,6 +67,7 @@ static SDL_GLContext create_context(_THIS, SDL_Window *window) {
   if(!ps4glInit(context,owner.width,owner.height) || !ps4glGLSLInitialize()) {
     free(context); context=NULL; SDL_SetError("GL context initialization failed"); return NULL;
   }
+  context->begin_frame=owner.begin ? begin_frame : NULL;
   ps4glMakeCurrent(context); ps4glConfigureVertexDevice(owner.physical,owner.device);
   ps4glConfigureShaderCompiler(owner.pass,ps4glCompileLegacyGLSL,ps4glLinkLegacyGLSL);
   return context;
@@ -79,7 +81,7 @@ static int swap_window(_THIS, SDL_Window *window) {
   (void)_this;
   if(!on_thread() || window!=owned_window || !context || ps4glCurrentContext()!=context)
     return SDL_SetError("GL window is not current");
-  if(context->command) return SDL_SetError("Owner must end recording before SDL swap");
+  if(context->command && !owner.begin) return SDL_SetError("Owner must end recording before SDL swap");
   if(owner.present(owner.data)) return SDL_SetError("Vulkan presentation failed");
   return 0;
 }
@@ -87,7 +89,7 @@ static void delete_context(_THIS, SDL_GLContext value) {
   (void)_this;
   if(!value) return;
   if(!on_thread() || value!=context) { SDL_SetError("Invalid GL context deletion"); return; }
-  if(context->command) { SDL_SetError("Owner must end recording before context deletion"); return; }
+  if(context->command && !owner.begin) { SDL_SetError("Owner must end recording before context deletion"); return; }
   /* On failure retain resources: waiting alone is insufficient; the owner must
    * discard executable command buffers too before releasing descriptor snapshots. */
   if(owner.quiesce(owner.data)) { SDL_SetError("Vulkan owner could not quiesce"); return; }

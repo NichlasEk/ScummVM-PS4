@@ -55,11 +55,24 @@ static GLuint import_program(VkDevice device, VkRenderPass pass, const uint32_t 
   c->programs[name-1]=(PS4GLProgram){.pipeline=(VkPipeline)(uintptr_t)1};
   c->programs[name-1].components[4]=2; strcpy(c->programs[name-1].attribute_names[4],"position"); return name;
 }
+static unsigned lazy_calls;
+static int lazy_fail;
+static int begin_lazy(PS4GLContext *ctx) {
+  assert(ctx==ps4glCurrentContext()); ++lazy_calls;
+  if(lazy_fail) return 0;
+  ps4glBeginPass((VkCommandBuffer)(uintptr_t)1); return 1;
+}
 int main(void) {
   PS4GLContext a,b;
   assert(ps4glInit(&a,80,60) && ps4glInit(&b,20,10));
   assert(!ps4glInit(NULL,80,60) && !ps4glInit(&b,0,60));
   ps4glMakeCurrent(&a);
+  assert(!strncmp((const char *)glGetString(GL_VERSION),"0.0 ",4));
+  assert(!*glGetString(GL_EXTENSIONS));
+  assert(!glGetString(0xdead) && glGetError()==GL_INVALID_ENUM);
+  GLint capability=0; glGetIntegerv(GL_MAX_TEXTURE_SIZE,&capability); assert(capability==PS4GL_TEXTURE_LIMIT);
+  glGetIntegerv(GL_MAX_VERTEX_ATTRIBS,&capability); assert(capability==PS4GL_MAX_ATTRIBS);
+  assert(ps4glGetProcAddress("glGetString"));
   assert(ps4glGetProcAddress("glClear") && ps4glGetProcAddress("glDrawArrays") && ps4glGetProcAddress("glShaderSource"));
   glClear(GL_COLOR_BUFFER_BIT); assert(glGetError()==GL_INVALID_OPERATION);
   ps4glBeginPass((VkCommandBuffer)(uintptr_t)1);
@@ -441,6 +454,14 @@ int main(void) {
   assert(!glCreateShader(GL_VERTEX_SHADER) && glGetError()==GL_OUT_OF_MEMORY);
   for(unsigned i=0;i<PS4GL_MAX_SHADERS;++i) glDeleteShader(allshaders[i]);
   ps4glDestroyShaderObjects(&shaderctx); assert(!glGetError());
+  PS4GLContext lazy; assert(ps4glInit(&lazy,80,60)); ps4glMakeCurrent(&lazy);
+  lazy.begin_frame=begin_lazy; lazy.programs[0].pipeline=(VkPipeline)(uintptr_t)1; glUseProgram(1);
+  glClear(0); assert(!lazy_calls);
+  lazy_fail=1; glClear(GL_COLOR_BUFFER_BIT); assert(glGetError()==GL_INVALID_OPERATION && lazy_calls==1 && !lazy.command);
+  lazy_fail=0; glDrawArrays(GL_TRIANGLES,0,0); assert(!glGetError() && lazy_calls==2 && lazy.command);
+  glDrawArrays(GL_TRIANGLES,0,0); assert(!glGetError() && lazy_calls==2);
+  ps4glEndPass(); glDrawArrays(0xdead,0,0); assert(glGetError()==GL_INVALID_ENUM && lazy_calls==2);
+
   ps4glMakeCurrent(NULL);
   puts("PASS signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

@@ -1,5 +1,7 @@
 # Experimental SDL GL adapter checkpoint (2026-09-26)
 
+The latest continuation below adds a reusable frame owner and numeric queries.
+
 A separate SDL archive now routes real SDL video/GL entrypoints to the bounded
 OpenGNM frontend. This is a diagnostic integration checkpoint, not a complete
 SDL graphics backend for ScummVM or a real-game boot result.
@@ -81,3 +83,71 @@ Stable ScummVM 1.17 retains SHA-256
 Physical PS4 execution and actual TWP gameplay through this backend remain
 unverified. Next: extract the reusable Vulkan frame owner and implement the
 renderer capability queries before attempting integration with ScummVM.
+
+
+## Reusable frame owner and numeric queries (2026-09-26)
+
+`compat/ps4gl/ps4gl-frame.c` now owns the frame's command pool, command buffer,
+fence and lifecycle. Device, queue, two-image swapchain, compatible render pass
+and framebuffer attachments are borrowed from the application bootstrap. The
+caller zero-initializes the owner, calls Init once, and destroys it before its
+parents. Initialization of a live owner is rejected.
+
+An optional `PS4GLSDLOwner.begin` callback installs lazy acquisition on the GL
+context. The first color clear or draw acquires an image, waits for acquisition,
+starts recording and attaches the managed GL frame. Shader creation/linking and
+ordinary state setters before the first draw do not start a frame. SDL swap then
+ends the managed pass, transitions the image, submits, waits, presents, resets
+the completed recording and only then releases its vertex/uniform/texture
+snapshots. Empty swaps leave the displayed image alone and acquire nothing.
+`ps4glFrameSubmit` also supports replay of a completed recording before present;
+the diagnostic checks that retained snapshot contract explicitly.
+
+Vulkan errors poison the owner rather than silently starting another frame.
+Quiesce waits for the device, discards recorded references and releases retained
+snapshots even when SDL has detached the GL context. It can discard an unfinished
+frame during context deletion. Because that abort leaves an acquired image
+unpresented, the owner stays poisoned: recreate the parent swapchain before
+rendering again. A wait failure retains the owner and resources for a later
+cleanup retry. This is deliberately serialized, single-threaded rendering;
+multiple frames in flight, resize and swapchain recovery are not implemented.
+
+The SDL diagnostic now renders its scene and calls SDL swap without directly
+recording or submitting Vulkan work in the frame loop. Its application bootstrap
+still constructs the borrowed Vulkan device/swapchain/pass/attachments; moving
+that bootstrap into the actual ScummVM startup is still required.
+
+Numeric GL queries report the actual RGBA8 color format, absent depth/stencil/
+MSAA, default-vs-offscreen double buffering, texture limit 1024, eight attribute
+locations and a conservative two fragment/combined texture image units. SDL's
+real `SDL_GL_GetAttribute` consumes these via GL procedure lookup.
+`glGetString` identifies the experimental renderer, reports no extensions and
+uses **`0.0 PS4GL experimental subset`** as a deliberate non-version. SDL needs
+that entrypoint even to choose how to query color sizes; reporting 2.x here would
+make engine autodetection assume APIs we have not audited. GLSL is identified
+as `1.10 bounded translator`. This does not yet pass ScummVM's renderer startup
+version gate or claim full GL conformance.
+
+Validation:
+
+```sh
+scripts/check-ps4-frame-owner.sh
+scripts/build-vulkan-probe.sh --sdlgl
+xvfb-run -a -s '-screen 0 1280x720x24' \
+  python3 scripts/run-opengnm-probe.py --vulkan --sdlgl
+```
+
+Host ASan/UBSan tests verify acquisition, replay, reset-before-release ordering,
+empty swaps, aborted recordings, poisoned-owner rejection, simulated GPU timeout
+retention and cleanup retry. Native shadPS4 tests retain the 2,553 pixel oracle,
+eight frame presents, replay and cleanup; they now additionally check numeric
+SDL attributes, an empty swap and deletion with an unfinished frame. Reports
+remain in `artifacts/vulkan/sdlgl/`; host results are `frame-owner-host.log` and
+`frame-state-host.log` under `artifacts/vulkan/`. Non-SDL regressions are
+`artifacts/vulkan/frameowner-regression-*.log`.
+
+Current package: `dist/ScummVM-PS4-SDL-GL.pkg`.
+SHA-256: `8aa35a96d58d9a68ed270a2fdedbc1ed3dc44658201d0e5c2430a3cb4d79160b`.
+The stable ScummVM package remains unchanged. Next: audit the startup GL API
+and feature selection, then connect the Vulkan bootstrap to ScummVM. Actual game
+and physical PS4 execution remain unverified.

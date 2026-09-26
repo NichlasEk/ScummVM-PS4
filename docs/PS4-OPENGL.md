@@ -21,8 +21,11 @@ Bounded legacy GLSL translation and named attribute bindings now also render
 original TWP shader sources in the native diagnostic. Signed scalar integer
 uniforms and arrays now also work, including the original TWP fade shader.
 A separate [SDL GL adapter](PS4-SDL-GL.md) now connects real SDL context,
-procedure and swap calls to the native diagnostic. Reusable frame ownership,
-capability queries, input integration and remaining GL state are still missing.
+procedure and swap calls to the native diagnostic. A reusable frame owner now
+handles lazy acquisition, submission, presentation and snapshot cleanup. Numeric
+capability queries work, while a deliberate experimental version string keeps
+engine autodetection gated. Vulkan bootstrap integration, input and remaining
+GL API/feature selection still need work.
 The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 

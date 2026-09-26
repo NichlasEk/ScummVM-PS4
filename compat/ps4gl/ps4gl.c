@@ -109,8 +109,27 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   else if(pname==GL_BLEND_DST_ALPHA) *values=current->blend.dst_alpha;
   else if(pname==GL_BLEND_EQUATION_RGB) *values=current->blend.equation_rgb;
   else if(pname==GL_BLEND_EQUATION_ALPHA) *values=current->blend.equation_alpha;
+  else if(pname==GL_MAX_TEXTURE_SIZE) *values=PS4GL_TEXTURE_LIMIT;
+  else if(pname==GL_MAX_VERTEX_ATTRIBS) *values=PS4GL_MAX_ATTRIBS;
+  else if(pname==GL_MAX_TEXTURE_IMAGE_UNITS || pname==GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS) *values=2;
+  else if(pname==GL_RED_BITS || pname==GL_GREEN_BITS || pname==GL_BLUE_BITS || pname==GL_ALPHA_BITS) *values=8;
+  else if(pname==GL_DEPTH_BITS || pname==GL_STENCIL_BITS || pname==GL_STEREO || pname==GL_SAMPLE_BUFFERS || pname==GL_SAMPLES) *values=0;
+  else if(pname==GL_DOUBLEBUFFER) *values=!current->framebuffer;
   else if (pname==GL_SCISSOR_TEST) *values=current->scissor_enabled;
   else error(GL_INVALID_ENUM);
+}
+const unsigned char *glGetString(GLenum name) {
+  if(!current) return NULL;
+  switch(name) {
+    case GL_VENDOR:return (const unsigned char *)"ScummVM-PS4";
+    case GL_RENDERER:return (const unsigned char *)"OpenGNM Vulkan bridge (experimental)";
+    /* A deliberate non-version: do not let engine autodetection infer a full
+     * OpenGL 2.x implementation from this diagnostic subset. */
+    case GL_VERSION:return (const unsigned char *)"0.0 PS4GL experimental subset";
+    case GL_SHADING_LANGUAGE_VERSION:return (const unsigned char *)"1.10 bounded translator";
+    case GL_EXTENSIONS:return (const unsigned char *)"";
+    default:error(GL_INVALID_ENUM);return NULL;
+  }
 }
 void glGetFloatv(GLenum pname, GLfloat *values) {
   if (!current) return;
@@ -126,6 +145,7 @@ void glClear(GLbitfield mask) {
   /* This color-only target has no depth/stencil attachment: GL ignores those
    * bits rather than rejecting a valid request for an absent buffer. */
   if (!(mask & GL_COLOR_BUFFER_BIT)) return;
+  if (!current->command && current->begin_frame && !current->begin_frame(current)) { error(GL_INVALID_OPERATION); return; }
   if (!current->command) { error(GL_INVALID_OPERATION); return; }
   if(!prepare_target()) return;
   int64_t x0=0,y0=0,x1=current->width,y1=current->height;
@@ -393,6 +413,7 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   if (mode!=GL_TRIANGLES) { error(GL_INVALID_ENUM); return; }
   if (count<0 || first<0) { error(GL_INVALID_VALUE); return; }
   PS4GLProgram *p=program(current->program);
+  if(p && !first && !current->command && current->begin_frame && !current->begin_frame(current)) { error(GL_INVALID_OPERATION); return; }
   if (!p || !current->command || first) { error(GL_INVALID_OPERATION); return; }
   if(!prepare_target()) return;
   GLint *v=current->viewport;
@@ -485,7 +506,7 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glClearColor); PROC(glClear); PROC(glScissor); PROC(glViewport);
   PROC(glBlendFunc); PROC(glBlendFuncSeparate); PROC(glBlendEquation); PROC(glBlendEquationSeparate);
   PROC(glEnable); PROC(glDisable); PROC(glIsEnabled); PROC(glGetError);
-  PROC(glGetIntegerv); PROC(glGetFloatv);
+  PROC(glGetIntegerv); PROC(glGetString); PROC(glGetFloatv);
   PROC(glUseProgram); PROC(glDeleteProgram); PROC(glIsProgram);
   PROC(glGenFramebuffers); PROC(glBindFramebuffer); PROC(glDeleteFramebuffers); PROC(glIsFramebuffer);
   PROC(glFramebufferTexture2D); PROC(glCheckFramebufferStatus);

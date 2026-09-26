@@ -90,7 +90,12 @@ static int reject_glsl(void) {
 
 #ifdef GLLEGACY_PROBE
 static int legacy_vertices(void) {
+#ifdef SDLGL_PROBE
+  const float vertices[]={-1,-1, 1,1,1,1, 0,0, 1,-1, 1,1,1,1, 1,0,
+                         -1,1, 1,1,1,1, 0,1, 1,1, 1,1,1,1, 1,1};
+#else
   const float vertices[]={-1,-1, 1,1,1,1, 0,0, 3,-1, 1,1,1,1, 2,0, -1,3, 1,1,1,1, 0,2};
+#endif
   GLuint buffer; glGenBuffers(1,&buffer); glBindBuffer(GL_ARRAY_BUFFER,buffer);
   glBufferData(GL_ARRAY_BUFFER,sizeof(vertices),vertices,GL_STATIC_DRAW);
   glVertexAttribPointer(4,2,GL_FLOAT,GL_FALSE,32,(void *)0);

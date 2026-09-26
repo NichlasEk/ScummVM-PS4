@@ -420,9 +420,14 @@ void glUniform1f(GLint l, GLfloat x) { glUniform1fv(l,1,&x); }
 void glUniform2f(GLint l, GLfloat x, GLfloat y) { float v[]={x,y}; glUniform2fv(l,1,v); }
 void glUniform3f(GLint l, GLfloat x, GLfloat y, GLfloat z) { float v[]={x,y,z}; glUniform3fv(l,1,v); }
 void glUniform4f(GLint l, GLfloat x, GLfloat y, GLfloat z, GLfloat w) { float v[]={x,y,z,w}; glUniform4fv(l,1,v); }
+static uint32_t element_index(const unsigned char *data, GLenum type, uint32_t i) {
+  if(!type) return i;
+  if(type==GL_UNSIGNED_SHORT) { uint16_t value; memcpy(&value,data+(size_t)i*2,2); return value; }
+  uint32_t value; memcpy(&value,data+(size_t)i*4,4); return value;
+}
 static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const void *indices) {
   if (!current) return;
-  if (mode!=GL_TRIANGLES) { error(GL_INVALID_ENUM); return; }
+  if (mode!=GL_TRIANGLES && mode!=GL_TRIANGLE_STRIP) { error(GL_INVALID_ENUM); return; }
   if (count<0 || first<0) { error(GL_INVALID_VALUE); return; }
   PS4GLProgram *p=program(current->program);
   if(p && !first && !current->command && current->begin_frame && !current->begin_frame(current)) { error(GL_INVALID_OPERATION); return; }
@@ -432,7 +437,7 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   /* The initial native subset deliberately rejects out-of-target viewports. */
   if(v[0]<0 || v[1]<0 || (int64_t)v[0]+v[2]>current->width ||
       (int64_t)v[1]+v[3]>current->height) { error(GL_INVALID_OPERATION); return; }
-  if(!count || !v[2] || !v[3]) return;
+  if(!count || (mode==GL_TRIANGLE_STRIP && count<3) || !v[2] || !v[3]) return;
   int64_t x0=0,y0=0,x1=current->width,y1=current->height;
   if(current->scissor_enabled) {
     x0=current->scissor[0]; y0=current->scissor[1];
@@ -453,6 +458,15 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     if(!current->select_pipeline) { error(GL_INVALID_OPERATION); return; }
     pipeline=current->select_pipeline(current,p); if(!pipeline) return;
   }
+  const int strip=mode==GL_TRIANGLE_STRIP;
+  uint32_t draw_count=(uint32_t)count;
+  GLenum draw_type=type;
+  if(strip) {
+    /* Triangulate into the existing triangle-list pipeline. Bound expansion
+     * before multiplication/allocation; keep vertex IDs and provoking vertex. */
+    if((uint32_t)(count-2)>PS4GL_MAX_BUFFER_BYTES/(3u*sizeof(uint32_t))) { error(GL_OUT_OF_MEMORY); return; }
+    draw_count=(uint32_t)(count-2)*3; draw_type=GL_UNSIGNED_INT;
+  }
   size_t index_bytes=0;
   const unsigned char *index_data=NULL;
   uint32_t vertices=(uint32_t)count;
@@ -467,16 +481,15 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     index_bytes=(size_t)count*width; index_data=ibo->data+offset;
     uint32_t max_index=0;
     for(GLsizei i=0;i<count;++i) {
-      uint32_t value=0;
-      if(width==2) { uint16_t v; memcpy(&v,index_data+(size_t)i*width,width); value=v; }
-      else memcpy(&value,index_data+(size_t)i*width,width);
+      uint32_t value=element_index(index_data,type,(uint32_t)i);
       if(value>max_index) max_index=value;
     }
     /* Pack a dense prefix, keeping the original gl_VertexIndex semantics. */
     if(p->vertex_stride && max_index>=INT32_MAX) { error(GL_INVALID_OPERATION); return; }
     vertices=p->vertex_stride ? max_index+1 : 0;
   }
-  if(p->vertex_stride || type) {
+  if(strip) index_bytes=(size_t)draw_count*sizeof(uint32_t);
+  if(p->vertex_stride || draw_type) {
     if(!current->upload_vertices) { error(GL_INVALID_OPERATION); return; }
     if(p->vertex_stride && vertices>PS4GL_MAX_BUFFER_BYTES/p->vertex_stride) { error(GL_OUT_OF_MEMORY); return; }
     size_t vertex_bytes=(size_t)vertices*p->vertex_stride;
@@ -485,8 +498,15 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     void *packed=malloc(bytes);
     if(!packed) { error(GL_OUT_OF_MEMORY); return; }
     int ok=!p->vertex_stride || ps4glPackVertices(current,p,(GLsizei)vertices,packed);
-    if(ok && index_bytes) memcpy((unsigned char *)packed+vertex_bytes,index_data,index_bytes);
-    if(ok) ok=current->upload_vertices(current,packed,bytes,vertex_bytes,type);
+    if(ok && strip) {
+      uint32_t *out=(uint32_t *)((unsigned char *)packed+vertex_bytes);
+      for(uint32_t i=0;i<(uint32_t)count-2;++i) {
+        out[i*3]=element_index(index_data,type,i+(i&1));
+        out[i*3+1]=element_index(index_data,type,i+1-(i&1));
+        out[i*3+2]=element_index(index_data,type,i+2);
+      }
+    } else if(ok && index_bytes) memcpy((unsigned char *)packed+vertex_bytes,index_data,index_bytes);
+    if(ok) ok=current->upload_vertices(current,packed,bytes,vertex_bytes,draw_type);
     free(packed);
     if(!ok) return;
   }
@@ -497,8 +517,8 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   vkCmdBindPipeline(current->command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
   vkCmdSetViewport(current->command,0,1,&vp);
   vkCmdSetScissor(current->command,0,1,&sc);
-  if(type) vkCmdDrawIndexed(current->command,(uint32_t)count,1,0,0,0);
-  else vkCmdDraw(current->command,(uint32_t)count,1,0,0);
+  if(draw_type) vkCmdDrawIndexed(current->command,draw_count,1,0,0,0);
+  else vkCmdDraw(current->command,draw_count,1,0,0);
 }
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
   draw(mode,first,count,0,NULL);

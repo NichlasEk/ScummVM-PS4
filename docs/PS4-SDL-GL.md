@@ -178,3 +178,11 @@ next application integration step.
 
 Current package: `dist/ScummVM-PS4-SDL-GL.pkg`.
 SHA-256: `3946eacca4a6883d4b7fb19fd1ee722893be137395dcac9eb29c7a5cc815e333`.
+
+## Triangle-strip continuation (2026-09-26)
+
+The diagnostic now renders four-corner surfaces through array, uint16-indexed
+and uint32-indexed strips. The original 2,553-pixel oracle still passes. See
+[PS4-GL-TRIANGLE-STRIPS.md](PS4-GL-TRIANGLE-STRIPS.md) for semantics and bounds.
+Current package SHA-256:
+`6f4552f148c20334e8764979241f79564aae7a71d18a9d84fc943073b19fd9a3`.

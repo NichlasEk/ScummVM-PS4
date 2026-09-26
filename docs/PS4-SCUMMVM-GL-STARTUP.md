@@ -51,11 +51,12 @@ itself a startup blocker.
    intentional gate, not a usable engine version. Desktop engine shaders need
    GLSL 1.20; FBO/NPOT/multitexture flags also depend on capability detection.
    Do not raise version strings or claim full extensions just to bypass this.
-5. Implement the actual renderer's draw/state requirements: launcher shader
-   pipeline uses `GL_TRIANGLE_STRIP`; TWP also uses line strips/loops. Only
-   triangles are currently supported. Launcher setup disables cull, depth and
-   dither, which the current state API rejects. Distinguish disable semantics
-   from claiming working depth/cull support.
+5. **Triangle strips implemented:** launcher-style four-corner surfaces now pass
+   the native pixel oracle through array and uint16/uint32 index paths. See
+   [PS4-GL-TRIANGLE-STRIPS.md](PS4-GL-TRIANGLE-STRIPS.md). TWP line strips/loops
+   remain unsupported. Launcher setup also disables cull, depth and dither,
+   which the current state API rejects. Distinguish disable semantics from
+   claiming working depth/cull support.
 6. Validate real texture sizes/formats and object lifetime. The current 1024
    texture limit is below TWP's 1280x720 screen width. RGBA8-only uploads cannot
    substitute for all launcher's packed/RGB/indexed formats. TWP deletes attached

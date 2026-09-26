@@ -1,3 +1,29 @@
+/* Keep the same independent framebuffer oracle while exercising launcher's
+ * four-vertex surfaces through three strip entry paths. */
+#ifdef SDLGL_PROBE
+static unsigned strip_sequence,strip_modes;
+#endif
+static void draw_gl_surface(void) {
+#ifdef SDLGL_PROBE
+  unsigned mode=strip_sequence++%3; strip_modes|=1u<<mode;
+  if(!mode) { glDrawArrays(GL_TRIANGLE_STRIP,0,4); return; }
+  GLuint ibo; glGenBuffers(1,&ibo); glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,ibo);
+  if(mode==1) {
+    const uint16_t ix[]={65535,0,1,2,3};
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(ix),ix,GL_STREAM_DRAW);
+    glDrawElements(GL_TRIANGLE_STRIP,4,GL_UNSIGNED_SHORT,(void *)2);
+  } else {
+    const uint32_t ix[]={UINT32_MAX,0,1,2,3};
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(ix),ix,GL_STREAM_DRAW);
+    glDrawElements(GL_TRIANGLE_STRIP,4,GL_UNSIGNED_INT,(void *)4);
+  }
+  const uint32_t poison[5]={0};
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(poison),poison,GL_STREAM_DRAW);
+  glDeleteBuffers(1,&ibo);
+#else
+  glDrawArrays(GL_TRIANGLES,0,3);
+#endif
+}
 static void frame_image_barrier(VkCommandBuffer cmd, VkImage image, int end) {
   VkImageMemoryBarrier b={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
     .srcAccessMask=end ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : 0,
@@ -17,7 +43,7 @@ static void draw_gl_color(GLuint program) {
 #else
   (void)program;
 #endif
-  glDrawArrays(GL_TRIANGLES,0,3);
+  draw_gl_surface();
 #ifdef GLLEGACY_PROBE
   /* Later CPU mutations must not alter already recorded draw snapshots. */
   glUniform1i(mode,0); glUniform1i(last,99);
@@ -40,17 +66,17 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glUseProgram(programs[0]); GLint color=glGetUniformLocation(programs[0],"color");
   if(color<0) return 2;
   glUniform4f(color,1,0,0,1); draw_gl_color(programs[0]);
-  glUseProgram(programs[1]); glDrawArrays(GL_TRIANGLES,0,3);
+  glUseProgram(programs[1]); draw_gl_surface();
   if(glGetError()!=GL_INVALID_OPERATION) return 2; /* feedback */
   glTexSubImage2D(GL_TEXTURE_2D,0,0,0,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
   if(glGetError()!=GL_INVALID_OPERATION) return 2; /* stale CPU shadow */
   glDeleteTextures(1,&texture);
   if(glGetError()!=GL_INVALID_OPERATION || !glIsTexture(texture)) return 2;
-  glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(0,0,320,720); glDrawArrays(GL_TRIANGLES,0,3);
+  glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(0,0,320,720); draw_gl_surface();
   glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
   glEnable(GL_SCISSOR_TEST); glScissor(32,32,32,32); glClearColor(0,1,0,1); glClear(GL_COLOR_BUFFER_BIT);
   glDisable(GL_SCISSOR_TEST); glBindFramebuffer(GL_FRAMEBUFFER,0);
-  glViewport(320,0,320,720); glDrawArrays(GL_TRIANGLES,0,3);
+  glViewport(320,0,320,720); draw_gl_surface();
   /* New storage must not overwrite either earlier sample before submission. */
   for(unsigned i=0;i<sizeof(pixels);i+=4) { pixels[i]=255; pixels[i+1]=255; pixels[i+2]=0; pixels[i+3]=255; }
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,64,64,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
@@ -58,7 +84,7 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glUseProgram(programs[0]); glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
   glUniform4f(color,0,1,1,.5f); draw_gl_color(programs[0]); glDisable(GL_BLEND);
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(640,0,640,720);
-  glUseProgram(programs[1]); glDrawArrays(GL_TRIANGLES,0,3);
+  glUseProgram(programs[1]); draw_gl_surface();
   glDeleteFramebuffers(1,&framebuffer); glDeleteTextures(1,&texture);
   if(glGetError()!=GL_NO_ERROR) return 2;
   /* Keep a GPU-only result alive across fences and snapshot collection. */
@@ -79,9 +105,13 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
     glDisable(GL_SCISSOR_TEST);
   }
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(0,656,64,64);
-  glUseProgram(programs[1]); glDrawArrays(GL_TRIANGLES,0,3);
+  glUseProgram(programs[1]); draw_gl_surface();
   if(frame==7) { glDeleteFramebuffers(1,&persistent_framebuffer); glDeleteTextures(1,&persistent_texture); }
   if(glGetError()!=GL_NO_ERROR) return 2;
+#ifdef SDLGL_PROBE
+  if(strip_modes!=7) return 2;
+  fprintf(report,"PASS SDL triangle strips arrays uint16 uint32 and retained indices\n");
+#endif
   fprintf(report,"PASS GL framebuffer targets orientation lifetime and rejected feedback\n");
   return 0;
 }

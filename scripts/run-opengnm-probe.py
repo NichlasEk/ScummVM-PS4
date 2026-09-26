@@ -172,7 +172,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
             if args.sdlgl:
                 sdl_log = guest_log.read_text()
-                sdl_markers = ('PASS SDL numeric framebuffer and shader limits',
+                sdl_markers = ('PASS SDL triangle strips arrays uint16 uint32 and retained indices',
+                               'PASS SDL numeric framebuffer and shader limits',
                                'PASS SDL empty swap preserves presented image',
                                'PASS SDL teardown discards unfinished frame',
                                'PASS reusable frame owner destruction',

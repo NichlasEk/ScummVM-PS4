@@ -26,7 +26,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(VkCommandBuffer cmd, uint32_t first, 
 VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer cmd, uint32_t count, uint32_t instances, uint32_t first, uint32_t instance) {
   assert(cmd && count==3 && instances==1 && !first && !instance); ++draws;
 }
-static unsigned indexed_draws, uploads;
+static unsigned indexed_draws, uploads, expected_indices=3;
 static unsigned char snapshot[128];
 static size_t snapshot_size, snapshot_vertex_bytes;
 static GLenum snapshot_type;
@@ -37,7 +37,7 @@ static int upload(PS4GLContext *ctx, const void *data, size_t size, size_t vb, G
 }
 VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(VkCommandBuffer cmd, uint32_t count,
  uint32_t instances, uint32_t first, int32_t base, uint32_t instance) {
-  assert(cmd && count==3 && instances==1 && !first && !base && !instance); ++indexed_draws;
+  assert(cmd && count==expected_indices && instances==1 && !first && !base && !instance); ++indexed_draws;
 }
 static int compile_source(int fragment, const char *source, uint32_t **out, size_t *bytes, char *log, size_t capacity) {
   (void)fragment; *out=NULL; *bytes=0;
@@ -481,6 +481,43 @@ int main(void) {
   glDrawArrays(GL_TRIANGLES,0,0); assert(!glGetError() && lazy_calls==2);
   ps4glEndPass(); glDrawArrays(0xdead,0,0); assert(glGetError()==GL_INVALID_ENUM && lazy_calls==2);
 
+  PS4GLContext strips; assert(ps4glInit(&strips,80,60)); ps4glMakeCurrent(&strips);
+  strips.programs[0]=(PS4GLProgram){.pipeline=(VkPipeline)(uintptr_t)1,.components={2},.vertex_stride=8};
+  strips.upload_vertices=upload; glUseProgram(1); ps4glBeginPass((VkCommandBuffer)(uintptr_t)1);
+  float strip_vertices[]={0,0, 1,0, 0,1, 1,1, 0,2};
+  glBindBuffer(GL_ARRAY_BUFFER,1); glBufferData(GL_ARRAY_BUFFER,sizeof(strip_vertices),strip_vertices,GL_STREAM_DRAW);
+  glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,0,NULL); glEnableVertexAttribArray(0);
+  expected_indices=9;
+  glDrawArrays(GL_TRIANGLE_STRIP,0,5); assert(!glGetError());
+  const uint32_t ordered[]={0,1,2, 2,1,3, 2,3,4};
+  assert(snapshot_type==GL_UNSIGNED_INT && snapshot_size==76 && snapshot_vertex_bytes==40);
+  assert(!memcmp(snapshot,strip_vertices,40) && !memcmp(snapshot+40,ordered,sizeof(ordered)));
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,2);
+  uint16_t strip16[]={65535,4,1,1,3,2};
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(strip16),strip16,GL_STREAM_DRAW);
+  glDrawElements(GL_TRIANGLE_STRIP,5,GL_UNSIGNED_SHORT,(void *)2); assert(!glGetError());
+  const uint32_t degenerate[]={4,1,1, 1,1,3, 1,3,2};
+  assert(snapshot_size==76 && !memcmp(snapshot+40,degenerate,sizeof(degenerate)));
+  uint32_t strip32[]={UINT32_MAX,4,1,1,3,2};
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(strip32),strip32,GL_STREAM_DRAW);
+  glDrawElements(GL_TRIANGLE_STRIP,5,GL_UNSIGNED_INT,(void *)4); assert(!glGetError());
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER,0,NULL,GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER,0,NULL,GL_STATIC_DRAW);
+  assert(!memcmp(snapshot+40,degenerate,sizeof(degenerate))); /* Captured before both stores changed. */
+  /* Attribute-free shaders must retain gl_VertexIndex and ignore the bound EBO
+   * for DrawArrays, even when that EBO has no storage. */
+  strips.programs[0].vertex_stride=0; strips.programs[0].components[0]=0;
+  expected_indices=6; glDrawArrays(GL_TRIANGLE_STRIP,0,4); assert(!glGetError());
+  assert(snapshot_vertex_bytes==0 && snapshot_size==24 && !memcmp(snapshot,ordered,24));
+  glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING,&value); assert(value==2);
+  strips.programs[0].vertex_stride=8; strips.programs[0].components[0]=2;
+  unsigned old_uploads=uploads, old_draws=indexed_draws;
+  for(int n=0;n<3;++n) { glDrawArrays(GL_TRIANGLE_STRIP,0,n); assert(!glGetError()); }
+  glDrawArrays(GL_TRIANGLE_STRIP,0,INT_MAX); assert(glGetError()==GL_OUT_OF_MEMORY);
+  glDrawArrays(GL_TRIANGLE_STRIP,0,-1); assert(glGetError()==GL_INVALID_VALUE);
+  glDrawElements(GL_TRIANGLE_STRIP,4,GL_UNSIGNED_SHORT,(void *)UINTPTR_MAX); assert(glGetError()==GL_INVALID_OPERATION);
+  assert(uploads==old_uploads && indexed_draws==old_draws);
+  ps4glDestroyBuffers(&strips);
   ps4glMakeCurrent(NULL);
-  puts("PASS constant vertex attributes, array precedence, context isolation and atomic errors; signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
+  puts("PASS triangle strips, winding, degenerates, index widths, bounds and snapshots; constant vertex attributes, array precedence, context isolation and atomic errors; signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

@@ -155,6 +155,7 @@ typedef struct PS4GLSnapshot {
   PS4GLTextureSnapshot textures[2];
 } PS4GLSnapshot;
 #define GL_TRIANGLES 0x0004
+#define GL_TRIANGLE_STRIP 0x0005
 #define GL_CURRENT_PROGRAM 0x8b8d
 #define GL_VERTEX_SHADER 0x8b31
 #define GL_FRAGMENT_SHADER 0x8b30

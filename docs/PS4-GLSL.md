@@ -160,3 +160,81 @@ Current shader-object package: `dist/ScummVM-PS4-GLSL.pkg`, SHA-256
 Reports remain in `artifacts/vulkan/glsl/`, with host object-state checks in
 `artifacts/glslang/shader-object-host.log`. Framebuffer, texture, blend and
 clear/readback regressions are in `artifacts/vulkan/globjects-regression-*.log`.
+
+
+## Legacy GLSL and attribute-binding checkpoint (2026-09-26)
+
+The separate `--gllegacy` diagnostic now renders with the original TWP vertex
+and default fragment sources, including the original ScummVM compatibility
+preambles. Sources are extracted from `.tools/scummvm-src` by
+`prepare-legacy-glsl-probe.py`; their hashes go to `legacy-sources.json`. This
+is runtime source compilation through GL shader objects, not an offline rewrite
+of those bodies. The package includes the embedded sources and ScummVM notices
+in `scummvm-shaders.txt`, alongside the existing glslang license.
+
+`ps4glCompileLegacyGLSL` and `ps4glLinkLegacyGLSL` first ask glslang to preprocess
+and validate the original GLSL. A bounded tokenizer then rewrites global
+attribute/varying/uniform declarations into Vulkan GLSL. Attribute locations
+honor pre-link `glBindAttribLocation`; remaining locations use free slots.
+Varyings are matched by name across stages, including differently ordered
+source declarations. Shared uniform types and array sizes must agree.
+Non-sampler uniforms become per-stage std140 blocks at bindings 0/1; fragment
+sampler2D declarations use bindings 2/3. A wrapper converts vertex clip Y and
+Z to the existing Vulkan/GL frontend convention. `texture2D` and `gl_FragColor`
+are translated too. Original macros are expanded before any rewriting.
+
+`glGetAttribLocation` reads the linked SPIR-V names/locations. A binding changed
+after linking leaves the current executable and query results intact; successful
+relinking remains unsupported. The link callback now takes the requested
+bindings; explicit Vulkan GLSL uses `ps4glLinkBoundVulkanGLSL`, whose explicit
+source locations take precedence over API bindings.
+
+The deliberately limited language surface is:
+
+- One named declaration per statement, at most 64 declarations, names under
+  64 bytes. Attributes/varyings are float or vec2/3/4, with at most 8 attribute
+  and 16 varying locations. Aliased attribute locations are rejected.
+- Uniform float/int/bool/vec2/vec3/vec4/mat4, optionally literal arrays of 1–16;
+  at most two fragment sampler2D declarations, without sampler arrays. Native
+  reflection remains a second gate: integer/bool uniform uploads are **not yet
+  supported**, even when source compilation succeeds.
+- Source up to 256 KiB, expanded/transformed text below 512 KiB. Includes,
+  unhandled directives/extensions, complex declarations and bridge-reserved
+  identifiers fail with diagnostics. User-visible builtins other than
+  `gl_Position` and `gl_FragColor` are rejected; fragment-coordinate/depth and
+  point semantics need their own implementation.
+- Existing single-thread, object-count, per-frame resource retention and
+  successful-relink restrictions remain. No complete GL version is advertised.
+
+Reproduce:
+
+```sh
+scripts/check-ps4-glslang.sh
+scripts/build-vulkan-probe.sh --gllegacy
+xvfb-run -a -s '-screen 0 1280x720x24' \
+  python3 scripts/run-opengnm-probe.py --vulkan --gllegacy
+```
+
+Host ASan/UBSan checks compile/link all five original TWP fragment shaders with
+the original vertex shader for both GLSL 110 and ES 100 preambles. They also
+cover declaration/builtin rejection, missing/reordered varyings, two samplers,
+aliased attributes and GL binding/query state. This does **not** mean every
+post-effect runs through the native GL frontend yet.
+
+In shadPS4, the default TWP pair plus a small uniform-color fragment probe pass
+2,553 framebuffer pixel checks, eight frames, command-buffer resubmission,
+shader lifetime checks and native cleanup. Nonsequential attribute locations
+4/1/6 and unchanged queries after a post-link rebind are checked on target.
+Reports are in `artifacts/vulkan/gllegacy/`. Explicit Vulkan GLSL, precompiled
+framebuffer and CPU-texture regressions are in
+`artifacts/vulkan/gllegacy-regression-*.log`.
+
+Package: `dist/ScummVM-PS4-GL-Legacy.pkg`.
+SHA-256: `6a8edd7c4f0aacc4bf835e81c9adf8e3d3a2d0abd274a222102eb63fe6d13618`.
+The stable ScummVM 1.17 package remains unchanged at
+`c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.
+
+Next: close the real engine's remaining uniform/state requirements and connect
+SDL context/procedure/frame ownership, then attempt an actual TWP boot. This
+checkpoint validates the shader bridge in an isolated diagnostic; physical PS4
+and real-game execution through this frontend remain unverified.

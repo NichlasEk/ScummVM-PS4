@@ -129,3 +129,34 @@ done:
   for(unsigned i=0;i<2;++i) if(shaders[i]) glslang_shader_delete(shaders[i]);
   return ok;
 }
+
+#include "ps4gl-legacy.inc"
+int ps4glCompileLegacyGLSL(int fragment, const char *source, uint32_t **words, size_t *bytes, char *log, size_t cap) {
+  if(words) *words=NULL;
+  if(bytes) *bytes=0;
+  diagnostic(log,cap,"");
+  if(!words || !bytes || (fragment!=0 && fragment!=1)) { diagnostic(log,cap,"Invalid legacy compiler arguments"); return 0; }
+  LegacySource parsed={0}; int ok=0; char *translated=NULL;
+  if(legacy_preprocess(fragment,source,&parsed,log,cap)) {
+    translated=legacy_rewrite(&parsed,fragment,&parsed,&parsed,NULL,0,log,cap);
+    if(translated) ok=ps4glCompileVulkanGLSL(fragment,translated,words,bytes,log,cap);
+  }
+  free(translated); free(parsed.text); return ok;
+}
+int ps4glLinkLegacyGLSL(const char *vertex, const char *fragment, const PS4GLAttributeBinding *bindings, size_t count,
+                       uint32_t **vs, size_t *vb, uint32_t **fs, size_t *fb, char *log, size_t cap) {
+  if(vs) *vs=NULL;
+  if(fs) *fs=NULL;
+  if(vb) *vb=0;
+  if(fb) *fb=0;
+  diagnostic(log,cap,"");
+  if(!vs || !vb || !fs || !fb || vs==fs || vb==fb) { diagnostic(log,cap,"Invalid legacy linker arguments"); return 0; }
+  char *v=NULL,*f=NULL;
+  if(!legacy_pair(vertex,fragment,bindings,count,&v,&f,log,cap)) return 0;
+  int ok=ps4glLinkVulkanGLSL(v,f,vs,vb,fs,fb,log,cap); free(v); free(f); return ok;
+}
+int ps4glLinkBoundVulkanGLSL(const char *v, const char *f, const PS4GLAttributeBinding *bindings, size_t count,
+                            uint32_t **vs, size_t *vb, uint32_t **fs, size_t *fb, char *log, size_t cap) {
+  /* Explicit GLSL locations take precedence over API bindings. */
+  (void)bindings; (void)count; return ps4glLinkVulkanGLSL(v,f,vs,vb,fs,fb,log,cap);
+}

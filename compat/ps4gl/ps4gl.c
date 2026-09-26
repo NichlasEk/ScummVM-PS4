@@ -474,6 +474,7 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices
 PS4GLProc ps4glGetProcAddress(const char *name) {
   if (!name) return NULL;
 #define PROC(fn) if(!strcmp(name,#fn)) return (PS4GLProc)fn
+  PROC(glBindAttribLocation); PROC(glGetAttribLocation);
   PROC(glCreateShader); PROC(glShaderSource); PROC(glCompileShader); PROC(glDeleteShader); PROC(glIsShader);
   PROC(glGetShaderiv); PROC(glGetShaderInfoLog); PROC(glGetShaderSource);
   PROC(glCreateProgram); PROC(glAttachShader); PROC(glDetachShader); PROC(glLinkProgram); PROC(glGetProgramInfoLog);

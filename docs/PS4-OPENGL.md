@@ -16,9 +16,10 @@ fragment sampler2D parameters now work as well. GL blending now supports separat
 retained pipeline variants. Managed color-only GL framebuffers now support GPU
 render-to-texture sampling, target switches and retained storage across frames.
 An explicit [runtime Vulkan GLSL compiler](PS4-GLSL.md) now works in the native
-diagnostic. GL shader objects and cross-stage linking now drive that diagnostic. Legacy
-source translation/attribute bindings, remaining GL state and SDL context
-integration are still missing. The alternatives below preserve the earlier
+diagnostic. GL shader objects and cross-stage linking now drive that diagnostic.
+Bounded legacy GLSL translation and named attribute bindings now also render
+original TWP shader sources in the native diagnostic. Remaining GL state and SDL
+context integration are still missing. The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 
 ## Capability probe checkpoint

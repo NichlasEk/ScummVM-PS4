@@ -20,6 +20,7 @@ variants.add_argument('--resources', action='store_true')
 variants.add_argument('--upload', action='store_true')
 variants.add_argument('--rectclear', action='store_true')
 variants.add_argument('--readback', action='store_true')
+variants.add_argument('--gllegacy', action='store_true')
 variants.add_argument('--glsl', action='store_true')
 variants.add_argument('--glfbo', action='store_true')
 variants.add_argument('--glblend', action='store_true')
@@ -34,6 +35,8 @@ variants.add_argument('--twp', action='store_true')
 variants.add_argument('--sprites', action='store_true')
 variants.add_argument('--composite', action='store_true')
 args = parser.parse_args()
+if args.gllegacy:
+    args.glsl = True
 if args.glsl:
     args.glfbo = True
 if args.glblend or args.glfbo:
@@ -76,7 +79,7 @@ if mode != 'triangle':
 if args.vulkan:
     reports = root / 'artifacts/vulkan'
     if args.gldraw:
-        reports /= 'glsl' if args.glsl else 'glfbo' if args.glfbo else 'glblend' if args.glblend else 'gltexture' if args.gltexture else 'glarray' if args.glarray else 'gluniform' if args.gluniform else 'glindex' if args.glindex else 'glvbo' if args.glvbo else 'gldraw'
+        reports /= 'gllegacy' if args.gllegacy else 'glsl' if args.glsl else 'glfbo' if args.glfbo else 'glblend' if args.glblend else 'gltexture' if args.gltexture else 'glarray' if args.glarray else 'gluniform' if args.gluniform else 'glindex' if args.glindex else 'glvbo' if args.glvbo else 'gldraw'
     elif args.twp:
         reports /= 'twp'
     elif args.composite:
@@ -164,6 +167,8 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                     raise RuntimeError('Vulkan cleanup failed; inspect target and emulator logs')
                 time.sleep(.25)
             shutil.copy2(guest_log, reports / 'triangle-result.txt')
+            if args.gllegacy and guest_log.read_text().count('PASS legacy source and attribute bindings 4 1 6') != 2:
+                raise RuntimeError('Legacy shader attribute checks incomplete')
             if args.glsl and (guest_log.read_text().count('GLSL runtime program=') != 2 or
                               guest_log.read_text().count('PASS GL shader objects copied source and deferred deletion') != 2 or
                               'PASS GL shader objects reject cross-stage mismatch' not in guest_log.read_text() or

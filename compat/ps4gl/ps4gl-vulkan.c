@@ -152,6 +152,19 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
   }
   result=vkCreatePipelineLayout(device,&lci,NULL,&layout);
   if(result!=VK_SUCCESS) goto cleanup;
+  /* Read compiler-emitted input names at explicit locations for GL queries. */
+  for(size_t i=5;i<vs_size/4;i+=vs[i]>>16) if((vs[i]&0xffff)==59 && (vs[i]>>16)>=4 && vs[i+3]==1) {
+    unsigned location=PS4GL_MAX_ATTRIBS; const char *name=NULL;
+    for(size_t j=5;j<vs_size/4;j+=vs[j]>>16) {
+      if((vs[j]&0xffff)==71 && (vs[j]>>16)>=4 && vs[j+1]==vs[i+2] && vs[j+2]==30) location=vs[j+3];
+      if((vs[j]&0xffff)==5 && (vs[j]>>16)>=3 && vs[j+1]==vs[i+2]) {
+        const char *candidate=(const char *)&vs[j+2]; size_t bytes=((vs[j]>>16)-2)*4;
+        const char *end=memchr(candidate,0,bytes);
+        if(end && (size_t)(end-candidate)<64) name=candidate;
+      }
+    }
+    if(location<PS4GL_MAX_ATTRIBS && name) strcpy(reflected.attribute_names[location],name);
+  }
   reflected.layout=layout;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) { reflected.components[i]=components[i]; stride+=components[i]*4; }
   PS4GLBlend disabled={.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};

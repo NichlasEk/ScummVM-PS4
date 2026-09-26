@@ -3,11 +3,11 @@
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 case "${1:-}" in
- ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo|--glsl) ;;
- *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo|--glsl]' >&2; exit 2 ;;
+ ""|--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo|--glsl|--gllegacy) ;;
+ *) echo 'Usage: build-vulkan-probe.sh [--resources|--upload|--composite|--sprites|--readback|--rectclear|--twp|--glstate|--gldraw|--glvbo|--glindex|--gluniform|--glarray|--gltexture|--glblend|--glfbo|--glsl|--gllegacy]' >&2; exit 2 ;;
 esac
 variant=${1:-}
-if [[ "$variant" == --glsl ]]; then set -- --glfbo; fi
+if [[ "$variant" == --glsl || "$variant" == --gllegacy ]]; then set -- --glfbo; fi
 if [[ "$variant" == --glstate ]]; then
  set -- --rectclear
 fi
@@ -48,11 +48,11 @@ else
 fi
 if [[ "$variant" == --glstate ]]; then
  sed -i '1i#define GLSTATE_PROBE 1' "$probe/draw.c"
- cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$probe/"
+ cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$root/compat/ps4gl/ps4gl-bindings.h" "$probe/"
 fi
-if [[ "$variant" == --glsl || "$variant" == --glfbo || "$variant" == --glblend || "$variant" == --gldraw || "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
+if [[ "$variant" == --gllegacy || "$variant" == --glsl || "$variant" == --glfbo || "$variant" == --glblend || "$variant" == --gldraw || "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLDRAW_PROBE 1' "$probe/draw.c"
- cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$root/compat/ps4gl/ps4gl-framebuffer-vulkan.h" "$probe/"
+ cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$root/compat/ps4gl/ps4gl-bindings.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$root/compat/ps4gl/ps4gl-framebuffer-vulkan.h" "$probe/"
 fi
 if [[ "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLVBO_PROBE 1' "$probe/draw.c"
@@ -78,7 +78,7 @@ if [[ "$variant" == --glblend ]]; then
  sed -i '1i#define GLBLEND_PROBE 1' "$probe/draw.c"
  cp "$root/tests/ps4/vulkan/glblend.h" "$probe/"
 fi
-if [[ "$variant" == --glfbo || "$variant" == --glsl ]]; then
+if [[ "$variant" == --glfbo || "$variant" == --glsl || "$variant" == --gllegacy ]]; then
  sed -i '1i#define GLFBO_PROBE 1' "$probe/draw.c"
  cp "$root/tests/ps4/vulkan/glfbo.h" "$probe/"
 fi
@@ -88,13 +88,19 @@ if [[ -f "$driver/sce_sys/param.sfo" ]]; then
  mv "$driver/sce_sys/param.sfo" "$driver/sce_sys/param.sfo.previous"
 fi
 extra_make=()
-if [[ "$variant" == --glsl ]]; then
+if [[ "$variant" == --glsl || "$variant" == --gllegacy ]]; then
  "$root/scripts/build-ps4-glslang.sh"
  sed -i '1i#define GLSL_PROBE 1' "$probe/draw.c"
- cp "$root/compat/ps4gl/ps4gl-glsl.c" "$root/compat/ps4gl/ps4gl-glsl.h" "$root/compat/ps4gl/ps4gl-stage-interface.h" "$root/tests/ps4/vulkan/glsl.h" "$probe/"
+ cp "$root/compat/ps4gl/ps4gl-glsl.c" "$root/compat/ps4gl/ps4gl-glsl.h" "$root/compat/ps4gl/ps4gl-stage-interface.h" "$root/compat/ps4gl/ps4gl-legacy.inc" "$root/tests/ps4/vulkan/glsl.h" "$probe/"
  python3 "$root/scripts/prepare-glsl-probe.py" "$probe"
  extra_make+=("EXTRA_CFLAGS=-I$root/.tools/glslang" "EXTRA_LIBS=$root/build/glslang-orbis/libglslang-ps4.a"
   "PKG_FILES=eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx glslang-LICENSE.txt")
+fi
+if [[ "$variant" == --gllegacy ]]; then
+ sed -i '1i#define GLLEGACY_PROBE 1' "$probe/draw.c"
+ python3 "$root/scripts/prepare-legacy-glsl-probe.py" "$probe"
+ cp "$probe/scummvm-shaders.txt" "$driver/scummvm-shaders.txt"
+ extra_make+=("PKG_FILES=eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png sce_module/libc.prx sce_module/libSceFios2.prx glslang-LICENSE.txt scummvm-shaders.txt")
 fi
 make -C "$driver" -f Makefile.orbis "${extra_make[@]}" -j"${JOBS:-8}" pkg \
  TEST_SRC="$probe/draw.c" TEST_OBJ="$probe/draw.o" \
@@ -150,10 +156,11 @@ fi
 if [[ "$variant" == --glblend ]]; then
  package=ScummVM-PS4-GL-Blend.pkg
 fi
-if [[ "$variant" == --glfbo || "$variant" == --glsl ]]; then
+if [[ "$variant" == --glfbo || "$variant" == --glsl || "$variant" == --gllegacy ]]; then
  package=ScummVM-PS4-GL-Framebuffer.pkg
 fi
-if [[ "$variant" == --glsl ]]; then package=ScummVM-PS4-GLSL.pkg; fi
+if [[ "$variant" == --glsl || "$variant" == --gllegacy ]]; then package=ScummVM-PS4-GLSL.pkg; fi
+if [[ "$variant" == --gllegacy ]]; then package=ScummVM-PS4-GL-Legacy.pkg; fi
 cp "$driver/$content.pkg" "$root/dist/$package"
 cd "$root/dist"
 sha256sum "$package" > "$package.sha256"

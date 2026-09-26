@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.h>
 #include <stdint.h>
 #include <stddef.h>
+#include "ps4gl-bindings.h"
 typedef ptrdiff_t GLsizeiptr;
 typedef ptrdiff_t GLintptr;
 typedef unsigned int GLuint;
@@ -144,7 +145,7 @@ typedef struct PS4GLSnapshot {
 #define PS4GL_MAX_SHADERS 32
 #define PS4GL_SHADER_SOURCE_LIMIT (256u*1024u)
 typedef int (*PS4GLCompileSource)(int, const char *, uint32_t **, size_t *, char *, size_t);
-typedef int (*PS4GLLinkSources)(const char *, const char *, uint32_t **, size_t *, uint32_t **, size_t *, char *, size_t);
+typedef int (*PS4GLLinkSources)(const char *, const char *, const PS4GLAttributeBinding *, size_t, uint32_t **, size_t *, uint32_t **, size_t *, char *, size_t);
 typedef struct PS4GLShader {
   GLuint name;
   GLenum type;
@@ -172,6 +173,9 @@ typedef struct PS4GLUniform {
 typedef struct PS4GLProgram {
   GLboolean allocated;
   GLuint attached[2];
+  PS4GLAttributeBinding bindings[8];
+  unsigned binding_count;
+  char attribute_names[8][64];
   char log[2048];
   VkPipeline pipeline;
   VkShaderModule modules[2];
@@ -274,6 +278,8 @@ GLuint glCreateProgram(void);
 void glAttachShader(GLuint, GLuint);
 void glDetachShader(GLuint, GLuint);
 void glLinkProgram(GLuint);
+void glBindAttribLocation(GLuint, GLuint, const GLchar *);
+GLint glGetAttribLocation(GLuint, const GLchar *);
 void glGetProgramInfoLog(GLuint, GLsizei, GLsizei *, char *);
 void ps4glDestroyShaderObjects(PS4GLContext *);
 PS4GLProc ps4glGetProcAddress(const char *);

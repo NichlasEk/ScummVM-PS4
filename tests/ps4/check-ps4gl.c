@@ -44,14 +44,16 @@ static int compile_source(int fragment, const char *source, uint32_t **out, size
   if(strstr(source,"bad")) { snprintf(log,capacity,"rejected source"); return 0; }
   *out=malloc(4); assert(*out); **out=1; *bytes=4; return 1;
 }
-static int link_sources(const char *vs, const char *fs, uint32_t **v, size_t *vb, uint32_t **f, size_t *fb, char *log, size_t cap) {
+static int link_sources(const char *vs, const char *fs, const PS4GLAttributeBinding *bindings, size_t binding_count, uint32_t **v, size_t *vb, uint32_t **f, size_t *fb, char *log, size_t cap) {
+  assert(binding_count==1 && !strcmp(bindings[0].name,"position") && bindings[0].index==4);
   assert(!strcmp(vs,"vertex") && !strcmp(fs,"fragment"));
   return compile_source(0,vs,v,vb,log,cap) && compile_source(1,fs,f,fb,log,cap);
 }
 static GLuint import_program(VkDevice device, VkRenderPass pass, const uint32_t *vs, size_t vb, const uint32_t *fs, size_t fb) {
   assert(device && pass && vs && fs && vb==4 && fb==4);
   PS4GLContext *c=ps4glCurrentContext(); GLuint name=c->link_destination; assert(name);
-  c->programs[name-1]=(PS4GLProgram){.pipeline=(VkPipeline)(uintptr_t)1}; return name;
+  c->programs[name-1]=(PS4GLProgram){.pipeline=(VkPipeline)(uintptr_t)1};
+  c->programs[name-1].components[4]=2; strcpy(c->programs[name-1].attribute_names[4],"position"); return name;
 }
 int main(void) {
   PS4GLContext a,b;
@@ -370,6 +372,10 @@ int main(void) {
   assert(!glCreateShader(GL_TRIANGLES) && glGetError()==GL_INVALID_ENUM);
   GLuint vs=glCreateShader(GL_VERTEX_SHADER), fs=glCreateShader(GL_FRAGMENT_SHADER), prog=glCreateProgram();
   assert(vs!=prog && fs!=prog && glIsProgram(prog) && glIsShader(vs));
+  assert(glGetAttribLocation(prog,"position")==-1 && glGetError()==GL_INVALID_OPERATION);
+  glBindAttribLocation(prog,8,"position"); assert(glGetError()==GL_INVALID_VALUE);
+  glBindAttribLocation(prog,1,"gl_reserved"); assert(glGetError()==GL_INVALID_OPERATION);
+  glBindAttribLocation(prog,1,"position"); glBindAttribLocation(prog,4,"position");
   glGetProgramiv(prog,GL_LINK_STATUS,&value); assert(!value);
   glUseProgram(prog); assert(glGetError()==GL_INVALID_OPERATION);
   glLinkProgram(prog); assert(!glGetError());
@@ -395,6 +401,10 @@ int main(void) {
   glDeleteShader(vs); glDeleteShader(fs); assert(glIsShader(vs) && glIsShader(fs));
   glEnable(0xdead); glLinkProgram(prog); assert(glGetError()==GL_INVALID_ENUM);
   glGetProgramiv(prog,GL_LINK_STATUS,&value); assert(value);
+  assert(shaderctx.programs[prog-1].binding_count==1 && shaderctx.programs[prog-1].bindings[0].index==4);
+  assert(glGetAttribLocation(prog,"position")==4 && glGetAttribLocation(prog,"absent")==-1);
+  glBindAttribLocation(prog,2,"position"); assert(glGetAttribLocation(prog,"position")==4);
+  assert(ps4glGetProcAddress("glBindAttribLocation") && ps4glGetProcAddress("glGetAttribLocation"));
   glGetProgramiv(prog,GL_INFO_LOG_LENGTH,&value); assert(!value);
   glGetProgramiv(prog,GL_ATTACHED_SHADERS,&value); assert(value==2);
   glLinkProgram(prog); assert(glGetError()==GL_INVALID_OPERATION); /* retained executable */

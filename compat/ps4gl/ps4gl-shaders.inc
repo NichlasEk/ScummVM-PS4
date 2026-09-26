@@ -130,8 +130,9 @@ void glLinkProgram(GLuint name) {
   if(!vs || !fs || !vs->compiled || !fs->compiled) { snprintf(p->log,sizeof(p->log),"One compiled vertex and fragment shader required"); return; }
   if(!current->link_sources || !current->import_program) { snprintf(p->log,sizeof(p->log),"No program linker configured"); return; }
   uint32_t *v=NULL,*f=NULL; size_t vb=0,fb=0;
-  if(!current->link_sources(vs->compiled_source,fs->compiled_source,&v,&vb,&f,&fb,p->log,sizeof(p->log))) { free(v); free(f); return; }
+  if(!current->link_sources(vs->compiled_source,fs->compiled_source,p->bindings,p->binding_count,&v,&vb,&f,&fb,p->log,sizeof(p->log))) { free(v); free(f); return; }
   GLuint attached[2]={p->attached[0],p->attached[1]}; GLboolean deleted=p->deleted;
+  PS4GLAttributeBinding bindings[8]; memcpy(bindings,p->bindings,sizeof(bindings)); unsigned binding_count=p->binding_count;
   GLenum previous=current->error; current->error=GL_NO_ERROR;
   current->link_destination=name;
   GLuint imported=current->import_program(current->program_device,current->program_pass,v,vb,f,fb);
@@ -144,6 +145,7 @@ void glLinkProgram(GLuint name) {
   }
   current->error=previous;
   if(imported!=name) { *p=current->programs[imported-1]; current->programs[imported-1]=(PS4GLProgram){0}; }
+  memcpy(p->bindings,bindings,sizeof(bindings)); p->binding_count=binding_count;
   p->allocated=1; p->deleted=deleted; p->attached[0]=attached[0]; p->attached[1]=attached[1];
 }
 void ps4glDestroyShaderObjects(PS4GLContext *ctx) {
@@ -161,4 +163,26 @@ void ps4glConfigureShaderCompiler(VkRenderPass pass, PS4GLCompileSource compile,
   if(!pass || !compile || !link || current->command || !current->program_device || !current->import_program ||
       (current->program_pass && current->program_pass!=pass)) { error(GL_INVALID_OPERATION); return; }
   current->program_pass=pass; current->compile_source=compile; current->link_sources=link;
+}
+
+void glBindAttribLocation(GLuint name, GLuint index, const GLchar *attribute) {
+  if(!current) return;
+  PS4GLProgram *p=program(name);
+  if(!p || !attribute || index>=PS4GL_MAX_ATTRIBS) { error(GL_INVALID_VALUE); return; }
+  if(!strncmp(attribute,"gl_",3)) { error(GL_INVALID_OPERATION); return; }
+  size_t length=strlen(attribute);
+  if(!length || length>=64) { error(GL_INVALID_VALUE); return; }
+  unsigned slot;
+  for(slot=0;slot<p->binding_count;++slot) if(!strcmp(p->bindings[slot].name,attribute)) break;
+  if(slot==8) { error(GL_OUT_OF_MEMORY); return; }
+  if(slot==p->binding_count) ++p->binding_count;
+  strcpy(p->bindings[slot].name,attribute); p->bindings[slot].index=index;
+}
+GLint glGetAttribLocation(GLuint name, const GLchar *attribute) {
+  if(!current) return -1;
+  PS4GLProgram *p=program(name);
+  if(!p || !attribute) { error(GL_INVALID_VALUE); return -1; }
+  if(!p->pipeline) { error(GL_INVALID_OPERATION); return -1; }
+  for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) if(p->components[i] && !strcmp(p->attribute_names[i],attribute)) return (GLint)i;
+  return -1;
 }

@@ -619,5 +619,6 @@ Stable ScummVM 1.17 remains unchanged at
 The next standalone milestone is documented in [PS4-GLSL.md](PS4-GLSL.md):
 explicit Vulkan GLSL text now compiles on target and drives this framebuffer
 probe. Shader objects, cross-stage linking and deferred shader deletion now
-work in that diagnostic as well. Legacy source translation and SDL integration
-are still pending.
+work in that diagnostic as well. Bounded legacy GLSL translation and named
+attribute bindings now render original TWP shader sources there too. SDL
+integration and the remaining engine API gaps are still pending.

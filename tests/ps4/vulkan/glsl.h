@@ -1,11 +1,21 @@
 #include "ps4gl-glsl.c"
 #include "glsl-sources.h"
+#ifdef GLLEGACY_PROBE
+#include "legacy-sources.h"
+#endif
 static GLuint compile_glsl_program(VkDevice device, VkRenderPass pass, const char *vertex, const char *fragment) {
   (void)device;
-  ps4glConfigureShaderCompiler(pass,ps4glCompileVulkanGLSL,ps4glLinkVulkanGLSL);
+#ifdef GLLEGACY_PROBE
+  ps4glConfigureShaderCompiler(pass,ps4glCompileLegacyGLSL,ps4glLinkLegacyGLSL);
+#else
+  ps4glConfigureShaderCompiler(pass,ps4glCompileVulkanGLSL,ps4glLinkBoundVulkanGLSL);
+#endif
   GLuint shaders[]={glCreateShader(GL_VERTEX_SHADER),glCreateShader(GL_FRAGMENT_SHADER)};
   const char *sources[]={vertex,fragment}; GLint status; char log[2048];
   GLuint result=glCreateProgram();
+#ifdef GLLEGACY_PROBE
+  glBindAttribLocation(result,4,"a_position"); glBindAttribLocation(result,1,"a_color"); glBindAttribLocation(result,6,"a_texCoords");
+#endif
   for(unsigned i=0;i<2;++i) {
     /* Explicit lengths, multiple strings, and independent copied storage. */
     const char *pieces[]={sources[i],sources[i]+13}; GLint lengths[]={13,(GLint)strlen(sources[i]+13)};
@@ -22,6 +32,16 @@ static GLuint compile_glsl_program(VkDevice device, VkRenderPass pass, const cha
   if(!status) { glGetProgramInfoLog(result,sizeof(log),NULL,log); fprintf(report,"Link failed: %s\n",log); return 0; }
   for(unsigned i=0;i<2;++i) { glDetachShader(result,shaders[i]); if(glIsShader(shaders[i])) return 0; }
   glGetProgramiv(result,GL_ATTACHED_SHADERS,&status); if(status || glGetError()) return 0;
+#ifdef GLLEGACY_PROBE
+  if(glGetAttribLocation(result,"a_position")!=4 || glGetAttribLocation(result,"a_color")!=1 || glGetAttribLocation(result,"a_texCoords")!=6) return 0;
+  glBindAttribLocation(result,2,"a_position");
+  if(glGetAttribLocation(result,"a_position")!=4 || glGetAttribLocation(result,"missing")!=-1) return 0;
+  glUseProgram(result);
+  const float matrix[]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+  GLint transform=glGetUniformLocation(result,"u_transform"); if(transform<0) return 0;
+  glUniformMatrix4fv(transform,1,GL_FALSE,matrix);
+  fprintf(report,"PASS legacy source and attribute bindings 4 1 6\n");
+#endif
   fprintf(report,"GLSL runtime program=%u via shader objects and cross-stage link\n",result);
   fprintf(report,"PASS GL shader objects copied source and deferred deletion\n");
   return result;
@@ -59,3 +79,16 @@ static int reject_glsl(void) {
   fprintf(report,"PASS GL shader objects reject cross-stage mismatch: %s\n",log);
   return 0;
 }
+
+#ifdef GLLEGACY_PROBE
+static int legacy_vertices(void) {
+  const float vertices[]={-1,-1, 1,1,1,1, 0,0, 3,-1, 1,1,1,1, 2,0, -1,3, 1,1,1,1, 0,2};
+  GLuint buffer; glGenBuffers(1,&buffer); glBindBuffer(GL_ARRAY_BUFFER,buffer);
+  glBufferData(GL_ARRAY_BUFFER,sizeof(vertices),vertices,GL_STATIC_DRAW);
+  glVertexAttribPointer(4,2,GL_FLOAT,GL_FALSE,32,(void *)0);
+  glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,32,(void *)8);
+  glVertexAttribPointer(6,2,GL_FLOAT,GL_FALSE,32,(void *)24);
+  glEnableVertexAttribArray(4); glEnableVertexAttribArray(1); glEnableVertexAttribArray(6);
+  return glGetError()!=GL_NO_ERROR;
+}
+#endif

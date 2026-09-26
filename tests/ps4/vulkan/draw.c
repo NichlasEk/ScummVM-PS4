@@ -326,10 +326,16 @@ int main(void) {
 #ifdef GLSL_PROBE
   ps4glConfigureVertexDevice(physical,device);
   if(!ps4glGLSLInitialize()) return 2;
-  ps4glConfigureShaderCompiler(pass,ps4glCompileVulkanGLSL,ps4glLinkVulkanGLSL);
+  ps4glConfigureShaderCompiler(pass,ps4glCompileVulkanGLSL,ps4glLinkBoundVulkanGLSL);
   if(reject_glsl()) return 2;
+#ifdef GLLEGACY_PROBE
+  GLuint glprograms[]={compile_glsl_program(device,pass,legacy_vsrc,legacy_color),
+    compile_glsl_program(device,pass,legacy_vsrc,legacy_fragmentSrc)};
+  if(legacy_vertices()) return 2;
+#else
   GLuint glprograms[]={compile_glsl_program(device,pass,glsl_vertex,glsl_color),
     compile_glsl_program(device,pass,glsl_vertex,glsl_texture)};
+#endif
 #else
   GLuint glprograms[]={ps4glCreateProgramSPIRV(device,pass,background_vert,sizeof(background_vert),background_frag,sizeof(background_frag)),
     ps4glCreateProgramSPIRV(device,pass,triangle_vert,sizeof(triangle_vert),triangle_frag,sizeof(triangle_frag))};

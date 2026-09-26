@@ -11,9 +11,10 @@ cmake -S "$src" -B "$work" -G Ninja -DCMAKE_BUILD_TYPE=Release \
  -DENABLE_SPVREMAPPER=OFF -DENABLE_PCH=OFF -DGLSLANG_TESTS=OFF -DGLSLANG_ENABLE_INSTALL=OFF \
  > artifacts/glslang/host-build.log 2>&1
 cmake --build "$work" -j"${JOBS:-8}" >> artifacts/glslang/host-build.log 2>&1
+python3 scripts/prepare-legacy-glsl-probe.py "$work"
 cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Icompat/ps4gl -I"$src" \
  -c compat/ps4gl/ps4gl-glsl.c -o "$work/wrapper.o"
-cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Icompat/ps4gl \
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -Icompat/ps4gl -I"$work" \
  -c tests/ps4/check-ps4gl-glsl.c -o "$work/check.o"
 c++ -fsanitize=address,undefined "$work/check.o" "$work/wrapper.o" -Wl,--start-group \
  "$work/glslang/libglslang.a" "$work/glslang/libMachineIndependent.a" "$work/glslang/libGenericCodeGen.a" \

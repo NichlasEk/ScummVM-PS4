@@ -35,7 +35,9 @@ static FILE *report;
 #ifdef GLDRAW_PROBE
 #include "ps4gl.c"
 #include "ps4gl-vulkan.c"
-#ifdef GLTEXTURE_PROBE
+#ifdef GLBLEND_PROBE
+#include "glblend.h"
+#elif defined(GLTEXTURE_PROBE)
 #include "gltexture.h"
 #elif defined(GLARRAY_PROBE)
 #include "glarray.h"
@@ -402,7 +404,9 @@ int main(void) {
     glUseProgram(glprograms[0]); draw_gl(GL_TRIANGLES,0,3);
     glUseProgram(glprograms[1]);
     if(frame==7) glDeleteProgram(glprograms[1]);
-#ifdef GLVBO_PROBE
+#ifdef GLBLEND_PROBE
+    if(draw_gl_blend(draw_gl)) return 2;
+#elif defined(GLVBO_PROBE)
     if(draw_gl_vertices(draw_gl)) return 2;
 #else
     glViewport(160,90,960,540);
@@ -445,7 +449,7 @@ int main(void) {
                            .pCommandBuffers = &cmd};
     CHECK(vkQueueSubmit(queue, 1, &submit, fence));
     CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ULL));
-#ifdef GLVBO_PROBE
+#if defined(GLVBO_PROBE) || defined(GLBLEND_PROBE)
     if(frame==7) {
       CHECK(vkResetFences(device,1,&fence));
       CHECK(vkQueueSubmit(queue,1,&submit,fence));

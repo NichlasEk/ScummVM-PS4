@@ -49,6 +49,59 @@ static int supported_interface(const uint32_t *code, size_t bytes, unsigned *com
   }
   return 1;
 }
+static VkBlendFactor native_factor(GLenum factor) {
+  switch(factor) {
+    case GL_ZERO:return VK_BLEND_FACTOR_ZERO; case GL_ONE:return VK_BLEND_FACTOR_ONE;
+    case GL_SRC_COLOR:return VK_BLEND_FACTOR_SRC_COLOR; case GL_ONE_MINUS_SRC_COLOR:return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+    case GL_DST_COLOR:return VK_BLEND_FACTOR_DST_COLOR; case GL_ONE_MINUS_DST_COLOR:return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+    case GL_SRC_ALPHA:return VK_BLEND_FACTOR_SRC_ALPHA; case GL_ONE_MINUS_SRC_ALPHA:return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    case GL_DST_ALPHA:return VK_BLEND_FACTOR_DST_ALPHA; default:return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+  }
+}
+static VkBlendOp native_equation(GLenum equation) {
+  switch(equation) {
+    case GL_FUNC_SUBTRACT:return VK_BLEND_OP_SUBTRACT; case GL_FUNC_REVERSE_SUBTRACT:return VK_BLEND_OP_REVERSE_SUBTRACT;
+    case GL_MIN:return VK_BLEND_OP_MIN; case GL_MAX:return VK_BLEND_OP_MAX; default:return VK_BLEND_OP_ADD;
+  }
+}
+static VkResult create_pipeline(VkDevice device, VkRenderPass pass, const PS4GLProgram *p,
+                                const VkShaderModule *modules, const PS4GLBlend *blend, VkPipeline *out) {
+  const unsigned *components=p->components; unsigned stride=0;
+  VkPipelineShaderStageCreateInfo stages[2]={
+    {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=modules[0],.pName="main"},
+    {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_FRAGMENT_BIT,.module=modules[1],.pName="main"}};
+  VkPipelineVertexInputStateCreateInfo vi={.sType=VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+  VkVertexInputAttributeDescription attributes[PS4GL_MAX_ATTRIBS];
+  unsigned attribute_count=0;
+  const VkFormat formats[]={VK_FORMAT_UNDEFINED,VK_FORMAT_R32_SFLOAT,VK_FORMAT_R32G32_SFLOAT,
+    VK_FORMAT_R32G32B32_SFLOAT,VK_FORMAT_R32G32B32A32_SFLOAT};
+  for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) if(components[i]) {
+    attributes[attribute_count++]=(VkVertexInputAttributeDescription){i,0,formats[components[i]],stride};
+    stride+=components[i]*4;
+  }
+  VkVertexInputBindingDescription binding={0,stride,VK_VERTEX_INPUT_RATE_VERTEX};
+  if(attribute_count) {
+    vi.vertexBindingDescriptionCount=1; vi.pVertexBindingDescriptions=&binding;
+    vi.vertexAttributeDescriptionCount=attribute_count; vi.pVertexAttributeDescriptions=attributes;
+  }
+  VkPipelineInputAssemblyStateCreateInfo ia={.sType=VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+    .topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+  VkPipelineViewportStateCreateInfo vp={.sType=VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,.viewportCount=1,.scissorCount=1};
+  VkPipelineRasterizationStateCreateInfo rs={.sType=VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    .polygonMode=VK_POLYGON_MODE_FILL,.cullMode=VK_CULL_MODE_NONE,.frontFace=VK_FRONT_FACE_COUNTER_CLOCKWISE,.lineWidth=1};
+  VkPipelineMultisampleStateCreateInfo ms={.sType=VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT};
+  VkPipelineColorBlendAttachmentState ba={.colorWriteMask=15,.blendEnable=blend->enabled,
+    .srcColorBlendFactor=native_factor(blend->src_rgb),.dstColorBlendFactor=native_factor(blend->dst_rgb),
+    .srcAlphaBlendFactor=native_factor(blend->src_alpha),.dstAlphaBlendFactor=native_factor(blend->dst_alpha),
+    .colorBlendOp=native_equation(blend->equation_rgb),.alphaBlendOp=native_equation(blend->equation_alpha)};
+  VkPipelineColorBlendStateCreateInfo bs={.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,.attachmentCount=1,.pAttachments=&ba};
+  VkDynamicState states[]={VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR};
+  VkPipelineDynamicStateCreateInfo ds={.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,.dynamicStateCount=2,.pDynamicStates=states};
+  VkGraphicsPipelineCreateInfo pci={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,.stageCount=2,.pStages=stages,
+    .pVertexInputState=&vi,.pInputAssemblyState=&ia,.pViewportState=&vp,.pRasterizationState=&rs,
+    .pMultisampleState=&ms,.pColorBlendState=&bs,.pDynamicState=&ds,.layout=p->layout,.renderPass=pass};
+  return vkCreateGraphicsPipelines(device,VK_NULL_HANDLE,1,&pci,NULL,out);
+}
 GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
                              const uint32_t *vs, size_t vs_size,
                              const uint32_t *fs, size_t fs_size) {
@@ -95,40 +148,13 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
   }
   result=vkCreatePipelineLayout(device,&lci,NULL,&layout);
   if(result!=VK_SUCCESS) goto cleanup;
-  VkPipelineShaderStageCreateInfo stages[2]={
-    {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=modules[0],.pName="main"},
-    {.sType=VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_FRAGMENT_BIT,.module=modules[1],.pName="main"}};
-  VkPipelineVertexInputStateCreateInfo vi={.sType=VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-  VkVertexInputAttributeDescription attributes[PS4GL_MAX_ATTRIBS];
-  unsigned attribute_count=0;
-  const VkFormat formats[]={VK_FORMAT_UNDEFINED,VK_FORMAT_R32_SFLOAT,VK_FORMAT_R32G32_SFLOAT,
-    VK_FORMAT_R32G32B32_SFLOAT,VK_FORMAT_R32G32B32A32_SFLOAT};
-  for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) if(components[i]) {
-    attributes[attribute_count++]=(VkVertexInputAttributeDescription){i,0,formats[components[i]],stride};
-    stride+=components[i]*4;
-  }
-  VkVertexInputBindingDescription binding={0,stride,VK_VERTEX_INPUT_RATE_VERTEX};
-  if(attribute_count) {
-    vi.vertexBindingDescriptionCount=1; vi.pVertexBindingDescriptions=&binding;
-    vi.vertexAttributeDescriptionCount=attribute_count; vi.pVertexAttributeDescriptions=attributes;
-  }
-  VkPipelineInputAssemblyStateCreateInfo ia={.sType=VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-    .topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
-  VkPipelineViewportStateCreateInfo vp={.sType=VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,.viewportCount=1,.scissorCount=1};
-  VkPipelineRasterizationStateCreateInfo rs={.sType=VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-    .polygonMode=VK_POLYGON_MODE_FILL,.cullMode=VK_CULL_MODE_NONE,.frontFace=VK_FRONT_FACE_COUNTER_CLOCKWISE,.lineWidth=1};
-  VkPipelineMultisampleStateCreateInfo ms={.sType=VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT};
-  VkPipelineColorBlendAttachmentState ba={.colorWriteMask=15};
-  VkPipelineColorBlendStateCreateInfo bs={.sType=VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,.attachmentCount=1,.pAttachments=&ba};
-  VkDynamicState states[]={VK_DYNAMIC_STATE_VIEWPORT,VK_DYNAMIC_STATE_SCISSOR};
-  VkPipelineDynamicStateCreateInfo ds={.sType=VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,.dynamicStateCount=2,.pDynamicStates=states};
-  VkGraphicsPipelineCreateInfo pci={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,.stageCount=2,.pStages=stages,
-    .pVertexInputState=&vi,.pInputAssemblyState=&ia,.pViewportState=&vp,.pRasterizationState=&rs,
-    .pMultisampleState=&ms,.pColorBlendState=&bs,.pDynamicState=&ds,.layout=layout,.renderPass=pass};
-  result=vkCreateGraphicsPipelines(device,VK_NULL_HANDLE,1,&pci,NULL,&pipeline);
+  reflected.layout=layout;
+  for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) { reflected.components[i]=components[i]; stride+=components[i]*4; }
+  PS4GLBlend disabled={.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};
+  result=create_pipeline(device,pass,&reflected,modules,&disabled,&pipeline);
 cleanup:
-  for(unsigned i=0;i<2;++i) if(modules[i]) vkDestroyShaderModule(device,modules[i],NULL);
   if(result!=VK_SUCCESS) {
+    for(unsigned i=0;i<2;++i) if(modules[i]) vkDestroyShaderModule(device,modules[i],NULL);
     if(pipeline) vkDestroyPipeline(device,pipeline,NULL);
     if(layout) vkDestroyPipelineLayout(device,layout,NULL);
     if(descriptors) vkDestroyDescriptorSetLayout(device,descriptors,NULL);
@@ -137,6 +163,7 @@ cleanup:
   }
   ctx->program_device=device; ctx->program_pass=pass;
   reflected.pipeline=pipeline; reflected.layout=layout; reflected.vertex_stride=stride; reflected.descriptors=descriptors;
+  for(unsigned i=0;i<2;++i) reflected.modules[i]=modules[i];
   ctx->programs[slot]=reflected;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->programs[slot].components[i]=components[i];
   return slot+1;
@@ -151,13 +178,15 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
     return;
   }
   for(unsigned i=0;i<PS4GL_MAX_PROGRAMS;++i) {
+    for(unsigned v=0;v<ctx->programs[i].variant_count;++v) vkDestroyPipeline(device,ctx->programs[i].variants[v].pipeline,NULL);
+    for(unsigned stage=0;stage<2;++stage) if(ctx->programs[i].modules[stage]) vkDestroyShaderModule(device,ctx->programs[i].modules[stage],NULL);
     if(ctx->programs[i].pipeline) vkDestroyPipeline(device,ctx->programs[i].pipeline,NULL);
     if(ctx->programs[i].layout) vkDestroyPipelineLayout(device,ctx->programs[i].layout,NULL);
     if(ctx->programs[i].descriptors) vkDestroyDescriptorSetLayout(device,ctx->programs[i].descriptors,NULL);
     ctx->programs[i]=(PS4GLProgram){0};
   }
   ps4glReleaseVertexSnapshots(ctx);
-  ctx->physical=VK_NULL_HANDLE; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL;
+  ctx->physical=VK_NULL_HANDLE; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL; ctx->select_pipeline=NULL;
   ctx->program=0; ctx->program_device=VK_NULL_HANDLE; ctx->program_pass=VK_NULL_HANDLE;
 }
 
@@ -254,6 +283,23 @@ fail:
   if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
   return 0;
 }
+static VkPipeline select_pipeline(PS4GLContext *ctx, PS4GLProgram *p) {
+  for(unsigned i=0;i<p->variant_count;++i)
+    if(!memcmp(&p->variants[i].state,&ctx->blend,sizeof(ctx->blend))) return p->variants[i].pipeline;
+  if(p->variant_count==PS4GL_BLEND_VARIANTS) {
+    if(!ctx->error) ctx->error=GL_OUT_OF_MEMORY;
+    return VK_NULL_HANDLE;
+  }
+  VkPipeline pipeline=VK_NULL_HANDLE;
+  VkResult result=create_pipeline(ctx->program_device,ctx->program_pass,p,p->modules,&ctx->blend,&pipeline);
+  if(result!=VK_SUCCESS) {
+    if(pipeline) vkDestroyPipeline(ctx->program_device,pipeline,NULL);
+    if(!ctx->error) ctx->error=result==VK_ERROR_OUT_OF_HOST_MEMORY || result==VK_ERROR_OUT_OF_DEVICE_MEMORY ? GL_OUT_OF_MEMORY : GL_INVALID_OPERATION;
+    return VK_NULL_HANDLE;
+  }
+  p->variants[p->variant_count++]=(PS4GLBlendVariant){ctx->blend,pipeline};
+  return pipeline;
+}
 void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
   PS4GLContext *ctx=ps4glCurrentContext();
   if(!ctx) return;
@@ -262,7 +308,7 @@ void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
     if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
     return;
   }
-  ctx->physical=physical; ctx->program_device=device; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms;
+  ctx->physical=physical; ctx->program_device=device; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms; ctx->select_pipeline=select_pipeline;
 }
 void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
   if(!ctx) return;

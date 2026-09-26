@@ -454,3 +454,69 @@ The previous array, uniform and indexed-draw GPU probes all pass with the new
 frontend (`artifacts/vulkan/gltexture-regression-*.log`), as do both earlier
 uniform/array reflection tests. The final texture diagnostic remains installed
 in the isolated probe build; stable ScummVM 1.17 is unchanged.
+
+
+## GL blending checkpoint (2026-09-26)
+
+`glEnable/Disable/IsEnabled(GL_BLEND)`, `glBlendFunc`, `glBlendFuncSeparate`,
+`glBlendEquation` and `glBlendEquationSeparate` now drive native Vulkan pipeline
+state. Queries cover BLEND, BLEND_SRC/DST_RGB/ALPHA and BLEND_EQUATION_RGB/ALPHA.
+Default factors are ONE/ZERO and equations ADD, with blending disabled. Invalid
+setters preserve the entire previous state. Clears remain independent of blend
+state. Reference semantics are the Khronos
+[blend factors](https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBlendFuncSeparate.xhtml)
+and [blend equations](https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBlendEquationSeparate.xhtml).
+
+The supported factor subset is ZERO, ONE, SRC_COLOR, DST_COLOR, SRC_ALPHA,
+DST_ALPHA and their ONE_MINUS forms. Equations are ADD, SUBTRACT,
+REVERSE_SUBTRACT, MIN and MAX, separately for RGB and alpha. Constant-color,
+saturate and dual-source factors, indexed per-attachment blend state,
+glBlendColor, color masks and logic operations remain unsupported. The current
+render-pass attachment format determines native sRGB handling; there is no GL
+FRAMEBUFFER_SRGB toggle yet, and no complete GL version is advertised.
+
+Shader modules now remain owned by the imported program. Each new enabled blend
+state creates a Vulkan pipeline from the same shader/interface definition;
+identical states reuse their cached variant. The disabled path uses the original
+pipeline. The cap is 16 enabled variants per program; exhausted capacity returns
+OUT_OF_MEMORY before recording a draw. Variants are not evicted because earlier
+recorded commands may still reference them. They survive glDeleteProgram until
+the existing owner-controlled teardown after completed fences and discarded
+commands, and are destroyed along with the retained shader modules and layouts.
+This avoids mutating the pipeline of a previously recorded draw.
+
+Reproduce:
+
+```sh
+scripts/build-vulkan-probe.sh --glblend
+xvfb-run -a -s '-screen 0 1280x720x24' \
+  python3 scripts/run-opengnm-probe.py --vulkan --glblend
+```
+
+The independent screenshot oracle checks eight columns: disabled replacement,
+standard source-alpha blending, separate alpha factors, additive blending,
+subtraction, reverse subtraction, MIN and MAX. The final column uses MAX for
+RGB and MIN for alpha to exercise distinct equations. Each column first writes
+an RGBA base and then an overlay. In the lower half, a white draw using
+DST_ALPHA as its RGB factor exposes the stored alpha as visible grayscale;
+this validates alpha computation rather than ignoring the screenshot's alpha.
+MIN/MAX use ZERO factors to ensure factors are correctly ignored for those
+equations. The target is SRGB, and the oracle computes linear blending followed
+by SRGB conversion with tolerance for 8-bit storage quantization.
+
+The probe checks 2,624 RGB/grayscale pixels across all eight columns, eight
+error-free frames, eight cached variants without growth, deletion of the bound
+program on the last frame, recorded-command resubmission and native lifecycle
+cleanup. Host ASan/UBSan checks cover defaults, queries, combined/separate
+setters, atomic rejection and clear independence. This remains a shadPS4
+diagnostic; neither full game boot nor physical PS4 is validated. Next is GL
+framebuffer/render-to-texture support, followed by runtime GLSL and SDL context
+integration with the existing resource and blending paths.
+
+Package: `dist/ScummVM-PS4-GL-Blend.pkg`.
+Reports: `artifacts/vulkan/glblend/`.
+SHA-256: `1d64b3eb0bf332dd8c090efb0de5191507aa045dc179c2449e0f889476e9d714`.
+The texture, array, indexed-draw and clear/readback GPU probes also pass with
+the refactored pipeline creation/lifetime (`artifacts/vulkan/glblend-regression-*.log`).
+The final blend diagnostic remains in the isolated probe build; stable ScummVM
+1.17 retains its prior package hash.

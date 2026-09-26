@@ -16,6 +16,34 @@ typedef int GLint;
 typedef int GLsizei;
 typedef float GLfloat;
 typedef unsigned char GLboolean;
+#define GL_BLEND 0x0be2
+#define GL_ZERO 0
+#define GL_ONE 1
+#define GL_SRC_COLOR 0x0300
+#define GL_ONE_MINUS_SRC_COLOR 0x0301
+#define GL_SRC_ALPHA 0x0302
+#define GL_ONE_MINUS_SRC_ALPHA 0x0303
+#define GL_DST_ALPHA 0x0304
+#define GL_ONE_MINUS_DST_ALPHA 0x0305
+#define GL_DST_COLOR 0x0306
+#define GL_ONE_MINUS_DST_COLOR 0x0307
+#define GL_FUNC_ADD 0x8006
+#define GL_MIN 0x8007
+#define GL_MAX 0x8008
+#define GL_FUNC_SUBTRACT 0x800a
+#define GL_FUNC_REVERSE_SUBTRACT 0x800b
+#define GL_BLEND_SRC_RGB 0x80c9
+#define GL_BLEND_DST_RGB 0x80c8
+#define GL_BLEND_SRC_ALPHA 0x80cb
+#define GL_BLEND_DST_ALPHA 0x80ca
+#define GL_BLEND_EQUATION_RGB 0x8009
+#define GL_BLEND_EQUATION_ALPHA 0x883d
+#define PS4GL_BLEND_VARIANTS 16
+typedef struct PS4GLBlend {
+  unsigned enabled;
+  GLenum src_rgb,dst_rgb,src_alpha,dst_alpha,equation_rgb,equation_alpha;
+} PS4GLBlend;
+typedef struct PS4GLBlendVariant { PS4GLBlend state; VkPipeline pipeline; } PS4GLBlendVariant;
 #define GL_TEXTURE_2D 0x0de1
 #define GL_TEXTURE0 0x84c0
 #define GL_ACTIVE_TEXTURE 0x84e0
@@ -106,6 +134,9 @@ typedef struct PS4GLUniform {
 } PS4GLUniform;
 typedef struct PS4GLProgram {
   VkPipeline pipeline;
+  VkShaderModule modules[2];
+  PS4GLBlendVariant variants[PS4GL_BLEND_VARIANTS];
+  unsigned variant_count;
   VkPipelineLayout layout;
   VkDescriptorSetLayout descriptors;
   unsigned uniform_stages, uniform_count, sampler_mask;
@@ -134,6 +165,7 @@ typedef struct PS4GLContext {
   GLfloat clear[4];
   GLenum error;
   GLboolean scissor_enabled;
+  PS4GLBlend blend;
   GLuint program;
   VkDevice program_device;
   VkRenderPass program_pass;
@@ -150,6 +182,7 @@ typedef struct PS4GLContext {
   unsigned snapshot_count;
   size_t snapshot_bytes;
   /* Immutable payload: packed vertices followed by indices; index type 0 for arrays. */
+  VkPipeline (*select_pipeline)(struct PS4GLContext *, PS4GLProgram *);
   int (*upload_uniforms)(struct PS4GLContext *, const PS4GLProgram *);
   int (*upload_vertices)(struct PS4GLContext *, const void *, size_t, size_t, GLenum);
 } PS4GLContext;
@@ -217,6 +250,10 @@ void glClearColor(GLfloat, GLfloat, GLfloat, GLfloat);
 void glClear(GLbitfield);
 void glScissor(GLint, GLint, GLsizei, GLsizei);
 void glViewport(GLint, GLint, GLsizei, GLsizei);
+void glBlendFunc(GLenum, GLenum);
+void glBlendFuncSeparate(GLenum, GLenum, GLenum, GLenum);
+void glBlendEquation(GLenum);
+void glBlendEquationSeparate(GLenum, GLenum);
 void glEnable(GLenum);
 void glDisable(GLenum);
 GLboolean glIsEnabled(GLenum);

@@ -9,6 +9,7 @@ static void error(GLenum value) {
 int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   if (!ctx || width <= 0 || height <= 0) return 0;
   memset(ctx, 0, sizeof(*ctx));
+  ctx->blend=(PS4GLBlend){.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};
   ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=4;
   for(unsigned i=0;i<PS4GL_MAX_ATTRIBS;++i) ctx->attribs[i].size=4;
   ctx->width=width; ctx->height=height;
@@ -44,17 +45,35 @@ void glScissor(GLint x, GLint y, GLsizei width, GLsizei height) {
 void glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
   if (current) box(current->viewport,x,y,width,height);
 }
+static int blend_factor(GLenum value) {
+  return value==GL_ZERO || value==GL_ONE || (value>=GL_SRC_COLOR && value<=GL_ONE_MINUS_DST_COLOR);
+}
+static int blend_equation(GLenum value) {
+  return value==GL_FUNC_ADD || value==GL_FUNC_SUBTRACT || value==GL_FUNC_REVERSE_SUBTRACT || value==GL_MIN || value==GL_MAX;
+}
+void glBlendFuncSeparate(GLenum sr, GLenum dr, GLenum sa, GLenum da) {
+  if(!current) return;
+  if(!blend_factor(sr) || !blend_factor(dr) || !blend_factor(sa) || !blend_factor(da)) { error(GL_INVALID_ENUM); return; }
+  current->blend.src_rgb=sr; current->blend.dst_rgb=dr; current->blend.src_alpha=sa; current->blend.dst_alpha=da;
+}
+void glBlendFunc(GLenum source, GLenum destination) { glBlendFuncSeparate(source,destination,source,destination); }
+void glBlendEquationSeparate(GLenum rgb, GLenum alpha) {
+  if(!current) return;
+  if(!blend_equation(rgb) || !blend_equation(alpha)) { error(GL_INVALID_ENUM); return; }
+  current->blend.equation_rgb=rgb; current->blend.equation_alpha=alpha;
+}
+void glBlendEquation(GLenum equation) { glBlendEquationSeparate(equation,equation); }
 void glEnable(GLenum cap) {
-  if (cap!=GL_SCISSOR_TEST) { error(GL_INVALID_ENUM); return; }
-  if (current) current->scissor_enabled=GL_TRUE;
+  if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return; }
+  if(current) { if(cap==GL_BLEND) current->blend.enabled=1; else current->scissor_enabled=GL_TRUE; }
 }
 void glDisable(GLenum cap) {
-  if (cap!=GL_SCISSOR_TEST) { error(GL_INVALID_ENUM); return; }
-  if (current) current->scissor_enabled=GL_FALSE;
+  if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return; }
+  if(current) { if(cap==GL_BLEND) current->blend.enabled=0; else current->scissor_enabled=GL_FALSE; }
 }
 GLboolean glIsEnabled(GLenum cap) {
-  if (cap!=GL_SCISSOR_TEST) { error(GL_INVALID_ENUM); return GL_FALSE; }
-  return current ? current->scissor_enabled : GL_FALSE;
+  if(cap!=GL_SCISSOR_TEST && cap!=GL_BLEND) { error(GL_INVALID_ENUM); return GL_FALSE; }
+  return current ? (cap==GL_BLEND ? current->blend.enabled : current->scissor_enabled) : GL_FALSE;
 }
 void glGetIntegerv(GLenum pname, GLint *values) {
   if (!current) return;
@@ -67,6 +86,13 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   else if (pname==GL_ELEMENT_ARRAY_BUFFER_BINDING) *values=(GLint)current->element_buffer;
   else if (pname==GL_ARRAY_BUFFER_BINDING) *values=(GLint)current->array_buffer;
   else if (pname==GL_CURRENT_PROGRAM) *values=current->program;
+  else if(pname==GL_BLEND) *values=current->blend.enabled;
+  else if(pname==GL_BLEND_SRC_RGB) *values=current->blend.src_rgb;
+  else if(pname==GL_BLEND_DST_RGB) *values=current->blend.dst_rgb;
+  else if(pname==GL_BLEND_SRC_ALPHA) *values=current->blend.src_alpha;
+  else if(pname==GL_BLEND_DST_ALPHA) *values=current->blend.dst_alpha;
+  else if(pname==GL_BLEND_EQUATION_RGB) *values=current->blend.equation_rgb;
+  else if(pname==GL_BLEND_EQUATION_ALPHA) *values=current->blend.equation_alpha;
   else if (pname==GL_SCISSOR_TEST) *values=current->scissor_enabled;
   else error(GL_INVALID_ENUM);
 }
@@ -360,6 +386,11 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   VkViewport vp={.x=v[0],.y=current->height-v[1]-v[3],.width=v[2],.height=v[3],.maxDepth=1};
   VkRect2D sc={{(int32_t)x0,(int32_t)(current->height-y1)},
               {(uint32_t)(x1-x0),(uint32_t)(y1-y0)}};
+  VkPipeline pipeline=p->pipeline;
+  if(current->blend.enabled) {
+    if(!current->select_pipeline) { error(GL_INVALID_OPERATION); return; }
+    pipeline=current->select_pipeline(current,p); if(!pipeline) return;
+  }
   size_t index_bytes=0;
   const unsigned char *index_data=NULL;
   uint32_t vertices=(uint32_t)count;
@@ -401,7 +432,7 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     if(!current->upload_uniforms) { error(GL_INVALID_OPERATION); return; }
     if(!current->upload_uniforms(current,p)) return;
   }
-  vkCmdBindPipeline(current->command,VK_PIPELINE_BIND_POINT_GRAPHICS,p->pipeline);
+  vkCmdBindPipeline(current->command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
   vkCmdSetViewport(current->command,0,1,&vp);
   vkCmdSetScissor(current->command,0,1,&sc);
   if(type) vkCmdDrawIndexed(current->command,(uint32_t)count,1,0,0,0);
@@ -419,6 +450,7 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   if (!name) return NULL;
 #define PROC(fn) if(!strcmp(name,#fn)) return (PS4GLProc)fn
   PROC(glClearColor); PROC(glClear); PROC(glScissor); PROC(glViewport);
+  PROC(glBlendFunc); PROC(glBlendFuncSeparate); PROC(glBlendEquation); PROC(glBlendEquationSeparate);
   PROC(glEnable); PROC(glDisable); PROC(glIsEnabled); PROC(glGetError);
   PROC(glGetIntegerv); PROC(glGetFloatv);
   PROC(glUseProgram); PROC(glDeleteProgram); PROC(glIsProgram);

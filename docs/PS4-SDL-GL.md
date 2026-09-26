@@ -206,3 +206,13 @@ before acquiring a frame. All 2,553 pixel checks and native cleanup pass. See
 and the distinction from actual launcher startup.
 Current package SHA-256:
 `b1c5394b705d441a3b252cdb7526e1d85ee3d6b4f106fec0a477117176cae1a0`.
+
+## VideoOut clear continuation (2026-09-26)
+
+The native fixture now validates full and partial default-buffer clears, sRGB
+encoding and preservation of prior draws. The final rebuilt diagnostic passes
+all 2,553 pixel checks, replay and lifecycle cleanup. One earlier development
+run hit a shadPS4 teardown access violation; the next two runs passed cleanup.
+See [PS4-VIDEOOUT-CLEAR.md](PS4-VIDEOOUT-CLEAR.md).
+Current package SHA-256:
+`2f4948ca49cda9c7c118a77e684d88b725f8bd8e52ba4f9954bcad20dc67659d`.

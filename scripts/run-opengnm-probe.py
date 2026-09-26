@@ -154,7 +154,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 shutil.copy2(screenshot, reports / 'triangle-gpu.png')
                 shutil.copy2(guest_log, reports / 'triangle-result.txt')
                 check = subprocess.run([sys.executable, str(root / ('tests/ps4/check-ps4gl-framebuffer.py' if args.glfbo else 'tests/ps4/check-ps4gl-blend.py' if args.glblend else 'tests/ps4/check-ps4gl-vertex.py' if args.glvbo else 'tests/ps4/check-ps4gl-draw.py' if args.gldraw else 'tests/ps4/check-vulkan-twp.py' if args.twp else 'tests/ps4/check-vulkan-composite.py' if args.composite else 'tests/ps4/check-opengnm-textures.py' if args.textures or args.resources else 'tests/ps4/check-opengnm-triangle.py')),
-                                        str(reports / 'triangle-gpu.png'), *(['--uniforms'] if args.uniforms else []), *(['--upload'] if args.upload else []), *(['--rectclear'] if args.rectclear else [])],
+                                        str(reports / 'triangle-gpu.png'), *(['--swapchain-clear'] if args.sdlgl else []), *(['--uniforms'] if args.uniforms else []), *(['--upload'] if args.upload else []), *(['--rectclear'] if args.rectclear else [])],
                                        capture_output=True, text=True)
                 (reports / 'pixel-test.log').write_text(check.stdout + check.stderr)
                 check.check_returncode()
@@ -174,6 +174,7 @@ with (reports / 'triangle-emulator.log').open('w') as log:
                 sdl_log = guest_log.read_text()
                 sdl_markers = ('PASS SDL triangle strips arrays uint16 uint32 and retained indices',
                                'PASS SDL numeric framebuffer and shader limits',
+                               'PASS SDL VideoOut full and partial sRGB attachment clears',
                                'PASS SDL launcher 2D startup state and separate pack alignment',
                                'PASS SDL empty swap preserves presented image',
                                'PASS SDL teardown discards unfinished frame',

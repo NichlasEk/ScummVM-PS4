@@ -131,7 +131,7 @@ ASan/UBSan tests cover successful loading and rejection of missing functions,
 wrong renderer/context and zero texture limit, plus absent version and engine
 promotion. The real PS4 application builds and runs with this loader.
 
-### Observed result and next blocker
+### Earlier result and clear blocker
 
 Real ScummVM now passes the previous GLAD fatal error, compiles its launcher
 shaders into native pipelines, loads fonts/UI data, chooses a 1024x576 overlay
@@ -170,3 +170,13 @@ Current experimental package SHA-256:
 `2a994e0dfc15aa1f0f4b43c2e081ab96be2b5e1c7d28684cc694aa9bd1c8c059`.
 Stable package SHA-256 remains
 `c519b288b663d4f7b5db0e86b23a2a7031f1dacc97984edaf9b807f3738191e1`.
+
+## First visible Vulkan launcher (2026-09-26)
+
+The VideoOut attachment-clear fix now allows the real application to present
+its startup frames and display the actual ScummVM launcher. The settled X-window
+capture has been visually inspected. See [PS4-VIDEOOUT-CLEAR.md](PS4-VIDEOOUT-CLEAR.md)
+for the storage/sRGB/cache fix, pixel tests, screenshot procedure and limitations.
+Input, game startup and graceful application exit are not yet verified.
+Current experimental package SHA-256:
+`4d9c265a1a3edc70aa9b687bd97a0ce724d4a6a95144500b4fe6a8defbe22f67`.

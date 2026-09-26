@@ -50,6 +50,10 @@ static void draw_gl_color(GLuint program) {
 #endif
 }
 static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
+#ifdef SDLGL_PROBE
+  glBindFramebuffer(GL_FRAMEBUFFER,0); glDisable(GL_SCISSOR_TEST);
+  glClearColor(0,0,0,1); glClear(GL_COLOR_BUFFER_BIT);
+#endif
   GLuint texture, framebuffer;
   glGenTextures(1,&texture); glBindTexture(GL_TEXTURE_2D,texture);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
@@ -109,6 +113,14 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   if(frame==7) { glDeleteFramebuffers(1,&persistent_framebuffer); glDeleteTextures(1,&persistent_texture); }
   if(glGetError()!=GL_NO_ERROR) return 2;
 #ifdef SDLGL_PROBE
+  /* Clear a small default-target rectangle after draws. Surrounding pixels
+   * retain their earlier values; fractional colors expose sRGB conversion. */
+  glEnable(GL_SCISSOR_TEST); glScissor(80,80,100,80);
+  glClearColor(.25f,.5f,.75f,.5f); glClear(GL_COLOR_BUFFER_BIT);
+  glScissor(100,100,40,30); glClearColor(.002f,0,1,1); glClear(GL_COLOR_BUFFER_BIT);
+  glDisable(GL_SCISSOR_TEST);
+  if(glGetError()!=GL_NO_ERROR) return 2;
+  fprintf(report,"PASS SDL VideoOut full and partial sRGB attachment clears\n");
   if(strip_modes!=7) return 2;
   fprintf(report,"PASS SDL triangle strips arrays uint16 uint32 and retained indices\n");
 #endif

@@ -50,10 +50,10 @@ itself a startup blocker.
 4. **Explicit launcher loader implemented:** the isolated application loads 76
    checked entrypoints directly into GLAD's typed pointers, retaining version
    0.0 and a deliberately narrow capability set. It reaches real shader
-   compilation and launcher draw calls. The first frame now fails at native
-   `CmdClearAttachments`: swapchain images have no owned VkDeviceMemory and use
-   SRGB, whereas the meta-clear currently requires owned UNORM storage. See
-   [PS4-SCUMMVM-VULKAN.md](PS4-SCUMMVM-VULKAN.md) for evidence and next steps.
+   compilation and launcher draw calls. The swapchain attachment-clear blocker
+   is now fixed: the real launcher displays its menu and two frames present
+   successfully in shadPS4. Input and game execution remain unverified. See
+   [PS4-VIDEOOUT-CLEAR.md](PS4-VIDEOOUT-CLEAR.md) for evidence and remaining gates.
 5. **Triangle strips implemented:** launcher-style four-corner surfaces now pass
    the native pixel oracle through array and uint16/uint32 index paths. See
    [PS4-GL-TRIANGLE-STRIPS.md](PS4-GL-TRIANGLE-STRIPS.md). TWP line strips/loops

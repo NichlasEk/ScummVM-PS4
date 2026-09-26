@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+sdk=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
+case "$*" in
+ *--version*) echo 2.0.9 ;;
+ *--cflags*) echo "-I$sdk/include/SDL2" ;;
+ *--libs*) echo "$root/build/ps4-sdlgl/libSDL2.a -L$sdk/lib -lSceUserService -lSceVideoOut -lSceAudioOut -lScePad -lSceSysmodule ${SCUMMVM_VULKAN_LIBS:?Run scripts/build-scummvm-vulkan.sh} -lc++ -lc++abi -lc -lkernel" ;;
+ *--prefix*) echo "$sdk" ;;
+ *) exit 1 ;;
+esac

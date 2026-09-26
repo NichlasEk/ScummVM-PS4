@@ -21,12 +21,19 @@ elif [[ $# != 0 ]]; then
     echo "Usage: $0 [--with-dott DIRECTORY_CONTAINING_TENTACLE_FILES]" >&2
     exit 2
 fi
+if [[ ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} == 1 ]]; then
+ [[ "$title_id" == SCVM00010 && "$output_name" == ScummVM-PS4-Vulkan-Experimental.pkg ]] || {
+  echo 'Experimental Vulkan package requires its isolated title and filename' >&2; exit 1;
+ }
+fi
 # Fail before packaging if cross-compilation accidentally picks up host libraries.
-python3 - "$build_dir/scummvm" <<'CHECK'
+python3 - "$build_dir/scummvm" "${SCUMMVM_EXPERIMENTAL_VULKAN:-0}" <<'CHECK'
 import re, subprocess, sys
 needed = re.findall(r'\(NEEDED\).*?\[(.*?)\]', subprocess.check_output(['readelf', '-d', sys.argv[1]], text=True))
 allowed = {'libkernel.so', 'libSceUserService.so', 'libSceVideoOut.so',
            'libSceAudioOut.so', 'libScePad.so', 'libSceSysmodule.so'}
+if sys.argv[2] == '1':
+    allowed.add('libSceGnmDriver.so')
 unexpected = set(needed) - allowed
 if unexpected:
     sys.exit('Unexpected non-target dependencies: ' + ', '.join(sorted(unexpected)))
@@ -76,6 +83,16 @@ package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right
     data/freetype-FTL.TXT data/freetype-LICENSE.TXT data/freetype-GPLv2.TXT
     data/libogg-COPYING data/libvorbis-COPYING data/libpng-LICENSE data/zlib-LICENSE data/libtheora-COPYING
     data/lua-COPYRIGHT data/vkeybd_default.zip data/scummremastered.zip games/README.txt)
+if [[ ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} == 1 ]]; then
+ for spec in 'opengnm/LICENSE:OpenGNM-LICENSE' 'opengnm-psbc/LICENSE:PSBC-LICENSE' 'vulkan-ps4/LICENSE:Vulkan-PS4-LICENSE'; do
+  cp "$root/.tools/opengnm-stack/${spec%%:*}" "$stage/data/${spec#*:}"
+  package_files+=("data/${spec#*:}")
+ done
+ cp "$root/.tools/glslang/LICENSE.txt" "$stage/data/glslang-LICENSE.txt"
+ cat "$root/.tools/glslang/glslang/Include/glslang_c_interface.h" >> "$stage/data/glslang-LICENSE.txt"
+ cp "$root/.tools/sdl-input-src/COPYING.txt" "$stage/data/SDL-LICENSE.txt"
+ package_files+=(data/glslang-LICENSE.txt data/SDL-LICENSE.txt)
+fi
 # Use upstream's conditional data manifest for the engines actually compiled.
 # Only these support files are packaged, never arbitrary staged game folders.
 engine_data=$(make -s --no-print-directory -C "$build_dir" \

@@ -38,14 +38,15 @@ itself a startup blocker.
    teardown, and the SDL fixture uses it. See [PS4-VULKAN-DISPLAY.md](PS4-VULKAN-DISPLAY.md).
    Application wiring must install this owner before SDL video initialization
    and keep the legacy software VideoOut bootstrap out of this path.
-2. Create an isolated experimental ScummVM build/configuration. Stable
-   `configure-scummvm.sh` still explicitly disables OpenGL. Its SDL config must
-   select the experimental archive and native graphics/compiler dependencies.
-3. Resolve SDL context negotiation: `openglsdl-graphics.cpp` requests 16 depth
-   bits and desktop GL 1.4 by default. The diagnostic adapter accepts only its
-   bounded 2.0/2.1 request with zero depth/stencil/MSAA, one fixed-size window.
-   A deliberate color-only shader path or real depth support is required;
-   silently accepting an unsupported depth buffer is not a solution.
+2. **Isolated application build implemented:** `build-scummvm-vulkan.sh` builds
+   real ScummVM with GLAD and the experimental SDL archive under title SCVM00010.
+   Stable configuration still defaults to OpenGL disabled. See
+   [PS4-SCUMMVM-VULKAN.md](PS4-SCUMMVM-VULKAN.md) for the native entrypoint,
+   dependency-link fix, separate settings and observed startup gates.
+3. **Diagnostic context request adapted:** only the isolated overlay requests a
+   fixed 1280x720 GL 2.0 color-only window and preserves its GL flag through the
+   old PS4 software-window branch. Depth/stencil, resize, context recreation and
+   general game graphics negotiation remain unimplemented.
 4. Exercise real GLAD/context initialization. Current `GL_VERSION=0.0` is an
    intentional gate, not a usable engine version. Desktop engine shaders need
    GLSL 1.20; FBO/NPOT/multitexture flags also depend on capability detection.

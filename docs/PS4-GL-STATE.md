@@ -4,7 +4,7 @@ The next small integration slice is in `compat/ps4gl/`. It is a reusable,
 single-threaded C frontend for clear color, scissor, viewport state, selected
 queries, error handling and procedure lookup. It forwards color clears to the
 existing Vulkan attachment-clear implementation. It does not yet own an SDL
-context, compile/link GLSL, or upload GL textures. Float vertex/index-buffer uploads and bounded named float/vector/mat4 uniforms
+context, compile/link GLSL, or upload GL textures. Float vertex/index-buffer uploads and bounded named float/vector/mat4 uniforms and arrays
 are supported by the snapshot paths described below. The imported-program
 draw subset added below is separate from runtime GLSL compilation.
 No OpenGL version or extension strings are advertised. Unknown procedure names
@@ -310,3 +310,64 @@ bindings, then translating GLSL at runtime and connecting the ScummVM backend.
 The previous index, vertex, procedural draw/program and clear/readback probes
 all pass (`artifacts/vulkan/gluniform-regression-*.log`). The uniform diagnostic
 is restored afterward; the stable ScummVM package remains unchanged.
+
+
+## Uniform array checkpoint (2026-09-26)
+
+The imported default-uniform blocks now accept one-dimensional fixed arrays of
+float32, vec2/3/4 and mat4. SPIR-V array length must be a positive 32-bit integer
+constant, with at most 16 elements and a declared array stride that is a multiple
+of 16 and covers the element. The entire array, including trailing padding, must
+fit the existing 256-byte stage block and not overlap other members. Matrix
+arrays retain column-major / matrix-stride-16 requirements. Nested, runtime and
+specialization-sized arrays remain unsupported. Shared names across stages must
+have matching element type and length; each stage keeps its own offset/stride.
+
+`glGetUniformLocation` accepts the bare array name, `[0]` and individual `[i]`
+elements. Locations are opaque: query each element instead of doing arithmetic.
+Malformed, overflowing and out-of-range names return -1. Vector/matrix `fv`
+setters accept multiple elements starting at the requested element, unpacking
+tightly packed caller data into the shader's declared stride. Excess elements
+past the end are ignored before accessing input data; a count greater than one
+for a non-array still raises INVALID_OPERATION. This follows the Uniform rules
+in the [Khronos OpenGL specification](https://registry.khronos.org/OpenGL/specs/gl/glspec44.compatibility.pdf).
+Matrix transpose is applied independently to each element. No element update
+changes neighbouring members or padding. The existing immutable draw snapshots
+also retain all array values through CPU edits and command resubmission.
+
+Reproduce:
+
+```sh
+scripts/build-vulkan-probe.sh --glarray
+xvfb-run -a -s '-screen 0 1280x720x24' \
+  python3 scripts/run-opengnm-probe.py --vulkan --glarray
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  -Icompat/ps4gl -I.tools/opengnm-stack/Vulkan-Headers/include \
+  tests/ps4/check-ps4gl-arrays.c -o build/check-ps4gl-arrays
+build/check-ps4gl-arrays build/vulkan-probe/triangle_vert.spv \
+  build/vulkan-probe/triangle_frag.spv
+```
+
+The shader fixture uses TWP's `RandomValue[5]` layout: offset 16, stride 16,
+followed by `TimeLapse` at offset 96. It also uses the second of two mat4 values
+in the vertex stage while the first deliberately moves geometry out of view.
+The fragment stage sums array values in a loop and uses the fifth value to
+select the right-hand draw's tint. The fifth element is changed through its
+indexed location, and both arrays are overwritten before GPU submission.
+This is a targeted fixture, not the full original TWP shader or game.
+
+Host ASan/UBSan checks cover reflection, rejected lengths/strides, indexed names,
+partial writes, distinct stage strides, padded vec3 arrays, transposed matrix
+arrays, wrong types, invalid locations and excess-count truncation without
+reading past the final input value. Existing scalar uniform reflection, uniform
+GPU and indexed-draw GPU regressions also pass; see
+`artifacts/vulkan/glarray-regression-*.log`. Texture/sampler binding and runtime
+GLSL/SDL integration remain the next gates before game startup validation.
+
+Package: `dist/ScummVM-PS4-GL-Array.pkg`.
+Reports: `artifacts/vulkan/glarray/`.
+SHA-256: `3280b0ec384df4b6c0b2b0240538273e08c43f99dd6c9272340258ad2299008e`.
+The final loop-based shader passes all 3,933 RGB samples, eight frames, deletion
+checks, recorded-command resubmission and Vulkan cleanup in shadPS4. SPIR-V
+contains OpLoopMerge and an OpAccessChain with a variable array index. This does
+not validate all TWP effect branches or physical PS4 execution.

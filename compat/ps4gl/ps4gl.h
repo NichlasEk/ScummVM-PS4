@@ -66,6 +66,7 @@ typedef struct PS4GLUniform {
   char name[64];
   unsigned width; /* 1..4 floats or 16 for column-major mat4 */
   int offset[2];
+  unsigned array_length, array_stride[2]; /* zero length means non-array */
 } PS4GLUniform;
 typedef struct PS4GLProgram {
   VkPipeline pipeline;

@@ -269,8 +269,21 @@ GLint glGetUniformLocation(GLuint name, const char *uniform) {
   if(!current) return -1;
   PS4GLProgram *p=program(name);
   if(!p || !uniform) { error(GL_INVALID_VALUE); return -1; }
-  for(unsigned i=0;i<p->uniform_count;++i)
-    if(!strcmp(uniform,p->uniforms[i].name)) return (GLint)i;
+  for(unsigned i=0;i<p->uniform_count;++i) {
+    PS4GLUniform *u=&p->uniforms[i]; size_t len=strlen(u->name);
+    if(!strcmp(uniform,u->name)) return (GLint)i;
+    if(u->array_length && !strncmp(uniform,u->name,len) && uniform[len]=='[') {
+      const char *q=uniform+len+1; unsigned element=0;
+      if(*q<'0' || *q>'9') continue;
+      while(*q>='0' && *q<='9') {
+        /* Bound before multiplying, including excessively long numeric names. */
+        if(element>=u->array_length) return -1;
+        element=element*10+(unsigned)(*q++-'0');
+      }
+      if(*q==']' && !q[1] && element<u->array_length)
+        return (GLint)(i+element*PS4GL_MAX_UNIFORMS);
+    }
+  }
   return -1;
 }
 static void uniform(GLint location, GLsizei count, unsigned width, GLboolean transpose, const GLfloat *data) {
@@ -279,17 +292,23 @@ static void uniform(GLint location, GLsizei count, unsigned width, GLboolean tra
   if(!p) { error(GL_INVALID_OPERATION); return; }
   if(count<0) { error(GL_INVALID_VALUE); return; }
   if(location==-1) return;
-  if(location<0 || (unsigned)location>=p->uniform_count) { error(GL_INVALID_OPERATION); return; }
-  PS4GLUniform *u=&p->uniforms[location];
-  if(u->width!=width || count>1) { error(GL_INVALID_OPERATION); return; }
+  unsigned member=(unsigned)location%PS4GL_MAX_UNIFORMS, element=(unsigned)location/PS4GL_MAX_UNIFORMS;
+  if(location<0 || member>=p->uniform_count) { error(GL_INVALID_OPERATION); return; }
+  PS4GLUniform *u=&p->uniforms[member];
+  unsigned available=u->array_length ? u->array_length : 1;
+  if(element>=available || u->width!=width || (!u->array_length && count>1)) { error(GL_INVALID_OPERATION); return; }
   if(!count) return;
   if(!data) { error(GL_INVALID_VALUE); return; }
-  float value[16];
-  if(width==16 && transpose) {
-    for(unsigned c=0;c<4;++c) for(unsigned r=0;r<4;++r) value[c*4+r]=data[r*4+c];
-  } else memcpy(value,data,width*4);
-  for(unsigned stage=0;stage<2;++stage) if(u->offset[stage]>=0)
-    memcpy(p->uniform_data[stage]+u->offset[stage],value,width*4);
+  /* GL ignores array writes beyond the last active element. */
+  if((unsigned)count>available-element) count=(GLsizei)(available-element);
+  for(GLsizei j=0;j<count;++j) {
+    float value[16]; const float *input=data+(size_t)j*width;
+    if(width==16 && transpose) {
+      for(unsigned c=0;c<4;++c) for(unsigned r=0;r<4;++r) value[c*4+r]=input[r*4+c];
+    } else memcpy(value,input,width*4);
+    for(unsigned stage=0;stage<2;++stage) if(u->offset[stage]>=0)
+      memcpy(p->uniform_data[stage]+u->offset[stage]+(element+(unsigned)j)*u->array_stride[stage],value,width*4);
+  }
 }
 void glUniform1fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,1,0,v); }
 void glUniform2fv(GLint l, GLsizei n, const GLfloat *v) { uniform(l,n,2,0,v); }

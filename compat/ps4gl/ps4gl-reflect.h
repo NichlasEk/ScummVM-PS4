@@ -32,7 +32,23 @@ static int gl_reflect_uniforms(const uint32_t *s, size_t bytes, unsigned stage, 
     unsigned char occupied[PS4GL_UNIFORM_BYTES]={0};
     for(unsigned m=0;m<(block[0]>>16)-2;++m) {
       uint32_t type=block[2+m], scalar=type;
-      unsigned width=1, alignment=4;
+      unsigned width=1, alignment=4, length=0, stride=0;
+      const uint32_t *array=gl_spv_type(s,n,28,type);
+      if(array) {
+        if((array[0]>>16)!=4) return 0;
+        const uint32_t *length_constant=NULL;
+        for(size_t j=5;j<n;j+=s[j]>>16)
+          if((s[j]&65535)==43 && (s[j]>>16)==4 && s[j+2]==array[3]) length_constant=s+j;
+        if(!length_constant) return 0;
+        const uint32_t *integer=gl_spv_type(s,n,21,length_constant[1]);
+        if(!integer || (integer[0]>>16)!=4 || integer[2]!=32 || integer[3]>1) return 0;
+        length=length_constant[3];
+        if(!length || length>PS4GL_UNIFORM_BYTES/16) return 0;
+        int declared_stride=gl_spv_dec(s,n,type,-1,6);
+        if(declared_stride<=0 || declared_stride%16) return 0;
+        stride=(unsigned)declared_stride;
+        type=array[2]; scalar=type;
+      }
       const uint32_t *mat=gl_spv_type(s,n,24,type), *vec;
       if(mat) {
         if((mat[0]>>16)!=4 || mat[3]!=4 || gl_spv_dec(s,n,ptr[3],m,7)!=16 ||
@@ -47,9 +63,12 @@ static int gl_reflect_uniforms(const uint32_t *s, size_t bytes, unsigned stage, 
       if(mat) { if(!vec || width!=4) return 0; width=16; }
       const uint32_t *f=gl_spv_type(s,n,22,scalar);
       if(!f || (f[0]>>16)!=3 || f[2]!=32) return 0;
+      if(array) alignment=16;
+      if(array && (stride<width*4 || stride>PS4GL_UNIFORM_BYTES/length)) return 0;
+      unsigned occupied_bytes=array ? stride*length : width*4;
       int offset=gl_spv_dec(s,n,ptr[3],m,35);
-      if(offset<0 || (unsigned)offset%alignment || (unsigned)offset>PS4GL_UNIFORM_BYTES-width*4) return 0;
-      for(unsigned b=offset;b<(unsigned)offset+width*4;++b) { if(occupied[b]) return 0; occupied[b]=1; }
+      if(offset<0 || (unsigned)offset%alignment || (unsigned)offset>PS4GL_UNIFORM_BYTES-occupied_bytes) return 0;
+      for(unsigned b=offset;b<(unsigned)offset+occupied_bytes;++b) { if(occupied[b]) return 0; occupied[b]=1; }
       const char *name=NULL;
       for(size_t j=5;j<n;j+=s[j]>>16) if((s[j]&65535)==6 && (s[j]>>16)>=4 && s[j+1]==ptr[3] && s[j+2]==m) {
         const char *candidate=(const char *)(s+j+3);
@@ -63,11 +82,11 @@ static int gl_reflect_uniforms(const uint32_t *s, size_t bytes, unsigned stage, 
       if(u==p->uniform_count) {
         if(u==PS4GL_MAX_UNIFORMS) return 0;
         p->uniform_count++;
-        p->uniforms[u]=(PS4GLUniform){.width=width,.offset={-1,-1}};
+        p->uniforms[u]=(PS4GLUniform){.width=width,.offset={-1,-1},.array_length=length};
         strcpy(p->uniforms[u].name,name);
       }
-      if(p->uniforms[u].width!=width || p->uniforms[u].offset[stage]>=0) return 0;
-      p->uniforms[u].offset[stage]=offset;
+      if(p->uniforms[u].width!=width || p->uniforms[u].array_length!=length || p->uniforms[u].offset[stage]>=0) return 0;
+      p->uniforms[u].offset[stage]=offset; p->uniforms[u].array_stride[stage]=stride;
     }
     p->uniform_stages|=1u<<stage;
   }

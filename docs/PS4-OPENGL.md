@@ -11,7 +11,7 @@ reflection pass offline, and all five original fragment effects now render in
 the native Vulkan diagnostic with bounded RGB checks. A first bounded
 [GL state/draw frontend](PS4-GL-STATE.md) now exists, with SPIR-V program import
 and streamed float vertex attributes plus 16/32-bit indexed draws. Named float/vector/mat4 uniforms now reach native vertex and fragment
-shader blocks with immutable per-draw snapshots. Runtime GLSL, uniform arrays,
+shader blocks with immutable per-draw snapshots. Bounded uniform arrays (including TWP's float[5]) now work as well. Runtime GLSL,
 textures and SDL context integration are still missing. The alternatives below preserve the earlier
 investigation; they are not the current implementation priority.
 

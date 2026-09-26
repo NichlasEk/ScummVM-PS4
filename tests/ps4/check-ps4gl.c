@@ -221,6 +221,39 @@ int main(void) {
   glUseProgram(0); glUniform1f(0,1); assert(glGetError()==GL_INVALID_OPERATION);
   glGetUniformLocation(0,"gain"); assert(glGetError()==GL_INVALID_VALUE);
   assert(ps4glGetProcAddress("glUniformMatrix4fv") && ps4glGetProcAddress("glUniform4f"));
+  PS4GLContext arrays;
+  assert(ps4glInit(&arrays,80,60)); ps4glMakeCurrent(&arrays);
+  PS4GLProgram *ap=&arrays.programs[0]; ap->pipeline=(VkPipeline)(uintptr_t)1; ap->uniform_count=3;
+  ap->uniforms[0]=(PS4GLUniform){.name="RandomValue",.width=1,.offset={0,16},.array_length=5,.array_stride={16,32}};
+  ap->uniforms[1]=(PS4GLUniform){.name="matrix",.width=16,.offset={80,-1},.array_length=2,.array_stride={64,0}};
+  ap->uniforms[2]=(PS4GLUniform){.name="color",.width=3,.offset={-1,192},.array_length=2,.array_stride={0,16}};
+  glUseProgram(1);
+  GLint base=glGetUniformLocation(1,"RandomValue");
+  assert(base==glGetUniformLocation(1,"RandomValue[0]"));
+  const char *bad_names[]={"RandomValue[5]","RandomValue[-1]","RandomValue[]","RandomValue[1]x","RandomValue[9999999999999999999999999]","RandomValue[1][0]"};
+  for(unsigned n=0;n<sizeof(bad_names)/sizeof(*bad_names);++n) assert(glGetUniformLocation(1,bad_names[n])==-1);
+  float initial[]={1,2,3,4,5}; glUniform1fv(base,5,initial);
+  for(unsigned j=0;j<5;++j) {
+    memcpy(&captured,ap->uniform_data[0]+16*j,4); assert(captured==initial[j]);
+    memcpy(&captured,ap->uniform_data[1]+16+32*j,4); assert(captured==initial[j]);
+  }
+  float tail[]={8,9}; glUniform1fv(glGetUniformLocation(1,"RandomValue[3]"),2,tail);
+  memcpy(&captured,ap->uniform_data[0]+32,4); assert(captured==3);
+  memcpy(&captured,ap->uniform_data[0]+48,4); assert(captured==8);
+  memcpy(&captured,ap->uniform_data[0]+64,4); assert(captured==9);
+  /* Excess count must be truncated before reading past the supplied final value. */
+  float last_value=7; glUniform1fv(glGetUniformLocation(1,"RandomValue[4]"),INT_MAX,&last_value);
+  memcpy(&captured,ap->uniform_data[1]+144,4); assert(captured==7 && !glGetError());
+  float matrices[32]; for(unsigned j=0;j<32;++j) matrices[j]=(float)j;
+  glUniformMatrix4fv(glGetUniformLocation(1,"matrix"),2,GL_TRUE,matrices);
+  for(unsigned j=0;j<2;++j) for(unsigned c=0;c<4;++c) for(unsigned r=0;r<4;++r) {
+    memcpy(&captured,ap->uniform_data[0]+80+64*j+4*(c*4+r),4); assert(captured==matrices[j*16+r*4+c]);
+  }
+  float colors[]={1,2,3,4,5,6}; glUniform3fv(glGetUniformLocation(1,"color"),2,colors);
+  assert(!memcmp(ap->uniform_data[1]+192,colors,12) && !memcmp(ap->uniform_data[1]+208,colors+3,12));
+  assert(ap->uniform_data[1][204]==0);
+  glUniform4fv(base,1,colors); assert(glGetError()==GL_INVALID_OPERATION);
+  glUniform1f(PS4GL_MAX_UNIFORMS*5,1); assert(glGetError()==GL_INVALID_OPERATION);
   ps4glMakeCurrent(NULL);
-  puts("PASS GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
+  puts("PASS uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

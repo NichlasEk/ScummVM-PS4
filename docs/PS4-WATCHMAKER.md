@@ -9,7 +9,8 @@ requested commit/push. Larger draw batches improved playback; retaining
 unchanged GPU textures across frames supplied the decisive further speedup.
 Animation pacing remains at its original setting: the catch-up experiment was
 rejected and reverted. Acceptance is visual/user-observed, not a measured FPS
-claim. The previously reported hand through the wall has no targeted fix.
+claim. The user also accepted the subsequent door-direction and lampshade
+fixes, reporting that the game now looks and works correctly in their test.
 
 The sections below record the bring-up chronologically, including superseded
 hypotheses. This is not a full-game or physical PS4 compatibility claim.
@@ -544,3 +545,27 @@ Eboot SHA-256: `45e4e38a13f825967a8fadee14629ed23ccb66f7081bb23ed722831367cfa78c
 
 User accepted the persistent-cache build ("där satt den!") and requested
 commit/push. The accepted eboot hash is recorded above.
+
+
+### Office door and lampshade follow-up (user accepted)
+
+User supplied reference images: Darrell should open the office door and leave,
+and the desk lamp should have a visible shade. Current run instead puts his
+hand through the door and omits the shade.
+
+Owned Data.wm animation 1128 links darrell, o92-porta and o92-manila to
+DoorA.a3d. Room mesh p92-lampasup uses material 20 (reef-tazza-2.TGA), flags
+0x600 (FLARE | FLARE_SUN). The ordinary-mesh diffuse-alpha marker is 2; the
+flare pass inherited an alpha cutoff of 85, discarding its geometry. Flare
+cutoff is now zero; smoke retains 85. The RGB blend and scene lighting remain
+unchanged.
+
+GetLightDirection copied light.Dir.x to both destination X and Z. Corrected
+Z to light.Dir.z. The user confirmed the resulting door sequence and
+lampshade correction. Added bounded DoorA-only track/load/progress
+messages to observe the character, door and handle on replay.
+
+Production-fragment direction/flare tests and render-state tests pass under
+ASan/UBSan; package builds. User accepted the visible result and requested
+commit/push on 2026-09-27. Eboot SHA-256:
+`55ad12975e5b3e2df242b4ce9ee2b5acb99a18a66c6fbb70fa37c95fb1446591`.

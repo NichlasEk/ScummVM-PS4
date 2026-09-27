@@ -1,3 +1,14 @@
+--- a/engines/watchmaker/3d/animation.cpp
++++ b/engines/watchmaker/3d/animation.cpp
+@@ -142,7 +142,7 @@
+ 	for (const auto &light : pLights) {
+ 		if (light.Dir.x && light.Dir.z) {
+ 			dest->x = light.Dir.x;
+-			dest->z = light.Dir.x;
++			dest->z = light.Dir.z;
+ 			return pos;
+ 		}
+ 	}
 --- a/engines/watchmaker/3d/geometry.cpp
 +++ b/engines/watchmaker/3d/geometry.cpp
 @@ -938,17 +938,19 @@
@@ -464,7 +475,19 @@
  		g_renderer->setRenderState(RenderState::ZWRITE_ENABLE, TRUE);
  #if 0 // TODO
  		g_renderer->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX, 0);                        // mapping coordinates back to set 0
-@@ -352,7 +357,6 @@
+@@ -299,6 +304,11 @@
+ 		        !(bb->Flags1 & T3D_MATERIAL_SMOKE))
+ 			continue;
+ 
++		// Ordinary flare meshes retain the low diffuse-alpha marker (2).
++		// Their blend uses RGB; the clipmap cutoff would discard the mesh.
++		g_renderer->setRenderState(RenderState::ALPHAREF,
++		                          (bb->Flags1 & T3D_MATERIAL_SMOKE) ? 0x55 : 0);
++
+ 		if (bb->Flags1 & T3D_MATERIAL_FLARE_SUN) {
+ 			g_renderer->setBlendFunc(BlendFactor::ONE, BlendFactor::INVSRCCOLOR);
+ 		} else if (bb->Flags1 & T3D_MATERIAL_FLARESOFT) {
+@@ -352,7 +362,6 @@
  
  		if (bb->Flags1 & T3D_MATERIAL_GLASS) {
  			g_renderer->setBlendFunc(BlendFactor::DESTCOLOR, BlendFactor::ZERO);
@@ -733,6 +756,29 @@
  	uint8 subtitles_on = 1;
  	bool bShowRoomDescriptions = true;
  	bool bShowExtraLocalizationStrings = false;
+--- a/engines/watchmaker/ll/ll_anim.cpp
++++ b/engines/watchmaker/ll/ll_anim.cpp
+@@ -1466,6 +1466,11 @@
+ 			CloseSys(game);
+ 		}
+ 
++		if (an == aDAR_DOOR_A92)
++			warning("DoorA track %d mesh=%s frames=%d bones=%d vertices=%u flags=%x", a,
++			        h->sub[a].ptr->name.c_str(), h->sub[a].ptr->Anim.NumFrames,
++			        h->sub[a].ptr->Anim.NumBones, h->sub[a].ptr->NumVerts, h->sub[a].ptr->Flags);
++
+ 		if (init.Anim[an].flags & ANIM_ABS) h->sub[a].ptr->Flags |= T3D_MESH_ABS_ANIM;
+ 		else h->sub[a].ptr->Flags &= ~T3D_MESH_ABS_ANIM;
+ 
+@@ -1750,6 +1755,8 @@
+ 			if ((CurFlags & T3D_MESH_CHARACTER) && (bDialogActive) && !(bAnimWaitText) && ((CurFrame + 1) >= h->LoopEnd))
+ 				h->LoopEnd = 0;
+ 
++			if (an == aDAR_DOOR_A92 && (CurFrame == 1 || CurFrame == 90 || CurFrame == 180 || CurFrame == 270))
++				warning("DoorA progress track=%d frame=%d last=%d", a, CurFrame, LastFrame);
+ 			h->sub[a].LastFrame = CurFrame;
+ //			Se arriva alla fine del loop o dell'anim reinizia
+ 			if ((h->LoopEnd > 0) && !(h->LoopMask & (1 << a)) &&
 --- a/engines/watchmaker/ll/ll_ffile.cpp
 +++ b/engines/watchmaker/ll/ll_ffile.cpp
 @@ -36,19 +36,22 @@

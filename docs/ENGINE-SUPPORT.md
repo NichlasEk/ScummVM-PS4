@@ -288,7 +288,8 @@ menu and opening dialogue in shadPS4. Geometry, model texture orientation,
 scripted movie stopping, WAV effects/speech and display color encoding have
 been repaired. The user accepted the corrected lighting on 2026-09-27.
 User accepted emulator performance after larger draw batches and persistent
-texture caching. Full-game progression, save/load,
+texture caching, then accepted the office door-direction and lampshade fixes.
+Full-game progression, save/load,
 music transitions and physical PS4 output are not verified. See
 [Watchmaker evidence and remaining work](PS4-WATCHMAKER.md).
 The historical package table above is unchanged.

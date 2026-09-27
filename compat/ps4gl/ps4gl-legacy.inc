@@ -4,7 +4,7 @@
 #include <stdarg.h>
 typedef struct LegacyDecl { char kind[16],type[64],name[64]; unsigned count; size_t begin,end; } LegacyDecl;
 typedef struct LegacyStruct { char name[64]; LegacyDecl fields[16]; unsigned count; size_t begin,end; } LegacyStruct;
-typedef struct LegacySource { char *text; LegacyDecl decl[64]; unsigned count; LegacyStruct structs[8]; unsigned struct_count; int fragcoord; char constant_names[16][64]; unsigned constants[16],constant_count; } LegacySource;
+typedef struct LegacySource { char *text; LegacyDecl decl[64]; unsigned count; LegacyStruct structs[8]; unsigned struct_count; int fragcoord; unsigned client_mask; char constant_names[16][64]; unsigned constants[16],constant_count; } LegacySource;
 typedef struct LegacyOutput { char *text; size_t length; int failed; } LegacyOutput;
 #define LEGACY_OUTPUT_LIMIT (512u*1024u)
 static void legacy_emit(LegacyOutput *out, const char *format, ...) {
@@ -25,9 +25,12 @@ static int legacy_token(const char *text, size_t *at, char *token, size_t capaci
   if(n>=capacity) return 0;
   memcpy(token,text+start,n); token[n]=0; return n!=0;
 }
+static int legacy_sampler(const char *type) {
+  return !strcmp(type,"sampler2D") || !strcmp(type,"sampler2DRect") || !strcmp(type,"sampler1D") || !strcmp(type,"samplerCube");
+}
 static int legacy_type(const char *type) {
   return !strcmp(type,"float") || !strcmp(type,"int") || !strcmp(type,"bool") || !strcmp(type,"vec2") ||
-    !strcmp(type,"vec3") || !strcmp(type,"vec4") || !strcmp(type,"mat4") || !strcmp(type,"sampler2D");
+    !strcmp(type,"vec3") || !strcmp(type,"vec4") || !strcmp(type,"mat4") || legacy_sampler(type);
 }
 static const LegacyStruct *legacy_struct(const LegacySource *source, const char *name) {
   for(unsigned i=0;i<source->struct_count;++i)
@@ -36,6 +39,12 @@ static const LegacyStruct *legacy_struct(const LegacySource *source, const char 
 }
 static void legacy_field_name(char *out, size_t size, const char *object, const char *field) {
   snprintf(out,size,"ps4gl_field_%zu_%s%s",strlen(object),object,field);
+}
+static const char *legacy_client_names[]={"gl_Vertex","gl_Color","gl_Normal","gl_MultiTexCoord0","gl_MultiTexCoord1"};
+static const char *legacy_client_attributes[]={"ps4gl_client_vertex","ps4gl_client_color","ps4gl_client_normal","ps4gl_client_uv0","ps4gl_client_uv1"};
+static int legacy_client(const char *name) {
+  for(unsigned i=0;i<5;++i) if(!strcmp(name,legacy_client_names[i])) return (int)i;
+  return -1;
 }
 static int legacy_preprocess(int fragment, const char *source, LegacySource *out, char *log, size_t cap) {
   if(!initialized || !source) { diagnostic(log,cap,"Invalid legacy compiler state"); return 0; }
@@ -63,7 +72,11 @@ static int legacy_preprocess(int fragment, const char *source, LegacySource *out
     char *p=line; while(p<end && isspace((unsigned char)*p)) ++p;
     if(p<end && *p=='#') {
       ++p; while(p<end && isspace((unsigned char)*p)) ++p;
-      if(strncmp(p,"version",7) && strncmp(p,"line",4)) { diagnostic(log,cap,"Unsupported legacy directive"); return 0; }
+      if(strncmp(p,"version",7) && strncmp(p,"line",4)) {
+        char extension[80],behavior[16];
+        if(sscanf(p,"extension %79s : %15s",extension,behavior)!=2 || strcmp(extension,"GL_ARB_texture_rectangle") ||
+           (strcmp(behavior,"enable") && strcmp(behavior,"require"))) {diagnostic(log,cap,"Unsupported legacy directive");return 0;}
+      }
       memset(line,' ',(size_t)(end-line));
     }
     line=*end ? end+1 : end;
@@ -74,6 +87,8 @@ static int legacy_preprocess(int fragment, const char *source, LegacySource *out
     if(!legacy_token(out->text,&at,token,sizeof(token))) break;
     if(!strncmp(token,"ps4gl_",6)) { diagnostic(log,cap,"Reserved bridge identifier"); return 0; }
     if(fragment && !strcmp(token,"gl_FragCoord")) { out->fragcoord=1; continue; }
+    int client=fragment ? -1 : legacy_client(token);
+    if(client>=0) { out->client_mask|=1u<<client; continue; }
     if(!strncmp(token,"gl_",3) && strcmp(token,"gl_Position") && strcmp(token,"gl_FragColor")) {
       diagnostic(log,cap,"Unsupported legacy builtin (only gl_Position/gl_FragColor are translated)"); return 0;
     }
@@ -102,7 +117,7 @@ static int legacy_preprocess(int fragment, const char *source, LegacySource *out
         LegacyDecl *field=&st->fields[st->count];
         if(!strcmp(token,"highp") || !strcmp(token,"mediump") || !strcmp(token,"lowp"))
           if(!legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;
-        if(!legacy_type(token) || !strcmp(token,"sampler2D")) goto unsupported;
+        if(!legacy_type(token) || legacy_sampler(token)) goto unsupported;
         strcpy(field->type,token);
         if(!legacy_token(out->text,&at,field->name,sizeof(field->name)) ||
            !strncmp(field->name,"ps4gl_",6) ||
@@ -141,13 +156,19 @@ static int legacy_preprocess(int fragment, const char *source, LegacySource *out
       if(!legacy_token(out->text,&at,token,sizeof(token)) || strcmp(token,"]") ||
          !legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;
     }
-    if(strcmp(token,";") || (strcmp(d->kind,"uniform") && (d->count || !strcmp(d->type,"mat4") || !strcmp(d->type,"sampler2D") || !strcmp(d->type,"int") || !strcmp(d->type,"bool")))) goto unsupported;
+    if(strcmp(token,";") || (strcmp(d->kind,"uniform") && (d->count || !strcmp(d->type,"mat4") || legacy_sampler(d->type) || !strcmp(d->type,"int") || !strcmp(d->type,"bool")))) goto unsupported;
     if(legacy_struct(out,d->type) && (strcmp(d->kind,"uniform") || d->count)) goto unsupported;
     if(!strcmp(d->type,"bool") && d->count) goto unsupported;
-    if(!strcmp(d->type,"sampler2D") && (d->count || !fragment || strcmp(d->kind,"uniform"))) goto unsupported;
+    if(legacy_sampler(d->type) && (d->count || !fragment || strcmp(d->kind,"uniform"))) goto unsupported;
     if(fragment && !strcmp(d->kind,"attribute")) goto unsupported;
     for(unsigned i=0;i<out->count;++i) if(!strcmp(out->decl[i].name,d->name)) goto unsupported;
     d->end=at; ++out->count;
+  }
+  for(unsigned i=0;i<5;++i) if(out->client_mask&(1u<<i)) {
+    if(out->count==64) goto unsupported;
+    LegacyDecl *d=&out->decl[out->count++];
+    strcpy(d->kind,"attribute"); strcpy(d->type,i==2 ? "vec3" : "vec4");
+    strcpy(d->name,legacy_client_attributes[i]); d->begin=d->end=SIZE_MAX;
   }
   return 1;
 unsupported:
@@ -172,11 +193,11 @@ static int legacy_location(const LegacySource *vertex, const LegacySource *fragm
     }
     return -1;
   }
-  const LegacySource *source=!strcmp(d->type,"sampler2D") ? fragment : vertex;
+  const LegacySource *source=legacy_sampler(d->type) ? fragment : vertex;
   int ordinal=0;
   for(unsigned i=0;i<source->count;++i) {
     const LegacyDecl *candidate=&source->decl[i];
-    int match=!strcmp(d->type,"sampler2D") ? !strcmp(candidate->type,"sampler2D") : !strcmp(candidate->kind,"varying");
+    int match=legacy_sampler(d->type) ? legacy_sampler(candidate->type) : !strcmp(candidate->kind,"varying");
     if(match) { if(!strcmp(candidate->name,d->name)) return ordinal; ++ordinal; }
   }
   return -1;
@@ -195,21 +216,26 @@ static char *legacy_rewrite(const LegacySource *source, int fragment, const Lega
   }
   const char *instance=fragment ? "ps4gl_fragment_data" : "ps4gl_vertex_data";
   int uniforms=source->fragcoord; unsigned used_attributes=0;
+  for(unsigned i=0;i<source->count;++i) if(!strcmp(source->decl[i].type,"sampler2DRect") || !strcmp(source->decl[i].type,"samplerCube")) uniforms=1;
   for(unsigned i=0;i<source->count;++i) {
     const LegacyDecl *d=&source->decl[i];
-    if(!strcmp(d->kind,"uniform") && strcmp(d->type,"sampler2D")) { uniforms=1; continue; }
+    if(!strcmp(d->kind,"uniform") && !legacy_sampler(d->type)) { uniforms=1; continue; }
     int location=legacy_location(vs,fs,d,bindings,count);
-    int sampler=!strcmp(d->type,"sampler2D"), attribute=!strcmp(d->kind,"attribute");
-    if(location<0 || location>=(sampler ? 2 : attribute ? 8 : 16)) goto fail;
+    int sampler=legacy_sampler(d->type), attribute=!strcmp(d->kind,"attribute");
+    if(location<0 || location>=(sampler ? PS4GL_MAX_SAMPLERS : attribute ? 8 : 16)) goto fail;
     if(attribute) { if(used_attributes&(1u<<location)) goto fail; used_attributes|=1u<<location; }
-    if(sampler) legacy_emit(&out,"layout(set=0,binding=%d) uniform sampler2D %s;\n",location+2,d->name);
+    if(sampler) legacy_emit(&out,"layout(set=0,binding=%d) uniform sampler2D %s%s;\n",location+2,!strcmp(d->type,"sampler1D") ? "ps4gl_1d_" : !strcmp(d->type,"samplerCube") ? "ps4gl_cube_" : "",d->name);
     else legacy_emit(&out,"layout(location=%d) %s %s %s;\n",location,attribute || fragment ? "in" : "out",d->type,d->name);
   }
   if(uniforms) {
     legacy_emit(&out,"layout(std140,set=0,binding=%d) uniform ps4gl_%s_defaults {\n",fragment ? 1 : 0,fragment ? "fragment" : "vertex");
     if(source->fragcoord) legacy_emit(&out,"vec2 ps4gl_fragcoord_y;\n");
+    for(unsigned i=0;i<source->count;++i) if(!strcmp(source->decl[i].type,"samplerCube"))
+      legacy_emit(&out,"vec2 ps4gl_cube_size%d;\n",legacy_location(vs,fs,&source->decl[i],bindings,count));
+    for(unsigned i=0;i<source->count;++i) if(!strcmp(source->decl[i].type,"sampler2DRect"))
+      legacy_emit(&out,"vec2 ps4gl_rect_size%d;\n",legacy_location(vs,fs,&source->decl[i],bindings,count));
     for(unsigned i=0;i<source->count;++i) { const LegacyDecl *d=&source->decl[i];
-      if(!strcmp(d->kind,"uniform") && strcmp(d->type,"sampler2D")) {
+      if(!strcmp(d->kind,"uniform") && !legacy_sampler(d->type)) {
         const LegacyStruct *st=legacy_struct(source,d->type);
         if(st) {
           for(unsigned j=0;j<st->count;++j) {
@@ -227,7 +253,26 @@ static char *legacy_rewrite(const LegacySource *source, int fragment, const Lega
     }
     legacy_emit(&out,"} %s;\n",instance);
   }
-  if(fragment) legacy_emit(&out,"layout(location=0) out vec4 ps4gl_fragment_color;\n");
+  if(fragment) {
+    legacy_emit(&out,"layout(location=0) out vec4 ps4gl_fragment_color;\n");
+    for(unsigned i=0;i<source->count;++i) if(!strcmp(source->decl[i].type,"samplerCube")) {
+      const LegacyDecl *d=&source->decl[i];int slot=legacy_location(vs,fs,d,bindings,count);
+      legacy_emit(&out,"vec4 ps4gl_cube_sample%d(vec3 d){vec3 a=abs(d);vec2 uv;float face;float m;"
+        "if(a.x>=a.y && a.x>=a.z){m=a.x;if(d.x>=0.0){face=0.0;uv=vec2(-d.z,-d.y);}else{face=1.0;uv=vec2(d.z,-d.y);}}"
+        "else if(a.y>=a.z){m=a.y;if(d.y>=0.0){face=2.0;uv=vec2(d.x,d.z);}else{face=3.0;uv=vec2(d.x,-d.z);}}"
+        "else{m=a.z;if(d.z>=0.0){face=4.0;uv=vec2(d.x,-d.y);}else{face=5.0;uv=vec2(-d.x,-d.y);}}"
+        "if(m==0.0)return vec4(0.0);vec2 h=vec2(0.5)/%s.ps4gl_cube_size%d;uv=clamp(uv/m*0.5+0.5,h,vec2(1.0)-h);"
+        "return texture(ps4gl_cube_%s,vec2(uv.x,(uv.y+face)/6.0));}\n",slot,instance,slot,d->name);
+    }
+    for(unsigned i=0;i<source->count;++i) if(!strcmp(source->decl[i].type,"sampler1D")) {
+      const LegacyDecl *d=&source->decl[i];int slot=legacy_location(vs,fs,d,bindings,count);
+      legacy_emit(&out,"vec4 ps4gl_1d_sample%d(float u){return texture(ps4gl_1d_%s,vec2(u,0.5));}\n",slot,d->name);
+    }
+    for(unsigned i=0;i<source->count;++i) if(!strcmp(source->decl[i].type,"sampler2DRect")) {
+      const LegacyDecl *d=&source->decl[i];int slot=legacy_location(vs,fs,d,bindings,count);
+      legacy_emit(&out,"vec4 ps4gl_rect_sample%d(vec2 uv){return texture(%s,uv/%s.ps4gl_rect_size%d);}\n",slot,d->name,instance,slot);
+    }
+  }
   size_t at=0; unsigned declaration=0, structure=0; char token[128];
   while(source->text[at]) {
     if(structure<source->struct_count && at==source->structs[structure].begin) { at=source->structs[structure++].end; continue; }
@@ -237,7 +282,19 @@ static char *legacy_rewrite(const LegacySource *source, int fragment, const Lega
       int member=previous && source->text[previous-1]=='.';
       if(!legacy_token(source->text,&at,token,sizeof(token))) goto fail;
       if(member) { legacy_emit(&out,"%s",token); continue; }
-      const char *replacement=!strcmp(token,"main") ? "ps4gl_main" : !strcmp(token,"texture2D") ? "texture" :
+      if(!strcmp(token,"texture2DRect") || !strcmp(token,"texture1D") || !strcmp(token,"textureCube")) {
+        int cube=!strcmp(token,"textureCube");
+        int one_dimensional=!strcmp(token,"texture1D");
+        char punct[4],sampler[64];
+        if(!legacy_token(source->text,&at,punct,sizeof(punct)) || strcmp(punct,"(") ||
+           !legacy_token(source->text,&at,sampler,sizeof(sampler)) ||
+           !legacy_token(source->text,&at,punct,sizeof(punct)) || strcmp(punct,",")) goto fail;
+        int index=legacy_find(source,"uniform",sampler);
+        if(index<0 || strcmp(source->decl[index].type,cube ? "samplerCube" : one_dimensional ? "sampler1D" : "sampler2DRect")) goto fail;
+        legacy_emit(&out,cube ? "ps4gl_cube_sample%d(" : one_dimensional ? "ps4gl_1d_sample%d(" : "ps4gl_rect_sample%d(",legacy_location(vs,fs,&source->decl[index],bindings,count));continue;
+      }
+      int client=fragment ? -1 : legacy_client(token);
+      const char *replacement=client>=0 ? legacy_client_attributes[client] : !strcmp(token,"main") ? "ps4gl_main" : !strcmp(token,"texture2D") ? "texture" :
         !strcmp(token,"gl_FragColor") ? "ps4gl_fragment_color" : token;
       const LegacyDecl *boolean=NULL;
       for(unsigned i=0;i<source->count;++i)
@@ -259,7 +316,7 @@ static char *legacy_rewrite(const LegacySource *source, int fragment, const Lega
         legacy_emit(&out,")");
       }
       else if(boolean) legacy_emit(&out,"(%s.ps4gl_bool_%s != 0)",instance,boolean->name);
-      else if(uniform>=0 && strcmp(source->decl[uniform].type,"sampler2D")) legacy_emit(&out,"%s.%s",instance,token);
+      else if(uniform>=0 && !legacy_sampler(source->decl[uniform].type)) legacy_emit(&out,"%s.%s",instance,token);
       else legacy_emit(&out,"%s",replacement);
     } else legacy_emit(&out,"%c",source->text[at++]);
   }

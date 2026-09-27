@@ -152,11 +152,11 @@ GLuint ps4glCreateProgramSPIRV(VkDevice device, VkRenderPass pass,
   }
   VkPipelineLayoutCreateInfo lci={.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
   if(reflected.uniform_stages || reflected.sampler_mask) {
-    VkDescriptorSetLayoutBinding bindings[4]; unsigned count=0;
+    VkDescriptorSetLayoutBinding bindings[2+PS4GL_MAX_SAMPLERS]; unsigned count=0;
     for(unsigned stage=0;stage<2;++stage) if(reflected.uniform_stages&(1u<<stage))
       bindings[count++]=(VkDescriptorSetLayoutBinding){.binding=stage,.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount=1,.stageFlags=stage ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT};
-    for(unsigned sampler=0;sampler<2;++sampler) if(reflected.sampler_mask&(1u<<sampler))
+    for(unsigned sampler=0;sampler<PS4GL_MAX_SAMPLERS;++sampler) if(reflected.sampler_mask&(1u<<sampler))
       bindings[count++]=(VkDescriptorSetLayoutBinding){.binding=sampler+2,.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         .descriptorCount=1,.stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT};
     VkDescriptorSetLayoutCreateInfo dci={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -210,6 +210,11 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
     if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
     return;
   }
+  for(unsigned i=0;i<PS4GL_MAX_QUERIES;++i) {
+    if(ctx->queries[i].pool) vkDestroyQueryPool(device,ctx->queries[i].pool,NULL);
+    ctx->queries[i]=(PS4GLQuery){0};
+  }
+  ctx->query_command=NULL;ctx->complete_queries=NULL;ctx->active_query=0;
   ps4glDestroyShaderObjects(ctx);
   for(unsigned i=0;i<PS4GL_MAX_PROGRAMS;++i) {
     for(unsigned v=0;v<ctx->programs[i].variant_count;++v) vkDestroyPipeline(device,ctx->programs[i].variants[v].pipeline,NULL);
@@ -224,7 +229,7 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
   collect_targets(ctx,1);
   if(ctx->offscreen_pass) vkDestroyRenderPass(device,ctx->offscreen_pass,NULL);
   ctx->offscreen_pass=VK_NULL_HANDLE; ctx->prepare_target=NULL; ctx->end_target=NULL;
-  ctx->physical=VK_NULL_HANDLE; ctx->read_pixels=NULL; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL; ctx->select_pipeline=NULL; ctx->import_program=NULL;
+  ctx->physical=VK_NULL_HANDLE; ctx->copy_texture=NULL; ctx->read_pixels=NULL; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL; ctx->select_pipeline=NULL; ctx->import_program=NULL;
   ctx->program=0; ctx->program_device=VK_NULL_HANDLE; ctx->program_pass=VK_NULL_HANDLE;
 }
 
@@ -254,7 +259,7 @@ static PS4GLUploadPage *create_upload_page(PS4GLContext *ctx, size_t bytes) {
   size_t size=bytes<PS4GL_UPLOAD_PAGE_BYTES ? PS4GL_UPLOAD_PAGE_BYTES : (bytes+65535u)&~(size_t)65535u;
   PS4GLUploadPage page={.size=size}; VkDevice device=ctx->program_device;
   VkBufferCreateInfo ci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=size,
-    .usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
+    .usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT|VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
   if(vkCreateBuffer(device,&ci,NULL,&page.buffer)!=VK_SUCCESS) goto fail;
   VkMemoryRequirements req; vkGetBufferMemoryRequirements(device,page.buffer,&req);
   if(req.size>PS4GL_UPLOAD_BUDGET-ctx->upload_memory_bytes) {
@@ -306,18 +311,21 @@ static int upload_vertices(PS4GLContext *ctx, const void *data, size_t bytes, si
 }
 #include "ps4gl-framebuffer-vulkan.h"
 #include "ps4gl-readback-vulkan.h"
+#include "ps4gl-copy-vulkan.h"
+#include "ps4gl-query-vulkan.h"
 static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
   size_t texture_bytes=0;
-  const PS4GLTexture *sources[2]={0};
-  for(unsigned i=0;i<2;++i) if(p->sampler_mask&(1u<<i)) {
-    sources[i]=ps4glTextureAtUnit(ctx,(unsigned)p->sampler_units[i]);
+  const PS4GLTexture *sources[PS4GL_MAX_SAMPLERS]={0};
+  for(unsigned i=0;i<PS4GL_MAX_SAMPLERS;++i) if(p->sampler_mask&(1u<<i)) {
+    sources[i]=(p->cube_sampler_mask&(1u<<i)) ? ps4glCubeAtUnit(ctx,(unsigned)p->sampler_units[i]) : (p->one_dimensional_sampler_mask&(1u<<i)) ? ps4glOneDimensionalAtUnit(ctx,(unsigned)p->sampler_units[i]) : (p->rectangle_sampler_mask&(1u<<i)) ? ps4glRectangleAtUnit(ctx,(unsigned)p->sampler_units[i]) : ps4glTextureAtUnit(ctx,(unsigned)p->sampler_units[i]);
     if((sources[i] && ctx->framebuffer && sources[i]==ps4glFramebufferTextureObject(ctx)) || !sources[i] || !sources[i]->pixels || sources[i]->width<=0 || sources[i]->height<=0 ||
         (sources[i]->min_filter!=GL_NEAREST && sources[i]->min_filter!=GL_LINEAR)) {
       if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
       return 0;
     }
-    if(!sources[i]->render_target && !find_texture_snapshot(ctx,sources[i]) &&
-       !(i && sources[0]==sources[i]))
+    if((p->cube_sampler_mask&(1u<<i)) && sources[i]->cube_faces!=63) {if(!ctx->error)ctx->error=GL_INVALID_OPERATION;return 0;}
+    int duplicate=0;for(unsigned j=0;j<i;++j) if(sources[j]==sources[i]) duplicate=1;
+    if(!sources[i]->render_target && !find_texture_snapshot(ctx,sources[i]) && !duplicate)
       texture_bytes+=(size_t)sources[i]->width*sources[i]->height*4;
   }
   /* Compact each reflected stage separately, preserving std140 offsets and
@@ -341,9 +349,18 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
   unsigned char packed[2*PS4GL_UNIFORM_BYTES]={0};
   memcpy(packed,p->uniform_data[0],stage_bytes[0]);
   memcpy(packed+stage_bytes[0],p->uniform_data[1],stage_bytes[1]);
+  for(unsigned i=0;i<p->uniform_count;++i) {
+    const PS4GLUniform *u=&p->uniforms[i];
+    if(!strncmp(u->name,"ps4gl_rect_size",15) || !strncmp(u->name,"ps4gl_cube_size",15)) {
+      unsigned slot=u->name[15]-'0';
+      if(slot>=PS4GL_MAX_SAMPLERS || !sources[slot] || u->offset[1]<0) return 0;
+      GLfloat dimensions[2]={(GLfloat)sources[slot]->width,(GLfloat)(sources[slot]->height/(!strncmp(u->name,"ps4gl_cube_size",15) ? 6 : 1))};
+      memcpy(packed+stage_bytes[0]+u->offset[1],dimensions,sizeof(dimensions));
+    }
+  }
   if(!upload_vertices(ctx,packed,uniform_bytes,0,0)) return 0;
   PS4GLSnapshot *snap=&ctx->snapshots[ctx->snapshot_count-1];
-  VkDescriptorPoolSize sizes[]={{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,2},{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2}};
+  VkDescriptorPoolSize sizes[]={{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,2},{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,PS4GL_MAX_SAMPLERS}};
   VkDescriptorPoolCreateInfo ci={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
     .maxSets=1,.poolSizeCount=2,.pPoolSizes=sizes};
   if(vkCreateDescriptorPool(ctx->program_device,&ci,NULL,&snap->pool)!=VK_SUCCESS) goto fail;
@@ -357,7 +374,7 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
       .dstBinding=stage,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,.pBufferInfo=&info};
     vkUpdateDescriptorSets(ctx->program_device,1,&write,0,NULL);
   }
-  for(unsigned i=0;i<2;++i) if(sources[i]) {
+  for(unsigned i=0;i<PS4GL_MAX_SAMPLERS;++i) if(sources[i]) {
     if(!texture_snapshot(ctx,sources[i],&snap->textures[i])) goto fail;
     VkDescriptorImageInfo info={snap->textures[i].sampler,snap->textures[i].view,VK_IMAGE_LAYOUT_GENERAL};
     VkWriteDescriptorSet write={.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=set,.dstBinding=i+2,
@@ -368,7 +385,7 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
   vkCmdBindDescriptorSets(ctx->command,VK_PIPELINE_BIND_POINT_GRAPHICS,p->layout,0,1,&set,0,NULL);
   return 1;
 fail:
-  for(unsigned i=0;i<2;++i) destroy_texture_snapshot(ctx->program_device,&snap->textures[i]);
+  for(unsigned i=0;i<PS4GL_MAX_SAMPLERS;++i) destroy_texture_snapshot(ctx->program_device,&snap->textures[i]);
   if(snap->pool) vkDestroyDescriptorPool(ctx->program_device,snap->pool,NULL);
   /* The page slice is not reused until frame retirement, even on failure. */
   *snap=(PS4GLSnapshot){0}; --ctx->snapshot_count;
@@ -404,15 +421,16 @@ void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
     return;
   }
   ctx->prepare_target=prepare_render_target; ctx->end_target=end_render_target;
-  ctx->physical=physical; ctx->program_device=device; ctx->read_pixels=read_pixels; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms; ctx->select_pipeline=select_pipeline; ctx->import_program=ps4glCreateProgramSPIRV;
+  ctx->query_command=query_command; ctx->complete_queries=complete_queries; ctx->physical=physical; ctx->copy_texture=copy_texture; ctx->program_device=device; ctx->read_pixels=read_pixels; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms; ctx->select_pipeline=select_pipeline; ctx->import_program=ps4glCreateProgramSPIRV;
 }
 void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
   if(!ctx) return;
   if(ctx->command) { if(!ctx->error) ctx->error=GL_INVALID_OPERATION; return; }
+  release_queries(ctx);
   retire_texture_cache(ctx,0);
   for(unsigned i=0;i<ctx->snapshot_count;++i) {
     if(ctx->snapshots[i].pool) vkDestroyDescriptorPool(ctx->program_device,ctx->snapshots[i].pool,NULL);
-    for(unsigned t=0;t<2;++t) {
+    for(unsigned t=0;t<PS4GL_MAX_SAMPLERS;++t) {
       cache_retired_texture(ctx,&ctx->snapshots[i].textures[t]);
       destroy_texture_snapshot(ctx->program_device,&ctx->snapshots[i].textures[t]);
     }

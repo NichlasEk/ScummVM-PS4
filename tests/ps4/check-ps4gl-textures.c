@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
   unsigned rejected=0;
   for(size_t i=5;i<(size_t)size/4;i+=s[i]>>16) {
     unsigned op=s[i]&65535, wc=s[i]>>16; size_t at=0; uint32_t old=0;
-    if(op==71 && wc==4 && s[i+2]==33 && s[i+3]>=2) { at=i+3; old=s[at]; s[at]=7; }
+    if(op==71 && wc==4 && s[i+2]==33 && s[i+3]>=2) { at=i+3; old=s[at]; s[at]=2+PS4GL_MAX_SAMPLERS; }
     if(op==25 && wc==9) { at=i+3; old=s[at]; s[at]=2; }
     if(op==27 && wc==3) { at=i; old=s[at]; s[at]=(3u<<16)|28; }
     if(at) { p=(PS4GLProgram){0}; assert(!gl_reflect_samplers(s,size,1,&p)); ++rejected; s[at]=old; }

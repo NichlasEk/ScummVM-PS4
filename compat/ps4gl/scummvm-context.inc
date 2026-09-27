@@ -63,6 +63,8 @@
 	PS4GL_LOAD(glPixelStorei);
 	PS4GL_LOAD(glReadPixels);
 	PS4GL_LOAD(glTexParameteri);
+	PS4GL_LOAD(glCopyTexSubImage2D);
+	PS4GL_LOAD(glTexImage1D);
 	PS4GL_LOAD(glTexImage2D);
 	PS4GL_LOAD(glTexSubImage2D);
 	PS4GL_LOAD(glUniform1i);
@@ -105,12 +107,29 @@
 	PS4GL_LOAD(glVertex3f);
 	PS4GL_LOAD(glColor3f);
 	PS4GL_LOAD(glColor4f);
+	PS4GL_LOAD(glTexCoord3f);
 	PS4GL_LOAD(glTexCoord2f);
+	PS4GL_LOAD(glTexEnvi);
 	PS4GL_LOAD(glAlphaFunc);
 	PS4GL_LOAD(glShadeModel);
 	PS4GL_LOAD(glCullFace);
 	PS4GL_LOAD(glFrontFace);
 	PS4GL_LOAD(glFlush);
+	PS4GL_LOAD(glGenQueries);
+	PS4GL_LOAD(glDeleteQueries);
+	PS4GL_LOAD(glBeginQuery);
+	PS4GL_LOAD(glEndQuery);
+	PS4GL_LOAD(glGetQueryObjectiv);
+	PS4GL_LOAD(glHint);
+	PS4GL_LOAD(glEnableClientState);
+	PS4GL_LOAD(glDisableClientState);
+	PS4GL_LOAD(glClientActiveTexture);
+	PS4GL_LOAD(glClientActiveTextureARB);
+	PS4GL_LOAD(glVertexPointer);
+	PS4GL_LOAD(glColorPointer);
+	PS4GL_LOAD(glNormalPointer);
+	PS4GL_LOAD(glTexCoordPointer);
+	PS4GL_LOAD(glOrtho);
 	PS4GL_LOAD(glCompressedTexImage2D);
 #undef PS4GL_LOAD
 	const char *identity = (const char *)glGetString(GL_RENDERER);

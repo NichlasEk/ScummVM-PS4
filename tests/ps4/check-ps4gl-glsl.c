@@ -13,7 +13,7 @@ int main(void) {
   assert(!ps4glCompileVulkanGLSL(0,valid,&words,&bytes,log,sizeof(log)) && !words && !bytes && log[0]);
   assert(ps4glGLSLInitialize() && ps4glGLSLInitialize());
   for(int textured=0;textured<2;++textured) {
-    char fragment[1024]; ps4glFixedFragment(textured,fragment,sizeof(fragment));
+    char fragment[2048]; ps4glFixedFragment(textured,fragment,sizeof(fragment));
     uint32_t *v=NULL,*f=NULL; size_t vb=0,fb=0;
     PS4GLAttributeBinding binding[3]={{"position",0},{"color",1},{"uv",2}};
     if(!ps4glLinkLegacyGLSL(ps4gl_fixed_vertex,fragment,binding,3,&v,&vb,&f,&fb,log,sizeof(log))) {
@@ -22,6 +22,39 @@ int main(void) {
     free(v); free(f);
   }
   puts("PASS production fixed-function shader variants (textured and untextured)");
+  {
+    const char *vsrc="#version 110\nvec4 position=gl_Vertex; vec2 uv=gl_MultiTexCoord0.xy; varying vec2 vUv; void main(){gl_Position=position;vUv=uv;}";
+    const char *fsrc="#version 110\nvarying vec2 vUv;uniform sampler2D tex0;void main(){gl_FragColor=texture2D(tex0,vUv);}";
+    uint32_t *v=NULL,*f=NULL;size_t vb=0,fb=0;
+    if(!ps4glLinkLegacyGLSL(vsrc,fsrc,NULL,0,&v,&vb,&f,&fb,log,sizeof(log))) {fprintf(stderr,"HPL1 legacy attributes: %s\n",log);abort();}
+    free(v);free(f);
+    if(!ps4glLinkLegacyGLSL(legacy_hpl_gamma_vertex,legacy_hpl_gamma_fragment,NULL,0,&v,&vb,&f,&fb,log,sizeof(log))) {fprintf(stderr,"HPL1 gamma shader: %s\n",log);abort();}
+    PS4GLProgram reflected={0};
+    assert(gl_reflect_uniforms(f,fb,1,&reflected) && gl_reflect_samplers(f,fb,1,&reflected));
+    assert(reflected.rectangle_sampler_mask==1 && reflected.sampler_mask==1);
+    free(v);free(f);
+    if(!ps4glLinkLegacyGLSL(legacy_hpl_fog_vertex,legacy_hpl_fog_fragment,NULL,0,&v,&vb,&f,&fb,log,sizeof(log))) {fprintf(stderr,"HPL1 fog shader: %s\n",log);abort();}
+    memset(&reflected,0,sizeof(reflected));assert(gl_reflect_samplers(f,fb,1,&reflected));
+    assert(reflected.one_dimensional_sampler_mask==1 && reflected.sampler_mask==1 && !strcmp(reflected.uniforms[0].name,"tex0"));
+    free(v);free(f);
+    if(!ps4glLinkLegacyGLSL(legacy_hpl_refract_vertex,legacy_hpl_refract_fragment,NULL,0,&v,&vb,&f,&fb,log,sizeof(log))) {fprintf(stderr,"HPL1 refraction shader: %s\n",log);abort();}
+    memset(&reflected,0,sizeof(reflected));assert(gl_reflect_uniforms(f,fb,1,&reflected) && gl_reflect_samplers(f,fb,1,&reflected));
+    assert(reflected.sampler_mask==7 && reflected.rectangle_sampler_mask==1);free(v);free(f);
+    if(!ps4glLinkLegacyGLSL(legacy_hpl_cube_vertex,legacy_hpl_cube_fragment,NULL,0,&v,&vb,&f,&fb,log,sizeof(log))) {fprintf(stderr,"HPL1 cube lighting shader: %s\n",log);abort();}
+    memset(&reflected,0,sizeof(reflected));assert(gl_reflect_uniforms(f,fb,1,&reflected) && gl_reflect_samplers(f,fb,1,&reflected));
+    assert(reflected.sampler_mask==7 && reflected.cube_sampler_mask==2 && reflected.one_dimensional_sampler_mask==4);free(v);free(f);
+    if(!ps4glLinkLegacyGLSL(legacy_hpl_ambient_vertex,legacy_hpl_ambient_fragment,NULL,0,&v,&vb,&f,&fb,log,sizeof(log))) {fprintf(stderr,"HPL1 ambient shader: %s\n",log);abort();}
+    free(v);free(f);
+    char many[4096]="#version 120\n";char line[128];
+    for(unsigned i=0;i<PS4GL_MAX_SAMPLERS;++i) {snprintf(line,sizeof(line),"uniform sampler2D tex%u;\n",i);strcat(many,line);}
+    strcat(many,"void main(){gl_FragColor=vec4(0.0);");
+    for(unsigned i=0;i<PS4GL_MAX_SAMPLERS;++i) {snprintf(line,sizeof(line),"gl_FragColor+=texture2D(tex%u,vec2(0.5));",i);strcat(many,line);}strcat(many,"}");
+    assert(ps4glCompileLegacyGLSL(1,many,&f,&fb,log,sizeof(log)));memset(&reflected,0,sizeof(reflected));assert(gl_reflect_samplers(f,fb,1,&reflected));
+    assert(reflected.sampler_mask==(1u<<PS4GL_MAX_SAMPLERS)-1);free(f);
+    strcat(many,"\nuniform sampler2D overLimit;\n");assert(!ps4glCompileLegacyGLSL(1,many,&f,&fb,log,sizeof(log)));
+    puts("PASS HPL1 gamma, fog and refraction shaders, 1D/RG textures and bounded eight-sampler interfaces");
+  }
+
   assert(ps4glCompileVulkanGLSL(0,valid,&words,&bytes,log,sizeof(log)) && words && bytes>=20 && words[0]==0x07230203);
   FILE *out=fopen("build/glslang-host/test.spv","wb"); assert(out);
   assert(fwrite(words,1,bytes,out)==bytes); fclose(out); free(words);

@@ -54,6 +54,7 @@ int ps4glFrameBegin(void *data) {
     vkCmdPipelineBarrier(f->command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,NULL,0,NULL,1,&depth);
   }
   ps4glBeginFrame(f->command,f->pass,f->targets[f->image],f->width,f->height);
+  c->default_image=f->images[f->image];
   if(c->command!=f->command || !c->managed_frame) { f->failed=1; return -1; }
   return 0;
 }
@@ -73,6 +74,7 @@ int ps4glFrameSubmit(PS4GLFrameOwner *f) {
   VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&f->command};
   FRAME_TRY(vkQueueSubmit(f->queue,1,&submit,f->fence));
   FRAME_TRY(vkWaitForFences(f->device,1,&f->fence,VK_TRUE,5000000000ULL));
+  if(f->context->complete_queries) f->context->complete_queries(f->context);
   return 0;
 }
 static int frame_discard(PS4GLFrameOwner *f) {

@@ -29,7 +29,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(VkDevice h,uint32_t family,uint32_t 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice h,const VkSwapchainCreateInfoKHR *i,const VkAllocationCallbacks *a,VkSwapchainKHR *out) {
   assert(h && !a && i->minImageCount==2 && !i->surface && !i->oldSwapchain);
   assert(i->imageExtent.width==1280 && i->imageExtent.height==720 && i->imageFormat==VK_FORMAT_R8G8B8A8_UNORM);
-  assert(i->presentMode==VK_PRESENT_MODE_FIFO_KHR && i->imageUsage==VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT); CREATE(out,VkSwapchainKHR);
+  assert(i->presentMode==VK_PRESENT_MODE_FIFO_KHR && i->imageUsage==(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT)); CREATE(out,VkSwapchainKHR);
 }
 VKAPI_ATTR void VKAPI_CALL vkDestroySwapchainKHR(VkDevice d,VkSwapchainKHR h,const VkAllocationCallbacks *a) { assert(d && !a); destroy((uintptr_t)h); }
 VKAPI_ATTR VkResult VKAPI_CALL vkGetSwapchainImagesKHR(VkDevice d,VkSwapchainKHR h,uint32_t *n,VkImage *out) {

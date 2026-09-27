@@ -97,6 +97,14 @@ static int gl_reflect_uniforms(const uint32_t *s, size_t bytes, unsigned stage, 
       }
       if(!name) return 0;
       if(!strcmp(name,"ps4gl_fragcoord_y") && (stage!=1 || width!=2 || is_integer || length)) return 0;
+      if(!strncmp(name,"ps4gl_cube_size",15)) {
+        if(stage!=1 || width!=2 || is_integer || length || name[15]<'0' || name[15]>='0'+PS4GL_MAX_SAMPLERS || name[16]) return 0;
+        p->cube_sampler_mask|=1u<<(name[15]-'0');
+      }
+      if(!strncmp(name,"ps4gl_rect_size",15)) {
+        if(stage!=1 || width!=2 || is_integer || length || name[15]<'0' || name[15]>='0'+PS4GL_MAX_SAMPLERS || name[16]) return 0;
+        p->rectangle_sampler_mask|=1u<<(name[15]-'0');
+      }
       unsigned u;
       for(u=0;u<p->uniform_count;++u) if(!strcmp(p->uniforms[u].name,name)) break;
       if(u==p->uniform_count) {
@@ -112,7 +120,7 @@ static int gl_reflect_uniforms(const uint32_t *s, size_t bytes, unsigned stage, 
   }
   return 1;
 }
-/* Fragment-only, non-array, float sampler2D at set 0 bindings 2/3. */
+/* Fragment-only, non-array, float sampler2D at set 0 bindings 2..9. */
 static inline int gl_reflect_samplers(const uint32_t *s, size_t bytes, unsigned stage, PS4GLProgram *p) {
   size_t n=bytes/4;
   for(size_t i=5;i<n;) { unsigned wc=s[i]>>16; if(!wc || wc>n-i) return 0; i+=wc; }
@@ -122,7 +130,7 @@ static inline int gl_reflect_samplers(const uint32_t *s, size_t bytes, unsigned 
     if(s[i+3]!=0) continue;
     if(stage!=1 || gl_spv_dec(s,n,s[i+2],-1,34)!=0) return 0;
     int binding=gl_spv_dec(s,n,s[i+2],-1,33);
-    if(binding<2 || binding>3 || (p->sampler_mask&(1u<<(binding-2)))) return 0;
+    if(binding<2 || binding>=2+PS4GL_MAX_SAMPLERS || (p->sampler_mask&(1u<<(binding-2)))) return 0;
     const uint32_t *ptr=gl_spv_type(s,n,32,s[i+1]);
     if(!ptr || (ptr[0]>>16)!=4 || ptr[2]!=0) return 0;
     const uint32_t *sampled=gl_spv_type(s,n,27,ptr[3]);
@@ -138,6 +146,10 @@ static inline int gl_reflect_samplers(const uint32_t *s, size_t bytes, unsigned 
       name=candidate;
     }
     if(!name || p->uniform_count==PS4GL_MAX_UNIFORMS) return 0;
+    if(!strncmp(name,"ps4gl_cube_",11)) {name+=11;if(!*name)return 0;}
+    if(!strncmp(name,"ps4gl_1d_",9)) {
+      name+=9;if(!*name) return 0;p->one_dimensional_sampler_mask|=1u<<(binding-2);
+    }
     for(unsigned u=0;u<p->uniform_count;++u) if(!strcmp(p->uniforms[u].name,name)) return 0;
     PS4GLUniform *u=&p->uniforms[p->uniform_count++];
     *u=(PS4GLUniform){.offset={-1,-1},.sampler_binding=(unsigned)binding}; strcpy(u->name,name);

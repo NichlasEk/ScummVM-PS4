@@ -146,7 +146,7 @@ static void check_luminance_alpha(void) {
   ps4glDestroyTextures(&c); ps4glMakeCurrent(NULL);
 }
 static void check_launcher_state(void) {
-  PS4GLContext a,b; assert(ps4glInit(&a,80,60) && ps4glInit(&b,80,60));
+  static PS4GLContext a,b; assert(ps4glInit(&a,80,60) && ps4glInit(&b,80,60));
   ps4glMakeCurrent(&a);
   GLboolean mask=99;
   glGetBooleanv(GL_DEPTH_WRITEMASK,&mask); assert(mask==GL_TRUE);
@@ -291,12 +291,26 @@ static void check_fixed(void) {
   glPushMatrix(); assert(glGetError()==GL_STACK_OVERFLOW);
   for(unsigned i=1;i<PS4GL_MATRIX_DEPTH;++i) glPopMatrix();
   glMatrixMode(GL_PROJECTION); glGetFloatv(GL_PROJECTION_MATRIX,m); assert(m[0]==1 && m[12]==0);
-  glEnable(GL_TEXTURE_2D); assert(glIsEnabled(GL_TEXTURE_2D)); glDisable(GL_TEXTURE_2D);
+  glEnable(GL_TEXTURE_2D); assert(glIsEnabled(GL_TEXTURE_2D));
+  glActiveTexture(GL_TEXTURE0+1); assert(!glIsEnabled(GL_TEXTURE_2D));
+  glEnable(GL_TEXTURE_2D); glActiveTexture(GL_TEXTURE0); glDisable(GL_TEXTURE_2D);
+  glActiveTexture(GL_TEXTURE0+1); assert(glIsEnabled(GL_TEXTURE_2D));
+  glDisable(GL_TEXTURE_2D); glActiveTexture(GL_TEXTURE0);
+  assert(ctx.fixed.env_mode[0]==GL_MODULATE && ctx.fixed.env_alpha[0]==GL_MODULATE);
+  glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_COMBINE);
+  glTexEnvi(GL_TEXTURE_ENV,GL_COMBINE_ALPHA,GL_REPLACE);
+  assert(ctx.fixed.env_alpha[0]==GL_REPLACE && ctx.fixed.env_alpha[1]==GL_MODULATE);
+  glTexEnvi(GL_TEXTURE_ENV,GL_COMBINE_RGB,GL_ADD);
+  glTexEnvi(GL_TEXTURE_ENV,GL_OPERAND1_RGB,GL_ONE_MINUS_SRC_ALPHA);
+  assert(ctx.fixed.env_rgb[0]==GL_ADD && ctx.fixed.env_operand1[0]==GL_ONE_MINUS_SRC_ALPHA);
+  glTexEnvi(GL_TEXTURE_ENV,GL_COMBINE_ALPHA,0xdead);
+  assert(glGetError()==GL_INVALID_ENUM && ctx.fixed.env_alpha[0]==GL_REPLACE);
+  glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
   glAlphaFunc(GL_LESS,2); assert(ctx.fixed.alpha_ref==1);
   glAlphaFunc(GL_GREATER,-1); assert(ctx.fixed.alpha_ref==0);
   ctx.fixed.programs[0]=1; ctx.programs[0].pipeline=(VkPipeline)(uintptr_t)1;
   ctx.programs[0].vertex_stride=sizeof(PS4GLFixedVertex);
-  ctx.programs[0].components[0]=3; ctx.programs[0].components[1]=4; ctx.programs[0].components[2]=2;
+  ctx.programs[0].components[0]=3; ctx.programs[0].components[1]=4; ctx.programs[0].components[2]=3;
   ctx.upload_vertices=upload; ps4glBeginPass((VkCommandBuffer)(uintptr_t)1);
   GLuint sentinel; glGenBuffers(1,&sentinel); glBindBuffer(GL_ARRAY_BUFFER,sentinel);
   expected_vertices=6; glBegin(GL_QUADS); glBegin(GL_TRIANGLES); assert(glGetError()==GL_INVALID_OPERATION);
@@ -320,15 +334,85 @@ static void check_fixed(void) {
   glEnd(); assert(draws==before+3 && stream_vertices==PS4GL_FIXED_VERTICES*2+3);
   check_stream=0;
   glEnd(); assert(glGetError()==GL_INVALID_OPERATION);
+  /* Client indices must dereference the declared arrays, not be treated as GPU offsets. */
+  GLfloat positions[]={10,11,12,20,21,22,30,31,32};
+  GLuint indices[]={2,0,1};
+  glBindBuffer(GL_ARRAY_BUFFER,0);glVertexPointer(3,GL_FLOAT,0,positions);glEnableClientState(0x8074);
+  before=draws;expected_vertices=3;glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,indices);
+  assert(!glGetError() && draws==before+1);memcpy(v,snapshot,3*sizeof(*v));
+  assert(v[0].position[0]==30 && v[1].position[0]==10 && v[2].position[0]==20);
+  assert(ctx.fixed.color[0]==.2f && ctx.array_buffer==0);
+  glBindBuffer(GL_ARRAY_BUFFER,sentinel);glBufferData(GL_ARRAY_BUFFER,sizeof(positions),positions,GL_STATIC_DRAW);
+  glVertexPointer(3,GL_FLOAT,0,0);glBindBuffer(GL_ARRAY_BUFFER,0);
+  indices[2]=3;before=draws;glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,indices);
+  assert(glGetError()==GL_INVALID_OPERATION && draws==before);
+  indices[2]=1;glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,indices);assert(!glGetError() && draws==before+1);
+  strcpy(ctx.programs[0].attribute_names[0],"ps4gl_client_vertex");
+  strcpy(ctx.programs[0].attribute_names[1],"ps4gl_client_color");
+  strcpy(ctx.programs[0].attribute_names[2],"ps4gl_client_uv0");
+  glUseProgram(1);before=draws;glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,indices);
+  assert(!glGetError() && draws==before+1 && ctx.program==1 && ctx.array_buffer==0 && !ctx.attribs[0].enabled);
+  memcpy(v,snapshot,3*sizeof(*v));assert(v[0].position[0]==30 && v[1].position[0]==10 && v[2].position[0]==20);
+  assert(v[0].color[0]==.2f && v[0].color[3]==1);
+  indices[2]=3;before=draws;glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,indices);
+  assert(glGetError()==GL_INVALID_OPERATION && draws==before && ctx.program==1);
+  before=draws;glBegin(GL_TRIANGLES);
+  for(unsigned i=0;i<3;++i) {glTexCoord3f(i,2,3);glVertex3f(50+i,0,0);}glEnd();
+  assert(!glGetError() && draws==before+1 && ctx.program==1 && ctx.fixed.clients[0].buffer==sentinel);
+  memcpy(v,snapshot,3*sizeof(*v));assert(v[0].position[0]==50 && v[2].position[0]==52 && v[1].uv[2]==3);
+  glUseProgram(0);
+  glDisableClientState(0x8074);
+  glMatrixMode(GL_PROJECTION);glLoadIdentity();glOrtho(0,80,60,0,-1,1);glGetFloatv(GL_PROJECTION_MATRIX,m);
+  assert(m[0]==.025f && m[12]==-1 && m[13]==1 && m[10]==-1);
+  glHint(0x0c50,0x1102);assert(!glGetError());
+  puts("PASS legacy client CPU indices, captured VBO binding, atomic bounds rejection, current color preservation and orthographic projection");
   ps4glEndPass(); ps4glDestroyBuffers(&ctx); expected_vertices=3;
   puts("PASS fixed matrices, stacks, errors, independent projection, quad winding, bounded batches and programmable state restoration");
 }
+static void check_rectangle_textures(void) {
+  static PS4GLContext ctx;assert(ps4glInit(&ctx,80,60));ps4glMakeCurrent(&ctx);
+  GLuint names[2];glGenTextures(2,names);glBindTexture(GL_TEXTURE_2D,names[0]);glBindTexture(GL_TEXTURE_RECTANGLE,names[1]);
+  GLint value;glGetIntegerv(GL_TEXTURE_BINDING_2D,&value);assert(value==(GLint)names[0]);
+  glGetIntegerv(GL_TEXTURE_BINDING_RECTANGLE,&value);assert(value==(GLint)names[1]);
+  glBindTexture(GL_TEXTURE_RECTANGLE,names[0]);assert(glGetError()==GL_INVALID_OPERATION);
+  glTexImage2D(GL_TEXTURE_RECTANGLE,0,GL_RGBA,2,3,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  const PS4GLTexture *rect=ps4glRectangleAtUnit(&ctx,0);assert(rect && rect->width==2 && rect->height==3 && rect->min_filter==GL_LINEAR);
+  assert(ps4glTextureAtUnit(&ctx,0)->width==0 && !glGetError());
+  glTexParameteri(GL_TEXTURE_RECTANGLE,GL_TEXTURE_WRAP_S,GL_REPEAT);assert(glGetError()==GL_INVALID_ENUM && rect->wrap_s==GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_RECTANGLE,GL_TEXTURE_MIN_FILTER,GL_NEAREST_MIPMAP_LINEAR);assert(glGetError()==GL_INVALID_ENUM);
+  glTexImage2D(GL_TEXTURE_RECTANGLE,1,GL_RGBA,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);assert(glGetError()==GL_INVALID_VALUE && rect->width==2);
+  glDeleteTextures(2,names);assert(!ps4glRectangleAtUnit(&ctx,0) && !ps4glTextureAtUnit(&ctx,0));ps4glDestroyTextures(&ctx);
+  GLuint line;glGenTextures(1,&line);glBindTexture(GL_TEXTURE_1D,line);
+  const unsigned char ramp[]={0,32,128,255};glTexImage1D(GL_TEXTURE_1D,0,GL_LUMINANCE,4,0,GL_LUMINANCE,GL_UNSIGNED_BYTE,ramp);
+  const PS4GLTexture *one=ps4glOneDimensionalAtUnit(&ctx,0);assert(one && one->width==4 && one->height==1 && one->pixels[8]==128 && one->pixels[11]==255);
+  glGetIntegerv(GL_TEXTURE_BINDING_1D,&value);assert(value==(GLint)line && !ps4glTextureAtUnit(&ctx,0) && !glGetError());
+  glTexImage2D(GL_TEXTURE_1D,0,GL_RGBA,2,3,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);assert(glGetError()==GL_INVALID_ENUM && one->width==4);
+  glBindTexture(GL_TEXTURE_2D,line);assert(glGetError()==GL_INVALID_OPERATION);
+  const unsigned char rg[]={255,128,128,64,0,32,255,0};
+  glTexImage1D(GL_TEXTURE_1D,0,GL_RG,4,0,GL_RG,GL_UNSIGNED_BYTE,rg);
+  assert(!glGetError() && one->pixels[0]==255 && one->pixels[1]==128 && one->pixels[2]==0 && one->pixels[3]==255 && one->pixels[13]==0);
+  glDeleteTextures(1,&line);assert(!ps4glOneDimensionalAtUnit(&ctx,0));ps4glDestroyTextures(&ctx);
+  GLuint cube;glGenTextures(1,&cube);glBindTexture(GL_TEXTURE_CUBE_MAP,cube);
+  for(unsigned face=0;face<6;++face) {
+    unsigned char color[16];for(unsigned i=0;i<4;++i){color[i*4]=face; color[i*4+1]=20+face;color[i*4+2]=40+face;color[i*4+3]=100+face;}
+    glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X+face,0,GL_RGBA,2,2,0,GL_BGRA,GL_UNSIGNED_BYTE,color);
+    const PS4GLTexture *t=ps4glCubeAtUnit(&ctx,0);assert(!glGetError() && t && t->cube_faces==((1u<<(face+1))-1) && t->width==2 && t->height==12);
+    for(unsigned i=0;i<=face;++i) assert(t->pixels[i*16]==40+i && t->pixels[i*16+2]==i && t->pixels[i*16+3]==100+i);
+  }
+  const PS4GLTexture *t=ps4glCubeAtUnit(&ctx,0);uint64_t revision=t->revision;
+  glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X,0,GL_RGBA,3,2,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  assert(glGetError()==GL_INVALID_VALUE && t->revision==revision && t->cube_faces==63);
+  glBindTexture(GL_TEXTURE_2D,cube);assert(glGetError()==GL_INVALID_OPERATION);
+  glDeleteTextures(1,&cube);assert(!ps4glCubeAtUnit(&ctx,0));ps4glDestroyTextures(&ctx);
+  puts("PASS rectangle target isolation, immutable target type, default filtering, non-mipmap bounds and deletion");
+}
 int main(void) {
+  check_rectangle_textures();
   check_texture_records();
   check_large_textures();
   check_luminance_alpha();
   check_launcher_state();
-  PS4GLContext a,b;
+  static PS4GLContext a,b;
   assert(ps4glInit(&a,80,60) && ps4glInit(&b,20,10));
   assert(!ps4glInit(NULL,80,60) && !ps4glInit(&b,0,60));
   ps4glMakeCurrent(&a);
@@ -591,13 +675,13 @@ int main(void) {
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
   assert(ps4glTextureAtUnit(&texctx,1)->min_filter==GL_NEAREST && ps4glTextureAtUnit(&texctx,1)->wrap_s==GL_CLAMP_TO_EDGE);
-  glActiveTexture(GL_TEXTURE0+4); assert(glGetError()==GL_INVALID_ENUM && texctx.active_texture==1);
+  glActiveTexture(GL_TEXTURE0+PS4GL_TEXTURE_UNITS); assert(glGetError()==GL_INVALID_ENUM && texctx.active_texture==1);
   glPixelStorei(GL_UNPACK_ALIGNMENT,3); assert(glGetError()==GL_INVALID_VALUE && texctx.unpack_alignment==8);
   texctx.programs[0].pipeline=(VkPipeline)(uintptr_t)1; texctx.programs[0].uniform_count=1;
   texctx.programs[0].uniforms[0]=(PS4GLUniform){.name="image",.sampler_binding=2};
   glUseProgram(1); glUniform1i(glGetUniformLocation(1,"image"),1);
   assert(texctx.programs[0].sampler_units[0]==1);
-  glUniform1i(0,4); assert(glGetError()==GL_INVALID_VALUE && texctx.programs[0].sampler_units[0]==1);
+  glUniform1i(0,PS4GL_TEXTURE_UNITS); assert(glGetError()==GL_INVALID_VALUE && texctx.programs[0].sampler_units[0]==1);
   glUniform1f(0,1); assert(glGetError()==GL_INVALID_OPERATION);
   glUniform1iv(0,0,NULL); assert(!glGetError());
   glActiveTexture(GL_TEXTURE0+2); glBindTexture(GL_TEXTURE_2D,tex[0]);
@@ -763,6 +847,15 @@ int main(void) {
   assert(!glCreateShader(GL_VERTEX_SHADER) && glGetError()==GL_OUT_OF_MEMORY);
   for(unsigned i=0;i<PS4GL_MAX_SHADERS;++i) glDeleteShader(allshaders[i]);
   ps4glDestroyShaderObjects(&shaderctx); assert(!glGetError());
+  static PS4GLContext capacity;
+  assert(ps4glInit(&capacity,80,60)); ps4glMakeCurrent(&capacity);
+  for(unsigned i=0;i<PS4GL_MAX_PROGRAMS;++i) {
+    GLuint name=glCreateProgram(); assert(name==i+1 && glIsProgram(name));
+    // Retired slots stay reserved until teardown to protect queued GPU work.
+    glDeleteProgram(name); assert(!glIsProgram(name));
+  }
+  assert(!glCreateProgram() && glGetError()==GL_OUT_OF_MEMORY);
+  ps4glDestroyShaderObjects(&capacity);
   static PS4GLContext lazy; assert(ps4glInit(&lazy,80,60)); ps4glMakeCurrent(&lazy);
   lazy.begin_frame=begin_lazy; lazy.programs[0].pipeline=(VkPipeline)(uintptr_t)1; glUseProgram(1);
   glClear(0); assert(!lazy_calls);

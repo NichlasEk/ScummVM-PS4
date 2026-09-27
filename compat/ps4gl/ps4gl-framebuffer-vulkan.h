@@ -129,6 +129,6 @@ void ps4glBeginFrame(VkCommandBuffer command, VkRenderPass pass, VkFramebuffer f
 void ps4glEndFrame(void) {
   PS4GLContext *c=ps4glCurrentContext(); if(!c) return;
   if(!c->managed_frame) { if(!c->error) c->error=GL_INVALID_OPERATION; return; }
-  end_render_target(c); c->managed_frame=0; c->command=VK_NULL_HANDLE;
+  end_render_target(c); c->managed_frame=0; c->command=VK_NULL_HANDLE; c->default_image=VK_NULL_HANDLE;
   c->width=c->default_width; c->height=c->default_height; c->active_pass=c->program_pass;
 }

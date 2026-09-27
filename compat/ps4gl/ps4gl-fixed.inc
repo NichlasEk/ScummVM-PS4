@@ -55,7 +55,10 @@ void glColor4f(GLfloat r, GLfloat g, GLfloat b, GLfloat a) {
   GLfloat *c=current->fixed.color; c[0]=r; c[1]=g; c[2]=b; c[3]=a;
 }
 void glTexCoord2f(GLfloat u, GLfloat v) {
-  if(current) { current->fixed.uv[0]=u; current->fixed.uv[1]=v; }
+  if(current) { current->fixed.uv[0]=u; current->fixed.uv[1]=v; current->fixed.uv[2]=0; }
+}
+void glTexCoord3f(GLfloat u, GLfloat v, GLfloat r) {
+  glTexCoord2f(u,v);if(current) current->fixed.uv[2]=r;
 }
 void glAlphaFunc(GLenum func, GLfloat ref) {
   if(!fixed_outside()) return;
@@ -82,10 +85,27 @@ void glFlush(void) {
    * remains with the frame owner, as for the other bridge draw entrypoints. */
   (void)fixed_outside();
 }
+void glTexEnvi(GLenum target, GLenum pname, GLint value) {
+  if(!fixed_outside()) return;
+  if(target!=GL_TEXTURE_ENV) { error(GL_INVALID_ENUM); return; }
+  PS4GLFixed *f=&current->fixed; unsigned u=current->active_texture;
+  GLenum *dst=NULL;
+  if(pname==GL_TEXTURE_ENV_MODE) {
+    if(value!=GL_MODULATE && value!=GL_REPLACE && value!=GL_COMBINE) {error(GL_INVALID_ENUM);return;}
+    dst=&f->env_mode[u];
+  } else if(pname==GL_COMBINE_RGB || pname==GL_COMBINE_ALPHA) {
+    if(value!=GL_MODULATE && value!=GL_REPLACE && value!=GL_ADD) {error(GL_INVALID_ENUM);return;}
+    dst=pname==GL_COMBINE_RGB ? &f->env_rgb[u] : &f->env_alpha[u];
+  } else if(pname==GL_OPERAND1_RGB) {
+    if(value!=GL_SRC_COLOR && value!=GL_ONE_MINUS_SRC_COLOR && value!=GL_SRC_ALPHA && value!=GL_ONE_MINUS_SRC_ALPHA) {error(GL_INVALID_ENUM);return;}
+    dst=&f->env_operand1[u];
+  } else {error(GL_INVALID_ENUM);return;}
+  *dst=value;
+}
 static GLuint fixed_program(int textured) {
   PS4GLFixed *f=&current->fixed;
   if(f->programs[textured]) return f->programs[textured];
-  const char *vs=ps4gl_fixed_vertex; char fs[1024];
+  const char *vs=ps4gl_fixed_vertex; char fs[2048];
   ps4glFixedFragment(textured,fs,sizeof(fs));
   GLuint shaders[2]={glCreateShader(GL_VERTEX_SHADER),glCreateShader(GL_FRAGMENT_SHADER)};
   GLuint p=glCreateProgram(); GLint ok=0;
@@ -110,10 +130,17 @@ failed:
 static void fixed_draw(void) {
   PS4GLFixed *f=&current->fixed;
   if(!f->count) return;
+  if(current->program && client_uses_arrays()) {
+    PS4GLClientArray saved[10];memcpy(saved,f->clients,sizeof(saved));memset(f->clients,0,sizeof(f->clients));
+    f->clients[0]=(PS4GLClientArray){.size=3,.type=GL_FLOAT,.stride=sizeof(f->vertices[0]),.pointer=f->vertices[0].position,.enabled=1};
+    f->clients[1]=(PS4GLClientArray){.size=4,.type=GL_FLOAT,.stride=sizeof(f->vertices[0]),.pointer=f->vertices[0].color,.enabled=1};
+    f->clients[3]=(PS4GLClientArray){.size=3,.type=GL_FLOAT,.stride=sizeof(f->vertices[0]),.pointer=f->vertices[0].uv,.enabled=1};
+    client_shader_draw(GL_TRIANGLES,0,f->count,0,NULL);memcpy(f->clients,saved,sizeof(saved));f->count=0;return;
+  }
   const PS4GLTexture *texture=ps4glTextureAtUnit(current,0);
   /* Fixed-function GL ignores incomplete texture units (unlike shader
    * sampling). In particular a bind of texture zero must render vertex color. */
-  int textured=f->texture_enabled && texture && texture->pixels && texture->width>0 && texture->height>0 &&
+  int textured=f->texture_enabled[0] && texture && texture->pixels && texture->width>0 && texture->height>0 &&
     (texture->min_filter==GL_NEAREST || texture->min_filter==GL_LINEAR);
   GLuint p=fixed_program(textured);
   if(!p) { f->count=0; return; }
@@ -124,13 +151,20 @@ static void fixed_draw(void) {
   glUniformMatrix4fv(glGetUniformLocation(p,"modelview"),1,GL_FALSE,f->matrix[0][f->top[0]]);
   glUniform1i(glGetUniformLocation(p,"alphaOp"),f->alpha_enabled ? (GLint)(f->alpha_func-GL_NEVER) : 7);
   glUniform1f(glGetUniformLocation(p,"alphaRef"),f->alpha_ref);
-  if(textured) glUniform1i(glGetUniformLocation(p,"image"),0);
+  if(textured) {
+    glUniform1i(glGetUniformLocation(p,"image"),0);
+    GLenum rgb=f->env_mode[0]==GL_COMBINE ? f->env_rgb[0] : f->env_mode[0];
+    GLenum alpha=f->env_mode[0]==GL_COMBINE ? f->env_alpha[0] : f->env_mode[0];
+    glUniform1i(glGetUniformLocation(p,"envRgb"),rgb==GL_REPLACE ? 1 : rgb==GL_ADD ? 2 : 0);
+    glUniform1i(glGetUniformLocation(p,"envAlpha"),alpha==GL_REPLACE ? 1 : alpha==GL_ADD ? 2 : 0);
+    glUniform1i(glGetUniformLocation(p,"envOperand"),f->env_mode[0]==GL_COMBINE ? f->env_operand1[0]-GL_SRC_COLOR : 0);
+  }
   if(!f->buffer) glGenBuffers(1,&f->buffer);
   glBindBuffer(GL_ARRAY_BUFFER,f->buffer);
   glBufferData(GL_ARRAY_BUFFER,f->count*sizeof(f->vertices[0]),f->vertices,GL_DYNAMIC_DRAW);
   glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(f->vertices[0]),(const void *)offsetof(PS4GLFixedVertex,position));
   glVertexAttribPointer(1,4,GL_FLOAT,GL_FALSE,sizeof(f->vertices[0]),(const void *)offsetof(PS4GLFixedVertex,color));
-  glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,sizeof(f->vertices[0]),(const void *)offsetof(PS4GLFixedVertex,uv));
+  glVertexAttribPointer(2,3,GL_FLOAT,GL_FALSE,sizeof(f->vertices[0]),(const void *)offsetof(PS4GLFixedVertex,uv));
   for(unsigned i=0;i<3;++i) glEnableVertexAttribArray(i);
   glDrawArrays(GL_TRIANGLES,0,f->count);
   /* Internal lowering must not overwrite the caller's programmable state. */

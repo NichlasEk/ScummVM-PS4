@@ -38,7 +38,7 @@ int ps4glDisplayInit(PS4GLDisplayOwner *d) {
   VkSwapchainCreateInfoKHR swap={.sType=VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
     .minImageCount=2,.imageFormat=PS4GL_DISPLAY_COLOR_FORMAT,
     .imageColorSpace=VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,.imageExtent={d->width,d->height},
-    .imageArrayLayers=1,.imageUsage=VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    .imageArrayLayers=1,.imageUsage=VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
     .imageSharingMode=VK_SHARING_MODE_EXCLUSIVE,.presentMode=VK_PRESENT_MODE_FIFO_KHR,
     .compositeAlpha=VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR};
   DISPLAY_TRY(vkCreateSwapchainKHR(d->device,&swap,NULL,&d->swap));

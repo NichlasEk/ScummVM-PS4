@@ -5,6 +5,8 @@
 static PS4GLContext c,*current;
 static unsigned creates,destroys,submits,presents,resets,releases,acquires;
 static int recording,busy,fail_wait,fail_idle;
+static unsigned completed_queries;
+static void query_complete(PS4GLContext *ctx) {assert(ctx && !busy && !recording);++completed_queries;}
 PS4GLContext *ps4glCurrentContext(void){return current;}
 void ps4glMakeCurrent(PS4GLContext *p){current=p;}
 void ps4glBeginFrame(VkCommandBuffer cmd,VkRenderPass pass,VkFramebuffer fb,GLint w,GLint h){
@@ -31,21 +33,21 @@ static void init(PS4GLFrameOwner *f){
   const VkImage images[]={(VkImage)1,(VkImage)2};const VkFramebuffer targets[]={(VkFramebuffer)1,(VkFramebuffer)2};
   assert(!ps4glFrameInit(f,(VkDevice)1,(VkQueue)1,(VkSwapchainKHR)1,(VkRenderPass)1,images,targets,1280,720));
   assert(ps4glFrameInit(f,(VkDevice)1,(VkQueue)1,(VkSwapchainKHR)1,(VkRenderPass)1,images,targets,1280,720));
-  c=(PS4GLContext){.program_device=(VkDevice)1,.program_pass=(VkRenderPass)1};current=&c;
+  c=(PS4GLContext){.program_device=(VkDevice)1,.program_pass=(VkRenderPass)1};current=&c;c.complete_queries=query_complete;
 }
 int main(void){
   PS4GLFrameOwner f={0};init(&f);
   assert(!ps4glFramePresent(&f) && !acquires && !presents); /* empty swap */
   assert(!ps4glFrameBegin(&f) && c.command && f.state==1);
   assert(ps4glFrameBegin(&f)); /* no second acquisition */
-  assert(!ps4glFrameSubmit(&f) && !ps4glFrameSubmit(&f) && submits==2 && !releases);
+  assert(!ps4glFrameSubmit(&f) && !ps4glFrameSubmit(&f) && submits==2 && !releases && completed_queries==2);
   assert(!ps4glFramePresent(&f) && f.frames==1 && presents==1 && releases==1 && !f.context);
   assert(!ps4glFrameBegin(&f)); current=NULL; /* SDL detaches before deleting */
   assert(!ps4glFrameQuiesce(&f) && !current && !c.command && !recording && f.failed);
   current=&c; assert(ps4glFrameBegin(&f)); assert(!ps4glFrameDestroy(&f));
   init(&f);assert(!ps4glFrameBegin(&f));fail_wait=1;
-  unsigned released=releases,reset=resets;
-  assert(ps4glFrameSubmit(&f) && f.failed && busy && releases==released);
+  unsigned released=releases,reset=resets,completed=completed_queries;
+  assert(ps4glFrameSubmit(&f) && f.failed && busy && releases==released && completed_queries==completed);
   fail_idle=1;assert(ps4glFrameDestroy(&f) && f.command && releases==released && resets==reset);
   fail_idle=fail_wait=0;assert(!ps4glFrameDestroy(&f) && releases==released+1 && !busy);
   assert(creates==destroys);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Embed original ScummVM shader strings and compatibility macros, unchanged."""
+"""Embed ScummVM shaders, compatibility macros and required HPL1 extensions."""
 from pathlib import Path
-import ast, hashlib, json, re, sys
+import ast, hashlib, json, re, sys, subprocess, tempfile
 root=Path(__file__).resolve().parents[1]
 source=root/'.tools/scummvm-src'
 out=Path(sys.argv[1]); out.mkdir(parents=True,exist_ok=True)
@@ -36,6 +36,26 @@ for vertex in sorted((source/'engines/grim/shaders').glob('grim_*.vertex')):
     grim_pairs.append(f'{{"{name}",legacy_{name}_vertex,legacy_{name}_fragment}}')
 parts.append('static const struct { const char *name,*vertex,*fragment; } grim_pairs[] = {'+','.join(grim_pairs)+'};\n')
 parts.append('static const char legacy_color[] = "#version 100\\nprecision mediump float;struct TestParams { bool enabled; vec3 tint; vec2 yBounds; };uniform TestParams settings;uniform vec4 color;uniform int mode;uniform int modes[2];void main(){gl_FragColor=(settings.enabled && mode==-7 && modes[0]==3 && modes[1]==-11 && gl_FragCoord.x>0.0 && gl_FragCoord.y>settings.yBounds.x && gl_FragCoord.y<settings.yBounds.y)?color*vec4(settings.tint,1.0):vec4(0.0);}";\n')
+# Test exactly the HPL1 source patch used by the isolated PS4 overlay.
+patch=root/'patches/scummvm/hpl1-experimental.patch'
+patched_hpl={}
+with tempfile.TemporaryDirectory(prefix='ps4gl-hpl-shaders-') as directory:
+    work=Path(directory)
+    names={line[6:] for line in patch.read_text().splitlines() if line.startswith('+++ b/')}
+    for name in names:
+        destination=work/name
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        destination.write_bytes((source/name).read_bytes())
+    subprocess.run(['patch','--batch','--silent','--fuzz=0','-p1','-d',str(work),'-i',str(patch)],check=True)
+    patched_hpl={name:(work/name).read_text() for name in names}
+for label,vertex_name,fragment_name in (('gamma','hpl1_gamma_correction','hpl1_gamma_correction'),('fog','hpl1_Fog_Solid','hpl1_Fog_Solid'),('refract','hpl1_refract','hpl1_refract_special'),('cube','hpl1_Diffuse_Light','hpl1_Diffuse_Light'),('ambient','hpl1_Diffuse_Color','hpl1_Ambient_Color')):
+    for stage,macro in (('vertex','compatVertex'),('fragment','compatFragment')):
+        name=vertex_name if stage=='vertex' else fragment_name
+        path=source/f'engines/hpl1/engine/impl/shaders/{name}.{stage}'
+        body=patched_hpl.get(str(path.relative_to(source)),path.read_text())
+        text='#version 120\n'+preamble(macro)+preamble('compatUniformBool')+body
+        parts.append(f'static const char legacy_hpl_{label}_{stage}[] = {json.dumps(text)};\n')
+        manifest[f'hpl_{label}_{stage}']=hashlib.sha256(text.encode()).hexdigest()
 (out/'legacy-sources.h').write_text(''.join(parts))
 (out/'legacy-sources.json').write_text(json.dumps(manifest,indent=2)+'\n')
 # The package carries the shader source used for reproduction and its notices.

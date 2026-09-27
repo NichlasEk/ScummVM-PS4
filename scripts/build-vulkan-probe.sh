@@ -20,7 +20,7 @@ reports="$root/artifacts/vulkan"
 mkdir -p "$probe" "$reports"
 cp "$root/compat/ps4gl/ps4libc-threading.h" "$probe/ps4libc-threading.h"
 cp "$root/tests/ps4/vulkan/allocator.h" "$probe/allocator.h"
-cp "$root/compat/ps4gl/ps4gl-texture-cache.h" "$root/compat/ps4gl/ps4gl-fixed.inc" "$root/compat/ps4gl/ps4gl-fixed-shaders.h" "$root/compat/ps4gl/ps4gl-s3tc.inc" "$probe/"
+cp "$root/compat/ps4gl/ps4gl-texture-cache.h" "$root/compat/ps4gl/ps4gl-client.inc" "$root/compat/ps4gl/ps4gl-query.inc" "$root/compat/ps4gl/ps4gl-fixed.inc" "$root/compat/ps4gl/ps4gl-fixed-shaders.h" "$root/compat/ps4gl/ps4gl-s3tc.inc" "$probe/"
 cp "$root/tests/ps4/vulkan/draw.c" "$probe/draw.c"
 cp "$root/tests/ps4/vulkan/resources.h" "$probe/resources.h"
 cp "$root/tests/ps4/vulkan/readback.h" "$probe/readback.h"
@@ -57,7 +57,7 @@ if [[ "$variant" == --glstate ]]; then
 fi
 if [[ "$variant" == --gllegacy || "$variant" == --glsl || "$variant" == --glfbo || "$variant" == --glblend || "$variant" == --gldraw || "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLDRAW_PROBE 1' "$probe/draw.c"
- cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$root/compat/ps4gl/ps4gl-bindings.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$root/compat/ps4gl/ps4gl-framebuffer-vulkan.h" "$root/compat/ps4gl/ps4gl-readback-vulkan.h" "$probe/"
+ cp "$root/compat/ps4gl/ps4gl.c" "$root/compat/ps4gl/ps4gl.h" "$root/compat/ps4gl/ps4gl-shaders.inc" "$root/compat/ps4gl/ps4gl-bindings.h" "$root/compat/ps4gl/ps4gl-vulkan.c" "$root/compat/ps4gl/ps4gl-reflect.h" "$root/compat/ps4gl/ps4gl-texture-vulkan.h" "$root/compat/ps4gl/ps4gl-framebuffer-vulkan.h" "$root/compat/ps4gl/ps4gl-readback-vulkan.h" "$root/compat/ps4gl/ps4gl-copy-vulkan.h" "$root/compat/ps4gl/ps4gl-query-vulkan.h" "$probe/"
 fi
 if [[ "$variant" == --glvbo || "$variant" == --glindex || "$variant" == --gluniform || "$variant" == --glarray || "$variant" == --gltexture ]]; then
  sed -i '1i#define GLVBO_PROBE 1' "$probe/draw.c"

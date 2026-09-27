@@ -5,7 +5,7 @@ index e104443..641fb26 100644
 @@ -69,6 +69,8 @@ CXXFLAGS := $(ARCHFLAGS) $(INCDIRS) $(DEFINES) -std=c++17 -O2 -g \
              -Wall -Wextra -Wno-unused-function \
              -Wno-macro-redefined -Wno-typedef-redefinition
- 
+
 +CFLAGS += $(EXTRA_CFLAGS)
 +
  # === Sources ===
@@ -29,13 +29,13 @@ index e104443..641fb26 100644
  APP_LIBS = --whole-archive $(LIB_STATIC) $(OPENGNM_LIB) --no-whole-archive \
 -           $(PSBC_LIB) $(PS4_LIBS)
 +           $(PSBC_LIB) $(EXTRA_LIBS) $(PS4_LIBS)
- 
+
  # === Link flags ===
  # Link against opengnm (orbis build), libpsbc, and OpenOrbis firmware stubs
 @@ -182,6 +181,8 @@ pkg: $(PKG_CONTENT_ID).pkg
  	@echo "  CC $<"
  	@$(CC) $(CFLAGS) -c $< -o $@
- 
+
 +$(VK_PS4_OBJS): include/vk_ps4_internal.h include/vk_ps4_pm4_chunks.h Makefile.orbis
 +
  # === Static library ===
@@ -43,7 +43,7 @@ index e104443..641fb26 100644
  	@echo "  AR $@"
 @@ -200,11 +201,11 @@ $(TEST_OBJ): $(TEST_SRC)
  	@$(CC) $(CFLAGS) -c $< -o $@
- 
+
  # Link the test ELF against libvulkan_ps4.a (static) + opengnm + libpsbc + PS4 libs
 -$(TEST_ELF): $(TEST_OBJ) $(MESA_STUBS_OBJ) $(LIB_STATIC)
 +$(TEST_ELF): $(TEST_OBJ) $(LIB_STATIC) $(PSBC_LIB) $(OPENGNM_LIB)
@@ -53,7 +53,7 @@ index e104443..641fb26 100644
 -	    $(TEST_OBJ) $(MESA_STUBS_OBJ) $(APP_LIBS) \
 +	    $(TEST_OBJ) $(APP_LIBS) \
  	    $(OO_PS4_TOOLCHAIN)/lib/crtn.o
- 
+
  # Create the OELF (orbis ELF) from the plain ELF
 @@ -271,7 +272,7 @@ $(PKG_CONTENT_ID).pkg: pkg.gp4
  # === Clean ===
@@ -131,7 +131,7 @@ index 7634d6b..cf4ea3d 100644
 @@ -676,6 +694,8 @@ struct VkPs4Swapchain {
  #define VK_PS4_CHECK_OBJ(handle, expected_type) \
      (VK_PS4_TO_OBJ(handle) && *(VK_PS4_TO_OBJ(handle)) == (expected_type))
- 
+
 +bool vk_ps4_descriptor_layout_supported(const VkDescriptorSetLayoutCreateInfo *info);
 +bool vk_ps4_emit_resource_table(VkPs4CommandBuffer *cmd);
  /* === Allocator helpers === */
@@ -180,22 +180,22 @@ index 168c1f3..22bb332 100644
 +++ b/src/vk_ps4_command.c
 @@ -11,15 +11,18 @@
   */
- 
+
  #include "vk_ps4_internal.h"
 +#include "gpuaddr.h"
- 
+
  #include <string.h>
 +#include <math.h>
- 
+
  /* PM4 register definitions for direct register programming
   * (stencil ref/mask/ops don't have GNM API wrappers). */
  #include <pm4/sid.h>
  #include <pm4/amdgfxregs.h>
- 
+
 -#define VK_PS4_CMD_BUFFER_SIZE (256 * 1024)  /* 256KB default PM4 buffer */
 +#include "vk_ps4_pm4_chunks.h"
 +#define VK_PS4_CMD_BUFFER_SIZE VK_PS4_PM4_RECORDING_BYTES
- 
+
  /* Forward declaration from vk_ps4_pipeline.c */
  extern GnmPrimitiveType vk_topology_to_gnm(VkPrimitiveTopology topology);
 @@ -435,14 +438,14 @@ static void vk_ps4_clear_color(VkPs4CommandBuffer *cmd,
@@ -222,7 +222,7 @@ index 168c1f3..22bb332 100644
 +        sceGnmDrawCmdSetPsInputUsage(&cmd->gnm_cmd, pipe->vs_exports,
 +            pipe->vs_export_count, pipe->ps_inputs, pipe->ps_input_count);
      }
- 
+
      /* Re-emit fetch shader */
 @@ -758,6 +763,10 @@ vk_ps4_DestroyCommandPool(VkDevice device, VkCommandPool commandPool, const VkAl
          VkPs4CommandBuffer *cmd = pool->command_buffers[i];
@@ -266,7 +266,7 @@ index 168c1f3..22bb332 100644
          cmd->vertex_binding_count = 0;
 +    cmd->vertex_tables_used = 0;
 +    cmd->readback_count = 0;
- 
+
          /* Allocate PM4 buffer if not reused */
          if (!cmd->pm4_buffer) {
              cmd->pm4_buffer_size = VK_PS4_CMD_BUFFER_SIZE / sizeof(uint32_t);
@@ -325,7 +325,7 @@ index 168c1f3..22bb332 100644
          }
      }
 @@ -917,7 +958,8 @@ vk_ps4_FreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
- 
+
  VKAPI_ATTR VkResult VKAPI_CALL
  vk_ps4_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo *pBeginInfo) {
 -    (void)pBeginInfo;
@@ -354,7 +354,7 @@ index 168c1f3..22bb332 100644
 +    vk_ps4_log("EndCommandBuffer: result=%d dwords=%u capacity=%u", cmd->resource_error, cmd->pm4_used, cmd->pm4_buffer_size);
 +    return cmd->resource_error;
  }
- 
+
  VKAPI_ATTR VkResult VKAPI_CALL
 @@ -974,7 +1021,11 @@ vk_ps4_ResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFla
      cmd->is_recording = false;
@@ -397,7 +397,7 @@ index 168c1f3..22bb332 100644
 +            sceGnmDrawCmdSetPsInputUsage(&cmd->gnm_cmd, pipe->vs_exports,
 +                pipe->vs_export_count, pipe->ps_inputs, pipe->ps_input_count);
          }
- 
+
          /* Bind fetch shader if the pipeline has one */
 @@ -1208,10 +1269,10 @@ vk_ps4_CmdSetViewport(VkCommandBuffer commandBuffer, uint32_t firstViewport, uin
           * GNM viewport: scale = half-dimension, offset = center */
@@ -413,7 +413,7 @@ index 168c1f3..22bb332 100644
      }
  }
 @@ -1223,6 +1284,13 @@ vk_ps4_CmdSetScissor(VkCommandBuffer commandBuffer, uint32_t firstScissor, uint3
- 
+
      for (uint32_t i = 0; i < scissorCount; i++) {
          const VkRect2D *sc = &pScissors[i];
 +        const uint32_t regs[] = {0x28204, 0x28240, 0x28250};
@@ -429,7 +429,7 @@ index 168c1f3..22bb332 100644
 @@ -1372,43 +1440,16 @@ vk_ps4_CmdBindVertexBuffers(VkCommandBuffer commandBuffer, uint32_t firstBinding
      if (!commandBuffer || !pBuffers) return;
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
- 
+
 +    if (firstBinding >= VK_PS4_MAX_VERTEX_BINDINGS || bindingCount > VK_PS4_MAX_VERTEX_BINDINGS - firstBinding) {
 +        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
 +    }
@@ -438,7 +438,7 @@ index 168c1f3..22bb332 100644
          if (idx < VK_PS4_MAX_VERTEX_BINDINGS) {
              cmd->vertex_buffers[idx].buffer = pBuffers[i];
              cmd->vertex_buffers[idx].offset = pOffsets ? pOffsets[i] : 0;
- 
+
 -            /* Build GnmBuffer descriptor for this vertex buffer */
 -            VkPs4Buffer *vk_buf = (VkPs4Buffer *)pBuffers[i];
 -            if (vk_buf && vk_buf->memory && vk_buf->memory->gnm_mem.mapped) {
@@ -487,7 +487,7 @@ index 168c1f3..22bb332 100644
 @@ -1448,24 +1492,81 @@ vk_ps4_CmdBindIndexBuffer(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDevi
      }
  }
- 
+
 +/* Snapshot descriptors per draw: later binds must not mutate earlier draws. */
 +static bool vk_ps4_emit_vertex_table(VkPs4CommandBuffer *cmd) {
 +    VkPs4Pipeline *pipe = cmd->current_pipeline;
@@ -575,7 +575,7 @@ index 168c1f3..22bb332 100644
 +    if (!vk_ps4_emit_resource_table(cmd)) return;
 +
 +    if (!vk_ps4_emit_vertex_table(cmd)) return;
- 
+
      /* Always set instance count to avoid state leak from previous draw */
      sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, instanceCount);
 @@ -1527,19 +1628,13 @@ vk_ps4_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32
@@ -601,7 +601,7 @@ index 168c1f3..22bb332 100644
 +    if (!vk_ps4_emit_resource_table(cmd)) return;
 +
 +    if (!vk_ps4_emit_vertex_table(cmd)) return;
- 
+
      /* Always set instance count to avoid state leak from previous draw */
      sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, instanceCount);
 @@ -1595,6 +1690,12 @@ vk_ps4_CmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32
@@ -626,11 +626,11 @@ index 168c1f3..22bb332 100644
 +        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT;
      }
  }
- 
+
 @@ -1617,18 +1717,7 @@ vk_ps4_CmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceS
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
      VkPs4Buffer *buf = (VkPs4Buffer *)buffer;
- 
+
 -    /* Emit vertex buffer table if dirty */
 -    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
 -        cmd->current_pipeline->has_fetch_shader &&
@@ -644,13 +644,13 @@ index 168c1f3..22bb332 100644
 -        cmd->vertex_buffers_dirty = false;
 -    }
 +    if (!vk_ps4_emit_vertex_table(cmd)) return;
- 
+
      if (!buf->memory || !buf->memory->gnm_mem.mapped) return;
- 
+
 @@ -1660,18 +1749,7 @@ vk_ps4_CmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, Vk
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
      VkPs4Buffer *buf = (VkPs4Buffer *)buffer;
- 
+
 -    /* Emit vertex buffer table if dirty */
 -    if (cmd->vertex_buffers_dirty && cmd->current_pipeline &&
 -        cmd->current_pipeline->has_fetch_shader &&
@@ -664,13 +664,13 @@ index 168c1f3..22bb332 100644
 -        cmd->vertex_buffers_dirty = false;
 -    }
 +    if (!vk_ps4_emit_vertex_table(cmd)) return;
- 
+
      if (!buf->memory || !buf->memory->gnm_mem.mapped) return;
- 
+
 @@ -2046,117 +2124,187 @@ vk_ps4_CmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, V
      if (!src || !dst || !src->memory || !dst->memory) return;
      if (!src->memory->gnm_mem.mapped || !dst->memory->gnm_mem.mapped) return;
- 
+
 -    /* For MVP, use GPU CopyMemory for linear-to-linear copies.
 -     * Tiled texture upload requires CP DMA with surface info or a
 -     * shader-based copy — deferred to Phase 3. */
@@ -789,7 +789,7 @@ index 168c1f3..22bb332 100644
      }
 -    (void)dstImageLayout;
  }
- 
+
  VKAPI_ATTR void VKAPI_CALL
  vk_ps4_CmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
 -                            VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy *pRegions) {
@@ -943,18 +943,18 @@ index 168c1f3..22bb332 100644
      }
 -    (void)srcImageLayout;
  }
- 
+
 +
  /* === Render pass commands === */
- 
+
  /* Check if attachment `att_idx` is used by subpass `subpass` (via any
 @@ -2318,7 +2466,7 @@ vk_ps4_CmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBegin
                  sceGnmDrawCmdSetDbRenderControl(&cmd->gnm_cmd, &db_ctrl);
- 
+
                  /* Trigger the lazy clear with a fullscreen draw. */
 -                vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
 +                vk_ps4_clear_depth_draw(&cmd->gnm_cmd, true);
- 
+
              } else if (view->image->is_render_target) {
                  const VkClearColorValue *cc =
 @@ -2460,7 +2608,7 @@ vk_ps4_CmdNextSubpass(VkCommandBuffer commandBuffer, VkSubpassContents contents)
@@ -978,7 +978,7 @@ index 168c1f3..22bb332 100644
 @@ -2516,19 +2664,40 @@ vk_ps4_CmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags sr
      if (!commandBuffer) return;
      VkPs4CommandBuffer *cmd = (VkPs4CommandBuffer *)commandBuffer;
- 
+
 -    /* For MVP, emit a cache flush EOP event as a full barrier */
 -    sceGnmDrawCmdEventWriteEop(&cmd->gnm_cmd,
 -        GNM_CACHE_FLUSH_AND_INV_TS_EVENT, 0,
@@ -1023,7 +1023,7 @@ index 168c1f3..22bb332 100644
 +    sceGnmDrawCmdWaitGraphicsWrite(&cmd->gnm_cmd, 0);
 +    /* Layout is a command execution contract. Do not mutate global image
 +     * state while recording buffers that may be submitted in another order. */
- 
+
      (void)srcStageMask;
      (void)dstStageMask;
 @@ -2609,117 +2778,55 @@ VKAPI_ATTR void VKAPI_CALL
@@ -1189,7 +1189,7 @@ index 168c1f3..22bb332 100644
 +            (uint64_t)scratch->mapped, (uint32_t)size))
 +        cmd->resource_error = VK_ERROR_OUT_OF_DEVICE_MEMORY;
  }
- 
+
  VKAPI_ATTR void VKAPI_CALL
 @@ -2756,7 +2863,7 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
          0, 0,
@@ -1197,13 +1197,13 @@ index 168c1f3..22bb332 100644
          img->create_info.extent.height);
 -    vk_ps4_clear_depth_draw(&cmd->gnm_cmd);
 +    vk_ps4_clear_depth_draw(&cmd->gnm_cmd, true);
- 
+
      /* Iterate ranges to validate bounds (API contract). The lazy clear
       * covers the entire target regardless of ranges. */
 @@ -2773,122 +2880,150 @@ vk_ps4_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer, VkImage image, V
      (void)imageLayout;
  }
- 
+
 +/* Color attachment meta-clear. Preserve unselected tiled pixels and draw state. */
  VKAPI_ATTR void VKAPI_CALL
  vk_ps4_CmdClearAttachments(VkCommandBuffer commandBuffer, uint32_t attachmentCount,
@@ -1453,7 +1453,7 @@ index 168c1f3..22bb332 100644
 +exhausted:
 +    cmd->resource_error = VK_ERROR_OUT_OF_DEVICE_MEMORY;
  }
- 
+
  VKAPI_ATTR void VKAPI_CALL
 diff --git a/src/vk_ps4_descriptor.c b/src/vk_ps4_descriptor.c
 index c9d6e1c..f0b4367 100644
@@ -1465,7 +1465,7 @@ index c9d6e1c..f0b4367 100644
  #include <stdio.h>
 +#include "psbc_compile.h"
 +static void publish_table(VkPs4DescriptorSet *set);
- 
+
  /* === Descriptor set layout === */
  /* (Already implemented in vk_ps4_pipeline.c) */
 @@ -414,331 +416,54 @@ vk_ps4_UpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
@@ -1478,7 +1478,7 @@ index c9d6e1c..f0b4367 100644
 +        publish_table((VkPs4DescriptorSet *)pDescriptorCopies[i].dstSet);
 +
  }
- 
+
 -/* === vkCmdBindDescriptorSets === */
 +/* Set-0 ABI is validated against the pipeline layout by psbc. The table
 + * belongs to the descriptor set and lives until free/reset/pool destruction.
@@ -1839,7 +1839,7 @@ index c9d6e1c..f0b4367 100644
 -    (void)pl;
 +    return true;
  }
- 
+
  /* === Sampler === */
 diff --git a/src/vk_ps4_device.c b/src/vk_ps4_device.c
 index 9d8a83f..73048f3 100644
@@ -1848,7 +1848,7 @@ index 9d8a83f..73048f3 100644
 @@ -76,18 +76,8 @@ static VkResult vk_ps4_device_init_gnm(VkPs4Device *dev) {
      }
      vk_ps4_log_raw("init_gnm: SubmitCommandBuffers OK");
- 
+
 -    vk_ps4_log_raw("init_gnm: calling sceGnmSubmitDone");
 -    result = sceGnmSubmitDone();
 -    if (result != 0) {
@@ -1863,7 +1863,7 @@ index 9d8a83f..73048f3 100644
 -    vk_ps4_log_raw("init_gnm: SubmitDone OK");
 +    /* Do not end a presentation frame during device creation: no swapchain
 +     * or VideoOut buffer exists yet. The preamble is ordered with later work. */
- 
+
      /* Allocate the epilogue command buffer used by QueueSubmit for EOP
           * fence/semaphore signal writes.  Small and reused across submits. */
 diff --git a/src/vk_ps4_image.c b/src/vk_ps4_image.c
@@ -1873,7 +1873,7 @@ index 6545469..cbe05c0 100644
 @@ -38,6 +38,14 @@ vk_ps4_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
      VkPs4Device *dev = (VkPs4Device *)device;
      const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
- 
+
 +    /* The current host-linear layout implementation covers a single RGBA8
 +     * surface. Reject other shapes instead of reporting a fabricated pitch. */
 +    if (pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR &&
@@ -1910,12 +1910,12 @@ index 6545469..cbe05c0 100644
 -        tex_ci.tilemodehint = GNM_TM_DISPLAY_2D_THIN;
 +        tex_ci.tilemodehint = pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR ? GNM_TM_DISPLAY_LINEAR_ALIGNED : GNM_TM_DISPLAY_2D_THIN;
          tex_ci.mingpumode = gpu_mode;
- 
+
          GnmError err = sceGnmCreateTexture(&img->gnm_texture, &tex_ci);
 @@ -175,7 +183,11 @@ vk_ps4_GetImageMemoryRequirements(VkDevice device, VkImage image, VkMemoryRequir
      if (!image || !pMemoryRequirements) return;
      VkPs4Image *img = (VkPs4Image *)image;
- 
+
 -    if (img->is_render_target) {
 +    if (img->is_depth_target) {
 +        uint64_t size=0; uint32_t align=0;
@@ -1926,9 +1926,9 @@ index 6545469..cbe05c0 100644
          uint32_t align = 0;
          sceGnmRtCalcByteSize(&size, &align, &img->gnm_rt);
 @@ -226,7 +238,14 @@ vk_ps4_BindImageMemory(VkDevice device, VkImage image, VkDeviceMemory memory, Vk
- 
+
      void *gpu_addr = (char *)mem->gnm_mem.mapped + offset;
- 
+
 -    if (img->is_render_target) {
 +    if (img->is_depth_target) {
 +        uint64_t stencil_offset=0;
@@ -1961,7 +1961,7 @@ index b621e66..ee8dd61 100644
                                        void **out_binary, size_t *out_binary_size,
 -                                      GnmShaderMetadata *out_metadata);
 +                                      GnmShaderMetadata *out_metadata, VkPs4PipelineLayout *layout);
- 
+
  /* Forward declaration from vk_ps4_command.c */
  extern uint32_t vk_stencil_op_to_pm4(VkStencilOp op);
 @@ -101,6 +101,10 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
@@ -1974,7 +1974,7 @@ index b621e66..ee8dd61 100644
 +
      VK_PS4_LOG_ENTRY();
      vk_ps4_log("CreateGraphicsPipelines: count=%u", createInfoCount);
- 
+
 @@ -324,7 +328,7 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
              } else {
                  /* Cache miss — compile the shader */
@@ -1987,7 +1987,7 @@ index b621e66..ee8dd61 100644
 @@ -342,6 +346,23 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                  }
              }
- 
+
 +            /* Code in a file container is neither aligned to the GPU's 256-byte
 +             * instruction boundary nor necessarily GPU mapped. Upload separately. */
 +            uintptr_t code_address = (uintptr_t)metadata.shadercode;
@@ -2042,7 +2042,7 @@ index b621e66..ee8dd61 100644
                          if (metadata.shadercode) {
                              sceGnmVsRegsSetAddress(&pipe->vs_regs,
 @@ -517,10 +550,12 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
- 
+
          /* A graphics pipeline must have at least VS with valid registers */
          if (!compile_ok || !vs_found) {
 +            for (unsigned st = 0; st < 6; ++st)
@@ -2058,7 +2058,7 @@ index b621e66..ee8dd61 100644
 @@ -564,36 +599,19 @@ vk_ps4_CreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                  goto skip_fetch_shader;
              }
- 
+
 -            /* Build instancing modes from Vulkan vertex input binding descriptions */
 -            GnmFetchShaderInstancingMode inst_modes[VK_PS4_MAX_VERTEX_BINDINGS];
 -            uint32_t num_inst_modes = 0;
@@ -2115,7 +2115,7 @@ index b621e66..ee8dd61 100644
 +            overall_result = VK_ERROR_FEATURE_NOT_PRESENT;
 +            continue;
 +        }
- 
+
          /* Extract push constant inline register mapping from input usage slots.
           * psbc emits IMM_ALUFLOATCONST slots for each inlined push constant
 @@ -667,6 +691,10 @@ vk_ps4_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
@@ -2126,7 +2126,7 @@ index b621e66..ee8dd61 100644
 +     * validate through psbc until these inputs are part of the cache key. */
 +    pipelineCache = VK_NULL_HANDLE;
 +
- 
+
      if (!device || !pCreateInfos || !pPipelines) {
          return VK_ERROR_INITIALIZATION_FAILED;
 @@ -715,7 +743,7 @@ vk_ps4_CreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
@@ -2159,16 +2159,16 @@ index b621e66..ee8dd61 100644
 @@ -864,6 +894,8 @@ vk_ps4_CreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *p
      VkPs4Device *dev = (VkPs4Device *)device;
      const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
- 
+
 +    if (pCreateInfo->setLayoutCount > 1 || pCreateInfo->pushConstantRangeCount)
 +        return VK_ERROR_FEATURE_NOT_PRESENT;
      VkPs4PipelineLayout *layout = vk_ps4_alloc_zero(alloc, sizeof(*layout), 16);
      if (!layout) return VK_ERROR_OUT_OF_HOST_MEMORY;
      layout->type = VK_PS4_OBJ_PIPELINE_LAYOUT;
 @@ -915,6 +947,24 @@ vk_ps4_DestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout, c
- 
+
  /* === Descriptor set layout === */
- 
+
 +bool vk_ps4_descriptor_layout_supported(const VkDescriptorSetLayoutCreateInfo *pCreateInfo) {
 +    if (!pCreateInfo) return false;
 +    if (pCreateInfo->flags || pCreateInfo->pNext || pCreateInfo->bindingCount > 16)
@@ -2193,7 +2193,7 @@ index b621e66..ee8dd61 100644
 @@ -925,6 +975,7 @@ vk_ps4_CreateDescriptorSetLayout(VkDevice device, const VkDescriptorSetLayoutCre
      VkPs4Device *dev = (VkPs4Device *)device;
      const VkAllocationCallbacks *alloc = pAllocator ? pAllocator : &dev->allocator;
- 
+
 +    if (!vk_ps4_descriptor_layout_supported(pCreateInfo)) return VK_ERROR_FEATURE_NOT_PRESENT;
      VkPs4DescriptorSetLayout *layout = vk_ps4_alloc_zero(alloc, sizeof(*layout), 16);
      if (!layout) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -2201,7 +2201,7 @@ index b621e66..ee8dd61 100644
 @@ -1018,151 +1069,95 @@ vk_ps4_CreateDescriptorPool(VkDevice device, const VkDescriptorPoolCreateInfo *p
      return VK_SUCCESS;
  }
- 
+
 -VKAPI_ATTR void VKAPI_CALL
 -vk_ps4_DestroyDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool, const VkAllocationCallbacks *pAllocator) {
 -    if (!device || !descriptorPool) return;
@@ -2419,7 +2419,7 @@ index b621e66..ee8dd61 100644
 +    memset(out, 0, info->descriptorSetCount * sizeof(*out));
 +    return result;
  }
- 
+
  /* === Sampler === */
 diff --git a/src/vk_ps4_queue.c b/src/vk_ps4_queue.c
 index 683667b..3b91cda 100644
@@ -2427,10 +2427,10 @@ index 683667b..3b91cda 100644
 +++ b/src/vk_ps4_queue.c
 @@ -17,6 +17,7 @@
  #include "vk_ps4_internal.h"
- 
+
  #include <string.h>
 +#include "vk_ps4_pm4_chunks.h"
- 
+
  /* Emit an EOP event write into the epilogue command buffer that writes
   * signal_value to the GPU label at gpuaddr.  Returns the number of bytes
 @@ -35,6 +36,8 @@ static uint32_t vk_ps4_queue_emit_eop(
@@ -2441,11 +2441,11 @@ index 683667b..3b91cda 100644
 +    cmd.cmdptr[-3] &= ~(3u << 24);
      return (uint32_t)(cmd.cmdptr - cmd.beginptr) * sizeof(uint32_t);
  }
- 
+
 @@ -118,14 +121,21 @@ vk_ps4_QueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSub
              uint32_t cmd_size_bytes = cmd->pm4_used * sizeof(uint32_t);
              if (cmd_size_bytes == 0) continue;
- 
+
 -            void *dcb_addr = cmd->pm4_buffer;
 -
 -            /* Submit to GNM — pass NULL for ccb_addrs and ccb_sizes
@@ -2469,7 +2469,7 @@ index 683667b..3b91cda 100644
 -                1, &dcb_addr, &cmd_size_bytes, NULL, NULL
 +                count, addresses, sizes, NULL, NULL
              );
- 
+
              if (result != 0) {
 @@ -246,6 +256,8 @@ vk_ps4_QueueWaitIdle(VkQueue queue) {
              1, &eop_addr, &eop_bytes, NULL, NULL
@@ -2509,7 +2509,7 @@ index 151a536..db15691 100644
 +                opts.texture_binding_mask |= 1u << b->binding;
 +        }
 +    }
- 
+
      /* Determine stage */
      const char *stage_name = "unknown";
 diff --git a/src/vk_ps4_swapchain.c b/src/vk_ps4_swapchain.c
@@ -2557,7 +2557,7 @@ index 719e9a3..45d845d 100644
 @@ -404,10 +404,12 @@
      sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &dev->clear_ps_regs);
      sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
- 
+
 -    /* Draw a fullscreen triangle to clear the entire RT.
 +    /* The embedded VS produces (-1,-1), (1,-1), (-1,1), (1,1).
 +     * Draw all four corners as a strip; three vertices clear only half the RT.
@@ -2567,12 +2567,12 @@ index 719e9a3..45d845d 100644
 +    sceGnmDrawCmdSetPrimitiveType(&cmd->gnm_cmd, GNM_PT_TRISTRIP);
 +    sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 4);
  }
- 
+
  /* Choose the appropriate color clear method based on the RT's tile mode.
 @@ -455,12 +457,12 @@
      sceGnmDrawCmdSetEmbeddedVsShader(cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
      sceGnmDrawCmdSetEmbeddedPsShader(cmd, GNM_EMBEDDED_PSH_DUMMY);
- 
+
 -    /* Draw a fullscreen triangle to trigger the lazy clear.
 +    /* Cover both halves using all four embedded VS corners.
       * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky and may
@@ -2583,12 +2583,12 @@ index 719e9a3..45d845d 100644
 -    sceGnmDrawCmdDrawIndexAuto(cmd, 3);
 +    sceGnmDrawCmdDrawIndexAuto(cmd, 4);
  }
- 
+
  /* Bind render targets for the current subpass.
 @@ -976,6 +978,8 @@
          sceGnmDrawCmdInitDefaultHardwareState(&cmd->gnm_cmd);
      }
- 
+
 +    cmd->viewport0_valid = false;
 +    cmd->screen_scissor_valid = false;
      cmd->is_recording = true;
@@ -2603,7 +2603,7 @@ index 719e9a3..45d845d 100644
          vp_info.dmin = vp->minDepth;
          vp_info.dmax = vp->maxDepth;
 @@ -1284,6 +1289,7 @@
- 
+
      for (uint32_t i = 0; i < scissorCount; i++) {
          const VkRect2D *sc = &pScissors[i];
 +        cmd->screen_scissor = *sc; cmd->screen_scissor_valid = true;
@@ -2647,7 +2647,7 @@ index 719e9a3..45d845d 100644
 +++ b/src/vk_ps4_device.c
 @@ -97,9 +97,8 @@
      dev->gnm_epilogue_cmd_dwords = VK_PS4_GNM_EPILOGUE_CMD_DWORDS;
- 
+
      /* Load the embedded clear pixel shader for tiled RT clears.
 -     * Copy the static binary to a malloc'd buffer (GPU-accessible on PS4)
 -     * and parse it with sceGnmShaderBinaryGetMetadata to extract the PS
@@ -2711,3 +2711,180 @@ index 719e9a3..45d845d 100644
      VkPs4DescriptorSet *graphics_set0;
      VkResult resource_error;
      GnmDirectMemory barrier_label;
+--- a/src/vk_ps4_query.c
++++ b/src/vk_ps4_query.c
+@@ -16,7 +16,67 @@
+  * With VK_QUERY_RESULT_WAIT_BIT: poll until result is non-zero.
+  * With VK_QUERY_RESULT_WITH_AVAILABILITY_BIT: extra uint64 for availability. */
+
+-#define QUERY_SLOT_SIZE 8  /* uint64_t per query result */
++#define QUERY_SLOT_SIZE 8  /* timestamp slot */
++
++/* PS4 base-mode GFX7: eight render-backend counter pairs, with bit 63
++ * marking each completed sample. Reserve sixteen pairs for safe GPU writes.
++ * A separate EOP marker distinguishes a completed zero count from pending. */
++#define OCCLUSION_STRIDE 272u
++#define OCCLUSION_VALID (UINT64_C(1) << 63)
++static size_t query_stride(const VkPs4QueryPool *p) {
++    return p->create_info.queryType == VK_QUERY_TYPE_OCCLUSION ? OCCLUSION_STRIDE : 8;
++}
++static void occlusion_reset(VkPs4CommandBuffer *cmd, uint64_t addr) {
++    const unsigned words = OCCLUSION_STRIDE / 4;
++    if ((size_t)(cmd->gnm_cmd.endptr - cmd->gnm_cmd.cmdptr) < words + 4) return;
++    uint32_t *p = cmd->gnm_cmd.cmdptr;
++    /* WRITE_DATA, memory destination, write confirmation. */
++    *p++ = 0xc0003700u | ((words + 2) << 16);
++    *p++ = (5u << 8) | (1u << 20);
++    *p++ = (uint32_t)addr; *p++ = (uint32_t)(addr >> 32);
++    memset(p, 0, OCCLUSION_STRIDE); p += words;
++    cmd->gnm_cmd.cmdptr = p;
++}
++static void occlusion_sample(VkPs4CommandBuffer *cmd, uint64_t addr) {
++    if ((size_t)(cmd->gnm_cmd.endptr - cmd->gnm_cmd.cmdptr) < 4) return;
++    uint32_t *p = cmd->gnm_cmd.cmdptr;
++    *p++ = 0xc0024600u; /* EVENT_WRITE with address */
++    *p++ = 0x15u | (1u << 8); /* GFX7 ZPASS_DONE, event index 1 */
++    *p++ = (uint32_t)addr; *p++ = (uint32_t)(addr >> 32);
++    cmd->gnm_cmd.cmdptr = p;
++}
++static VkResult occlusion_results(VkPs4QueryPool *pool, uint32_t first,
++                                  uint32_t count, size_t size, void *data,
++                                  VkDeviceSize stride, VkQueryResultFlags flags) {
++    const size_t word = flags & VK_QUERY_RESULT_64_BIT ? 8 : 4;
++    const size_t entry = word * (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT ? 2 : 1);
++    if (count && (size < entry || (count > 1 && (stride < entry || stride > (size-entry)/(count-1)))))
++        return VK_ERROR_OUT_OF_HOST_MEMORY;
++    VkResult status = VK_SUCCESS;
++    for (uint32_t i=0; i<count; ++i) {
++        volatile uint64_t *src = (volatile uint64_t *)((char *)pool->result_buffer + (first+i)*OCCLUSION_STRIDE);
++        uint64_t sum=0, available=src[32]!=0;
++        for (unsigned rb=0;rb<8;++rb) {
++            uint64_t begin=src[2*rb], end=src[2*rb+1];
++            if (!(begin & end & OCCLUSION_VALID)) available=0;
++            sum += (end-begin) & ~OCCLUSION_VALID;
++        }
++        unsigned char *dst=(unsigned char *)data+i*stride;
++        if (available || (flags & VK_QUERY_RESULT_PARTIAL_BIT)) {
++            if (word==8) memcpy(dst,&sum,8);
++            else {uint32_t value=(uint32_t)sum;memcpy(dst,&value,4);}
++        }
++        if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) {
++            if (word==8) memcpy(dst+word,&available,8);
++            else {uint32_t value=(uint32_t)available;memcpy(dst+word,&value,4);}
++        }
++        if (!available) status=VK_NOT_READY;
++    }
++    /* The bridge polls after its submission fence; never fabricate completion
++     * or spin indefinitely on emulators which do not implement ZPASS_DONE. */
++    return status;
++}
++
+
+ VKAPI_ATTR VkResult VKAPI_CALL
+ vk_ps4_CreateQueryPool(VkDevice device, const VkQueryPoolCreateInfo *pCreateInfo,
+@@ -46,7 +106,7 @@
+     /* Allocate GPU-visible memory for query results.
+      * Each query needs QUERY_SLOT_SIZE bytes.
+      * Use Onion memory (CPU-visible) for easy readback. */
+-    pool->result_size = (VkDeviceSize)pCreateInfo->queryCount * QUERY_SLOT_SIZE;
++    pool->result_size = (VkDeviceSize)pCreateInfo->queryCount * query_stride(pool);
+     pool->result_buffer = NULL;
+     pool->result_gpu_addr = 0;
+
+@@ -107,6 +167,9 @@
+         queryCount > pool->create_info.queryCount - firstQuery) {
+         return VK_ERROR_INITIALIZATION_FAILED;
+     }
++
++    if (pool->create_info.queryType == VK_QUERY_TYPE_OCCLUSION)
++        return occlusion_results(pool,firstQuery,queryCount,dataSize,pData,stride,flags);
+
+     bool wait = (flags & VK_QUERY_RESULT_WAIT_BIT) != 0;
+     bool with_availability = (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) != 0;
+@@ -189,8 +252,9 @@
+
+     /* Reset each query slot by writing 0 to its GPU address */
+     for (uint32_t i = 0; i < queryCount; i++) {
+-        uint64_t addr = pool->result_gpu_addr + (firstQuery + i) * QUERY_SLOT_SIZE;
+-        sceGnmDrawCmdResetQuery(&cmd->gnm_cmd, addr);
++        uint64_t addr = pool->result_gpu_addr + (firstQuery + i) * query_stride(pool);
++        if (pool->create_info.queryType == VK_QUERY_TYPE_OCCLUSION) occlusion_reset(cmd,addr);
++        else sceGnmDrawCmdResetQuery(&cmd->gnm_cmd, addr);
+     }
+ }
+
+@@ -203,7 +267,12 @@
+
+     if (query >= pool->create_info.queryCount) return;
+
+-    uint64_t addr = pool->result_gpu_addr + query * QUERY_SLOT_SIZE;
++    uint64_t addr = pool->result_gpu_addr + query * query_stride(pool);
++    if (pool->create_info.queryType == VK_QUERY_TYPE_OCCLUSION) {
++        sceGnmDrawCmdBeginQuery(&cmd->gnm_cmd, addr);
++        occlusion_sample(cmd,addr);
++        return;
++    }
+     /* Reset the query slot to 0 before beginning */
+     sceGnmDrawCmdResetQuery(&cmd->gnm_cmd, addr);
+     /* Enable the occlusion counter */
+@@ -220,7 +289,18 @@
+
+     if (query >= pool->create_info.queryCount) return;
+
+-    uint64_t addr = pool->result_gpu_addr + query * QUERY_SLOT_SIZE;
++    uint64_t addr = pool->result_gpu_addr + query * query_stride(pool);
++    if (pool->create_info.queryType == VK_QUERY_TYPE_OCCLUSION) {
++        occlusion_sample(cmd,addr+8);
++        sceGnmDrawCmdEventWriteEop(&cmd->gnm_cmd, GNM_CACHE_FLUSH_AND_INV_TS_EVENT,
++                                 addr+256, GNM_DATA_SEL_SEND_DATA32, 1);
++        if ((size_t)(cmd->gnm_cmd.endptr-cmd->gnm_cmd.cmdptr)>=3) {
++            uint32_t *p=cmd->gnm_cmd.cmdptr;
++            *p++=0xc0016900u; *p++=1; *p++=0; /* DB_COUNT_CONTROL */
++            cmd->gnm_cmd.cmdptr=p;
++        }
++        return;
++    }
+     /* Write the ZPASS count to the query slot and disable the counter */
+     sceGnmDrawCmdEndQuery(&cmd->gnm_cmd, addr);
+ }
+@@ -234,7 +314,7 @@
+
+     if (query >= pool->create_info.queryCount) return;
+
+-    uint64_t addr = pool->result_gpu_addr + query * QUERY_SLOT_SIZE;
++    uint64_t addr = pool->result_gpu_addr + query * query_stride(pool);
+
+     /* Write the GPU timestamp via EOP event.
+      * GNM_DATA_SEL_SEND_GPU_CLOCK writes the 32-bit GPU clock counter
+@@ -264,6 +344,8 @@
+     if (firstQuery > pool->create_info.queryCount ||
+         queryCount > pool->create_info.queryCount - firstQuery) return;
+
++    if (pool->create_info.queryType == VK_QUERY_TYPE_OCCLUSION) return; /* GPU reduction not implemented. */
++
+     /* Copy query results from the query pool's GPU memory to the destination buffer.
+      * We use sceGnmDrawCmdCopyMemory for each query result.
+      * KNOWN LIMITATION: This copies the raw uint64 results without
+@@ -278,7 +360,7 @@
+                                     dst->memory_offset + dstOffset);
+
+     for (uint32_t i = 0; i < queryCount; i++) {
+-        uint64_t src_addr = pool->result_gpu_addr + (firstQuery + i) * QUERY_SLOT_SIZE;
++        uint64_t src_addr = pool->result_gpu_addr + (firstQuery + i) * query_stride(pool);
+         uint64_t dst_addr = dst_base + i * stride;
+         sceGnmDrawCmdCopyMemory(&cmd->gnm_cmd, dst_addr, src_addr, copy_size);
+     }
+@@ -298,8 +380,8 @@
+         if (end > pool->create_info.queryCount) end = pool->create_info.queryCount;
+         for (uint32_t i = firstQuery; i < end; i++) {
+             volatile uint64_t *slot =
+-                (volatile uint64_t *)((char *)pool->result_buffer + i * QUERY_SLOT_SIZE);
+-            *slot = 0;
+-        }
+-    }
+-}
++                (volatile uint64_t *)((char *)pool->result_buffer + i * query_stride(pool));
++            memset((void *)slot,0,query_stride(pool));
++        }
++    }
++}

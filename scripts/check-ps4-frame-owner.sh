@@ -11,3 +11,6 @@ build/check-ps4gl | tee artifacts/vulkan/frame-state-host.log
 
 cc "${flags[@]}" tests/ps4/check-ps4gl-texture-cache.c -o build/check-ps4gl-texture-cache
 build/check-ps4gl-texture-cache | tee artifacts/vulkan/texture-cache-host.log
+
+cc "${flags[@]}" tests/ps4/check-ps4gl-copy.c -o build/check-ps4gl-copy
+build/check-ps4gl-copy | tee artifacts/vulkan/copy-host.log

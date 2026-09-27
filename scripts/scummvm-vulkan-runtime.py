@@ -173,4 +173,5 @@ def runtime_patches(root):
         patches.extend(difflib.unified_diff(originals[name].splitlines(True), text.splitlines(True), fromfile='a/'+name, tofile='b/'+name))
     from pathlib import Path
     patches.extend((Path(__file__).resolve().parents[1] / "patches/scummvm/watchmaker-experimental.patch").read_text().splitlines(True))
+    patches.extend((Path(__file__).resolve().parents[1] / "patches/scummvm/hpl1-experimental.patch").read_text().splitlines(True))
     return patches

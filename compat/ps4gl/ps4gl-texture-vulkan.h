@@ -15,7 +15,7 @@ static void destroy_texture_snapshot(VkDevice device, PS4GLTextureSnapshot *t) {
 static const PS4GLTextureSnapshot *find_texture_snapshot(const PS4GLContext *ctx, const PS4GLTexture *source) {
   for(unsigned i=0;i<PS4GL_TEXTURE_CACHE_SLOTS;++i)
     if(texture_snapshot_matches(&ctx->texture_cache[i],source)) return &ctx->texture_cache[i];
-  for(unsigned i=0;i<ctx->snapshot_count;++i) for(unsigned j=0;j<2;++j) {
+  for(unsigned i=0;i<ctx->snapshot_count;++i) for(unsigned j=0;j<PS4GL_MAX_SAMPLERS;++j) {
     const PS4GLTextureSnapshot *t=&ctx->snapshots[i].textures[j];
     if(texture_snapshot_matches(t,source)) return t;
   }

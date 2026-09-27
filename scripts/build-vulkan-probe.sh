@@ -20,6 +20,7 @@ reports="$root/artifacts/vulkan"
 mkdir -p "$probe" "$reports"
 cp "$root/compat/ps4gl/ps4libc-threading.h" "$probe/ps4libc-threading.h"
 cp "$root/tests/ps4/vulkan/allocator.h" "$probe/allocator.h"
+cp "$root/compat/ps4gl/ps4gl-fixed.inc" "$root/compat/ps4gl/ps4gl-fixed-shaders.h" "$root/compat/ps4gl/ps4gl-s3tc.inc" "$probe/"
 cp "$root/tests/ps4/vulkan/draw.c" "$probe/draw.c"
 cp "$root/tests/ps4/vulkan/resources.h" "$probe/resources.h"
 cp "$root/tests/ps4/vulkan/readback.h" "$probe/readback.h"
@@ -115,7 +116,7 @@ if (( sdlgl )); then
  cp "$root/compat/ps4gl/ps4gl-display.c" "$root/compat/ps4gl/ps4gl-display.h" "$probe/"
  cp "$root/compat/ps4gl/ps4gl-frame.c" "$root/compat/ps4gl/ps4gl-frame.h" "$probe/"
  cp "$root/tests/ps4/vulkan/sdlgl.h" "$root/compat/ps4gl/ps4gl-sdl.h" "$probe/"
- extra_make+=("EXTRA_LIBS=$allocator_wrap $root/build/ps4-sdlgl/libSDL2.a $root/build/glslang-orbis/libglslang-ps4.a -lSceUserService -lSceAudioOut -lScePad -lSceSysmodule")
+ extra_make+=("EXTRA_LIBS=$allocator_wrap $root/build/ps4-sdlgl/libSDL2.a $root/build/glslang-orbis/libglslang-ps4.a -lSceUserService -lSceAudioOut -lScePad -lSceMouse -lSceSysmodule")
 fi
 make -C "$driver" -f Makefile.orbis "${extra_make[@]}" -j"${JOBS:-8}" pkg \
  TEST_SRC="$probe/draw.c" TEST_OBJ="$probe/draw.o" \

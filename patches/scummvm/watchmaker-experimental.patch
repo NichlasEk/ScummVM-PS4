@@ -1,0 +1,1773 @@
+--- a/engines/watchmaker/3d/geometry.cpp
++++ b/engines/watchmaker/3d/geometry.cpp
+@@ -938,17 +938,19 @@
+ 
+ 		for (auto &modVertex : bone->ModVertices) {
+ //			DebugFile("%d",bone->ModVertices[k].Vertex);
++			assert(modVertex < mesh->NumVerts);
++			// SavedVertexBuffer and blend counts use full-mesh indices.
+ 			gv = &mesh->VBptr[modVertex];
+ 
+ //			t3dVectCopy(&Appov,&Newptr[bone->ModVertices[k].Vertex-cv]);
+ //			t3dVectSub(&Appov, &Appov, &bone->Trasl[0]);
+ 
+-			Appov.x = Newptr[modVertex - cv].x - bone->Trasl[0].x;
+-			Appov.y = Newptr[modVertex - cv].y - bone->Trasl[0].y;
+-			Appov.z = Newptr[modVertex - cv].z - bone->Trasl[0].z;
++			Appov.x = Newptr[modVertex].x - bone->Trasl[0].x;
++			Appov.y = Newptr[modVertex].y - bone->Trasl[0].y;
++			Appov.z = Newptr[modVertex].z - bone->Trasl[0].z;
+ 			t3dVectTransformInv(&Appov, &Appov, Matrix);
+ 
+-			if (Average[modVertex - cv] == 0) {
++			if (Average[modVertex] == 0) {
+ 				gv->x = Appov.x + Trasl->x;
+ 				gv->y = Appov.y + Trasl->y;
+ 				gv->z = Appov.z + Trasl->z;
+@@ -957,7 +959,7 @@
+ 				gv->y += Appov.y + Trasl->y;
+ 				gv->z += Appov.z + Trasl->z;
+ 			}
+-			Average[modVertex - cv] ++;
++			Average[modVertex] ++;
+ 		}
+ 	}
+ 
+@@ -1782,7 +1784,8 @@
+  *              t3dAddTextureBufferShadow
+  * --------------------------------------------------*/
+ void t3dAddTextureBufferShadow(t3dCHARACTER *c, uint32 CurShadowBox, t3dLIGHT *light) {
+-	warning("TODO: t3dAddTextureBufferShadow");
++	static bool warned = false;
++	if (!warned) { warning("TODO: t3dAddTextureBufferShadow"); warned = true; }
+ 	return;
+ #if 0
+ 	SHADOWBOX   *sb = c->ShadowBox[CurShadowBox];
+@@ -2342,22 +2345,23 @@
+ 
+ 		if ((T1 != LastT1) || (T2 != LastT2) || !target) {
+ 			if (T2 > 0) {
+-				if (!Material->NumAddictionalMaterial)
+-					DebugLogWindow("Error no Sub Material found in %s!", mesh->name.c_str());
+-				int32 j = -1;
+-				for (j = 0; j < Material->NumAddictionalMaterial; j++)
++				int32 j = 0;
++				for (; j < Material->NumAddictionalMaterial; j++)
+ 					if (Material->AddictionalMaterial[j]->Texture->ID == T2)
+ 						break;
+-
+-				if (j == Material->NumAddictionalMaterial) {
+-					DebugLogWindow("Sub Material not found in %s!", mesh->name.c_str());
+-					DebugLogWindow("%d %d | %d", Material->NumAddictionalMaterial, T2, f.lightmap->Texture->ID);
+-					for (j = 0; j < Material->NumAddictionalMaterial; j++)
+-						DebugLogWindow("%d", Material->AddictionalMaterial[j]->Texture->ID);
+-					continue;
+-
++				if (j < Material->NumAddictionalMaterial) {
++					target = Material->AddictionalMaterial[j];
++				} else {
++					// The experimental renderer has no combined lightmap material.
++					// Keep the base geometry visible while that lighting path is absent.
++					static bool warned = false;
++					if (!warned) {
++						warning("Watchmaker: drawing base materials without combined lightmaps");
++						warned = true;
++					}
++					target = Material;
+ 				}
+-				target = Material->AddictionalMaterial[j];
++
+ 			} else {
+ 				target = Material;
+ 			}
+@@ -2431,7 +2435,8 @@
+  * --------------------------------------------------*/
+ void t3dCalcHalos(t3dBODY *b) {
+ 	// The userVertexBuffer stuff is not ready yet, giving us nullptr writes.
+-	warning("TODO: t3dCalcHalos");
++	static bool warned = false;
++	if (!warned) { warning("TODO: t3dCalcHalos"); warned = true; }
+ 	return;
+ 
+ 	gMaterial   *Material;
+--- a/engines/watchmaker/3d/loader.cpp
++++ b/engines/watchmaker/3d/loader.cpp
+@@ -292,7 +292,6 @@
+ 				t3dCalcRejectedMeshFromPortal(LoadedFiles[i].b);
+ 	}
+ 
+-	warning("Room loaded");
+ 	return r;
+ }
+ 
+--- a/engines/watchmaker/3d/material.cpp
++++ b/engines/watchmaker/3d/material.cpp
+@@ -125,8 +125,9 @@
+ 		return nullptr;
+ 
+ 	for (int i = 0; i < Mat2->NumAddictionalMaterial; i++) {
+-		Mat1->addNumFacesAdditionalMaterial(Mat2->AddictionalMaterial[i],
+-		                                    /*Mat2->AddictionalMaterial[i]->NumAllocatedFaces*/ Mat2->AddictionalMaterial[i]->NumFaces());
++		// FacesList is the per-frame draw list and is empty during loading.
++		// Preserve the material association before vertex lists are finalized.
++		Mat1->addNumFacesAdditionalMaterial(Mat2->AddictionalMaterial[i], 1);
+ 	}
+ 	//reset mat2
+ 	rRemoveMaterial(Mat2);
+@@ -234,9 +235,19 @@
+ void rAddToMaterialList(gMaterial &mat, signed short int ViewMatrixNum) {
+ 	gBatchBlock *bb = nullptr;
+ 
+-	if ((mat.Flags & T3D_MATERIAL_MOVIE)) {
+-		warning("Movie: %s %d", mat.Movie->_name.c_str(), mat.Texture->ID);
+-		mat.Movie->updateMovie();
++	if ((mat.Flags & T3D_MATERIAL_MOVIE) && mat.Movie) {
++		auto &movie = *mat.Movie;
++		if (mat.Flags & T3D_MATERIAL_MOVIEPAUSED) {
++			// A paused material still needs its initial image uploaded.
++			if (movie._curFrame == 0xFFFF)
++				movie.setFrame(0);
++			movie._paused = true;
++		} else {
++			if (movie._paused && movie._frameRate)
++				movie._startTime = timeGetTime() - (movie._curFrame * 1000u / movie._frameRate);
++			movie._paused = false;
++			movie.updateMovie();
++		}
+ 	}
+ 
+ 	if ((mat.NumFaces() >= 3) && (mat.VBO)) {
+--- a/engines/watchmaker/3d/movie.cpp
++++ b/engines/watchmaker/3d/movie.cpp
+@@ -19,6 +19,7 @@
+ *
+ */
+ 
++#include "common/debug.h"
+ #include "watchmaker/3d/movie.h"
+ #include "watchmaker/3d/dds_header.h"
+ #include "watchmaker/file_utils.h"
+@@ -123,14 +124,15 @@
+ }
+ 
+ bool gMovie::setFrame(uint16 newFrame) {
+-	warning("Set Frame: %d\t%s", newFrame, _name.c_str());
++	debug(5, "Set Frame: %d\t%s", newFrame, _name.c_str());
++	if (!_numFrames || !_keyFrame || newFrame >= _numFrames)
++		return false;
+ 	if (_curFrame == newFrame)
+ 		return true;
+ 
+ 	//do we have to replace the whole frame or do we have to built it?
+ 	bool rebuildFrame = true;
+-	if (_curFrame == 0xFFFF) rebuildFrame = false;
+-	else if (!(newFrame % _keyFrame)) rebuildFrame = false;        //it's a keyframe
++	if (!(newFrame % _keyFrame)) rebuildFrame = false;        //it's a keyframe
+ 
+ 	_header.dataSize();
+ #if 0
+@@ -183,7 +185,7 @@
+ 	if (_paused)
+ 		return TRUE;
+ 
+-	warning("Update Movie: %s", _name.c_str());
++	debug(5, "Update Movie: %s", _name.c_str());
+ 
+ 	if ((_curFrame == 0xFFFF) || (!_startTime)) {
+ 		_startTime = timeGetTime();
+--- a/engines/watchmaker/3d/render/opengl_2d.cpp
++++ b/engines/watchmaker/3d/render/opengl_2d.cpp
+@@ -48,11 +48,11 @@
+ unsigned int Renderer::BitmapList::acquirePosition() {
+ 	unsigned int pos = 1;
+ 
+-	while (!bitmaps[pos].isEmpty()) {
++	while (pos < MAX_BITMAP_LIST && !bitmaps[pos].isEmpty()) {
+ 		pos++;
+ 	}
+ 
+-	if (pos > MAX_BITMAP_LIST)
++	if (pos >= MAX_BITMAP_LIST)
+ 		return 0;
+ 
+ 	if (pos > _numBitmaps)
+@@ -192,7 +192,21 @@
+ 		renderTexture(game, *this, src, dst);
+ 	}
+ 	for (uint i = 0; i < _blitsOnTop.size(); i++) {
+-		_blitsOnTop[i].texture->render(game, _blitsOnTop[i].src, _blitsOnTop[i].dst);
++		const auto &blit = _blitsOnTop[i];
++		Common::Rect clipped = blit.dst;
++		clipped.clip(src);
++		if (clipped.isEmpty() || src.isEmpty() || blit.dst.isEmpty()) continue;
++		Common::Rect childSrc(
++			blit.src.left + (clipped.left - blit.dst.left) * blit.src.width() / blit.dst.width(),
++			blit.src.top + (clipped.top - blit.dst.top) * blit.src.height() / blit.dst.height(),
++			blit.src.left + (clipped.right - blit.dst.left) * blit.src.width() / blit.dst.width(),
++			blit.src.top + (clipped.bottom - blit.dst.top) * blit.src.height() / blit.dst.height());
++		Common::Rect childDst(
++			dst.left + (clipped.left - src.left) * dst.width() / src.width(),
++			dst.top + (clipped.top - src.top) * dst.height() / src.height(),
++			dst.left + (clipped.right - src.left) * dst.width() / src.width(),
++			dst.top + (clipped.bottom - src.top) * dst.height() / src.height());
++		blit.texture->render(game, childSrc, childDst);
+ 	}
+ }
+ 
+@@ -214,11 +228,11 @@
+               int sposx, int sposy, int sdimx, int sdimy) {
+ 	auto &bitmapList = game._renderer->_bitmapList.bitmaps;
+ 	// TODO: This currently gets called a bit too much.
+-	warning("TODO: Stubbed rBlitter(%s, %d, %d, %d, %d, %d, %d, %d, %d)", bitmapList[src].name.c_str(), dst, src, dposx, dposy, sposx, sposy, sdimx, sdimy);
+ 
+ 	auto &bitmap = bitmapList[src];
+ 
+-	assert(dst == 0);
++	if (dst < 0 || dst >= Renderer::MAX_BITMAP_LIST || src <= 0 || src >= Renderer::MAX_BITMAP_LIST || dst == src)
++		return;
+ 	auto &dstBitmap = bitmapList[dst];
+ 
+ 	checkGlError("rBlitter Start");
+--- a/engines/watchmaker/3d/render/opengl_3d.cpp
++++ b/engines/watchmaker/3d/render/opengl_3d.cpp
+@@ -691,6 +691,9 @@
+ 	} else { // TGA
+ 		auto stream = workDirs.resolveFile(TextName);
+ 		auto image = ReadTgaImage(TextName, *stream, Graphics::PixelFormat(4, 8, 8, 8, 8, 0, 8, 16, 24), 0); // TODO Flags
++		// Model UVs expect bottom-first TGA rows. Keep this conversion out
++		// of the shared loader used by menu bitmaps and fonts.
++		image->flipVertical(Common::Rect(image->w, image->h));
+ 		SurfaceBackedTextureData texData(image);
+ 
+ 		texture->_texture->assignData(texData);
+--- a/engines/watchmaker/3d/render/opengl_renderer.cpp
++++ b/engines/watchmaker/3d/render/opengl_renderer.cpp
+@@ -31,30 +31,22 @@
+ 
+ namespace Watchmaker {
+ 
+-OpenGLRenderer *g_renderer = nullptr;
+-
+-void OpenGLRenderer::drawIndexedPrimitivesVBO(PrimitiveType primitiveType, Common::SharedPtr<VertexBuffer> VBO, int firstVertex, int numVertices, Common::Array<uint16> faces, uint32 numFaces) {
++static OpenGLRenderer renderer;
++OpenGLRenderer *g_renderer = &renderer;
++
++void OpenGLRenderer::drawIndexedPrimitivesVBO(PrimitiveType primitiveType, const Common::SharedPtr<VertexBuffer> &VBO, int firstVertex, int numVertices, const Common::Array<uint16> &faces, uint32 numFaces) {
+ 	assert(numFaces <= faces.size());
+ 
+ 	assert(primitiveType == PrimitiveType::TRIANGLE);
+ 
+-	float fNearPlane = 1.0f;//5000.0f;
+-	float fFarPlane = 15000.0f;
+-	float width = 1024;
+-	float height = 768;
+-
+-	glEnable(GL_ALPHA_TEST);
+-	glEnable(GL_BLEND);
+-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+-
+-	glMatrixMode(GL_PROJECTION);
+-	glPushMatrix();
+-	glLoadIdentity();
+-
+-	float fAspect = 60.0f;//curCamera->FovRad;
+-	auto perspectiveMatrix = Math::makePerspectiveMatrix(fAspect, width / height, fNearPlane, fFarPlane);
+-	glLoadMatrixf(perspectiveMatrix.getData());
+-
++	// Blend enable/factors are selected by the geometry pass.
++	// Forcing alpha blending here also makes opaque RGB materials transparent.
++	// Lightmaps multiply RGB, including black DXT1 texels whose alpha is zero.
++	// Alpha rejection here would erase the darkest parts of the baked lighting.
++	if (_lightmapPass) glDisable(GL_ALPHA_TEST);
++	else glEnable(GL_ALPHA_TEST);
++
++	// Retain the projection selected by the active room camera.
+ 	glMatrixMode(GL_MODELVIEW);
+ 	glPushMatrix();
+ 
+@@ -63,32 +55,51 @@
+ 	glBegin(GL_TRIANGLES);
+ 	for (uint32 i = 0; i < numFaces; i++) {
+ 		uint16 index = faces[i];
+-		assert(index <= VBO->_buffer.size());
++		if (index >= VBO->_buffer.size())
++			::error("Watchmaker mesh index %u outside vertex count %u", index, VBO->_buffer.size());
+ 		auto &vertex = VBO->_buffer[index];
+ 		//warning("%d/%d %d: [%f, %f, %f], [%f, %f], [%f, %f]", i, numFaces, index, vertex.x, vertex.y, vertex.z, vertex.u1, vertex.v1, vertex.u2, vertex.v2);
+ 		//glColor3f((float)i/numFaces, 1.0, 0.0);
+-		glColor3f(1.0f, 1.0f, 1.0f);
+-		glTexCoord2f(vertex.u1, vertex.v1);
++		glColor4f(RGBA_GETRED(vertex.diffuse) / 255.f, RGBA_GETGREEN(vertex.diffuse) / 255.f,
++		          RGBA_GETBLUE(vertex.diffuse) / 255.f, RGBA_GETALPHA(vertex.diffuse) / 255.f);
++		if (_lightmapPass) {
++			glColor4f(1.f, 1.f, 1.f, 1.f);
++			glTexCoord2f(vertex.u2, vertex.v2);
++		} else {
++			glTexCoord2f(vertex.u1, vertex.v1);
++		}
+ 		glVertex3f(vertex.x, vertex.y, -vertex.z);
+ 	}
+ 	glEnd();
+ 
+ 	glFlush();
+ 	glPopMatrix();
+-	glMatrixMode(GL_PROJECTION);
+-	glPopMatrix();
+-	glMatrixMode(GL_MODELVIEW);
++
+ }
+ 
+ void OpenGLRenderer::drawPrimitives(PrimitiveType primitiveType, Vertex *vertices, int numPrimitives) {
+ 	assert(primitiveType == PrimitiveType::TRIANGLE);
++	GLint viewport[4];
++	glGetIntegerv(GL_VIEWPORT, viewport);
++	if (viewport[2] <= 0 || viewport[3] <= 0)
++		return;
++	const bool textured = glIsEnabled(GL_TEXTURE_2D);
++	glDisable(GL_TEXTURE_2D);
++	enter2Dmode();
+ 	glBegin(GL_TRIANGLES);
+ 	for (int i = 0; i < numPrimitives; i++) {
+-		auto &vertex = vertices[i];
+-		glColor3f(1.0, 1.0, 1.0);
+-		glVertex3f(vertex.sx, vertex.sy, -vertex.sz);
++		const auto &vertex = vertices[i];
++		const uint32 color = vertex.color;
++		glColor4f(((color >> 24) & 255) / 255.f, ((color >> 16) & 255) / 255.f,
++		          ((color >> 8) & 255) / 255.f, (color & 255) / 255.f);
++		glVertex3f(2.f * vertex.sx / viewport[2] - 1.f,
++		           1.f - 2.f * vertex.sy / viewport[3], 0.f);
+ 	}
+ 	glEnd();
++	glColor4f(1.f, 1.f, 1.f, 1.f);
++	exit2Dmode();
++	if (textured)
++		glEnable(GL_TEXTURE_2D);
+ 	glFlush();
+ }
+ void OpenGLRenderer::drawIndexedPrimitivesVBO(PrimitiveType primitiveType, int VBO, int firstVertex, int numVertices, uint16 *faces, uint32 numFaces) {
+@@ -130,6 +141,9 @@
+ }
+ 
+ void OpenGLRenderer::setTextureWrapMode(int index, TextureWrapMode mode) {
++	// Stage 1 is rendered separately; never change the stage-0 material here.
++	if (index != 0)
++		return;
+ 	GLint openGlWrapMode = 0;
+ 	switch (mode) {
+ 	case TextureWrapMode::WRAP:
+@@ -154,6 +168,10 @@
+ }
+ void OpenGLRenderer::setTexture(int stage, const gTexture &texture) {
+ 	texture._texture->bind();
++	// Base materials tile their UVs; lightmaps use a bounded atlas.
++	const GLint wrap = _lightmapPass ? GL_CLAMP_TO_EDGE : GL_REPEAT;
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+ }
+ 
+ void setGlFeature(GLint feature, bool state) {
+@@ -170,18 +188,22 @@
+ 		glDepthFunc(GL_LEQUAL);
+ 		setGlFeature(GL_DEPTH_TEST, value);
+ 		break;
+-	case RenderState::ALPHAREF: // ALPHA-func is never changed.
+-		glAlphaFunc(GL_ALWAYS, value);
+-		// fall through
+-		// FIXME: Is this intended?
++	case RenderState::ALPHAREF:
++		// The engine supplies an 8-bit cutoff. Rejected texels must not
++		// write depth, and changing the cutoff must not toggle blending.
++		glAlphaFunc(GL_GREATER, (value & 255) / 255.f);
++		break;
+ 	case RenderState::ALPHABLEND:
+ 		setGlFeature(GL_BLEND, value);
+ 		break; // TODO
+ 
++	case RenderState::ZWRITE_ENABLE:
++		glDepthMask(value ? GL_TRUE : GL_FALSE);
++		break;
++
+ 	case RenderState::LIGHT:
+ 	case RenderState::CLIP:
+ 	case RenderState::EXTENT:
+-	case RenderState::ZWRITE_ENABLE:
+ 	case RenderState::TEXTUREFACTOR:
+ 	default:
+ 		break;
+--- a/engines/watchmaker/3d/render/opengl_renderer.h
++++ b/engines/watchmaker/3d/render/opengl_renderer.h
+@@ -71,7 +71,9 @@
+ Texture *createGLTexture();
+ 
+ class OpenGLRenderer {
++	bool _lightmapPass = false;
+ public:
++	void setLightmapPass(bool enabled) { _lightmapPass = enabled; }
+ 	void enter2Dmode();
+ 	void exit2Dmode();
+ 
+@@ -96,7 +98,7 @@
+ 
+ 	void drawPrimitives(PrimitiveType primitiveType, Vertex *vertices, int numPrimitives);
+ 	void drawIndexedPrimitivesVBO(PrimitiveType primitiveType, int VBO, int firstVertex, int numVertices, uint16 *faces, uint32 numFaces);
+-	void drawIndexedPrimitivesVBO(PrimitiveType primitiveType, Common::SharedPtr<VertexBuffer> VBO, int firstVertex, int numVertices, Common::Array<uint16> faces, uint32 numFaces);
++	void drawIndexedPrimitivesVBO(PrimitiveType primitiveType, const Common::SharedPtr<VertexBuffer> &VBO, int firstVertex, int numVertices, const Common::Array<uint16> &faces, uint32 numFaces);
+ 	void drawIndexedPrimitivesVBO(PrimitiveType primitiveType, gBatchBlock &bb);
+ 	bool supportsMultiTexturing() const { // TODO
+ 		return false;
+--- a/engines/watchmaker/3d/render/opengl_texture.cpp
++++ b/engines/watchmaker/3d/render/opengl_texture.cpp
+@@ -49,7 +49,7 @@
+ 
+ class OpenGLTexture : public Texture {
+ public:
+-	unsigned int _texId;
++	unsigned int _texId = 0;
+ 	OpenGLTexture() {
+ 		glGenTextures(1, &_texId);
+ 	}
+--- a/engines/watchmaker/3d/render/render.cpp
++++ b/engines/watchmaker/3d/render/render.cpp
+@@ -30,7 +30,7 @@
+ 
+ namespace Watchmaker {
+ 
+-unsigned int bLightmaps = FALSE;                                                                // if lightmaps are activated
++unsigned int bLightmaps = TRUE;                                                                // if lightmaps are activated
+ unsigned int bDisableShadows = FALSE;                                                           // if shadows should be disabled
+ unsigned int bDisableMultiTexturing = FALSE;                                                    // if multitexturing should be disabled
+ 
+@@ -127,6 +127,9 @@
+ 	gBatchBlock *bb;
+ 	bool hres = false;
+ 
++	// The menu and subtitle pass disables depth testing. Establish 3D state
++	// every frame, including rooms without a sky pass that would restore it.
++	rSetZBufferState(true);
+ 	RenderSky();
+ 	//warning("TODO: Texture configuration");
+ #if 0
+@@ -215,6 +218,7 @@
+ 			return;
+ 		}
+ 
++		g_renderer->setLightmapPass(true);
+ 		LastViewMatrixNum = LastTexture1 = LastTexture2 = -2;
+ 		bb = &BatchBlockList[0];
+ 		for (uint i = 0; i < NumBatchBlocks; i++, bb++) {
+@@ -237,6 +241,7 @@
+ 			}
+ 		}
+ 
++		g_renderer->setLightmapPass(false);
+ 		g_renderer->setRenderState(RenderState::ZWRITE_ENABLE, TRUE);
+ #if 0 // TODO
+ 		g_renderer->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX, 0);                        // mapping coordinates back to set 0
+@@ -352,7 +357,6 @@
+ 
+ 		if (bb->Flags1 & T3D_MATERIAL_GLASS) {
+ 			g_renderer->setBlendFunc(BlendFactor::DESTCOLOR, BlendFactor::ZERO);
+-			return;
+ 		} else if (bb->Flags1 & T3D_MATERIAL_OPACITY) {
+ 			g_renderer->setBlendFunc(BlendFactor::ONE, BlendFactor::SRCCOLOR);
+ 		} else if (bb->Flags1 & T3D_MATERIAL_BOTTLE) {
+--- a/engines/watchmaker/3d/t3d_body.cpp
++++ b/engines/watchmaker/3d/t3d_body.cpp
+@@ -135,6 +135,9 @@
+ #ifndef WMGEN
+ 		Mesh.VBptr = Mesh.VertexBuffer;
+ #endif
++		// Loading initially shares the body normals. Detach before creating
++		// per-vertex normals, otherwise copying mutates the shared face planes.
++		Mesh.NList.clear();
+ 		Mesh.NList.reserve(Mesh.NumVerts); // Alloca normali mesh
+ 		for (int k = 0; k < Mesh.NumVerts; k++) {
+ 			Mesh.NList.push_back(Common::SharedPtr<t3dNORMAL>(new t3dNORMAL()));
+@@ -359,8 +362,8 @@
+ 				gv = m.VBptr;
+ 
+ 				if (m.Flags & T3D_MESH_NOLIGHTMAP) {
+-					t3dFACE &f = m.FList[0];
+ 					for (uint32 j = 0; j < m.NumFaces(); j++) {
++						t3dFACE &f = m.FList[j];
+ 						if (f.n == b->NList[i]) {
+ 							f.lightmap = nullptr;
+ 						}
+@@ -368,8 +371,8 @@
+ 					m.VBptr = nullptr;
+ 					continue;
+ 				}
+-				t3dFACE &f = m.FList[0];
+ 				for (uint32 j = 0; j < m.NumFaces(); j++) {
++					t3dFACE &f = m.FList[j];
+ //					gMaterial *newmat;
+ 					if (f.n == b->NList[i]) {
+ //						f->mat->Texture=f->mat->Lightmap;
+@@ -413,8 +416,8 @@
+ //f                 continue;
+ 
+ 				if (m.Flags & T3D_MESH_NOLIGHTMAP) {
+-					t3dFACE &f = m.FList[0];
+ 					for (uint32 j = 0; j < m.NumFaces(); j++) {
++						t3dFACE &f = m.FList[j];
+ 						if (f.n == b->NList[i]) {
+ 							f.lightmap = nullptr;
+ 						}
+@@ -423,8 +426,8 @@
+ 					continue;
+ 				}
+ 
+-				t3dFACE &f = m.FList[0];
+ 				for (uint32 j = 0; j < m.NumFaces(); j++) {
++					t3dFACE &f = m.FList[j];
+ //					t3dU32 nr,ng,nb;
+ 					if (f.n == b->NList[i]) {
+ 						f.lightmap = nullptr;
+@@ -547,7 +550,6 @@
+ 
+ 	populatePortalLists();
+ 
+-	warning("LoaderFlags late = %08X", _LoaderFlags);
+ 	//decodeLoaderFlags(_LoaderFlags);
+ 	if (!(_LoaderFlags & T3D_NOBOUNDS)) {                                                        // Carica Bounds
+ 		auto bndName = workdirs.join(workdirs._bndDir, pname, "bnd");
+--- a/engines/watchmaker/3d/t3d_face.h
++++ b/engines/watchmaker/3d/t3d_face.h
+@@ -65,8 +65,20 @@
+ 	}
+ 
+ 	void checkVertices() {
++		MaterialPtr material = getMaterial();
++		if (lightmap) {
++			MaterialPtr combined;
++			for (const auto &candidate : material->AddictionalMaterial) {
++				if (candidate->Texture->ID == lightmap->Texture->ID) {
++					combined = candidate;
++					break;
++				}
++			}
++			assert(combined);
++			material = combined;
++		}
+ 		for (int i = 0; i < 3; i++) {
+-			assert((int)getMaterial()->VertsList.size() > MatVertexIndex[i]);
++			assert((int)material->VertsList.size() > MatVertexIndex[i]);
+ 		}
+ 	}
+ 
+--- a/engines/watchmaker/3d/texture.h
++++ b/engines/watchmaker/3d/texture.h
+@@ -44,11 +44,10 @@
+ 	int                     Flags = 0;                  // Flags
+ 
+ 	bool isEmpty() {
+-		return _texture == nullptr;
++		return _texture == nullptr && DimX == 0 && DimY == 0;
+ 	}
+ 	void clear() {
+ 		// TODO: This will only work for the back-surface
+-		warning("Clearing %d", _blitsOnTop.size());
+ 		_blitsOnTop.clear();
+ 	}
+ 	void render(WGame &game, Common::Rect src, Common::Rect dst);
+--- a/engines/watchmaker/classes/do_camera.cpp
++++ b/engines/watchmaker/classes/do_camera.cpp
+@@ -737,18 +737,18 @@
+ //	Se non e' valida esco
+ 	if (!ForcedCamera && ((col < 0 || row < 0) || (col >= croom->CameraGrid.Col) || (row >= croom->CameraGrid.Row))) return;
+ //	Prendo l'indice della nuova stanza e se e' in una zona libera esce
+-	cc = croom->CameraGrid.Grid[col + row * croom->CameraGrid.Col];
++	cc = ForcedCamera ? 255 : croom->CameraGrid.Grid[col + row * croom->CameraGrid.Col];
+ //	Se e' in zona libera e la vecchia telecamera era in zona libera, ricerca a spirale
+-	if ((cc == 255) && (t3dLastCameraIndex == 255)) {
++	if (!ForcedCamera && (cc == 255) && (t3dLastCameraIndex == 255)) {
+ 		for (a = 1; a < 10; a++) {
+ 			for (b = -a; b <= a; b++) {
+-				if ((col + b) >= 0 || (row + a) >= 0 || (col + b) < croom->CameraGrid.Col || (row + a) < croom->CameraGrid.Row)
++				if ((col + b) >= 0 && (row + a) >= 0 && (col + b) < croom->CameraGrid.Col && (row + a) < croom->CameraGrid.Row)
+ 					if ((cc = croom->CameraGrid.Grid[col + b + (row + a) * croom->CameraGrid.Col]) != 255) break;
+-				if ((col + b) >= 0 || (row - a) >= 0 || (col + b) < croom->CameraGrid.Col || (row - a) < croom->CameraGrid.Row)
++				if ((col + b) >= 0 && (row - a) >= 0 && (col + b) < croom->CameraGrid.Col && (row - a) < croom->CameraGrid.Row)
+ 					if ((cc = croom->CameraGrid.Grid[col + b + (row - a) * croom->CameraGrid.Col]) != 255) break;
+-				if ((col + a) >= 0 || (row + b) >= 0 || (col + a) < croom->CameraGrid.Col || (row + b) < croom->CameraGrid.Row)
++				if ((col + a) >= 0 && (row + b) >= 0 && (col + a) < croom->CameraGrid.Col && (row + b) < croom->CameraGrid.Row)
+ 					if ((cc = croom->CameraGrid.Grid[col + a + (row + b) * croom->CameraGrid.Col]) != 255) break;
+-				if ((col - a) >= 0 || (row + b) >= 0 || (col - a) < croom->CameraGrid.Col || (row + b) < croom->CameraGrid.Row)
++				if ((col - a) >= 0 && (row + b) >= 0 && (col - a) < croom->CameraGrid.Col && (row + b) < croom->CameraGrid.Row)
+ 					if ((cc = croom->CameraGrid.Grid[col - a + (row + b) * croom->CameraGrid.Col]) != 255) break;
+ 			}
+ 			if (cc != 255) break;
+@@ -878,13 +878,13 @@
+ 	if (cc == 255) {
+ 		for (a = 1; a < 10; a++) {
+ 			for (b = -a; b <= a; b++) {
+-				if ((col + b) >= 0 || (row + a) >= 0 || (col + b) < croom->CameraGrid.Col || (row + a) < croom->CameraGrid.Row)
++				if ((col + b) >= 0 && (row + a) >= 0 && (col + b) < croom->CameraGrid.Col && (row + a) < croom->CameraGrid.Row)
+ 					if ((cc = croom->CameraGrid.Grid[col + b + (row + a) * croom->CameraGrid.Col]) != 255) break;
+-				if ((col + b) >= 0 || (row - a) >= 0 || (col + b) < croom->CameraGrid.Col || (row - a) < croom->CameraGrid.Row)
++				if ((col + b) >= 0 && (row - a) >= 0 && (col + b) < croom->CameraGrid.Col && (row - a) < croom->CameraGrid.Row)
+ 					if ((cc = croom->CameraGrid.Grid[col + b + (row - a) * croom->CameraGrid.Col]) != 255) break;
+-				if ((col + a) >= 0 || (row + b) >= 0 || (col + a) < croom->CameraGrid.Col || (row + b) < croom->CameraGrid.Row)
++				if ((col + a) >= 0 && (row + b) >= 0 && (col + a) < croom->CameraGrid.Col && (row + b) < croom->CameraGrid.Row)
+ 					if ((cc = croom->CameraGrid.Grid[col + a + (row + b) * croom->CameraGrid.Col]) != 255) break;
+-				if ((col - a) >= 0 || (row + b) >= 0 || (col - a) < croom->CameraGrid.Col || (row + b) < croom->CameraGrid.Row)
++				if ((col - a) >= 0 && (row + b) >= 0 && (col - a) < croom->CameraGrid.Col && (row + b) < croom->CameraGrid.Row)
+ 					if ((cc = croom->CameraGrid.Grid[col - a + (row + b) * croom->CameraGrid.Col]) != 255) break;
+ 			}
+ 			if (cc != 255) break;
+--- a/engines/watchmaker/classes/do_sound.cpp
++++ b/engines/watchmaker/classes/do_sound.cpp
+@@ -47,18 +47,7 @@
+ /* -----------------28/06/00 16.33-------------------
+  *                  InitMusic
+  * --------------------------------------------------*/
+-bool InitMusic() {
+-	warning("STUBBED InitMusic");
+-#if 0
+-	if (!mInitMusicSystem())
+-		return false;
+-	if (!sInitSoundSystem(hWnd))
+-		return false;
+-
+-	sSetDistanceFactor(METER2UNIT);
+-#endif
+-	return true;
+-}
++bool InitMusic() { StopMusic(); return mInitMusicSystem(); }
+ 
+ bool ListenerUpdate() {
+ 	sListener CurListener;
+@@ -301,63 +290,23 @@
+ /* -----------------28/06/00 16.33-------------------
+  *  Ferma tutti i midi in Play
+  * --------------------------------------------------*/
++static int32 currentMusic = -1, currentSubMusic = -1;
+ bool StopMusic() {
+-	if (!mStopMusic()) return FALSE;
+-	//if( !sStopAllSounds() ) return FALSE;
+-	warning("STUBBED: StopMusic");
+-#if 0
+-	CurPlayIndex = -1;
+-	CurPlaySubMusic = -1;
+-	CurMusicName[0] = 0;
+-#endif
+-	return TRUE;
+-}
+-
+-/* -----------------28/06/00 16.33-------------------
+- * Ferma il MIDI con un fade di FadeOutTime ms,
+- * fa partire il MIDI index con un fade di FadeInTime ms.
+- * --------------------------------------------------*/
++	currentMusic = currentSubMusic = -1;
++	return mStopMusic();
++}
+ 
+ bool PlayMusic(int32 index, uint32 FadeOutTime, uint32 FadeInTime) {
+-	warning("STUBBED: PlayMusic");
+-#if 0
+-	char FileName[MAX_PATH];
+-
+-	if (GameOptions.music_on == FALSE) return TRUE;
+-
+-	if ((CurPlayIndex == index) && (CurPlaySubMusic == CurSubMusic)) return TRUE;
+-	if (!strcasecmp(CurMusicName, Music[index].name[CurSubMusic])) return TRUE;
+-
+-	if ((Music[index].vol[CurSubMusic] != 0) &&
+-	        (Music[index].vol[CurSubMusic] != mGetAllVolume())) {
+-		if (!mSetAllVolume((BYTE)Music[index].vol[CurSubMusic])) return FALSE;
+-	}
+-	snprintf(FileName, MAX_PATH, "%s%s", WmMidiDir, Music[index].name[CurSubMusic]);
+-	if (!mLoadMusic(FileName)) {
+-		if (CurPlayIndex == -1) return TRUE;
+-		mInstantFadeOut(NULL, FadeOutTime);
+-		CurPlayIndex = -1;
+-		CurPlaySubMusic = -1;
+-		CurMusicName[0] = '\0';
+-		return TRUE;
+-	}
+-
+-	//if (!mPlayMusic(FileName))
+-	if (!mCrossFade(FileName, FadeOutTime, FadeInTime)) {
+-		CurPlayIndex = -1;
+-		CurPlaySubMusic = -1;
+-		CurMusicName[0] = '\0';
+-		return FALSE;
+-	}
+-
+-	DebugLogFile("PM %s", FileName);
+-
+-	CurPlayIndex = index;
+-	CurPlaySubMusic = CurSubMusic;
+-	strcpy(CurMusicName, Music[index].name[CurSubMusic]);
+-
+-#endif
+-	return TRUE;
++	if (!_vm || !_vm->gameOptions.music_on) return true;
++	if (index < 0 || index >= MAX_MUSICS || CurSubMusic < 0 || CurSubMusic >= MAX_SUB_MUSICS) return false;
++	if (index == currentMusic && CurSubMusic == currentSubMusic) return true;
++	const auto &music = _vm->init.Music[index];
++	if (!music.name[CurSubMusic][0]) return StopMusic();
++	Common::String path = _vm->workDirs._midiDir + music.name[CurSubMusic];
++	if (!mPlayMusic(path.c_str())) return false;
++	currentMusic = index;
++	currentSubMusic = CurSubMusic;
++	return true;
+ }
+ 
+ bool StopSounds() {
+--- a/engines/watchmaker/game_options.h
++++ b/engines/watchmaker/game_options.h
+@@ -31,11 +31,11 @@
+ class GameOptions {
+ public:
+ 	uint8 sound_on = 1;
+-	uint8 sound_volume = 100;
++	uint8 sound_volume = 50;
+ 	uint8 music_on = 1;
+-	uint8 music_volume = 100;
++	uint8 music_volume = 50;
+ 	uint8 speech_on = 1;
+-	uint8 speech_volume = 100;
++	uint8 speech_volume = 50;
+ 	uint8 subtitles_on = 1;
+ 	bool bShowRoomDescriptions = true;
+ 	bool bShowExtraLocalizationStrings = false;
+--- a/engines/watchmaker/ll/ll_ffile.cpp
++++ b/engines/watchmaker/ll/ll_ffile.cpp
+@@ -36,19 +36,22 @@
+ 
+ FastFile::FastFile(const char *path) : _path(path) {
+ 	auto stream = openFile(path);
+-	assert(stream);
++	if (!stream || stream->size()<4) error("Invalid Watchmaker archive");
+ 
+ 	_numFiles = stream->readUint32LE();
++	if (_numFiles<0 || _numFiles>(stream->size()-4)/64) error("Invalid Watchmaker archive directory");
+ 	_files = new FileEntry[_numFiles] {};
+ 	_totalSize = stream->size();
+ 
+ 	for (int i = 0; i < _numFiles; i++) {
+-		char name[MAX_NAME_LEN] = {};
++		char name[MAX_NAME_LEN+1] = {};
+ 		stream->read(name, MAX_NAME_LEN);
+ 		_files[i].name = name;
+ 		_files[i].offset = stream->readUint32LE();
+ 		_files[i].time = stream->readUint32LE();
+ 		_files[i].date = stream->readUint32LE();
++		if (_files[i].offset<4+_numFiles*64 || _files[i].offset>_totalSize ||
++		    (i && _files[i].offset<_files[i-1].offset)) error("Invalid Watchmaker archive offset");
+ 		for (auto it = _files[i].name.begin(); it != _files[i].name.end(); ++it) {
+ 			if (*it == '\\') {
+ 				*it = '/';
+@@ -61,32 +64,33 @@
+ 	delete[] _files;
+ }
+ 
++int FastFile::findFile(const Common::Path &path) const {
++ Common::String name=path.toString('/');
++ while (name.hasPrefix("./")) name=name.substr(2);
++ for (int i=0;i<_numFiles;++i)
++  if (_files[i].name.equalsIgnoreCase(name)) return i;
++ return -1;
++}
++bool FastFile::hasFile(const Common::Path &path) const { return findFile(path)>=0; }
++int FastFile::listMembers(Common::ArchiveMemberList &list) const {
++ for (int i=0;i<_numFiles;++i)
++  list.push_back(Common::ArchiveMemberPtr(new Common::GenericArchiveMember(Common::Path(_files[i].name),*this)));
++ return _numFiles;
++}
++const Common::ArchiveMemberPtr FastFile::getMember(const Common::Path &path) const {
++ if (!hasFile(path)) return Common::ArchiveMemberPtr();
++ return Common::ArchiveMemberPtr(new Common::GenericArchiveMember(path,*this));
++}
++Common::SeekableReadStream *FastFile::createReadStreamForMember(const Common::Path &path) const {
++ int i=findFile(path);
++ if (i<0) return nullptr;
++ int end=i+1<_numFiles ? _files[i+1].offset : _totalSize;
++ Common::SeekableReadStream *file=SearchMan.createReadStreamForMember(Common::Path(_path));
++ if (!file) return nullptr;
++ return new Common::SeekableSubReadStream(file,_files[i].offset,end,DisposeAfterUse::YES);
++}
+ Common::SharedPtr<Common::SeekableReadStream> FastFile::resolve(const char *filename) {
+-	Common::String converted = filename;
+-	int index = -1;
+-	//HACK
+-	if (converted.size() >= 2 && converted[0] == '.' && converted[1] == '/') {
+-		converted = converted.substr(2, converted.size() - 2);
+-	}
+-	for (int i = 0; i < _numFiles; i++) {
+-		if (_files[i].name.equalsIgnoreCase(converted)) {
+-			index = i;
+-			break;
+-		}
+-	}
+-	if (index == -1) {
+-		return nullptr;
+-	}
+-	const auto &entry = _files[index];
+-	int size = 0;
+-	if (index == _numFiles - 1) {
+-		size = _totalSize - entry.offset;
+-	} else {
+-		size = _files[index + 1].offset - entry.offset;
+-	}
+-	auto stream = openFile(_path, entry.offset, size);
+-	assert(stream);
+-	return Common::SharedPtr<Common::SeekableReadStream>(stream);
++ return Common::SharedPtr<Common::SeekableReadStream>(createReadStreamForMember(Common::Path(filename)));
+ }
+ 
+ } // End of namespace Watchmaker
+--- a/engines/watchmaker/ll/ll_ffile.h
++++ b/engines/watchmaker/ll/ll_ffile.h
+@@ -23,12 +23,14 @@
+ #define WATCHMAKER_LL_FFILE_H
+ 
+ #include "common/ptr.h"
++#include "common/archive.h"
+ #include "common/stream.h"
+ 
+ namespace Watchmaker {
+ 
+ struct FileEntry;
+-class FastFile {
++class FastFile : public Common::Archive {
++	int findFile(const Common::Path &path) const;
+ 	const char *_path = nullptr;
+ 	int _totalSize = 0;
+ public:
+@@ -36,7 +38,11 @@
+ 	FileEntry *_files = nullptr; // TODO: This could just be a Common::Array
+ 
+ 	FastFile(const char *path);
+-	~FastFile();
++	~FastFile() override;
++	bool hasFile(const Common::Path &path) const override;
++	int listMembers(Common::ArchiveMemberList &list) const override;
++	const Common::ArchiveMemberPtr getMember(const Common::Path &path) const override;
++	Common::SeekableReadStream *createReadStreamForMember(const Common::Path &path) const override;
+ 
+ 	Common::SharedPtr<Common::SeekableReadStream> resolve(const char *filename);
+ };
+--- a/engines/watchmaker/ll/ll_mesh.cpp
++++ b/engines/watchmaker/ll/ll_mesh.cpp
+@@ -506,7 +506,6 @@
+ 	struct SMeshModifier *mm;
+ 	int16 i;
+ 
+-	warning("Not sure this is right"); // Used to check for nullptr, not 0 length.
+ 	if (name.empty() || !p)
+ 		return;
+ 
+@@ -849,7 +848,7 @@
+  *              ChangeMeshMaterialFlags
+  * --------------------------------------------------*/
+ void ChangeMeshMaterialFlag(t3dMESH *m, int8 add, uint32 newflag) {
+-	if (!m || m->hasFaceMaterial()) return;
++	if (!m || !m->hasFaceMaterial()) return;
+ 
+ 	if (add > 0) {
+ 		m->FList[0].getMaterial()->addProperty(newflag);
+--- a/engines/watchmaker/ll/ll_regen.cpp
++++ b/engines/watchmaker/ll/ll_regen.cpp
+@@ -86,152 +86,19 @@
+  *                  Regen
+  * --------------------------------------------------*/
+ void Regen(WGame &game) {
+-	struct SRect UpdateRect[MAX_UPDATE_RECTS], *p;
+-	struct SDDBitmap *n, *o;
+-	struct SRect r, ext;
+-	int32 a, b, upn;
+-	uint8 found, refresh[MAX_PAINT_RECTS];
+-
+-#ifdef DEBUG_REGEN
+-	DebugFile("----- Nuovo Frame -----");
+-#endif
+-	upn = 0;
+-	memset(refresh, 0, sizeof(refresh));
+-	for (uint32 i = 0; i < ARRAYSIZE(UpdateRect); i++) UpdateRect[i].reset();
+-	// I take the Extends of what the engine drew
+-	rGetExtends(&ext.x1, &ext.y1, &ext.x2, &ext.y2);
+-	// 1 - Compare each element of PaintRect to all OlPaintRect elements
+-	for (a = 0; a < MAX_PAINT_RECTS; a++) {
+-		n = &PaintRect[a];
+-		if (!(n->dx) || !(n->dy))
++	// The GL back buffer stores draw references, not persistent pixels.
++	// Rebuild it each frame so removed windows cannot remain over the scene.
++	game._renderer->_bitmapList.bitmaps[BACK_BUFFER].clear();
++	for (const auto &rect : PaintRect) {
++		if (rect.tnum <= 0 || rect.dx <= 0 || rect.dy <= 0)
+ 			continue;
+-#ifdef DEBUG_REGEN
+-		DebugFile("%d: Controllo rect %d '%s': %d,%d %d,%d", a, n->tnum, rGetBitmapName(n->tnum), n->px + n->ox, n->py + n->oy, n->dx, n->dy);
+-#endif
+-		found = 0;
+-		for (b = 0; b < MAX_PAINT_RECTS; b++) {
+-			o = &OldPaintRect[b];
+-			if (!(o->dx) || !(o->dy))
+-				continue;
+-
+-			if ((n->tnum == o->tnum) && (n->px == o->px) && (n->py == o->py) && (n->ox == o->ox) && (n->oy == o->oy) && (n->dx == o->dx) && (n->dy == o->dy)) {
+-#ifdef DEBUG_REGEN
+-				DebugFile("-> Gia' disegnato");
+-#endif
+-				refresh[b] = 1;
+-				found ++;
+-			}
+-		}
+-		// if it's a new rectangle, compile UpdateRect
+-		if (true || !found) { // HACK: Just always treat everything as new, since we're doing GL
+-#ifdef DEBUG_REGEN
+-			DebugFile("-> Nuovo rettangolo");
+-#endif
+-			UpdateRect[upn].x1 = n->px + n->ox;
+-			UpdateRect[upn].y1 = n->py + n->oy;
+-			UpdateRect[upn].x2 = n->px + n->ox + n->dx;
+-			UpdateRect[upn].y2 = n->py + n->oy + n->dy;
+-			upn ++;
+-		}
+-	}
+-	// 2 - If there are any reactangles that need to be deleted, compile UpdateRect
+-	for (a = 0; a < MAX_PAINT_RECTS; a++) {
+-		n = &OldPaintRect[a];
+-		if (!(n->dx) || !(n->dy))
+-			continue;
+-
+-		if ((!refresh[a]) && (n->dx) && (n->dy)) {
+-#ifdef DEBUG_REGEN
+-			DebugFile("Non viene piu' ridisegnato %d '%s': %d,%d %d,%d", n->tnum, rGetBitmapName(n->tnum), n->px + n->ox, n->py + n->oy, n->dx, n->dy);
+-#endif
+-			UpdateRect[upn].x1 = n->px + n->ox;
+-			UpdateRect[upn].y1 = n->py + n->oy;
+-			UpdateRect[upn].x2 = n->px + n->ox + n->dx;
+-			UpdateRect[upn].y2 = n->py + n->oy + n->dy;
+-			upn ++;
+-		}
+-	}
+-
+-	// 3 - For all UpdateRects delete the ScreenBuffer and copy what's left
+-	for (a = 0; a < upn; a++) {
+-		p = &UpdateRect[a];
+-		if (!(p->x2 - p->x1) || !(p->y2 - p->y1))
+-			continue;
+-
+-		// Clear ScreenBuffer
+-		game._renderer->clearBitmap(BACK_BUFFER, (p->x1), (p->y1), (p->x2 - p->x1), (p->y2 - p->y1), 0, 0, 0);
+-	}
+-
+-	for (a = 0; a < upn; a++) {
+-		p = &UpdateRect[a];
+-		if (!(p->x2 - p->x1) || !(p->y2 - p->y1))
+-			continue;
+-
+-#ifdef DEBUG_REGEN
+-		DebugFile("Ridisegno quello che sta sopra a %d,%d %d,%d", p->x1, p->y1, p->x2 - p->x1, p->y2 - p->y1);
+-#endif
+-		found = 0;
+-		for (b = 0; b < MAX_PAINT_RECTS; b++) {
+-			n = &PaintRect[b];
+-			if (!(n->dx) || !(n->dy))
+-				continue;
+-
+-			// If it intersects, copies intersection only
+-			if ((IntersecateRect(p->x1, p->y1, p->x2, p->y2, n->px + n->ox, n->py + n->oy, n->px + n->ox + n->dx, n->py + n->oy + n->dy, &r)) &&
+-			        (n->ox + r.x2 - r.x1) && (n->oy + r.y2 - r.y1)) {
+-#ifdef DEBUG_REGEN
+-				DebugFile("Copio %d '%s': P %d,%d O %d,%d D %d,%d", n->tnum, rGetBitmapName(n->tnum), (n->px + n->ox + r.x1), (n->py + n->oy + r.y1), (n->ox + r.x1), (n->oy + r.y1), (r.x2 - r.x1), (r.y2 - r.y1));
+-//				DebugLogWindow( "Copio %d '%s': P %d,%d O %d,%d D %d,%d", n->tnum, rGetBitmapName(n->tnum), (n->px+n->ox+r.x1), (n->py+n->oy+r.y1), (n->ox+r.x1), (n->oy+r.y1), (r.x2-r.x1), (r.y2-r.y1) );
+-#endif
+-				rBlitter(game, BACK_BUFFER, n->tnum, (n->px + n->ox + r.x1), (n->py + n->oy + r.y1), (n->ox + r.x1), (n->oy + r.y1), (r.x2 - r.x1), (r.y2 - r.y1));
+-				found ++;
+-			}
+-		}
+-
+-		if (!found) {
+-			if (p) p->reset();
+-		}
+-	}
+-
+-	// 4 - Copy on screen only the UpdateRects by stretching them.
+-	for (a = 0; a < MAX_PAINT_RECTS; a++) {
+-		n = &PaintRect[a];
+-		if (!(n->dx) || !(n->dy))
+-			continue;
+-
+-		if ((n->px + n->ox) < ext.x1) ext.x1 = n->px + n->ox;
+-		if ((n->py + n->oy) < ext.y1) ext.y1 = n->py + n->oy;
+-		if ((n->px + n->ox + n->dx) > ext.x2) ext.x2 = n->px + n->ox + n->dx;
+-		if ((n->py + n->oy + n->dy) > ext.y2) ext.y2 = n->py + n->oy + n->dy;
+-	}
+-	for (a = 0; a < upn; a++) {
+-		p = &UpdateRect[a];
+-		if (!(p->x2 - p->x1) || !(p->y2 - p->y1))
+-			continue;
+-
+-		if (p->x1 < ext.x1) ext.x1 = p->x1;
+-		if (p->y1 < ext.y1) ext.y1 = p->y1;
+-		if (p->x2 > ext.x2) ext.x2 = p->x2;
+-		if (p->y2 > ext.y2) ext.y2 = p->y2;
+-	}
+-	auto windowInfo = game._renderer->getScreenInfos();
+-	if (ext.x1 < 0) ext.x1 = 0;
+-	if (ext.y1 < 0) ext.y1 = 0;
+-	if (ext.x2 > (int32)windowInfo.width) ext.x2 = windowInfo.width;
+-	if (ext.y2 > (int32)windowInfo.height) ext.y2 = windowInfo.height;
+-#ifdef DEBUG_REGEN
+-	DebugFile("Aggiorna video %d,%d %d,%d", ext.x1, ext.y1, ext.x2 - ext.x1, ext.y2 - ext.y1);
+-//	DebugLogWindow( "Aggiorna video %d,%d %d,%d", ext.x1, ext.y1, ext.x2-ext.x1, ext.y2-ext.y1 );
+-#endif
+-	rUpdateExtends(ext.x1, ext.y1, ext.x2, ext.y2);
++		rBlitter(game, BACK_BUFFER, rect.tnum, rect.px + rect.ox, rect.py + rect.oy,
++		         rect.ox, rect.oy, rect.dx, rect.dy);
++	}
+ 	game._renderer->blitScreenBuffer();
+ 	rResetExtends();
+-
+-	// 5 - Copy PaintRect to OldPaintRect
+ 	memcpy(OldPaintRect, PaintRect, sizeof(OldPaintRect));
+-//	memset( OldPaintRect, 0, sizeof( OldPaintRect ) );
+-}
+-
++}
+ 
+ /* -----------------16/11/98 17.29-------------------
+  *                  ResetScreenBuffer
+--- a/engines/watchmaker/ll/ll_sound.cpp
++++ b/engines/watchmaker/ll/ll_sound.cpp
+@@ -20,83 +20,165 @@
+  */
+ 
+ #include "watchmaker/ll/ll_sound.h"
+-#include "watchmaker/windows_hacks.h"
++#include "audio/audiostream.h"
++#include "audio/decoders/wave.h"
++#include "audio/decoders/mp3.h"
++#include "audio/mixer.h"
++#include "common/archive.h"
++#include "common/system.h"
++#include "common/textconsole.h"
++#include "common/debug.h"
+ 
+ namespace Watchmaker {
++namespace {
++struct SoundChannel {
++	Audio::SoundHandle handle;
++	sSound sound = {};
++	bool diffuse = true;
++};
++SoundChannel channels[24];
++sListener listener = {};
++Audio::SoundHandle musicHandle;
++byte soundVolume = 255, speechVolume = 255, musicVolume = 255;
+ 
+-bool mInitMusicSystem() {
+-	warning("STUBBED: mInitMusicSystem");
++Common::String soundPath(const char *name) {
++	Common::String path(name);
++	for (uint i = 0; i < path.size(); ++i)
++		if (path[i] == '\\') path.setChar('/', i);
++	while (path.hasPrefix("./")) path = path.substr(2);
++	return path;
++}
++
++Audio::SeekableAudioStream *loadAudio(const Common::String &path) {
++	auto *file = SearchMan.createReadStreamForMember(Common::Path(path));
++	if (!file) return nullptr;
++	if (path.hasSuffixIgnoreCase(".wav"))
++		return Audio::makeWAVStream(file, DisposeAfterUse::YES);
++#ifdef USE_MAD
++	if (path.hasSuffixIgnoreCase(".mp3"))
++		return Audio::makeMP3Stream(file, DisposeAfterUse::YES);
++#endif
++	delete file;
++	return nullptr;
++}
++
++void updateChannel(SoundChannel &channel) {
++	if (!g_system->getMixer()->isSoundHandleActive(channel.handle)) return;
++	float gain = 1.f;
++	int balance = 0;
++	if (!channel.diffuse) {
++		const auto &s = channel.sound;
++		const float dx = s.v3flPosition.x - listener.v3flPosition.x;
++		const float dy = s.v3flPosition.y - listener.v3flPosition.y;
++		const float dz = s.v3flPosition.z - listener.v3flPosition.z;
++		const float distance = sqrtf(dx * dx + dy * dy + dz * dz);
++		if (s.flMaxDistance > s.flMinDistance && distance > s.flMinDistance)
++			gain = MAX(0.f, (s.flMaxDistance - distance) / (s.flMaxDistance - s.flMinDistance));
++		// Listener front/top define the horizontal right vector in game space.
++		const auto &f = listener.v3flFrontOrientation;
++		const auto &t = listener.v3flTopOrientation;
++		const float rx = t.y*f.z-t.z*f.y, ry = t.z*f.x-t.x*f.z, rz = t.x*f.y-t.y*f.x;
++		const float length = sqrtf(rx*rx+ry*ry+rz*rz);
++		if (distance > 0.f && length > 0.f)
++			balance = CLIP<int>((int)(127.f * (dx*rx+dy*ry+dz*rz)/(distance*length)), -127, 127);
++	}
++	const byte volume = channel.sound.dwFlags & SOUND_SPEECH ? speechVolume : soundVolume;
++	g_system->getMixer()->setChannelVolume(channel.handle, (byte)(volume * gain));
++	g_system->getMixer()->setChannelBalance(channel.handle, balance);
++}
++
++bool startSound(sSound *sound, bool reload, bool diffuse) {
++	if (!sound || !sound->name[0]) return false;
++	SoundChannel *slot = nullptr;
++	for (auto &channel : channels) {
++		if (g_system->getMixer()->isSoundHandleActive(channel.handle)) {
++			if (channel.sound.lIndex == sound->lIndex) {
++				if (!reload && sound->dwLooped) return true;
++				g_system->getMixer()->stopHandle(channel.handle);
++				slot = &channel;
++				break;
++			}
++		} else if (!slot) slot = &channel;
++	}
++	if (!slot) return false;
++	Common::String path = soundPath(sound->name);
++	auto *stream = loadAudio(path);
++	if (!stream) {
++		warning("Watchmaker audio: cannot decode %s", path.c_str());
++		return false;
++	}
++	slot->sound = *sound;
++	slot->diffuse = diffuse || (sound->dwFlags & SOUND_SPEECH);
++	Audio::AudioStream *playback = stream;
++	if (sound->dwLooped) playback = Audio::makeLoopingAudioStream(stream, 0);
++	g_system->getMixer()->playStream(sound->dwFlags & SOUND_SPEECH ? Audio::Mixer::kSpeechSoundType : Audio::Mixer::kSFXSoundType,
++		&slot->handle, playback);
++	updateChannel(*slot);
++	debug(1, "Watchmaker audio: playing %s", path.c_str());
+ 	return true;
+ }
++byte volumeFromPercent(byte volume) { return MIN<uint>(volume, 100) * 255 / 100; }
++}
+ 
+-bool mCloseMusicSystem() {
+-	warning("STUBBED: mCloseMusicSystem");
++bool mInitMusicSystem() { return g_system->getMixer()->isReady(); }
++bool mCloseMusicSystem() { sStopAllSounds(); return mStopMusic(); }
++static Common::String musicPath(const char *name) {
++	Common::String path = soundPath(name);
++	if (path.hasSuffixIgnoreCase(".mid")) {
++		const uint slash = path.findLastOf('/');
++		path = slash == Common::String::npos ? path : path.substr(slash + 1);
++		path = "Music/" + path.substr(0, path.size() - 4) + ".mp3";
++	}
++	return path;
++}
++bool mLoadMusic(const char *name) { return SearchMan.hasFile(Common::Path(musicPath(name))); }
++bool mPlayMusic(const char *name) {
++	const Common::String path = musicPath(name);
++	auto *stream = loadAudio(path);
++	if (!stream) { warning("Watchmaker music: cannot decode %s", path.c_str()); return false; }
++	debug(1, "Watchmaker music: playing %s", path.c_str());
++	g_system->getMixer()->stopHandle(musicHandle);
++	g_system->getMixer()->playStream(Audio::Mixer::kMusicSoundType, &musicHandle,
++		Audio::makeLoopingAudioStream(stream, 0), -1, musicVolume);
+ 	return true;
+ }
+-
+-bool mLoadMusic(const char *FileName) {
+-	warning("STUBBED: mLoadMusic");
++bool mStopMusic() { g_system->getMixer()->stopHandle(musicHandle); return true; }
++bool mRestoreMixerVolume() { return true; }
++bool sSetListener(sListener *value) {
++	if (!value) return false;
++	listener = *value;
++	for (auto &channel : channels) updateChannel(channel);
+ 	return true;
+ }
+-
+-bool mPlayMusic(const char *FileName) {
+-	warning("STUBBED: mPlayMusic");
++bool sStartSound(sSound *sound, bool reload) { return startSound(sound, reload, false); }
++bool sStartSoundDiffuse(sSound *sound) { return startSound(sound, false, true); }
++bool sStopSound(int32 index) {
++	for (auto &channel : channels)
++		if (channel.sound.lIndex == index) g_system->getMixer()->stopHandle(channel.handle);
+ 	return true;
+ }
+-
+-bool mStopMusic() {
+-	warning("STUBBED: mStopMusic");
++bool sStopAllSounds() {
++	for (auto &channel : channels) g_system->getMixer()->stopHandle(channel.handle);
+ 	return true;
+ }
+-
+-bool mRestoreMixerVolume() {
+-	warning("STUBBED: mRestoreMixerVolume");
++bool sIsPlaying(sS32 index) {
++	for (auto &channel : channels)
++		if (channel.sound.lIndex == index && g_system->getMixer()->isSoundHandleActive(channel.handle)) return true;
++	return false;
++}
++bool mSetAllVolume(unsigned char volume) {
++	musicVolume = volumeFromPercent(volume);
++	g_system->getMixer()->setChannelVolume(musicHandle, musicVolume);
+ 	return true;
+ }
+-
+-bool sSetListener(sListener *NewListener) {
+-	warning("STUBBED: sSetListener");
++bool sSetAllSoundsVolume(unsigned char volume) {
++	soundVolume = volumeFromPercent(volume);
++	for (auto &channel : channels) updateChannel(channel);
+ 	return true;
+ }
+-
+-bool sStartSound(sSound *CurSound, bool Reload) {
+-	warning("STUBBED: sStartSound");
++bool sSetAllSpeechVolume(unsigned char volume) {
++	speechVolume = volumeFromPercent(volume);
++	for (auto &channel : channels) updateChannel(channel);
+ 	return true;
+ }
+-
+-bool sStopSound(int32 index) {
+-	warning("STUBBED: sStopSound");
+-	return true;
+-}
+-
+-bool sStopAllSounds() {
+-	warning("STUBBED: sStopAllSounds");
+-	return true;
+-}
+-
+-bool sIsPlaying(sS32 lIndex) {
+-	warning("STUBBED: sIsPlaying");
+-	return true;
+-}
+-
+-bool mSetAllVolume(unsigned char Volume) {
+-	warning("STUBBED: mSetAllVolume");
+-	return true;
+-}
+-
+-bool sSetAllSoundsVolume(unsigned char Vol) {
+-	warning("STUBBED: sSetAllSoundsVolume");
+-	return true;
+-}
+-
+-bool sSetAllSpeechVolume(unsigned char Vol) {
+-	warning("STUBBED: sSetAllSpeechVolume");
+-	return true;
+-}
+-
+-bool sStartSoundDiffuse(sSound *CurSound) {
+-	warning("STUBBED: sStartSoundDiffuse");
+-	return true;
+-}
+-
+ } // End of namespace Watchmaker
+--- a/engines/watchmaker/ll/ll_system.cpp
++++ b/engines/watchmaker/ll/ll_system.cpp
+@@ -122,7 +122,6 @@
+ }
+ 
+ bool t3dGetFileDate(uint32 *date, uint32 *time, const char *name) {
+-	warning("TODO: t3dGetFileDate is currently super-inefficient: %s", name);
+ 	*date = 0;
+ 	*time = 0;
+ 	return checkFileExists(name);
+--- a/engines/watchmaker/ll/ll_util.cpp
++++ b/engines/watchmaker/ll/ll_util.cpp
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include "watchmaker/ll/ll_util.h"
++#include "watchmaker/classes/do_sound.h"
+ #include "watchmaker/ll/ll_anim.h"
+ #include "watchmaker/ll/ll_diary.h"
+ #include "watchmaker/ll/ll_mesh.h"
+@@ -335,10 +336,10 @@
+ #if 0
+ //	Se ha cambiato stanza cambia anche l'environment
+ 	sSetEnvironment(init.Room[cr].env);
++#endif
+ //	Se ha cambiato stanza cambia anche la musica
+ 	if (!(LoaderFlags & T3D_NOMUSIC) && (init.Room[cr].music != nNULL))
+ 		PlayMusic(init.Room[cr].music, 3000, 3000);
+-#endif
+ 	init.Room[cr].flags |= ROOM_VISITED;
+ 
+ //	Aggiorna oggetti speciali
+--- a/engines/watchmaker/main.cpp
++++ b/engines/watchmaker/main.cpp
+@@ -28,6 +28,7 @@
+ #include "watchmaker/saveload.h"
+ #include "watchmaker/schedule.h"
+ #include "watchmaker/types.h"
++#include "watchmaker/ll/ll_sound.h"
+ #include "watchmaker/utils.h"
+ #include "watchmaker/walk/act.h"
+ #include "watchmaker/walk/ball.h"
+@@ -83,6 +84,10 @@
+ 	if (!(LoaderFlags & T3D_NOSOUND) && !(InitMusic()))                // Attiva DirectSound
+ 		warning("No Sound-Card detected");
+ 
++	sSetAllSoundsVolume(game->gameOptions.sound_volume);
++	sSetAllSpeechVolume(game->gameOptions.speech_volume);
++	mSetAllVolume(game->gameOptions.music_volume);
++
+ 	//  aggiorna i volumi
+ 	/*
+ 	sSetAllSoundsVolume(GameOptions.sound_volume);
+@@ -151,9 +156,8 @@
+ void Render3DEnvironment(WGame &game) {
+ 	t3dV3F cp;
+ 	int32 i;
+-//	Cancella buffers
+-	//if (!rClearBuffers(0, rCLEARBACKBUFFER | rCLEARZBUFFER))
+-	//  DebugLogWindow("Unable to clear backbuffers\n");
++// Clear both attachments before replaying this frame.
++	rClearBuffers(rCLEARSCREENBUFFER | rCLEARZBUFFER);
+ 	t3dResetPipeline();
+ 	// Update mouse coordinates and project them in 3D
+ 	HandleMouseChanges();
+--- a/engines/watchmaker/render.cpp
++++ b/engines/watchmaker/render.cpp
+@@ -28,6 +28,8 @@
+ #include "watchmaker/game.h"
+ #include "watchmaker/rect.h"
+ #include "watchmaker/renderer.h"
++#include "watchmaker/3d/material.h"
++#include "watchmaker/3d/render/opengl_renderer.h"
+ 
+ #if defined(USE_OPENGL_SHADERS)
+ 
+@@ -38,6 +40,8 @@
+ #define MAX_BITMAP_LIST 1024
+ 
+ namespace Watchmaker {
++
++extern Renderer *g_bitmapRenderer;
+ 
+ bool rInitialize3DEnvironment(WGame &game, char *cfg) {
+ 	warning("STUBBED: rInitialize3DEnvironment");
+@@ -90,14 +94,17 @@
+ }
+ 
+ bool rClearBuffers(char flags) {
++	static unsigned clearCalls;
++	if (++clearCalls <= 8 || clearCalls % 120 == 0)
++		warning("WM clear call %u flags %u", clearCalls, (unsigned)flags);
+ 	checkGlError("Entering rClearBuffers");
+ 	bool clearStencil = rGetStencilBitDepth() != 0;
+ 	bool clearDepth = flags & rCLEARZBUFFER;
+ 	//bool clearBack = flags & rCLEARBACKBUFFER;
+ 	bool clearScreen = flags & rCLEARSCREENBUFFER;
+ 
+-	// Picking green to make the clear color easy to spot.
+-	glClearColor(0, 1, 0, 1);
++	glClearColor(0, 0, 0, 1);
++	glDepthMask(GL_TRUE);
+ 	GLbitfield mask = (clearStencil ? GL_STENCIL_BUFFER_BIT : 0) | (clearDepth ? GL_DEPTH_BUFFER_BIT : 0) | (clearScreen ? GL_COLOR_BUFFER_BIT : 0);
+ 	glClear(mask);
+ 	return checkGlError("rClearBuffers");
+@@ -118,13 +125,38 @@
+ }
+ 
+ bool rSetMovieFrame(MaterialPtr mat, uint32 dwCurrFrame) {
+-	warning("STUBBED: rSetMovieFrame");
+-	return false;
++	if (!mat || !mat->Movie || !mat->Movie->_numFrames)
++		return false;
++	auto &movie = *mat->Movie;
++	if (dwCurrFrame == 0xFFFF) {
++		// Resume timed playback from the selected frame, not the old clock.
++		if (movie._curFrame == 0xFFFF && !movie.setFrame(0))
++			return false;
++		if (movie._frameRate)
++			movie._startTime = timeGetTime() - (movie._curFrame * 1000u / movie._frameRate);
++		movie._paused = false;
++		return true;
++	}
++	if (dwCurrFrame >= movie._numFrames || !movie.setFrame(dwCurrFrame))
++		return false;
++	// Seeking repositions timed playback; it does not pause the material.
++	if (movie._frameRate)
++		movie._startTime = timeGetTime() - (dwCurrFrame * 1000u / movie._frameRate);
++	movie._paused = false;
++	return true;
+ }
+ 
+ int rCreateSurface(unsigned int dimx, unsigned int dimy, unsigned char flags) {
+-	warning("STUBBED: rCreateSurface");
+-	return 0;
++	if (!g_bitmapRenderer || !dimx || !dimy || dimx > 32767 || dimy > 32767)
++		return 0;
++	const unsigned id = g_bitmapRenderer->_bitmapList.acquirePosition();
++	if (!id) return 0;
++	auto &bitmap = g_bitmapRenderer->_bitmapList.bitmaps[id];
++	bitmap = gTexture();
++	bitmap.DimX = bitmap.RealDimX = dimx;
++	bitmap.DimY = bitmap.RealDimY = dimy;
++	bitmap.Flags = flags;
++	return id;
+ }
+ 
+ void *rCreateSurfaceP(unsigned int dimx, unsigned int dimy, unsigned char flags) {
+@@ -143,7 +175,7 @@
+ }
+ 
+ void rGetScreenInfos(unsigned int *width, unsigned int *height, unsigned int *bpp) {
+-	warning("STUBBED: rGetScreenInfos");
++	// Logical game canvas (the backend scales it to the display).
+ 	*width = 800;
+ 	*height = 600;
+ 	*bpp = 32;
+@@ -165,8 +197,10 @@
+ }
+ 
+ void rReleaseBitmap(int i) {
+-	error("STUBBED: rReleaseBitmap");
+-	return;
++	if (!g_bitmapRenderer || i <= 0 || i >= MAX_BITMAP_LIST) return;
++	auto &bitmap = g_bitmapRenderer->_bitmapList.bitmaps[i];
++	delete bitmap._texture;
++	bitmap = gTexture();
+ }
+ 
+ void rReleaseAllTextures(unsigned int NotFlags) {
+@@ -175,13 +209,12 @@
+ }
+ 
+ void rSetBitmapName(unsigned int id, const char *s) {
+-	error("STUBBED: rSetBitmapName");
+-	return;
++	if (!g_bitmapRenderer || id == 0 || id >= MAX_BITMAP_LIST) return;
++	g_bitmapRenderer->_bitmapList.bitmaps[id].name = s ? s : "";
+ }
+ 
+ uint32 rGetMovieFrame(MaterialPtr mat) {
+-	error("STUBBED: rGetMovieFrame");
+-	return 0;
++	return mat && mat->Movie && mat->Movie->_curFrame != 0xFFFF ? mat->Movie->_curFrame : 0;
+ }
+ 
+ 
+--- a/engines/watchmaker/renderer.cpp
++++ b/engines/watchmaker/renderer.cpp
+@@ -40,8 +40,17 @@
+ 
+ namespace Watchmaker {
+ 
++Renderer *g_bitmapRenderer = nullptr;
++
+ Renderer::Renderer(WGame *game, sdl_wrapper *wrapper) : _2dStuff(this), sdl(wrapper), _game(game) {
+ 	_workDirs = &game->workDirs;
++	_fonts = &game->_fonts;
++	g_bitmapRenderer = this;
++}
++
++Renderer::~Renderer() {
++	if (g_bitmapRenderer == this) g_bitmapRenderer = nullptr;
++	for (auto &bitmap : _bitmapList.bitmaps) delete bitmap._texture;
+ }
+ 
+ // blitter info
+--- a/engines/watchmaker/renderer.h
++++ b/engines/watchmaker/renderer.h
+@@ -51,6 +51,7 @@
+ 	Fonts *_fonts = nullptr;
+ 	Common::Rect _viewport;
+ 	Renderer(WGame *game, sdl_wrapper *wrapper);
++	~Renderer();
+ 	bool addMaterial(gMaterial &material, const Common::String &name, int NumFaces, unsigned int LoaderFlags);
+ 
+ 	void initGL();
+--- a/engines/watchmaker/saveload.cpp
++++ b/engines/watchmaker/saveload.cpp
+@@ -84,7 +84,11 @@
+ 
+ 	if (!TextBucket) TextBucket = (char *)calloc(1, TEXT_BUCKET_SIZE);
+ 
+-	stream.read(TextBucket, TEXT_BUCKET_SIZE);
++	// TEXT_BUCKET_SIZE is allocation capacity, not the on-disk text length.
++	const int64 remaining = stream.size() - stream.pos();
++	if (remaining < 0 || remaining > TEXT_BUCKET_SIZE) error("Invalid Watchmaker text size");
++	memset(TextBucket, 0, TEXT_BUCKET_SIZE);
++	if (stream.read(TextBucket, remaining) != remaining) error("Truncated Watchmaker text");
+ 
+ 	TextPtr = TextBucket;
+ 
+@@ -109,6 +113,7 @@
+ 	init.loadFromStream(*stream);
+ 
+ 	loadTextBucket(*stream);
++	if (stream->err() || stream->eos()) error("Truncated Watchmaker game data");
+ }
+ 
+ /* -----------------28/06/00 10.12-------------------
+--- a/engines/watchmaker/schedule.cpp
++++ b/engines/watchmaker/schedule.cpp
+@@ -19,6 +19,7 @@
+  *
+  */
+ 
++#include "common/debug.h"
+ #include "watchmaker/schedule.h"
+ #include "watchmaker/sysdef.h"
+ #include "watchmaker/types.h"
+@@ -123,7 +124,7 @@
+ 	pqueue *lq;
+ 	message *lm;
+ 
+-	warning("Event(%s, event=%d, flags=%d, wparam1=%d, wparam2=%d, bparam=%d", eventToString(classe), event, flags, wparam1, wparam2, bparam);
++	debug(5, "Event(%s, event=%d, flags=%d, wparam1=%d, wparam2=%d, bparam=%d", eventToString(classe), event, flags, wparam1, wparam2, bparam);
+ 	if (classe == EventClass::MC_IDLE && !event)
+ 		return ;
+ 
+@@ -223,7 +224,7 @@
+ void ProcessTheMessage(WGame &game) {
+ SUPEREVENT:
+ 	if (TheMessage->classe != EventClass::MC_IDLE)
+-		warning("doEvent: %s - %d", eventToString(TheMessage->classe), TheMessage->event);
++		debug(5, "doEvent: %s - %d", eventToString(TheMessage->classe), TheMessage->event);
+ 
+ 	switch (TheMessage->classe) {
+ 	case EventClass::MC_IDLE:
+--- a/engines/watchmaker/struct.h
++++ b/engines/watchmaker/struct.h
+@@ -104,6 +104,15 @@
+ 	SerializableDynamicArray(uint32 size) : _size(size) {
+ 		_array = new T[size] {};
+ 	}
++	SerializableDynamicArray(const SerializableDynamicArray &) = delete;
++	SerializableDynamicArray &operator=(const SerializableDynamicArray &) = delete;
++	SerializableDynamicArray &operator=(SerializableDynamicArray &&other) {
++		if (this != &other) {
++			delete[] _array; _array=other._array; _size=other._size;
++			other._array=nullptr; other._size=0;
++		}
++		return *this;
++	}
+ 	~SerializableDynamicArray() {
+ 		delete[] _array;
+ 	}
+@@ -167,9 +176,11 @@
+ 		room = stream.readByte();
+ 		goroom = stream.readByte();
+ 		ninv = stream.readByte();
++		stream.skip(1); // Original Win32 structure padding.
+ 		flags = stream.readUint16LE();
+ 		pos = stream.readByte();
+ 		meshlink_int.loadFromStream(stream);
++		stream.skip(1);
+ 		// HACK:
+ 		for (int i = 0; i < MAX_OBJ_MESHLINKS; i++) {
+ 			meshlink[i] = meshlink_int.rawArray()[i].rawArray();
+@@ -233,9 +244,11 @@
+ 		atframe.loadFromStream(stream);
+ 		flags = stream.readUint32LE();
+ 		active = stream.readSint16LE();
++		stream.skip(2);
+ 		obj = stream.readSint32LE();
+ 		pos = stream.readByte();
+ 		cam = stream.readByte();
++		stream.skip(2);
+ 	}
+ };
+ 
+@@ -252,6 +265,7 @@
+ 		stream.read(name, T3D_NAMELEN);
+ 		flags = stream.readByte();
+ 		meshlink.loadFromStream(stream);
++		stream.skip(3); // Align the serialized 32-bit fields.
+ 		ConeInside = stream.readUint32LE();
+ 		ConeOutside = stream.readUint32LE();
+ 		ConeOutsideVolume = stream.readSint32LE();
+@@ -291,6 +305,7 @@
+ 
+ 	void loadFromStream(Common::SeekableReadStream &stream) override {
+ 		com = stream.readByte();
++		stream.skip(1);
+ 		param1 = stream.readUint16LE();
+ 		param2 = stream.readUint16LE();
+ 	}
+@@ -314,6 +329,7 @@
+ 
+ 	void loadFromStream(Common::SeekableReadStream &stream) override {
+ 		flags = stream.readUint16LE();
++		stream.skip(2);
+ 		obj = stream.readSint32LE();
+ 		AltPosSco.loadFromStream(stream);
+ 		AltCamSco.loadFromStream(stream);
+@@ -359,6 +375,7 @@
+ 		cur = stream.readUint16LE();
+ 		end_hideobj = stream.readUint16LE();
+ 		item.loadFromStream(stream);
++		stream.skip(2);
+ 	}
+ };
+ 
+@@ -543,6 +560,7 @@
+ 		stream.read(name, 64);
+ 		role = stream.readUint16LE();
+ 		flags = stream.readByte();
++		stream.skip(1);
+ 	}
+ };
+ 
+--- a/engines/watchmaker/t2d/expr.cpp
++++ b/engines/watchmaker/t2d/expr.cpp
+@@ -22,6 +22,7 @@
+ #define FORBIDDEN_SYMBOL_EXCEPTION_strcpy
+ 
+ #include "watchmaker/t2d/expr.h"
++#include "common/random.h"
+ #include "watchmaker/windows_hacks.h"
+ #include "watchmaker/globvar.h"
+ 
+@@ -30,8 +31,6 @@
+ 
+ #define MIN_VISEMA_LENG 70
+ 
+-#define RandomInt(Max) (rand()%(Max+1))
+-#define RandomFloat(Max) ((float)rand()/MAX_RAND)*Max)
+ 
+ #define VIS_DEFAULT_TIME    -10
+ #define VIS_NULL            -999
+@@ -46,6 +45,12 @@
+ //#define PROVAMODE
+ 
+ namespace Watchmaker {
++
++static uint32 visemaRandom(uint32 maximum) {
++	static Common::RandomSource visemaRng("WatchmakerVisema");
++	return visemaRng.getRandomNumber(maximum);
++}
++
+ 
+ struct SilbsStruct {
+ 	const char *Text;
+@@ -612,10 +617,7 @@
+ 			i = 0;
+ 			while ((TimeXVis < MIN_VISEMA_LENG) && (TimeXVis != 0)) {
+ 				CICLECONTROL(i);
+-				error("TODO: Randomness");
+-#if 0
+-				Rnd = LastVis + RandomInt(WavePause[j][2] - LastVis - 1);
+-#endif
++				Rnd = LastVis + visemaRandom(WavePause[j][2] - LastVis - 1);
+ 				if (VisemaBuf[Rnd].Visema != 0)
+ 					VisemaBuf[Rnd].TimeLeng = VIS_NULL;
+ 				if (TrueVisemaDist(VisemaBuf, LastVis, WavePause[j][2]) == 0) break;
+@@ -675,10 +677,7 @@
+ 
+ 	// FIXME: condition never happen
+ 	//if (Text==NULL) return -1;
+-	error("TODO: Randomness");
+-#if 0
+-	srand((unsigned int)time(NULL));
+-#endif
++	// The named ScummVM random source is initialized once, not per sentence.
+ 	VisemaBuf[RPos].Visema = 0;
+ 	VisemaBuf[RPos++].TimeLeng = VIS_NULL;
+ 
+@@ -707,10 +706,7 @@
+ 						LastVis = 0;
+ 						break;
+ 					case 15:
+-						error("TODO: Randomness");
+-#if 0
+-						Rnd = RandomInt(100);
+-#endif
++						Rnd = visemaRandom(100);
+ 						if (Rnd < 15)      VisemaBuf[RPos].Visema = 15;
+ 						else if (Rnd < 30) VisemaBuf[RPos].Visema = 15;
+ 						VisemaBuf[RPos++].TimeLeng = VIS_DEFAULT_TIME;
+--- a/engines/watchmaker/t2d/t2d.cpp
++++ b/engines/watchmaker/t2d/t2d.cpp
+@@ -5033,6 +5033,9 @@
+ 			ScrollWithMouse = 0;
+ 
+ 			bStartMenuActive = 1;
++			StopMusic();
++			if (game.gameOptions.music_on && !(LoaderFlags & T3D_NOMUSIC))
++				mPlayMusic("Music/menu.mp3");
+ 			break;
+ 
+ 		case tGAMEOVER:
+@@ -5112,6 +5115,7 @@
+ 			break;
+ 
+ 		case tMAINMENU:
++			StopMusic();
+ 			bStartMenuActive = 0;
+ 			break;
+ 
+--- a/engines/watchmaker/tga_util.cpp
++++ b/engines/watchmaker/tga_util.cpp
+@@ -32,14 +32,8 @@
+ 	if (!tgaDecoder.loadStream(stream)) {
+ 		error("Failed to load TGA: %s", Name);
+ 	}
+-	auto surface = tgaDecoder.getSurface();
+-	return surface->convertTo(format);
+-#if 0
+-	if (flag & 1)                                                                                // read alpa byte?
+-		bAlpha = 1;
+-	if (flag & rSURFACEFLIP)                                                                    // flip tga orientation?
+-		bFlip = 1;
+-#endif
++	// Bitmap/UI callers use the decoder's normalized top-first rows.
++	return tgaDecoder.getSurface()->convertTo(format);
+ }
+ 
+ } // End of namespace Watchmaker
+--- a/engines/watchmaker/watchmaker.cpp
++++ b/engines/watchmaker/watchmaker.cpp
+@@ -21,8 +21,10 @@
+ 
+ #include "watchmaker/watchmaker.h"
+ #include "watchmaker/console.h"
++#include "watchmaker/ll/ll_sound.h"
+ #include "common/error.h"
+ #include "engines/util.h"
++#include "watchmaker/ll/ll_ffile.h"
+ 
+ namespace Watchmaker {
+ 
+@@ -39,7 +41,10 @@
+ 
+ Common::Error WatchmakerGame::run() {
+ 	initGraphics3d(800, 600);
++	SearchMan.add("watchmaker-game-data", new FastFile("GameData.wm"), -1);
+ 	WMakerMain();
++	mCloseMusicSystem();
++	SearchMan.remove("watchmaker-game-data");
+ 	return Common::kNoError;
+ }
+ 
+--- a/engines/watchmaker/windows_hacks.h
++++ b/engines/watchmaker/windows_hacks.h
+@@ -28,11 +28,11 @@
+ namespace Watchmaker {
+ 
+ // HACKY:
+-#define RGBA_MAKE(r, g, b, a) ((r << 24) | (g << 16) | (b << 8) | a)
+-#define RGBA_GETRED(rgba) (rgba & (0xFF << 24) )
+-#define RGBA_GETGREEN(rgba) (rgba & (0xFF << 16) )
+-#define RGBA_GETBLUE(rgba) (rgba & (0xFF << 8) )
+-#define RGBA_GETALPHA(rgba) (rgba & (0xFF << 0) )
++#define RGBA_MAKE(r, g, b, a) ((uint32(uint8(r)) << 24) | (uint32(uint8(g)) << 16) | (uint32(uint8(b)) << 8) | uint32(uint8(a)))
++#define RGBA_GETRED(rgba) ((uint32(rgba) >> 24) & 0xFFu)
++#define RGBA_GETGREEN(rgba) ((uint32(rgba) >> 16) & 0xFFu)
++#define RGBA_GETBLUE(rgba) ((uint32(rgba) >> 8) & 0xFFu)
++#define RGBA_GETALPHA(rgba) (uint32(rgba) & 0xFFu)
+ #define TRUE true
+ #define FALSE false
+ typedef short WORD;
+--- a/engines/watchmaker/work_dirs.h
++++ b/engines/watchmaker/work_dirs.h
+@@ -42,7 +42,7 @@
+ 	Common::String _camDir = "./CAM/";
+ 	Common::String _mapsDir = "./TMaps/";
+ 	Common::String _moviesDir = "./Movies/"; //lo aggiorno in GetRegistrySettings()
+-	Common::String _speechDir = ""; //lo aggiorno in GetRegistrySettings()
++	Common::String _speechDir = "./Speech/"; //lo aggiorno in GetRegistrySettings()
+ 	Common::String _lightmapsDir = "./LMaps/";
+ 	Common::String _miscDir = "./Misc/";
+ 	Common::String _a3dDir = "./A3D/";

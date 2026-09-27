@@ -155,6 +155,22 @@ def runtime_patches(root):
     edit('audio/softsynth/fmtowns_pc98/towns_pc98_fmsynth.cpp', [
         ('TownsPC98_FmSynth::ChanInternal::ChanInternal() {\n\tmemset(this, 0, sizeof(ChanInternal));\n}',
          'TownsPC98_FmSynth::ChanInternal::ChanInternal()\n\t: enableLeft(false), enableRight(false), updateEnvelopeParameters(false),\n\t  feedbuf{}, algorithm(0), ampModSvty(0), frqModSvty(0), opr{} {\n}')])
+    # Watchmaker keeps its existing geometry code; the experimental bridge
+    # lowers its bounded immediate-mode subset to shaders. Do not enable the
+    # general classic-GL renderer selection in other engines.
+    edit('engines/watchmaker/configure.engine', [
+        ('opengl_game_classic', 'opengl_game_shaders')])
+    for name in ('renderer.cpp', 'render.cpp', '3d/render/opengl_texture.cpp',
+                 '3d/render/opengl_renderer.cpp', '3d/render/opengl_3d.cpp', '3d/render/opengl_2d.cpp'):
+        path = 'engines/watchmaker/' + name
+        original = (root / path).read_text()
+        # The guard also occurs in end-of-block comments.
+        originals[path] = original
+        modified[path] = original.replace('USE_OPENGL_GAME', 'USE_OPENGL_SHADERS')
+        if name in ('3d/render/opengl_texture.cpp', '3d/render/opengl_renderer.cpp'):
+            modified[path] = modified[path].replace('GL_CLAMP)', 'GL_CLAMP_TO_EDGE)').replace('GL_CLAMP;', 'GL_CLAMP_TO_EDGE;')
     for name, text in modified.items():
         patches.extend(difflib.unified_diff(originals[name].splitlines(True), text.splitlines(True), fromfile='a/'+name, tofile='b/'+name))
+    from pathlib import Path
+    patches.extend((Path(__file__).resolve().parents[1] / "patches/scummvm/watchmaker-experimental.patch").read_text().splitlines(True))
     return patches

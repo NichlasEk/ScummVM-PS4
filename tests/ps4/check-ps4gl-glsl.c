@@ -6,11 +6,22 @@
 #include <stdio.h>
 #include <string.h>
 #include "ps4gl-reflect.h"
+#include "ps4gl-fixed-shaders.h"
 int main(void) {
   const char *valid="#version 450\nvoid main(){gl_Position=vec4(0,0,0,1);}";
   uint32_t *words=(uint32_t *)1; size_t bytes=99; char log[512];
   assert(!ps4glCompileVulkanGLSL(0,valid,&words,&bytes,log,sizeof(log)) && !words && !bytes && log[0]);
   assert(ps4glGLSLInitialize() && ps4glGLSLInitialize());
+  for(int textured=0;textured<2;++textured) {
+    char fragment[1024]; ps4glFixedFragment(textured,fragment,sizeof(fragment));
+    uint32_t *v=NULL,*f=NULL; size_t vb=0,fb=0;
+    PS4GLAttributeBinding binding[3]={{"position",0},{"color",1},{"uv",2}};
+    if(!ps4glLinkLegacyGLSL(ps4gl_fixed_vertex,fragment,binding,3,&v,&vb,&f,&fb,log,sizeof(log))) {
+      fprintf(stderr,"Fixed-function shader: %s\n",log); abort();
+    }
+    free(v); free(f);
+  }
+  puts("PASS production fixed-function shader variants (textured and untextured)");
   assert(ps4glCompileVulkanGLSL(0,valid,&words,&bytes,log,sizeof(log)) && words && bytes>=20 && words[0]==0x07230203);
   FILE *out=fopen("build/glslang-host/test.spv","wb"); assert(out);
   assert(fwrite(words,1,bytes,out)==bytes); fclose(out); free(words);

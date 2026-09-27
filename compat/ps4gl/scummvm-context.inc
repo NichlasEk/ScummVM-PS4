@@ -93,6 +93,25 @@
 	PS4GL_LOAD(glVertexAttribPointer);
 	PS4GL_LOAD(glEnableVertexAttribArray);
 	PS4GL_LOAD(glDisableVertexAttribArray);
+	PS4GL_LOAD(glMatrixMode);
+	PS4GL_LOAD(glLoadIdentity);
+	PS4GL_LOAD(glLoadMatrixf);
+	PS4GL_LOAD(glPushMatrix);
+	PS4GL_LOAD(glPopMatrix);
+	PS4GL_LOAD(glScalef);
+	PS4GL_LOAD(glTranslatef);
+	PS4GL_LOAD(glBegin);
+	PS4GL_LOAD(glEnd);
+	PS4GL_LOAD(glVertex3f);
+	PS4GL_LOAD(glColor3f);
+	PS4GL_LOAD(glColor4f);
+	PS4GL_LOAD(glTexCoord2f);
+	PS4GL_LOAD(glAlphaFunc);
+	PS4GL_LOAD(glShadeModel);
+	PS4GL_LOAD(glCullFace);
+	PS4GL_LOAD(glFrontFace);
+	PS4GL_LOAD(glFlush);
+	PS4GL_LOAD(glCompressedTexImage2D);
 #undef PS4GL_LOAD
 	const char *identity = (const char *)glGetString(GL_RENDERER);
 	if (!identity || Common::String(identity) != "OpenGNM Vulkan bridge (experimental)")

@@ -280,3 +280,14 @@ D-pad routing are repaired. A held arrow key walks Manny into the corridor;
 the user also confirmed that the game works. See [Grim implementation and
 validation](PS4-GRIM-SHADERS.md) for remaining GL limits and test evidence.
 Physical PS4 validation remains separate from these shadPS4 results.
+
+## Experimental Vulkan: Watchmaker checkpoint (2026-09-27)
+
+The experimental Vulkan overlay now runs The Watchmaker through its startup,
+menu and opening dialogue in shadPS4. Geometry, model texture orientation,
+scripted movie stopping, WAV effects/speech and display color encoding have
+been repaired. The user accepted the corrected lighting on 2026-09-27.
+Emulator playback remains slow/stuttery; full-game progression, save/load,
+music transitions and physical PS4 output are not verified. See
+[Watchmaker evidence and remaining work](PS4-WATCHMAKER.md).
+The historical package table above is unchanged.

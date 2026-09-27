@@ -2552,3 +2552,162 @@ index 719e9a3..45d845d 100644
          }
          chain = chain->pNext;
      }
+--- a/src/vk_ps4_command.c
++++ b/src/vk_ps4_command.c
+@@ -404,10 +404,12 @@
+     sceGnmDrawCmdSetPsShader(&cmd->gnm_cmd, &dev->clear_ps_regs);
+     sceGnmDrawCmdSetEmbeddedVsShader(&cmd->gnm_cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+ 
+-    /* Draw a fullscreen triangle to clear the entire RT.
++    /* The embedded VS produces (-1,-1), (1,-1), (-1,1), (1,1).
++     * Draw all four corners as a strip; three vertices clear only half the RT.
+      * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky. */
+     sceGnmDrawCmdSetNumInstances(&cmd->gnm_cmd, 1);
+-    sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 3);
++    sceGnmDrawCmdSetPrimitiveType(&cmd->gnm_cmd, GNM_PT_TRISTRIP);
++    sceGnmDrawCmdDrawIndexAuto(&cmd->gnm_cmd, 4);
+ }
+ 
+ /* Choose the appropriate color clear method based on the RT's tile mode.
+@@ -455,12 +457,12 @@
+     sceGnmDrawCmdSetEmbeddedVsShader(cmd, GNM_EMBEDDED_VSH_FULLSCREEN, 0);
+     sceGnmDrawCmdSetEmbeddedPsShader(cmd, GNM_EMBEDDED_PSH_DUMMY);
+ 
+-    /* Draw a fullscreen triangle to trigger the lazy clear.
++    /* Cover both halves using all four embedded VS corners.
+      * Reset instance count to 1 — VGT_INSTANCE_COUNT is sticky and may
+      * have been set to a large value by a previous draw. */
+-    sceGnmDrawCmdSetPrimitiveType(cmd, GNM_PT_TRILIST);
++    sceGnmDrawCmdSetPrimitiveType(cmd, GNM_PT_TRISTRIP);
+     sceGnmDrawCmdSetNumInstances(cmd, 1);
+-    sceGnmDrawCmdDrawIndexAuto(cmd, 3);
++    sceGnmDrawCmdDrawIndexAuto(cmd, 4);
+ }
+ 
+ /* Bind render targets for the current subpass.
+@@ -976,6 +978,8 @@
+         sceGnmDrawCmdInitDefaultHardwareState(&cmd->gnm_cmd);
+     }
+ 
++    cmd->viewport0_valid = false;
++    cmd->screen_scissor_valid = false;
+     cmd->is_recording = true;
+     cmd->is_begin = true;
+     cmd->pm4_used = (uint32_t)(cmd->gnm_cmd.cmdptr - cmd->gnm_cmd.beginptr);
+@@ -1262,6 +1266,7 @@
+     /* GNM viewport: scale/offset maps Vulkan viewport to GNM */
+     for (uint32_t i = 0; i < viewportCount; i++) {
+         const VkViewport *vp = &pViewports[i];
++        if (firstViewport + i == 0) { cmd->viewport0 = *vp; cmd->viewport0_valid = true; }
+         GnmSetViewportInfo vp_info;
+         vp_info.dmin = vp->minDepth;
+         vp_info.dmax = vp->maxDepth;
+@@ -1284,6 +1289,7 @@
+ 
+     for (uint32_t i = 0; i < scissorCount; i++) {
+         const VkRect2D *sc = &pScissors[i];
++        cmd->screen_scissor = *sc; cmd->screen_scissor_valid = true;
+         const uint32_t regs[] = {0x28204, 0x28240, 0x28250};
+         for (unsigned j = 0; j < 3; ++j) {
+             vk_ps4_emit_context_reg(&cmd->gnm_cmd, regs[j], 0x80000000u |
+@@ -2953,6 +2959,32 @@
+                 (uint64_t)rect->rect.offset.x + rect->rect.extent.width > img->create_info.extent.width ||
+                 (uint64_t)rect->rect.offset.y + rect->rect.extent.height > img->create_info.extent.height)
+                 goto unsupported;
++        }
++        /* Render full clears through the color attachment itself. DMA writes
++         * to a display image can leave an emulator's cached render image stale.
++         * A draw is also valid Vulkan behavior on hardware, without that alias. */
++        if (rectCount == 1 && !pRects[0].rect.offset.x && !pRects[0].rect.offset.y &&
++            pRects[0].rect.extent.width == img->create_info.extent.width &&
++            pRects[0].rect.extent.height == img->create_info.extent.height) {
++            if (!cmd->device->clear_ps_ready) goto unsupported;
++            VkViewport saved_viewport = cmd->viewport0;
++            bool saved_viewport_valid = cmd->viewport0_valid;
++            VkRect2D saved_scissor = cmd->screen_scissor_valid ? cmd->screen_scissor : area;
++            GnmDepthStencilControl off = {0};
++            sceGnmDrawCmdSetDepthStencilControl(&cmd->gnm_cmd, &off);
++            sceGnmDrawCmdSetRenderTargetMask(&cmd->gnm_cmd, 15);
++            sceGnmDrawCmdSetPrimitiveType(&cmd->gnm_cmd, GNM_PT_TRILIST);
++            VkViewport vp = {0, 0, img->create_info.extent.width, img->create_info.extent.height, 0, 1};
++            vk_ps4_CmdSetViewport(commandBuffer, 0, 1, &vp);
++            VkRect2D full_scissor = {{0, 0}, {img->create_info.extent.width, img->create_info.extent.height}};
++            vk_ps4_CmdSetScissor(commandBuffer, 0, 1, &full_scissor);
++            vk_ps4_clear_color_draw(cmd, img, &att->clearValue.color);
++            vk_ps4_bind_subpass_targets(cmd);
++            if (saved_viewport_valid) vk_ps4_CmdSetViewport(commandBuffer, 0, 1, &saved_viewport);
++            else cmd->viewport0_valid = false;
++            vk_ps4_CmdSetScissor(commandBuffer, 0, 1, &saved_scissor);
++            if (cmd->current_pipeline) vk_ps4_CmdBindPipeline(commandBuffer,VK_PIPELINE_BIND_POINT_GRAPHICS,(VkPipeline)cmd->current_pipeline);
++            continue;
+         }
+         uint64_t size = 0; uint32_t alignment = 0;
+         if (sceGnmRtCalcByteSize(&size, &alignment, &img->gnm_rt) != GNM_ERROR_OK ||
+--- a/src/vk_ps4_device.c
++++ b/src/vk_ps4_device.c
+@@ -97,9 +97,8 @@
+     dev->gnm_epilogue_cmd_dwords = VK_PS4_GNM_EPILOGUE_CMD_DWORDS;
+ 
+     /* Load the embedded clear pixel shader for tiled RT clears.
+-     * Copy the static binary to a malloc'd buffer (GPU-accessible on PS4)
+-     * and parse it with sceGnmShaderBinaryGetMetadata to extract the PS
+-     * stage registers and shader code address. */
++     * Parse the container, then upload instructions to aligned GPU memory.
++     * A shader's code offset within the container need not be 256-byte aligned. */
+     {
+ #include "../shaders/clear_ps_binary.h"
+         dev->clear_ps_binary = malloc(g_clear_ps_binary_size);
+@@ -116,12 +115,18 @@
+                 /* The binary's spishaderpgmlops is an offset from the
+                  * start of the GnmPsShader, not a GPU address.  We must
+                  * call sceGnmPsRegsSetAddress to patch it to the actual
+-                 * address of the shader code in the malloc'd buffer.
+-                 * meta.shadercode points into dev->clear_ps_binary. */
+-                if (meta.shadercode) {
+-                    sceGnmPsRegsSetAddress(
+-                        &dev->clear_ps_regs, (void *)meta.shadercode
+-                    );
++                 * aligned GPU address. meta.shadercode points into the container. */
++                uintptr_t code = (uintptr_t)meta.shadercode;
++                uintptr_t container = (uintptr_t)dev->clear_ps_binary;
++                size_t offset = code >= container ? code - container : g_clear_ps_binary_size;
++                size_t bytes = offset < g_clear_ps_binary_size ? g_clear_ps_binary_size - offset : 0;
++                /* GPU instructions require 256-byte alignment; the file's code
++                 * offset is not aligned. Keep trailing OrbShdr metadata too. */
++                if (meta.shadercode && meta.shadercodesize && bytes >= meta.shadercodesize &&
++                    sceGnmDirectMemoryAllocate(&dev->clear_ps_code_mem, bytes, 65536,
++                        GNM_DIRECT_MEMORY_TYPE_WC_GARLIC, GNM_PROT_CPU_GPU_RW) == GNM_ERROR_OK) {
++                    memcpy(dev->clear_ps_code_mem.mapped, meta.shadercode, bytes);
++                    sceGnmPsRegsSetAddress(&dev->clear_ps_regs, dev->clear_ps_code_mem.mapped);
+                     dev->clear_ps_ready = true;
+                 }
+             }
+@@ -135,6 +140,7 @@
+ /* Release the GNM init and epilogue command buffer backing stores.
+  * Safe to call when gnm_initialized is false (no-op). */
+ static void vk_ps4_device_finish_gnm(VkPs4Device *dev) {
++    if (dev->clear_ps_code_mem.allocated) sceGnmDirectMemoryRelease(&dev->clear_ps_code_mem);
+     if (dev->clear_ps_binary) {
+         free(dev->clear_ps_binary);
+         dev->clear_ps_binary = NULL;
+--- a/include/vk_ps4_internal.h
++++ b/include/vk_ps4_internal.h
+@@ -180,6 +180,7 @@
+      * Allocated from regular memory (GPU-accessible on PS4) at
+      * device init time. */
+     void *clear_ps_binary;
++    GnmDirectMemory clear_ps_code_mem;
+     GnmPsStageRegisters clear_ps_regs;
+     bool clear_ps_ready;
+ };
+@@ -246,6 +247,10 @@
+     } current_render_pass;
+     /* Current pipeline */
+     VkPs4Pipeline *current_pipeline;
++    VkViewport viewport0;
++    bool viewport0_valid;
++    VkRect2D screen_scissor;
++    bool screen_scissor_valid;
+     VkPs4DescriptorSet *graphics_set0;
+     VkResult resource_error;
+     GnmDirectMemory barrier_label;

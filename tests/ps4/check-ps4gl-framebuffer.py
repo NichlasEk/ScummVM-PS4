@@ -12,12 +12,12 @@ for y in range(13,710,17):
         if x<640:
             want=(255,0,0) if y>360 else (0,255,0) if x>480 else (0,0,255)
         else:
-            want=(188,255,188) if y>360 else (255,255,0)
+            want=((128,255,128) if '--swapchain-clear' in sys.argv else (188,255,188)) if y>360 else (255,255,0)
         if x<64 and y<64: want=(255,0,255)
         if abs(x-64)<5 and y<70 or abs(y-64)<5 and x<70: continue
         if '--swapchain-clear' in sys.argv:
-            if 80<=x<180 and 560<=y<640: want=(137,188,225)
-            if 100<=x<140 and 590<=y<620: want=(7,0,255)
+            if 80<=x<180 and 560<=y<640: want=(64,128,191)
+            if 100<=x<140 and 590<=y<620: want=(1,0,255)
             if 200<=x<250 and 560<=y<640: want=(0,255,0)
             if 320<=x<400 and 560<=y<640: want=(0,0,255)
         got=im.getpixel((x,y))

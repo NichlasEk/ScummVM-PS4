@@ -11,6 +11,11 @@
 #undef PFN_vkEnumerateInstanceExtensionProperties
 #include "ps4gl-sdl.h"
 #include "ps4gl-glsl.h"
+#include "ps4gl-mouse.h"
+#include "events/SDL_mouse_c.h"
+#include "SDL_events.h"
+#include "SDL_log.h"
+#include <orbis/UserService.h>
 #include <stdlib.h>
 #include <string.h>
 static PS4GLSDLOwner owner;
@@ -18,6 +23,8 @@ static PS4GLContext *context;
 static SDL_Window *owned_window;
 static SDL_bool video_active;
 static SDL_threadID owner_thread;
+static int mouse_handle=-1;
+static uint32_t mouse_buttons;
 static int on_thread(void) { return owner_thread==SDL_ThreadID(); }
 int ps4glSDLSetOwner(const PS4GLSDLOwner *value) {
   if(video_active || context || owned_window) return SDL_SetError("GL owner is in use");
@@ -32,6 +39,11 @@ static int video_init(_THIS) {
   if(!available() || !on_thread()) return SDL_SetError("Vulkan owner missing or wrong thread");
   SDL_DisplayMode mode={.format=SDL_PIXELFORMAT_RGBA8888,.w=owner.width,.h=owner.height,.refresh_rate=60};
   if(SDL_AddBasicVideoDisplay(&mode)<0) return -1;
+  int user;
+  const uint8_t mouse_open[8]={1}; /* Merge host/USB mice into one pointer. */
+  if(sceUserServiceGetInitialUser(&user)>=0 && sceMouseInit()>=0)
+    mouse_handle=sceMouseOpen(user,0,0,mouse_open);
+  SDL_Log("PS4 USB mouse handle: %d",mouse_handle);
   video_active=SDL_TRUE; return 0;
 }
 static int create_window(_THIS, SDL_Window *window) {
@@ -106,6 +118,8 @@ static void destroy_window(_THIS, SDL_Window *window) {
 static void video_quit(_THIS) {
   if(context) delete_context(_this,context);
   owned_window=NULL; video_active=SDL_FALSE;
+  if(mouse_handle>=0) sceMouseClose(mouse_handle);
+  mouse_handle=-1; mouse_buttons=0;
 }
 static void drawable_size(_THIS, SDL_Window *window, int *w, int *h) {
   (void)_this; (void)window;
@@ -114,7 +128,33 @@ static void drawable_size(_THIS, SDL_Window *window, int *w, int *h) {
 }
 static int swap_interval(_THIS, int interval) { (void)_this; return interval==1 ? 0 : SDL_SetError("Only FIFO interval 1 supported"); }
 static int get_interval(_THIS) { (void)_this; return 1; }
-static void pump(_THIS) { (void)_this; } /* Input integration is a separate gate. */
+static void pump(_THIS) {
+  (void)_this;
+  if(mouse_handle<0 || !owned_window) return;
+  SDL_SetMouseFocus(owned_window);
+  /* Bound draining so a busy device cannot starve game/controller events. */
+  for(int batch=0;batch<4;++batch) {
+    PS4GLMouseData reports[64];
+    int count=sceMouseRead(mouse_handle,reports,64);
+    static unsigned report_log;
+    if(count>0 && report_log++<12) SDL_Log("USB report count=%d first=%d,%d connected=%d buttons=%u",count,reports[0].x,reports[0].y,reports[0].connected,reports[0].buttons);
+    if(count<=0 || count>64) break;
+    for(int i=0;i<count;++i) {
+      PS4GLMouseData *r=&reports[i];
+      uint32_t buttons=r->connected ? r->buttons : 0;
+      if(r->connected && (r->x || r->y))
+        SDL_SendMouseMotion(owned_window,0,1,r->x,r->y);
+      static const Uint8 mapping[]={SDL_BUTTON_LEFT,SDL_BUTTON_RIGHT,SDL_BUTTON_MIDDLE,SDL_BUTTON_X1,SDL_BUTTON_X2};
+      for(unsigned b=0;b<5;++b)
+        if((buttons^mouse_buttons)&(1u<<b))
+          SDL_SendMouseButton(owned_window,0,(buttons&(1u<<b)) ? SDL_PRESSED : SDL_RELEASED,mapping[b]);
+      mouse_buttons=buttons;
+      if(r->connected && (r->wheel || r->tilt))
+        SDL_SendMouseWheel(owned_window,0,r->tilt,r->wheel,SDL_MOUSEWHEEL_NORMAL);
+    }
+    if(count<64) break;
+  }
+}
 static void free_device(SDL_VideoDevice *device) { SDL_free(device); }
 static SDL_VideoDevice *create_device(int index) {
   (void)index;

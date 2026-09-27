@@ -131,7 +131,7 @@ typedef struct PS4GLBlendVariant { PS4GLBlend state; PS4GLRaster raster; VkPipel
 #define GL_UNPACK_ALIGNMENT 0x0cf5
 #define GL_PACK_ALIGNMENT 0x0d05
 #define PS4GL_TEXTURE_UNITS 4
-#define PS4GL_MAX_TEXTURES 256
+#define PS4GL_MAX_TEXTURES 1024
 #define PS4GL_TEXTURE_LIMIT 2048
 #define PS4GL_TEXTURE_BUDGET (64u*1024u*1024u)
 typedef struct PS4GLTexture {
@@ -279,7 +279,54 @@ typedef struct PS4GLProgram {
 #define GL_SCISSOR_BOX 0x0c10
 #define GL_VIEWPORT 0x0ba2
 #define GL_COLOR_CLEAR_VALUE 0x0c22
+/* Bounded immediate-mode adapter used by the experimental Watchmaker port. */
+#define GL_MODELVIEW 0x1700
+#define GL_PROJECTION 0x1701
+#define GL_MATRIX_MODE 0x0ba0
+#define GL_MODELVIEW_MATRIX 0x0ba6
+#define GL_PROJECTION_MATRIX 0x0ba7
+#define GL_QUADS 0x0007
+#define GL_ALPHA_TEST 0x0bc0
+#define GL_SMOOTH 0x1d01
+#define GL_BACK 0x0405
+#define GL_FRONT 0x0404
+#define GL_FRONT_AND_BACK 0x0408
+#define GL_CW 0x0900
+#define GL_CCW 0x0901
+#define GL_STACK_OVERFLOW 0x0503
+#define GL_STACK_UNDERFLOW 0x0504
+#define PS4GL_FIXED_VERTICES 384
+#define PS4GL_MATRIX_DEPTH 32
+typedef struct PS4GLFixedVertex { GLfloat position[3], color[4], uv[2]; } PS4GLFixedVertex;
+typedef struct PS4GLFixed {
+  GLfloat matrix[2][PS4GL_MATRIX_DEPTH][16], color[4], uv[2], alpha_ref;
+  unsigned top[2], matrix_mode, count, pending_count;
+  GLenum primitive, alpha_func, cull_face, front_face;
+  GLboolean active, texture_enabled, alpha_enabled;
+  GLuint programs[2], buffer;
+  PS4GLFixedVertex vertices[PS4GL_FIXED_VERTICES], pending[4];
+} PS4GLFixed;
+void glMatrixMode(GLenum);
+void glLoadIdentity(void);
+void glLoadMatrixf(const GLfloat *);
+void glPushMatrix(void);
+void glPopMatrix(void);
+void glScalef(GLfloat, GLfloat, GLfloat);
+void glTranslatef(GLfloat, GLfloat, GLfloat);
+void glBegin(GLenum);
+void glEnd(void);
+void glVertex3f(GLfloat, GLfloat, GLfloat);
+void glColor3f(GLfloat, GLfloat, GLfloat);
+void glColor4f(GLfloat, GLfloat, GLfloat, GLfloat);
+void glTexCoord2f(GLfloat, GLfloat);
+void glAlphaFunc(GLenum, GLfloat);
+void glShadeModel(GLenum);
+void glCullFace(GLenum);
+void glFrontFace(GLenum);
+void glFlush(void);
+void glCompressedTexImage2D(GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const void *);
 typedef struct PS4GLContext {
+  PS4GLFixed fixed;
   VkCommandBuffer command;
   GLint width, height, scissor[4], viewport[4];
   GLfloat clear[4];

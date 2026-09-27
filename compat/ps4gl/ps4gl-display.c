@@ -1,5 +1,8 @@
 #include "ps4gl-display.h"
 #include <string.h>
+/* Legacy GL writes display-encoded values with FRAMEBUFFER_SRGB disabled.
+ * An sRGB render target would encode them again and brighten all lighting. */
+#define PS4GL_DISPLAY_COLOR_FORMAT VK_FORMAT_R8G8B8A8_UNORM
 static void display_release(PS4GLDisplayOwner *d) {
   for(unsigned i=2;i>0;--i) {
     if(d->targets[i-1]) vkDestroyFramebuffer(d->device,d->targets[i-1],NULL);
@@ -33,7 +36,7 @@ int ps4glDisplayInit(PS4GLDisplayOwner *d) {
   vkGetDeviceQueue(d->device,0,0,&d->queue);
   if(!d->queue) { result=VK_ERROR_INITIALIZATION_FAILED; goto fail; }
   VkSwapchainCreateInfoKHR swap={.sType=VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-    .minImageCount=2,.imageFormat=VK_FORMAT_R8G8B8A8_SRGB,
+    .minImageCount=2,.imageFormat=PS4GL_DISPLAY_COLOR_FORMAT,
     .imageColorSpace=VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,.imageExtent={d->width,d->height},
     .imageArrayLayers=1,.imageUsage=VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
     .imageSharingMode=VK_SHARING_MODE_EXCLUSIVE,.presentMode=VK_PRESENT_MODE_FIFO_KHR,
@@ -44,7 +47,7 @@ int ps4glDisplayInit(PS4GLDisplayOwner *d) {
   if(count!=2 || !d->images[0] || !d->images[1] || d->images[0]==d->images[1]) {
     result=VK_ERROR_INITIALIZATION_FAILED; goto fail;
   }
-  VkAttachmentDescription attachments[2]={{.format=VK_FORMAT_R8G8B8A8_SRGB,
+  VkAttachmentDescription attachments[2]={{.format=PS4GL_DISPLAY_COLOR_FORMAT,
     .samples=VK_SAMPLE_COUNT_1_BIT,.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD,
     .storeOp=VK_ATTACHMENT_STORE_OP_STORE,.initialLayout=VK_IMAGE_LAYOUT_GENERAL,
     .finalLayout=VK_IMAGE_LAYOUT_GENERAL},
@@ -61,7 +64,7 @@ int ps4glDisplayInit(PS4GLDisplayOwner *d) {
   DISPLAY_TRY(vkCreateRenderPass(d->device,&pass,NULL,&d->pass));
   for(unsigned i=0;i<2;++i) {
     VkImageViewCreateInfo view={.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image=d->images[i],.viewType=VK_IMAGE_VIEW_TYPE_2D,.format=VK_FORMAT_R8G8B8A8_SRGB,
+      .image=d->images[i],.viewType=VK_IMAGE_VIEW_TYPE_2D,.format=PS4GL_DISPLAY_COLOR_FORMAT,
       .subresourceRange={.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,.levelCount=1,.layerCount=1}};
     DISPLAY_TRY(vkCreateImageView(d->device,&view,NULL,&d->views[i]));
     VkImageCreateInfo image={.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,.imageType=VK_IMAGE_TYPE_2D,

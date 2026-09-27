@@ -12,7 +12,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdClearAttachments(VkCommandBuffer cmd, uint32_t n
  const VkClearAttachment *c, uint32_t nr, const VkClearRect *r) {
   assert(cmd && nc==1 && nr==1); ++calls; last=*r; color=*c;
 }
-static unsigned draws;
+static unsigned draws, expected_vertices=3;
 static VkViewport viewport;
 VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer cmd, VkPipelineBindPoint point, VkPipeline p) {
   assert(cmd && point==VK_PIPELINE_BIND_POINT_GRAPHICS && p);
@@ -24,10 +24,10 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(VkCommandBuffer cmd, uint32_t first, 
   assert(cmd && !first && count==1); last.rect=*r;
 }
 VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer cmd, uint32_t count, uint32_t instances, uint32_t first, uint32_t instance) {
-  assert(cmd && count==3 && instances==1 && !first && !instance); ++draws;
+  assert(cmd && count==expected_vertices && instances==1 && !first && !instance); ++draws;
 }
 static unsigned indexed_draws, uploads, expected_indices=3;
-static unsigned char snapshot[128];
+static unsigned char snapshot[PS4GL_FIXED_VERTICES*sizeof(PS4GLFixedVertex)];
 static size_t snapshot_size, snapshot_vertex_bytes;
 static GLenum snapshot_type;
 static int upload(PS4GLContext *ctx, const void *data, size_t size, size_t vb, GLenum type) {
@@ -63,7 +63,7 @@ static int begin_lazy(PS4GLContext *ctx) {
   ps4glBeginPass((VkCommandBuffer)(uintptr_t)1); return 1;
 }
 static void check_rgb_uploads(void) {
-  PS4GLContext ctx; assert(ps4glInit(&ctx,80,60)); ps4glMakeCurrent(&ctx);
+  static PS4GLContext ctx; assert(ps4glInit(&ctx,80,60)); ps4glMakeCurrent(&ctx);
   GLuint name; glGenTextures(1,&name); glBindTexture(GL_TEXTURE_2D,name);
   const PS4GLTexture *t=ps4glTextureAtUnit(&ctx,0);
   for(unsigned align=1;align<=8;align*=2) for(unsigned width=1;width<=3;width+=2) {
@@ -120,7 +120,7 @@ static void check_rgb_uploads(void) {
   glDeleteFramebuffers(1,&fbo); ps4glDestroyTextures(&ctx); ps4glMakeCurrent(NULL);
 }
 static void check_luminance_alpha(void) {
-  PS4GLContext c; assert(ps4glInit(&c,80,60)); ps4glMakeCurrent(&c);
+  static PS4GLContext c; assert(ps4glInit(&c,80,60)); ps4glMakeCurrent(&c);
   GLuint t; glGenTextures(1,&t); glBindTexture(GL_TEXTURE_2D,t);
   const unsigned char la[]={7,128,99,99,33,255,99,99};
   glTexImage2D(GL_TEXTURE_2D,0,GL_LUMINANCE_ALPHA,1,2,0,GL_LUMINANCE_ALPHA,GL_UNSIGNED_BYTE,la);
@@ -189,7 +189,7 @@ static void check_launcher_state(void) {
   ps4glMakeCurrent(NULL);
 }
 static void check_large_textures(void) {
-  PS4GLContext ctx; assert(ps4glInit(&ctx,1280,720)); ps4glMakeCurrent(&ctx);
+  static PS4GLContext ctx; assert(ps4glInit(&ctx,1280,720)); ps4glMakeCurrent(&ctx);
   GLuint ids[5]; glGenTextures(5,ids);
   for (unsigned i=0;i<4;++i) {
     glBindTexture(GL_TEXTURE_2D,ids[i]);
@@ -215,7 +215,7 @@ static void check_large_textures(void) {
 }
 
 static void check_texture_records(void) {
-  PS4GLContext ctx; assert(ps4glInit(&ctx,80,60)); ps4glMakeCurrent(&ctx);
+  static PS4GLContext ctx; assert(ps4glInit(&ctx,80,60)); ps4glMakeCurrent(&ctx);
   GLuint names[PS4GL_MAX_TEXTURES]; glGenTextures(PS4GL_MAX_TEXTURES,names);
   assert(glGetError()==GL_NO_ERROR && ctx.texture_bytes==0);
   const unsigned char pixel[]={4,9,21,255};
@@ -232,6 +232,79 @@ static void check_texture_records(void) {
   glDeleteTextures(1,&rejected); ps4glMakeCurrent(NULL);
 }
 
+static void check_s3tc(void) {
+  static PS4GLContext ctx; assert(ps4glInit(&ctx,80,60)); ps4glMakeCurrent(&ctx);
+  GLuint t; glGenTextures(1,&t); glBindTexture(GL_TEXTURE_2D,t);
+  /* Red/green endpoints; every row covers all four palette entries. */
+  unsigned char bc1[]={0,248,224,7,228,228,228,228};
+  glCompressedTexImage2D(GL_TEXTURE_2D,0,0x83f1,4,4,0,8,bc1); assert(!glGetError());
+  const unsigned char row[]={255,0,0,255,0,255,0,255,170,85,0,255,85,170,0,255};
+  const PS4GLTexture *tex=ps4glTextureAtUnit(&ctx,0);
+  for(unsigned y=0;y<4;++y) assert(!memcmp(tex->pixels+y*16,row,16));
+  /* BC1 three-color mode: transparent black, or opaque black for RGB. */
+  unsigned char black[]={0,0,255,255,255,255,255,255};
+  for(unsigned fmt=0x83f0;fmt<=0x83f1;++fmt) {
+    glCompressedTexImage2D(GL_TEXTURE_2D,0,fmt,3,1,0,8,black); assert(!glGetError());
+    for(unsigned x=0;x<3;++x) assert(tex->pixels[x*4]==0 && tex->pixels[x*4+3]==(fmt==0x83f0 ? 255 : 0));
+  }
+  unsigned char bc2[16]={0x10,0x32,0x54,0x76,0x98,0xba,0xdc,0xfe,0,0,255,255,255,255,255,255};
+  glCompressedTexImage2D(GL_TEXTURE_2D,0,0x83f2,4,4,0,16,bc2); assert(!glGetError());
+  for(unsigned i=0;i<16;++i) assert(tex->pixels[i*4]==170 && tex->pixels[i*4+3]==i*17);
+  for(unsigned mode=0;mode<2;++mode) {
+    unsigned char bc3[16]={0}; bc3[0]=mode ? 0 : 255; bc3[1]=mode ? 255 : 0;
+    uint64_t bits=0; for(unsigned i=0;i<16;++i) bits|=(uint64_t)(i%8)<<(i*3);
+    for(unsigned i=0;i<6;++i) bc3[i+2]=bits>>(8*i);
+    memcpy(bc3+8,bc1,8);
+    glCompressedTexImage2D(GL_TEXTURE_2D,0,0x83f3,4,4,0,16,bc3); assert(!glGetError());
+    const unsigned char high[]={255,0,218,182,145,109,72,36}, low[]={0,255,51,102,153,204,0,255};
+    for(unsigned i=0;i<16;++i) assert(tex->pixels[i*4+3]==(mode ? low : high)[i%8]);
+  }
+  unsigned char old[64]; memcpy(old,tex->pixels,64);
+  glCompressedTexImage2D(GL_TEXTURE_2D,0,0x83f3,4,4,0,15,bc2); assert(glGetError()==GL_INVALID_VALUE);
+  assert(!memcmp(old,tex->pixels,64));
+  glCompressedTexImage2D(GL_TEXTURE_2D,0,0x83f3,INT_MAX,4,0,16,bc2); assert(glGetError()==GL_INVALID_VALUE);
+  ps4glDestroyTextures(&ctx);
+  puts("PASS BC1/BC2/BC3 palettes, both alpha modes, small edges, exact lengths and atomic rejection");
+}
+static void check_fixed(void) {
+  static PS4GLContext ctx;
+  assert(ps4glInit(&ctx,80,60)); ps4glMakeCurrent(&ctx);
+  float m[16]; GLint mode;
+  glGetIntegerv(GL_MATRIX_MODE,&mode); assert(mode==GL_MODELVIEW);
+  glScalef(2,3,4); glTranslatef(5,6,7); glGetFloatv(GL_MODELVIEW_MATRIX,m);
+  assert(m[0]==2 && m[5]==3 && m[10]==4 && m[12]==10 && m[13]==18 && m[14]==28);
+  glPushMatrix(); glLoadIdentity(); glPopMatrix(); glGetFloatv(GL_MODELVIEW_MATRIX,m); assert(m[12]==10);
+  glPopMatrix(); assert(glGetError()==GL_STACK_UNDERFLOW);
+  for(unsigned i=1;i<PS4GL_MATRIX_DEPTH;++i) glPushMatrix();
+  glPushMatrix(); assert(glGetError()==GL_STACK_OVERFLOW);
+  for(unsigned i=1;i<PS4GL_MATRIX_DEPTH;++i) glPopMatrix();
+  glMatrixMode(GL_PROJECTION); glGetFloatv(GL_PROJECTION_MATRIX,m); assert(m[0]==1 && m[12]==0);
+  glEnable(GL_TEXTURE_2D); assert(glIsEnabled(GL_TEXTURE_2D)); glDisable(GL_TEXTURE_2D);
+  glAlphaFunc(GL_LESS,2); assert(ctx.fixed.alpha_ref==1);
+  glAlphaFunc(GL_GREATER,-1); assert(ctx.fixed.alpha_ref==0);
+  ctx.fixed.programs[0]=1; ctx.programs[0].pipeline=(VkPipeline)(uintptr_t)1;
+  ctx.programs[0].vertex_stride=sizeof(PS4GLFixedVertex);
+  ctx.programs[0].components[0]=3; ctx.programs[0].components[1]=4; ctx.programs[0].components[2]=2;
+  ctx.upload_vertices=upload; ps4glBeginPass((VkCommandBuffer)(uintptr_t)1);
+  GLuint sentinel; glGenBuffers(1,&sentinel); glBindBuffer(GL_ARRAY_BUFFER,sentinel);
+  expected_vertices=6; glBegin(GL_QUADS); glBegin(GL_TRIANGLES); assert(glGetError()==GL_INVALID_OPERATION);
+  glLoadIdentity(); assert(glGetError()==GL_INVALID_OPERATION);
+  for(int i=0;i<4;++i) { glColor4f(i,0,1,i*.25f); glTexCoord2f(i,.5f); glVertex3f(i,2,3); }
+  glEnd(); assert(!glGetError());
+  assert(ctx.program==0 && ctx.array_buffer==sentinel && !ctx.attribs[0].enabled);
+  PS4GLFixedVertex v[6]; memcpy(v,snapshot,sizeof(v));
+  const unsigned order[]={0,1,2,0,2,3};
+  for(unsigned i=0;i<6;++i) assert(v[i].position[0]==order[i] && v[i].color[0]==order[i] && v[i].color[3]==order[i]*.25f && v[i].uv[0]==order[i]);
+  glColor3f(.2f,.3f,.4f); assert(ctx.fixed.color[3]==1.f);
+  assert(ps4glGetProcAddress("glColor4f"));
+  unsigned before=draws; glBegin(GL_TRIANGLES); glVertex3f(0,0,0); glEnd(); assert(draws==before);
+  expected_vertices=PS4GL_FIXED_VERTICES; glBegin(GL_TRIANGLES);
+  for(unsigned i=0;i<PS4GL_FIXED_VERTICES*2;++i) glVertex3f(i,0,0);
+  glEnd(); assert(draws==before+2 && !glGetError());
+  glEnd(); assert(glGetError()==GL_INVALID_OPERATION);
+  ps4glEndPass(); ps4glDestroyBuffers(&ctx); expected_vertices=3;
+  puts("PASS fixed matrices, stacks, errors, independent projection, quad winding, bounded batches and programmable state restoration");
+}
 int main(void) {
   check_texture_records();
   check_large_textures();
@@ -296,7 +369,7 @@ int main(void) {
   assert(glGetError()==GL_INVALID_OPERATION && draws==3);
   glDeleteProgram(2); glUseProgram(0); assert(!glIsProgram(2));
   ps4glEndPass(); glClear(GL_COLOR_BUFFER_BIT); assert(glGetError()==GL_INVALID_OPERATION);
-  PS4GLContext vertices_ctx;
+  static PS4GLContext vertices_ctx;
   assert(ps4glInit(&vertices_ctx,80,60)); ps4glMakeCurrent(&vertices_ctx);
   GLuint buffers[2]; glGenBuffers(2,buffers);
   assert(!glIsBuffer(buffers[0]));
@@ -362,7 +435,7 @@ int main(void) {
   glBindBuffer(GL_ARRAY_BUFFER,1000); assert(glIsBuffer(1000));
   ps4glDestroyBuffers(&vertices_ctx);
   assert(vertices_ctx.attribs[1].constant[0]==0 && vertices_ctx.attribs[1].constant[3]==1);
-  PS4GLContext indexed;
+  static PS4GLContext indexed;
   assert(ps4glInit(&indexed,80,60)); ps4glMakeCurrent(&indexed);
   indexed.programs[0]=(PS4GLProgram){.pipeline=(VkPipeline)(uintptr_t)5,
       .components={2},.vertex_stride=8};
@@ -407,7 +480,7 @@ int main(void) {
   assert(uploads==2 && indexed_draws==2);
   assert(ps4glGetProcAddress("glDrawElements"));
   ps4glEndPass(); ps4glDestroyBuffers(&indexed);
-  PS4GLContext uniforms;
+  static PS4GLContext uniforms;
   assert(ps4glInit(&uniforms,80,60)); ps4glMakeCurrent(&uniforms);
   PS4GLProgram *up=&uniforms.programs[0];
   up->pipeline=(VkPipeline)(uintptr_t)5; up->uniform_count=5;
@@ -444,7 +517,7 @@ int main(void) {
   glUseProgram(0); glUniform1f(0,1); assert(glGetError()==GL_INVALID_OPERATION);
   glGetUniformLocation(0,"gain"); assert(glGetError()==GL_INVALID_VALUE);
   assert(ps4glGetProcAddress("glUniformMatrix4fv") && ps4glGetProcAddress("glUniform4f"));
-  PS4GLContext arrays;
+  static PS4GLContext arrays;
   assert(ps4glInit(&arrays,80,60)); ps4glMakeCurrent(&arrays);
   PS4GLProgram *ap=&arrays.programs[0]; ap->pipeline=(VkPipeline)(uintptr_t)1; ap->uniform_count=3;
   ap->uniforms[0]=(PS4GLUniform){.name="RandomValue",.width=1,.offset={0,16},.array_length=5,.array_stride={16,32}};
@@ -478,7 +551,7 @@ int main(void) {
   glUniform4fv(base,1,colors); assert(glGetError()==GL_INVALID_OPERATION);
   glUniform1f(PS4GL_MAX_UNIFORMS*5,1); assert(glGetError()==GL_INVALID_OPERATION);
   check_rgb_uploads();
-  PS4GLContext texctx;
+  static PS4GLContext texctx;
   assert(ps4glInit(&texctx,80,60)); ps4glMakeCurrent(&texctx);
   GLuint tex[2]; glGenTextures(2,tex); assert(!glIsTexture(tex[0]));
   glBindTexture(GL_TEXTURE_2D,tex[0]); assert(glIsTexture(tex[0]));
@@ -514,7 +587,7 @@ int main(void) {
   assert(ps4glTextureAtUnit(&texctx,1) && texctx.texture_bytes==8);
   ps4glDestroyTextures(&texctx); assert(texctx.texture_bytes==0 && !glIsTexture(tex[1]));
   assert(ps4glGetProcAddress("glTexImage2D") && ps4glGetProcAddress("glUniform1i"));
-  PS4GLContext blend_ctx;
+  static PS4GLContext blend_ctx;
   assert(ps4glInit(&blend_ctx,80,60)); ps4glMakeCurrent(&blend_ctx);
   assert(!glIsEnabled(GL_BLEND));
   glGetIntegerv(GL_BLEND_SRC_RGB,&value); assert(value==GL_ONE);
@@ -537,7 +610,7 @@ int main(void) {
   unsigned clears_before=calls; glClear(GL_COLOR_BUFFER_BIT); assert(calls==clears_before+1 && !glGetError());
   ps4glEndPass(); glDisable(GL_BLEND); assert(!glIsEnabled(GL_BLEND));
   assert(ps4glGetProcAddress("glBlendFuncSeparate") && ps4glGetProcAddress("glBlendEquationSeparate"));
-  PS4GLContext fboctx;
+  static PS4GLContext fboctx;
   assert(ps4glInit(&fboctx,80,60)); ps4glMakeCurrent(&fboctx);
   GLuint fbo, ft;
   glGenFramebuffers(1,&fbo); assert(!glIsFramebuffer(fbo));
@@ -587,7 +660,7 @@ int main(void) {
   assert(!fboctx.framebuffer && !glGetError());
   ps4glDestroyFramebuffers(&fboctx); ps4glDestroyTextures(&fboctx);
   assert(ps4glGetProcAddress("glBindFramebuffer") && ps4glGetProcAddress("glCheckFramebufferStatus"));
-  PS4GLContext ints; assert(ps4glInit(&ints,80,60)); ps4glMakeCurrent(&ints);
+  static PS4GLContext ints; assert(ps4glInit(&ints,80,60)); ps4glMakeCurrent(&ints);
   PS4GLProgram *ip=&ints.programs[0];
   ip->pipeline=(VkPipeline)(uintptr_t)1; ip->uniform_count=2;
   ip->uniforms[0]=(PS4GLUniform){.name="mode",.width=1,.integer=1,.offset={0,16}};
@@ -617,7 +690,7 @@ int main(void) {
   memcpy(&boolean_bits,ip->uniform_data[0],4); assert(boolean_bits==0);
   glUniform1f(0,-.25f); assert(!glGetError());
   memcpy(&boolean_bits,ip->uniform_data[0],4); assert(boolean_bits==1);
-  PS4GLContext shaderctx;
+  static PS4GLContext shaderctx;
   assert(ps4glInit(&shaderctx,80,60)); ps4glMakeCurrent(&shaderctx);
   shaderctx.program_device=(VkDevice)(uintptr_t)1; shaderctx.import_program=import_program;
   ps4glConfigureShaderCompiler((VkRenderPass)(uintptr_t)1,compile_source,link_sources);
@@ -672,7 +745,7 @@ int main(void) {
   assert(!glCreateShader(GL_VERTEX_SHADER) && glGetError()==GL_OUT_OF_MEMORY);
   for(unsigned i=0;i<PS4GL_MAX_SHADERS;++i) glDeleteShader(allshaders[i]);
   ps4glDestroyShaderObjects(&shaderctx); assert(!glGetError());
-  PS4GLContext lazy; assert(ps4glInit(&lazy,80,60)); ps4glMakeCurrent(&lazy);
+  static PS4GLContext lazy; assert(ps4glInit(&lazy,80,60)); ps4glMakeCurrent(&lazy);
   lazy.begin_frame=begin_lazy; lazy.programs[0].pipeline=(VkPipeline)(uintptr_t)1; glUseProgram(1);
   glClear(0); assert(!lazy_calls);
   lazy_fail=1; glClear(GL_COLOR_BUFFER_BIT); assert(glGetError()==GL_INVALID_OPERATION && lazy_calls==1 && !lazy.command);
@@ -680,7 +753,7 @@ int main(void) {
   glDrawArrays(GL_TRIANGLES,0,0); assert(!glGetError() && lazy_calls==2);
   ps4glEndPass(); glDrawArrays(0xdead,0,0); assert(glGetError()==GL_INVALID_ENUM && lazy_calls==2);
 
-  PS4GLContext strips; assert(ps4glInit(&strips,80,60)); ps4glMakeCurrent(&strips);
+  static PS4GLContext strips; assert(ps4glInit(&strips,80,60)); ps4glMakeCurrent(&strips);
   strips.programs[0]=(PS4GLProgram){.pipeline=(VkPipeline)(uintptr_t)1,.components={2},.vertex_stride=8};
   strips.upload_vertices=upload; glUseProgram(1); ps4glBeginPass((VkCommandBuffer)(uintptr_t)1);
   float strip_vertices[]={0,0, 1,0, 0,1, 1,1, 0,2};
@@ -717,6 +790,8 @@ int main(void) {
   glDrawElements(GL_TRIANGLE_STRIP,4,GL_UNSIGNED_SHORT,(void *)UINTPTR_MAX); assert(glGetError()==GL_INVALID_OPERATION);
   assert(uploads==old_uploads && indexed_draws==old_draws);
   ps4glDestroyBuffers(&strips);
+  check_s3tc();
+  check_fixed();
   ps4glMakeCurrent(NULL);
   puts("PASS launcher fixed-disabled state, independent pack alignment and isolation; triangle strips, winding, degenerates, index widths, bounds and snapshots; constant vertex attributes, array precedence, context isolation and atomic errors; signed integer uniforms, array strides, shared stages and atomic type errors; shader objects, source snapshots, deferred/shared deletion and status; framebuffer namespace, completeness, attachment errors and limits; blend defaults, queries, atomic errors and clear independence; RGB8/RGB565 conversion, opaque RGB storage, padded rows and subimages; texture state, upload bounds, row alignment, updates and sampler units; uniform arrays, partial updates and truncation; GL uniform types, shared stages, transpose, isolation and errors; GL state/draw and vertex buffer capture, packing, bounds, deletion and overflow checks; indexed draws, widths, offsets and rejected ranges");
 }

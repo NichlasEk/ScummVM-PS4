@@ -4,14 +4,19 @@
 #include <stdio.h>
 /* Deliberately single-threaded: SDL/thread ownership is a later integration gate. */
 static PS4GLContext *current;
-static void error(GLenum value) {
+static void trace_error(GLenum value, int line) {
+  static unsigned count; if(count++<24) fprintf(stderr,"PS4GL error %x line %d\n",value,line);
   if (current && !current->error) current->error = value;
 }
+#define error(v) trace_error(v,__LINE__)
 int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   if (!ctx || width <= 0 || height <= 0) return 0;
   memset(ctx, 0, sizeof(*ctx));
   ctx->blend=(PS4GLBlend){.src_rgb=GL_ONE,.src_alpha=GL_ONE,.equation_rgb=GL_FUNC_ADD,.equation_alpha=GL_FUNC_ADD};
   ctx->depth_write_mask=GL_TRUE; ctx->raster=(PS4GLRaster)PS4GL_RASTER_DEFAULT; ctx->clear_depth=1.f;
+  ctx->fixed.color[0]=ctx->fixed.color[1]=ctx->fixed.color[2]=ctx->fixed.color[3]=1.f;
+  ctx->fixed.alpha_func=GL_ALWAYS; ctx->fixed.cull_face=GL_BACK; ctx->fixed.front_face=GL_CCW;
+  for(unsigned m=0;m<2;++m) for(unsigned i=0;i<4;++i) ctx->fixed.matrix[m][0][i*5]=1.f;
   ctx->next_shader=65536;
   ctx->next_framebuffer=1;
   ctx->next_buffer=1; ctx->next_texture=1; ctx->unpack_alignment=ctx->pack_alignment=4;
@@ -88,6 +93,10 @@ static int fixed_disabled_cap(GLenum cap) {
   return cap==GL_CULL_FACE || cap==GL_DITHER;
 }
 void glEnable(GLenum cap) {
+  if(current && (cap==GL_TEXTURE_2D || cap==GL_ALPHA_TEST)) {
+    if(current->fixed.active) { error(GL_INVALID_OPERATION); return; }
+    if(cap==GL_TEXTURE_2D) current->fixed.texture_enabled=1; else current->fixed.alpha_enabled=1; return;
+  }
   if(current && cap==GL_DEPTH_TEST) { current->raster.depth_enabled=1; return; }
   if(current && cap==GL_STENCIL_TEST) { current->raster.stencil_enabled=1; return; }
   if(current && cap==GL_POLYGON_OFFSET_FILL) { current->polygon_offset_fill=1; return; }
@@ -96,6 +105,10 @@ void glEnable(GLenum cap) {
   if(current) { if(cap==GL_BLEND) current->blend.enabled=1; else current->scissor_enabled=GL_TRUE; }
 }
 void glDisable(GLenum cap) {
+  if(current && (cap==GL_TEXTURE_2D || cap==GL_ALPHA_TEST)) {
+    if(current->fixed.active) { error(GL_INVALID_OPERATION); return; }
+    if(cap==GL_TEXTURE_2D) current->fixed.texture_enabled=0; else current->fixed.alpha_enabled=0; return;
+  }
   if(current && cap==GL_DEPTH_TEST) { current->raster.depth_enabled=0; return; }
   if(current && cap==GL_STENCIL_TEST) { current->raster.stencil_enabled=0; return; }
   if(current && cap==GL_POLYGON_OFFSET_FILL) { current->polygon_offset_fill=0; return; }
@@ -104,6 +117,8 @@ void glDisable(GLenum cap) {
   if(current) { if(cap==GL_BLEND) current->blend.enabled=0; else current->scissor_enabled=GL_FALSE; }
 }
 GLboolean glIsEnabled(GLenum cap) {
+  if(current && cap==GL_TEXTURE_2D) return current->fixed.texture_enabled;
+  if(current && cap==GL_ALPHA_TEST) return current->fixed.alpha_enabled;
   if(current && cap==GL_DEPTH_TEST) return current->raster.depth_enabled;
   if(current && cap==GL_STENCIL_TEST) return current->raster.stencil_enabled;
   if(current && cap==GL_POLYGON_OFFSET_FILL) return current->polygon_offset_fill;
@@ -145,6 +160,7 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   if (pname==GL_SCISSOR_BOX || pname==GL_VIEWPORT)
     memcpy(values,pname==GL_SCISSOR_BOX ? current->scissor : current->viewport,4*sizeof(GLint));
   else if(pname==GL_DEPTH_WRITEMASK) *values=current->depth_write_mask;
+  else if(pname==GL_MATRIX_MODE) *values=current->fixed.matrix_mode ? GL_PROJECTION : GL_MODELVIEW;
   else if(pname==GL_FRAMEBUFFER_BINDING) *values=current->framebuffer;
   else if(pname==GL_ACTIVE_TEXTURE) *values=GL_TEXTURE0+current->active_texture;
   else if(pname==GL_TEXTURE_BINDING_2D) *values=current->texture_bindings[current->active_texture];
@@ -189,7 +205,10 @@ const unsigned char *glGetString(GLenum name) {
 void glGetFloatv(GLenum pname, GLfloat *values) {
   if (!current) return;
   if (!values) { error(GL_INVALID_VALUE); return; }
-  if (pname==GL_COLOR_CLEAR_VALUE) memcpy(values,current->clear,sizeof(current->clear));
+  if(pname==GL_MODELVIEW_MATRIX || pname==GL_PROJECTION_MATRIX) {
+    unsigned mode=pname==GL_PROJECTION_MATRIX; memcpy(values,current->fixed.matrix[mode][current->fixed.top[mode]],16*sizeof(*values));
+  }
+  else if (pname==GL_COLOR_CLEAR_VALUE) memcpy(values,current->clear,sizeof(current->clear));
   else error(GL_INVALID_ENUM);
 }
 void glClear(GLbitfield mask) {
@@ -607,9 +626,15 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices
   if(type!=GL_UNSIGNED_SHORT && type!=GL_UNSIGNED_INT) { error(GL_INVALID_ENUM); return; }
   draw(mode,0,count,type,indices);
 }
+#include "ps4gl-fixed.inc"
+
 PS4GLProc ps4glGetProcAddress(const char *name) {
   if (!name) return NULL;
 #define PROC(fn) if(!strcmp(name,#fn)) return (PS4GLProc)fn
+  PROC(glCompressedTexImage2D);
+  PROC(glMatrixMode); PROC(glLoadIdentity); PROC(glLoadMatrixf); PROC(glPushMatrix); PROC(glPopMatrix);
+  PROC(glScalef); PROC(glTranslatef); PROC(glBegin); PROC(glEnd); PROC(glVertex3f); PROC(glColor3f); PROC(glColor4f);
+  PROC(glTexCoord2f); PROC(glAlphaFunc); PROC(glShadeModel); PROC(glCullFace); PROC(glFrontFace); PROC(glFlush);
   PROC(glBindAttribLocation); PROC(glGetAttribLocation);
   PROC(glCreateShader); PROC(glShaderSource); PROC(glCompileShader); PROC(glDeleteShader); PROC(glIsShader);
   PROC(glGetShaderiv); PROC(glGetShaderInfoLog); PROC(glGetShaderSource);
@@ -908,3 +933,5 @@ void ps4glDestroyFramebuffers(PS4GLContext *ctx) {
   memset(ctx->framebuffers,0,sizeof(ctx->framebuffers)); ctx->framebuffer=0;
   collect_deleted_textures(ctx);
 }
+
+#include "ps4gl-s3tc.inc"

@@ -2,6 +2,7 @@
 """Seed project-local shadPS4 input settings; retain existing user bindings."""
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -15,18 +16,31 @@ profile.mkdir(parents=True, exist_ok=True)
 config_path = profile / 'config.json'
 config = json.loads(config_path.read_text()) if config_path.exists() else {}
 config.setdefault('Input', {})['use_unified_input_config'] = False
+if args.vulkan:
+    config['Input']['use_mice_as_mice'] = True
+    log = config.setdefault('Log', {})
+    # Keep game warnings/errors visible without synchronously logging every
+    # emulated allocation. Opt into full traces only while diagnosing them.
+    if os.environ.get('SCUMMVM_VULKAN_DIAGNOSTICS') == '1':
+        log['filter'] = ''
+        log['sync'] = True
+    else:
+        if not log.get('filter'):
+            log['filter'] = '*:Warning Tty:Info'
+        log['sync'] = False
 config_path.write_text(json.dumps(config, indent=2) + '\n')
 input_dir = profile / 'input_config'
 input_dir.mkdir(exist_ok=True)
 bindings = input_dir / ('SCVM00010.ini' if args.vulkan else 'SCVM00002.ini')
 if not bindings.exists():
     shutil.copyfile(root / 'config/emulator/SCVM00002.ini', bindings)
-    if args.vulkan:
-        # Mouse deltas become stick deflections before ScummVM's cubic curve.
-        # Keep physical stick mappings and existing user profiles unchanged.
-        bindings.write_text(bindings.read_text().replace(
-            'mouse_movement_params = 0.15, 3.0, 0.0',
-            'mouse_movement_params = 0.40, 3.0, 0.05'))
+if args.vulkan:
+    # Native USB reports carry deltas once; mouse-to-stick would integrate
+    # the same input again. Retain keyboard and physical controller bindings.
+    import re
+    text = bindings.read_text()
+    text = re.sub(r'(?m)^mouse_to_joystick\s*=.*\n?', '', text)
+    bindings.write_text(text)
 
 # shadPS4 supplies external mounts directly and does not emulate the HEN kernel service.
 import configparser

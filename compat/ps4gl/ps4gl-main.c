@@ -83,16 +83,18 @@ int __wrap_main(int argc, char **argv) {
       if(!((*p>='a' && *p<='z') || (*p>='A' && *p<='Z') ||
            (*p>='0' && *p<='9') || *p=='_' || *p=='-')) return 2;
     fprintf(log_file,"START diagnostic target %s\n",target);
-    char *args[]={"scummvm","--gfx-mode=opengl","--debuglevel=5",target,NULL};
-    return __real_main(4,args);
+    char *args[]={"scummvm","--gfx-mode=opengl",target,NULL};
+    return __real_main(3,args);
   }
   FILE *probe=fopen("/data/scummvm-vulkan/start-twp-once", "r");
   if(probe) {
     fclose(probe); remove("/data/scummvm-vulkan/start-twp-once");
     fprintf(log_file,"START diagnostic target twp\n");
-    char *args[]={"scummvm","--gfx-mode=opengl","--debuglevel=5","twp",NULL};
-    return __real_main(4,args);
+    char *args[]={"scummvm","--gfx-mode=opengl","twp",NULL};
+    return __real_main(3,args);
   }
-  char *args[]={"scummvm","--gfx-mode=opengl","--debuglevel=5",NULL};
-  return __real_main(3,args);
+  /* Use ScummVM's default verbosity; scummvm.ini can opt into debuglevel.
+   * Forced level 5 makes Director log every sprite refresh through the TTY. */
+  char *args[]={"scummvm","--gfx-mode=opengl",NULL};
+  return __real_main(2,args);
 }

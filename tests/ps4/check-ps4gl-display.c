@@ -28,7 +28,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(VkDevice h,uint32_t family,uint32_t 
 }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice h,const VkSwapchainCreateInfoKHR *i,const VkAllocationCallbacks *a,VkSwapchainKHR *out) {
   assert(h && !a && i->minImageCount==2 && !i->surface && !i->oldSwapchain);
-  assert(i->imageExtent.width==1280 && i->imageExtent.height==720 && i->imageFormat==VK_FORMAT_R8G8B8A8_SRGB);
+  assert(i->imageExtent.width==1280 && i->imageExtent.height==720 && i->imageFormat==VK_FORMAT_R8G8B8A8_UNORM);
   assert(i->presentMode==VK_PRESENT_MODE_FIFO_KHR && i->imageUsage==VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT); CREATE(out,VkSwapchainKHR);
 }
 VKAPI_ATTR void VKAPI_CALL vkDestroySwapchainKHR(VkDevice d,VkSwapchainKHR h,const VkAllocationCallbacks *a) { assert(d && !a); destroy((uintptr_t)h); }
@@ -48,12 +48,13 @@ VKAPI_ATTR VkResult VKAPI_CALL vkBindImageMemory(VkDevice d,VkImage i,VkDeviceMe
 VKAPI_ATTR void VKAPI_CALL vkFreeMemory(VkDevice d,VkDeviceMemory m,const VkAllocationCallbacks *a) { assert(d && !a); destroy((uintptr_t)m); }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateRenderPass(VkDevice h,const VkRenderPassCreateInfo *i,const VkAllocationCallbacks *a,VkRenderPass *out) {
   assert(h && !a && i->attachmentCount==2 && i->subpassCount==1);
+  assert(i->pAttachments->format==VK_FORMAT_R8G8B8A8_UNORM);
   assert(i->pAttachments->loadOp==VK_ATTACHMENT_LOAD_OP_LOAD && i->pAttachments->storeOp==VK_ATTACHMENT_STORE_OP_STORE);
   assert(i->pAttachments->initialLayout==VK_IMAGE_LAYOUT_GENERAL && i->pAttachments->finalLayout==VK_IMAGE_LAYOUT_GENERAL); CREATE(out,VkRenderPass);
 }
 VKAPI_ATTR void VKAPI_CALL vkDestroyRenderPass(VkDevice d,VkRenderPass h,const VkAllocationCallbacks *a) { assert(d && !a); destroy((uintptr_t)h); }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateImageView(VkDevice h,const VkImageViewCreateInfo *i,const VkAllocationCallbacks *a,VkImageView *out) {
-  assert(h && !a && i->image && (i->format==VK_FORMAT_R8G8B8A8_SRGB || i->format==VK_FORMAT_D32_SFLOAT_S8_UINT));
+  assert(h && !a && i->image && (i->format==VK_FORMAT_R8G8B8A8_UNORM || i->format==VK_FORMAT_D32_SFLOAT_S8_UINT));
   assert(i->subresourceRange.levelCount==1 && i->subresourceRange.layerCount==1); CREATE(out,VkImageView);
 }
 VKAPI_ATTR void VKAPI_CALL vkDestroyImageView(VkDevice d,VkImageView h,const VkAllocationCallbacks *a) { assert(d && !a); destroy((uintptr_t)h); }

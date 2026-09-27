@@ -9,15 +9,15 @@ static void destroy_texture_snapshot(VkDevice device, PS4GLTextureSnapshot *t) {
   if(t->memory) vkFreeMemory(device,t->memory,NULL);
   *t=(PS4GLTextureSnapshot){0};
 }
-/* Owners and borrowers live until the complete frame has retired. CPU content
- * revision and sampler state are independent; GPU render targets keep ordered
- * access to their existing view instead of pretending to be immutable copies. */
+#include "ps4gl-texture-cache.h"
+/* Cache owners survive retired frames; current-frame snapshots borrow them.
+ * Revisions and sampler state must both match, never only the GL name. */
 static const PS4GLTextureSnapshot *find_texture_snapshot(const PS4GLContext *ctx, const PS4GLTexture *source) {
+  for(unsigned i=0;i<PS4GL_TEXTURE_CACHE_SLOTS;++i)
+    if(texture_snapshot_matches(&ctx->texture_cache[i],source)) return &ctx->texture_cache[i];
   for(unsigned i=0;i<ctx->snapshot_count;++i) for(unsigned j=0;j<2;++j) {
     const PS4GLTextureSnapshot *t=&ctx->snapshots[i].textures[j];
-    if(t->sampler && t->source_name==source->name && t->source_revision==source->revision &&
-       t->source_target==source->render_target && t->min_filter==source->min_filter &&
-       t->mag_filter==source->mag_filter && t->wrap_s==source->wrap_s && t->wrap_t==source->wrap_t) return t;
+    if(texture_snapshot_matches(t,source)) return t;
   }
   return NULL;
 }
@@ -48,6 +48,7 @@ static int texture_snapshot(PS4GLContext *ctx, const PS4GLTexture *source, PS4GL
   if(type==UINT32_MAX) return 0;
   VkMemoryAllocateInfo ai={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=req.size,.memoryTypeIndex=type};
   if(vkAllocateMemory(device,&ai,NULL,&t->memory)!=VK_SUCCESS || vkBindImageMemory(device,t->image,t->memory,0)!=VK_SUCCESS) return 0;
+  t->allocation_bytes=(size_t)req.size;
   VkImageSubresource sub={.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT}; VkSubresourceLayout layout;
   vkGetImageSubresourceLayout(device,t->image,&sub,&layout);
   size_t row=(size_t)source->width*4;

@@ -4,11 +4,12 @@ Checked 2026-09-27 against the current experimental Vulkan build.
 
 ## Current checkpoint
 
-User accepted the corrected lighting and requested commit/push. The game runs
-through startup and the opening dialogue with working WAV effects and speech.
-Playback in shadPS4 is still slow/stuttery, explicitly reconfirmed by the user.
-The apparent disappearing seated character was subsequently seen completing
-his slow animation; this is not a confirmed missing-mesh defect.
+User accepted the corrected lighting, audio and emulator performance, then
+requested commit/push. Larger draw batches improved playback; retaining
+unchanged GPU textures across frames supplied the decisive further speedup.
+Animation pacing remains at its original setting: the catch-up experiment was
+rejected and reverted. Acceptance is visual/user-observed, not a measured FPS
+claim. The previously reported hand through the wall has no targeted fix.
 
 The sections below record the bring-up chronologically, including superseded
 hypotheses. This is not a full-game or physical PS4 compatibility claim.
@@ -480,3 +481,66 @@ as requested. Existing loaded options retain their own values. The production
 audio fixture passes after this change and the experimental package builds.
 Final eboot SHA-256:
 `85a2ba5cbef17d55fa98f7da7784c82abeaa7f4b8780d69050ac97a72d1c627e`.
+
+
+### Animation pacing candidate
+
+After the user accepted the general image and asked to focus on animation
+speed, inspected `ProcessTime`: its missed-render recovery capped at eight
+ticks, dropping elapsed simulation time below roughly 9 rendered FPS. Raised
+the bounded recovery budget to FRAME_PER_SECOND (about one second). Each
+character/animation/camera step and intervening scheduler dispatch still runs;
+no frame-index jump bypasses AtFrame triggers. Long stalls remain bounded.
+
+`check-watchmaker-timing.py` compiles the production pacing arithmetic with
+ASan/UBSan and a synthetic render clock. Over 60 seconds, 5/16/50/100 ms render
+costs produce identical legacy/candidate tick counts. At 250 ms the counts
+are 2080/4603, and at 500 ms they are 1054/4580. This proves the timing-limit
+behavior, not an increase in GPU FPS or live-scene correctness. Actual emulator
+acceptance remains pending; door-scene hand placement is unchanged.
+
+Build succeeded; eboot SHA-256:
+`0ec9c08cf8b151cc7225e78ed10c6b0d1ab0ca1984c4707affee419f3a9b6eda`.
+
+User rejected the animation pacing candidate: characters visibly teleported
+between infrequent rendered frames. Restored the eight-tick limit; synthetic
+timing correctness did not establish acceptable motion. Investigating render
+cost separately, without changing animation speed.
+
+### Larger immediate-mode batches (candidate)
+
+Restored the original animation pacing and removed the rejected candidate's
+temporary timing fixture. Increased fixed-function batch capacity from 384 to
+3072 vertices (128 to 1024 triangles). Large same-material meshes therefore
+need up to eight times fewer draw submissions and per-draw descriptor pools.
+Material boundaries, vertex order, shader inputs and animation steps remain
+unchanged. This adds 96,768 bytes to each bridge context.
+
+Host ASan/UBSan frame/state tests pass, including complete vertex/color/UV
+sequence checks across full batches and a final partial triangle batch. Both
+the SDL context allocator and bridge objects were rebuilt against the new
+layout, then the experimental package was linked. Emulator frame-rate and
+visual improvement still require live acceptance; reduced draw counts alone
+do not establish a performance win.
+
+User accepted larger batches as clearly faster, but requested more speed.
+
+### Persistent texture cache candidate
+
+Unchanged sampled textures were previously rebuilt and uploaded on every
+frame, including a queue submit/fence wait for every unique texture. A bounded
+128-entry / 32 MiB cache now takes ownership of completed immutable texture
+snapshots at GPU frame retirement. Later frames borrow matching content
+revision and sampler state. Changed/deleted textures are reclaimed only after
+the frame completes; render-target views are excluded. Cache exhaustion falls
+back to the existing per-frame upload; shutdown releases all cache owners.
+The cache adds up to 32 MiB beyond the existing frame upload budget.
+
+ASan/UBSan host tests cover 100-frame reuse, content and sampler invalidation,
+deleted/reused texture names, ownership transfer, bounds, target exclusion and
+teardown. Existing frame/state tests pass. SDL and bridge rebuilt and package
+linked. This is not yet a measured emulator FPS improvement.
+Eboot SHA-256: `45e4e38a13f825967a8fadee14629ed23ccb66f7081bb23ed722831367cfa78c`.
+
+User accepted the persistent-cache build ("där satt den!") and requested
+commit/push. The accepted eboot hash is recorded above.

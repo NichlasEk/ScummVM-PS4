@@ -220,6 +220,7 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
     ctx->programs[i]=(PS4GLProgram){0};
   }
   ps4glReleaseVertexSnapshots(ctx);
+  retire_texture_cache(ctx,1);
   collect_targets(ctx,1);
   if(ctx->offscreen_pass) vkDestroyRenderPass(device,ctx->offscreen_pass,NULL);
   ctx->offscreen_pass=VK_NULL_HANDLE; ctx->prepare_target=NULL; ctx->end_target=NULL;
@@ -408,9 +409,13 @@ void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
 void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
   if(!ctx) return;
   if(ctx->command) { if(!ctx->error) ctx->error=GL_INVALID_OPERATION; return; }
+  retire_texture_cache(ctx,0);
   for(unsigned i=0;i<ctx->snapshot_count;++i) {
     if(ctx->snapshots[i].pool) vkDestroyDescriptorPool(ctx->program_device,ctx->snapshots[i].pool,NULL);
-    for(unsigned t=0;t<2;++t) destroy_texture_snapshot(ctx->program_device,&ctx->snapshots[i].textures[t]);
+    for(unsigned t=0;t<2;++t) {
+      cache_retired_texture(ctx,&ctx->snapshots[i].textures[t]);
+      destroy_texture_snapshot(ctx->program_device,&ctx->snapshots[i].textures[t]);
+    }
     ctx->snapshots[i]=(PS4GLSnapshot){0};
   }
   free(ctx->snapshots); ctx->snapshots=NULL; ctx->snapshot_capacity=0;

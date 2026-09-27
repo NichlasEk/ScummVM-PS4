@@ -152,6 +152,7 @@ typedef struct PS4GLTextureSnapshot {
   VkImageView view;
   VkSampler sampler;
   GLboolean borrowed_view, borrowed_snapshot;
+  size_t allocation_bytes;
   GLuint source_name;
   uint64_t source_revision;
   unsigned source_target;
@@ -295,7 +296,8 @@ typedef struct PS4GLProgram {
 #define GL_CCW 0x0901
 #define GL_STACK_OVERFLOW 0x0503
 #define GL_STACK_UNDERFLOW 0x0504
-#define PS4GL_FIXED_VERTICES 384
+// Keep whole triangles/quads while amortizing draw/descriptor work.
+#define PS4GL_FIXED_VERTICES 3072
 #define PS4GL_MATRIX_DEPTH 32
 typedef struct PS4GLFixedVertex { GLfloat position[3], color[4], uv[2]; } PS4GLFixedVertex;
 typedef struct PS4GLFixed {
@@ -364,6 +366,10 @@ typedef struct PS4GLContext {
   unsigned active_texture, unpack_alignment, pack_alignment;
   size_t texture_bytes;
   uint64_t next_texture_revision;
+#define PS4GL_TEXTURE_CACHE_SLOTS 128
+#define PS4GL_TEXTURE_CACHE_BUDGET (32u*1024u*1024u)
+  PS4GLTextureSnapshot texture_cache[PS4GL_TEXTURE_CACHE_SLOTS];
+  size_t texture_cache_bytes;
   unsigned texture_snapshot_uploads, texture_snapshot_reuses;
   VkPhysicalDevice physical;
   PS4GLSnapshot *snapshots;

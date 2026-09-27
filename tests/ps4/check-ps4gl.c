@@ -27,11 +27,23 @@ VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer cmd, uint32_t count, uint32
   assert(cmd && count==expected_vertices && instances==1 && !first && !instance); ++draws;
 }
 static unsigned indexed_draws, uploads, expected_indices=3;
+static unsigned stream_vertices;
+static int check_stream;
 static unsigned char snapshot[PS4GL_FIXED_VERTICES*sizeof(PS4GLFixedVertex)];
 static size_t snapshot_size, snapshot_vertex_bytes;
 static GLenum snapshot_type;
 static int upload(PS4GLContext *ctx, const void *data, size_t size, size_t vb, GLenum type) {
   assert(ctx && size<=sizeof(snapshot)); ++uploads;
+  if(check_stream) {
+    assert(vb==size && type==0 && size%sizeof(PS4GLFixedVertex)==0);
+    const PS4GLFixedVertex *v=data;
+    for(size_t i=0;i<size/sizeof(*v);++i) {
+      assert(v[i].position[0]==(float)stream_vertices++);
+      assert(v[i].position[1]==0 && v[i].position[2]==0);
+      assert(v[i].color[0]==.2f && v[i].color[1]==.3f && v[i].color[2]==.4f && v[i].color[3]==1.f);
+      assert(v[i].uv[0]==3.f && v[i].uv[1]==.5f);
+    }
+  }
   memcpy(snapshot,data,size); snapshot_size=size; snapshot_vertex_bytes=vb; snapshot_type=type;
   return 1;
 }
@@ -298,9 +310,15 @@ static void check_fixed(void) {
   glColor3f(.2f,.3f,.4f); assert(ctx.fixed.color[3]==1.f);
   assert(ps4glGetProcAddress("glColor4f"));
   unsigned before=draws; glBegin(GL_TRIANGLES); glVertex3f(0,0,0); glEnd(); assert(draws==before);
+  check_stream=1; stream_vertices=0;
   expected_vertices=PS4GL_FIXED_VERTICES; glBegin(GL_TRIANGLES);
   for(unsigned i=0;i<PS4GL_FIXED_VERTICES*2;++i) glVertex3f(i,0,0);
   glEnd(); assert(draws==before+2 && !glGetError());
+  assert(stream_vertices==PS4GL_FIXED_VERTICES*2);
+  expected_vertices=3; glBegin(GL_TRIANGLES);
+  for(unsigned i=0;i<3;++i) glVertex3f(stream_vertices+i,0,0);
+  glEnd(); assert(draws==before+3 && stream_vertices==PS4GL_FIXED_VERTICES*2+3);
+  check_stream=0;
   glEnd(); assert(glGetError()==GL_INVALID_OPERATION);
   ps4glEndPass(); ps4glDestroyBuffers(&ctx); expected_vertices=3;
   puts("PASS fixed matrices, stacks, errors, independent projection, quad winding, bounded batches and programmable state restoration");

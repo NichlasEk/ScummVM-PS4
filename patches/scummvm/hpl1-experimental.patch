@@ -326,3 +326,61 @@
  	//		if (!(gpGame->GetSound()->GetLowLevel()->IsEnvAudioAvailable()))
  	//			return;
  
+--- a/engines/hpl1/engine/input/Mouse.cpp
++++ b/engines/hpl1/engine/input/Mouse.cpp
+@@ -93,10 +93,11 @@
+ 		return;
+ 	if (ev.type == Common::EVENT_MOUSEMOVE) {
+ 		_absMousePos = cVector2f(ev.mouse.x, ev.mouse.y);
++		// Preserve every motion report until the game consumes the delta.
++		_relMousePos += cVector2f(ev.relMouse.x, ev.relMouse.y);
+ 	} else {
+ 		setMouseState(ev.type, _buttonState);
+ 	}
+-	_relMousePos = cVector2f(ev.relMouse.x, ev.relMouse.y);
+ }
+ 
+ void Mouse::Update() {
+--- a/engines/hpl1/penumbra-overture/ButtonHandler.cpp
++++ b/engines/hpl1/penumbra-overture/ButtonHandler.cpp
+@@ -26,6 +26,7 @@
+  */
+ 
+ #include "hpl1/penumbra-overture/ButtonHandler.h"
++#include "common/config-manager.h"
+ 
+ #include "hpl1/penumbra-overture/Credits.h"
+ #include "hpl1/penumbra-overture/DeathMenu.h"
+@@ -149,7 +150,13 @@
+ 	}
+ 
+ 	// LOAD SETTINGS
++#ifdef __PS4__
++	// Keep the existing in-game control in the target's persistent config.
++	mfMouseSensitivity = ConfMan.hasKey("hpl_mouse_sensitivity")
++		? cMath::Clamp(ConfMan.getInt("hpl_mouse_sensitivity") / 100.f, 0.2f, 5.0f) : 2.0f;
++#else
+ 	mfMouseSensitivity = mpInit->mpConfig->GetFloat("Controls", "MouseSensitivity", 1.0f);
++#endif
+ 	mbInvertMouseY = mpInit->mpConfig->GetBool("Controls", "InvertMouseY", false);
+ 	mbToggleCrouch = mpInit->mpConfig->GetBool("Controls", "ToggleCrouch", true);
+ }
+--- a/engines/hpl1/penumbra-overture/MainMenu.cpp
++++ b/engines/hpl1/penumbra-overture/MainMenu.cpp
+@@ -1,3 +1,4 @@
++#include "common/config-manager.h"
+ /* ScummVM - Graphic Adventure Engine
+  *
+  * ScummVM is the legal property of its developers, whose names
+@@ -841,6 +842,11 @@
+ 			if (mpInit->mpButtonHandler->mfMouseSensitivity < 0.2f)
+ 				mpInit->mpButtonHandler->mfMouseSensitivity = 0.2f;
+ 		}
++
++#ifdef __PS4__
++		ConfMan.setInt("hpl_mouse_sensitivity", (int)(mpInit->mpButtonHandler->mfMouseSensitivity * 100.f + 0.5f));
++		ConfMan.flushToDisk();
++#endif
+ 
+ 		char sTempVec[256];
+ 		snprintf(sTempVec, 256, "%.1f", mpInit->mpButtonHandler->mfMouseSensitivity);

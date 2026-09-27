@@ -314,3 +314,20 @@ Host validation passed for frame ownership, GL state/vertex packing, shader
 compilation, all 130 subset-loader entries and occlusion completion packets.
 The shared Watchmaker path has not had a new visual regression run. Real halo
 occlusion remains subject to the emulator limitation described above.
+
+
+### Mouse input follow-up
+
+HPL previously overwrote relative movement with each mouse event, losing all
+but the last report between game updates. Button/wheel events could also erase
+pending motion. Mouse::processEvent now accumulates motion reports only;
+GetRelPosition consumes and clears the accumulated delta as before.
+
+On PS4 the existing Options -> Controls -> Mouse Sensitivity control defaults
+to 2.0 (range 0.2–5.0). Left click increases and right click decreases by 0.2.
+Changes persist immediately in the target's hpl_mouse_sensitivity INI key,
+stored as hundredths. This replaces the otherwise transient HPL XML setting
+for this control. Current local launch restores show_menu/show_pre_menu=true;
+post_effects=false remains. Build/package passed. The user accepted Overture as finished after this
+control update (2026-09-27). Runtime: /tmp/hpl-input-runtime.log. The known
+postprocessing fallback and hardware-validation limits above remain recorded.

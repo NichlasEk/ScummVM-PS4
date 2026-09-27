@@ -57,6 +57,13 @@ void glColor4f(GLfloat r, GLfloat g, GLfloat b, GLfloat a) {
 void glTexCoord2f(GLfloat u, GLfloat v) {
   if(current) { current->fixed.uv[0]=u; current->fixed.uv[1]=v; current->fixed.uv[2]=0; }
 }
+void glMultiTexCoord3f(GLenum unit,GLfloat u,GLfloat v,GLfloat r) {
+  if(!current) return;
+  if(unit<GL_TEXTURE0 || unit>=GL_TEXTURE0+PS4GL_TEXTURE_UNITS) {error(GL_INVALID_ENUM);return;}
+  unsigned n=unit-GL_TEXTURE0;
+  GLfloat *coord=n ? current->fixed.extra_uv[n-1] : current->fixed.uv;
+  coord[0]=u;coord[1]=v;coord[2]=r;
+}
 void glTexCoord3f(GLfloat u, GLfloat v, GLfloat r) {
   glTexCoord2f(u,v);if(current) current->fixed.uv[2]=r;
 }
@@ -94,18 +101,33 @@ void glTexEnvi(GLenum target, GLenum pname, GLint value) {
     if(value!=GL_MODULATE && value!=GL_REPLACE && value!=GL_COMBINE) {error(GL_INVALID_ENUM);return;}
     dst=&f->env_mode[u];
   } else if(pname==GL_COMBINE_RGB || pname==GL_COMBINE_ALPHA) {
-    if(value!=GL_MODULATE && value!=GL_REPLACE && value!=GL_ADD) {error(GL_INVALID_ENUM);return;}
+    if(value!=GL_MODULATE && value!=GL_REPLACE && value!=GL_ADD && value!=GL_INTERPOLATE) {error(GL_INVALID_ENUM);return;}
     dst=pname==GL_COMBINE_RGB ? &f->env_rgb[u] : &f->env_alpha[u];
-  } else if(pname==GL_OPERAND1_RGB) {
+  } else if((pname>=GL_SOURCE0_RGB && pname<=GL_SOURCE2_RGB) || (pname>=GL_SOURCE0_ALPHA && pname<=GL_SOURCE2_ALPHA)) {
+    if(value!=GL_TEXTURE && value!=GL_CONSTANT && value!=GL_PRIMARY_COLOR && value!=GL_PREVIOUS) {error(GL_INVALID_ENUM);return;}
+    dst=pname<=GL_SOURCE2_RGB ? &f->env_source_rgb[u][pname-GL_SOURCE0_RGB] : &f->env_source_alpha[u][pname-GL_SOURCE0_ALPHA];
+  } else if(pname>=GL_OPERAND0_RGB && pname<=GL_OPERAND2_RGB) {
     if(value!=GL_SRC_COLOR && value!=GL_ONE_MINUS_SRC_COLOR && value!=GL_SRC_ALPHA && value!=GL_ONE_MINUS_SRC_ALPHA) {error(GL_INVALID_ENUM);return;}
-    dst=&f->env_operand1[u];
+    dst=&f->env_operand_rgb[u][pname-GL_OPERAND0_RGB];
+  } else if(pname>=GL_OPERAND0_ALPHA && pname<=GL_OPERAND2_ALPHA) {
+    if(value!=GL_SRC_ALPHA && value!=GL_ONE_MINUS_SRC_ALPHA) {error(GL_INVALID_ENUM);return;}
+    dst=&f->env_operand_alpha[u][pname-GL_OPERAND0_ALPHA];
   } else {error(GL_INVALID_ENUM);return;}
   *dst=value;
 }
+void glTexEnvfv(GLenum target, GLenum pname, const GLfloat *values) {
+  if(!fixed_outside()) return;
+  if(target!=GL_TEXTURE_ENV || pname!=GL_TEXTURE_ENV_COLOR) {error(GL_INVALID_ENUM);return;}
+  if(!values) {error(GL_INVALID_VALUE);return;}
+  for(unsigned i=0;i<4;++i) current->fixed.env_color[current->active_texture][i]=values[i]<0.f ? 0.f : values[i]>1.f ? 1.f : values[i];
+}
+/* Unit zero PREVIOUS is the primary vertex color. Multitexture fixed-function
+ * rendering is still outside this bridge's supported subset. */
+static GLfloat fixed_source(GLenum source) { return source==GL_TEXTURE ? 0.f : source==GL_CONSTANT ? 1.f : 2.f; }
 static GLuint fixed_program(int textured) {
   PS4GLFixed *f=&current->fixed;
   if(f->programs[textured]) return f->programs[textured];
-  const char *vs=ps4gl_fixed_vertex; char fs[2048];
+  const char *vs=ps4gl_fixed_vertex; char fs[4096];
   ps4glFixedFragment(textured,fs,sizeof(fs));
   GLuint shaders[2]={glCreateShader(GL_VERTEX_SHADER),glCreateShader(GL_FRAGMENT_SHADER)};
   GLuint p=glCreateProgram(); GLint ok=0;
@@ -135,6 +157,7 @@ static void fixed_draw(void) {
     f->clients[0]=(PS4GLClientArray){.size=3,.type=GL_FLOAT,.stride=sizeof(f->vertices[0]),.pointer=f->vertices[0].position,.enabled=1};
     f->clients[1]=(PS4GLClientArray){.size=4,.type=GL_FLOAT,.stride=sizeof(f->vertices[0]),.pointer=f->vertices[0].color,.enabled=1};
     f->clients[3]=(PS4GLClientArray){.size=3,.type=GL_FLOAT,.stride=sizeof(f->vertices[0]),.pointer=f->vertices[0].uv,.enabled=1};
+    f->clients[4]=(PS4GLClientArray){.size=3,.type=GL_FLOAT,.stride=sizeof(f->vertices[0]),.pointer=f->vertices[0].extra_uv[0],.enabled=1};
     client_shader_draw(GL_TRIANGLES,0,f->count,0,NULL);memcpy(f->clients,saved,sizeof(saved));f->count=0;return;
   }
   const PS4GLTexture *texture=ps4glTextureAtUnit(current,0);
@@ -155,9 +178,18 @@ static void fixed_draw(void) {
     glUniform1i(glGetUniformLocation(p,"image"),0);
     GLenum rgb=f->env_mode[0]==GL_COMBINE ? f->env_rgb[0] : f->env_mode[0];
     GLenum alpha=f->env_mode[0]==GL_COMBINE ? f->env_alpha[0] : f->env_mode[0];
-    glUniform1i(glGetUniformLocation(p,"envRgb"),rgb==GL_REPLACE ? 1 : rgb==GL_ADD ? 2 : 0);
-    glUniform1i(glGetUniformLocation(p,"envAlpha"),alpha==GL_REPLACE ? 1 : alpha==GL_ADD ? 2 : 0);
-    glUniform1i(glGetUniformLocation(p,"envOperand"),f->env_mode[0]==GL_COMBINE ? f->env_operand1[0]-GL_SRC_COLOR : 0);
+    glUniform1i(glGetUniformLocation(p,"envRgb"),rgb==GL_REPLACE ? 1 : rgb==GL_ADD ? 2 : rgb==GL_INTERPOLATE ? 3 : 0);
+    glUniform1i(glGetUniformLocation(p,"envAlpha"),alpha==GL_REPLACE ? 1 : alpha==GL_ADD ? 2 : alpha==GL_INTERPOLATE ? 3 : 0);
+    GLfloat sr[3]={0,2,1},sa[3]={0,2,1},op[3]={0,0,0},oa[3]={0,0,0};
+    if(f->env_mode[0]==GL_COMBINE) for(unsigned a=0;a<3;++a) {
+      sr[a]=fixed_source(f->env_source_rgb[0][a]);sa[a]=fixed_source(f->env_source_alpha[0][a]);
+      op[a]=f->env_operand_rgb[0][a]-GL_SRC_COLOR;oa[a]=f->env_operand_alpha[0][a]-GL_SRC_ALPHA;
+    }
+    glUniform3fv(glGetUniformLocation(p,"envSources"),1,sr);
+    glUniform3fv(glGetUniformLocation(p,"envAlphaSources"),1,sa);
+    glUniform3fv(glGetUniformLocation(p,"envOperands"),1,op);
+    glUniform3fv(glGetUniformLocation(p,"envAlphaOperands"),1,oa);
+    glUniform4fv(glGetUniformLocation(p,"envColor"),1,f->env_color[0]);
   }
   if(!f->buffer) glGenBuffers(1,&f->buffer);
   glBindBuffer(GL_ARRAY_BUFFER,f->buffer);
@@ -181,8 +213,8 @@ void glVertex3f(GLfloat x, GLfloat y, GLfloat z) {
   if(!current) return;
   PS4GLFixed *f=&current->fixed;
   if(!f->active) { error(GL_INVALID_OPERATION); return; }
-  PS4GLFixedVertex v={{x,y,z},{0},{0}};
-  memcpy(v.color,f->color,sizeof(v.color)); memcpy(v.uv,f->uv,sizeof(v.uv));
+  PS4GLFixedVertex v={.position={x,y,z}};
+  memcpy(v.color,f->color,sizeof(v.color)); memcpy(v.uv,f->uv,sizeof(v.uv)); memcpy(v.extra_uv,f->extra_uv,sizeof(v.extra_uv));
   f->pending[f->pending_count++]=v;
   unsigned group=f->primitive==GL_QUADS ? 4 : 3;
   if(f->pending_count!=group) return;

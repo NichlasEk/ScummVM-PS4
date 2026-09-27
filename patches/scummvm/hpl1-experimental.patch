@@ -272,3 +272,57 @@
  	initGraphics3d(mvScreenSize.x, mvScreenSize.y);
  	SetupGL();
  	ShowCursor(false);
+--- a/engines/hpl1/engine/impl/SDLTexture.cpp
++++ b/engines/hpl1/engine/impl/SDLTexture.cpp
+@@ -589,8 +589,11 @@
+ 		glTexImage2D(GLTarget, 0, internalFormat, _width, _height,
+ 					 0, format, GL_UNSIGNED_BYTE, pPixelSrc);
+ 
+-	if (glGetError() != GL_NO_ERROR)
++	GLenum uploadError = glGetError();
++	if (uploadError != GL_NO_ERROR) {
++		warning("Texture %s: upload %ux%u failed, GL error 0x%x", msName.c_str(), _width, _height, uploadError);
+ 		return false;
++	}
+ 
+ 	if (mbUseMipMaps && mTarget != eTextureTarget_Rect)
+ 		generateMipmaps(mTarget);
+--- a/engines/hpl1/engine/impl/CGProgram.cpp
++++ b/engines/hpl1/engine/impl/CGProgram.cpp
+@@ -92,6 +92,11 @@
+ void cCGProgram::Bind() {
+ 	Hpl1::logInfo(Hpl1::kDebugShaders, "binding shader %s\n", GetName().c_str());
+ 	_shader->use();
++#ifdef __PS4__
++	static bool seen[256] = {};
++	GLint id = 0; glGetIntegerv(GL_CURRENT_PROGRAM, &id);
++	if (id > 0 && id < 256 && !seen[id]) { seen[id] = true; warning("HPL program %d: %s", id, GetName().c_str()); }
++#endif
+ }
+ 
+ //-----------------------------------------------------------------------
+--- a/engines/hpl1/engine/impl/OpenALSoundChannel.cpp
++++ b/engines/hpl1/engine/impl/OpenALSoundChannel.cpp
+@@ -137,7 +137,13 @@
+ 
+ void cOpenALSoundChannel::SetVolume(float volume) {
+ 	mfVolume = cMath::Clamp(volume, 0.0, 1.0);
+-	mixer->setChannelVolume(_handle, static_cast<byte>(mfVolume * 255.f));
++	float outputVolume = mfVolume;
++#ifdef __PS4__
++	// Quiet looping world ambience without changing speech or scripted fades.
++	if (mbLooping && mbAffectedByEnv)
++		outputVolume *= 0.3f;
++#endif
++	mixer->setChannelVolume(_handle, static_cast<byte>(outputVolume * 255.f));
+ }
+ 
+ //-----------------------------------------------------------------------
+@@ -226,6 +232,7 @@
+ //-----------------------------------------------------------------------
+ 
+ void cOpenALSoundChannel::SetAffectedByEnv(bool abAffected) {
++	iSoundChannel::SetAffectedByEnv(abAffected);
+ 	//		if (!(gpGame->GetSound()->GetLowLevel()->IsEnvAudioAvailable()))
+ 	//			return;
+ 

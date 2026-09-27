@@ -5,7 +5,7 @@
 /* Deliberately single-threaded: SDL/thread ownership is a later integration gate. */
 static PS4GLContext *current;
 static void trace_error(GLenum value, int line) {
-  static unsigned count; if(count++<24) fprintf(stderr,"PS4GL error %x line %d\n",value,line);
+  static unsigned char seen[2048]; if(line>=0 && line<2048 && !seen[line]) {seen[line]=1;fprintf(stderr,"PS4GL error %x line %d\n",value,line);}
   if (current && !current->error) current->error = value;
 }
 #define error(v) trace_error(v,__LINE__)
@@ -19,7 +19,11 @@ int ps4glInit(PS4GLContext *ctx, GLint width, GLint height) {
   for(unsigned m=0;m<2;++m) for(unsigned i=0;i<4;++i) ctx->fixed.matrix[m][0][i*5]=1.f;
   for(unsigned i=0;i<PS4GL_TEXTURE_UNITS;++i) {
     ctx->fixed.env_mode[i]=ctx->fixed.env_rgb[i]=ctx->fixed.env_alpha[i]=GL_MODULATE;
-    ctx->fixed.env_operand1[i]=GL_SRC_COLOR;
+    for(unsigned a=0;a<3;++a) {
+      ctx->fixed.env_source_rgb[i][a]=ctx->fixed.env_source_alpha[i][a]=a==0 ? GL_TEXTURE : a==1 ? GL_PREVIOUS : GL_CONSTANT;
+      ctx->fixed.env_operand_rgb[i][a]=a==2 ? GL_SRC_ALPHA : GL_SRC_COLOR;
+      ctx->fixed.env_operand_alpha[i][a]=GL_SRC_ALPHA;
+    }
   }
   ctx->next_query=1; ctx->next_shader=65536;
   ctx->next_framebuffer=1;
@@ -141,16 +145,30 @@ void glClearDepth(double value) { if(current) current->clear_depth=value>0 ? (va
 void glClearStencil(GLint value) { if(current) current->clear_stencil=value; }
 static int compare_func(GLenum f) { return f>=GL_NEVER && f<=GL_ALWAYS; }
 void glDepthFunc(GLenum f) { if(!compare_func(f)) { error(GL_INVALID_ENUM); return; } if(current) current->raster.depth_func=f; }
-void glStencilFunc(GLenum f,GLint ref,GLuint mask) {
-  if(!compare_func(f)) { error(GL_INVALID_ENUM); return; }
-  if(current) { current->raster.stencil_func=f; current->raster.stencil_ref=ref<0?0:ref>255?255:(unsigned)ref; current->raster.stencil_mask=mask&255; }
+static int stencil_face(GLenum face) { return face==GL_FRONT || face==GL_BACK || face==GL_FRONT_AND_BACK; }
+void glStencilFuncSeparate(GLenum face,GLenum f,GLint ref,GLuint mask) {
+  if(!stencil_face(face) || !compare_func(f)) { error(GL_INVALID_ENUM); return; }
+  if(!current) return;
+  unsigned reference=ref<0?0:ref>255?255:(unsigned)ref;
+  if(face!=GL_BACK) { current->raster.stencil_func=f; current->raster.stencil_ref=reference; current->raster.stencil_mask=mask&255; }
+  if(face!=GL_FRONT) { current->raster.back_stencil_func=f; current->raster.back_stencil_ref=reference; current->raster.back_stencil_mask=mask&255; }
 }
+void glStencilFunc(GLenum f,GLint ref,GLuint mask) { glStencilFuncSeparate(GL_FRONT_AND_BACK,f,ref,mask); }
 static int stencil_op(GLenum op) { return op==GL_KEEP || op==GL_ZERO || op==GL_REPLACE || op==GL_INCR || op==GL_DECR || op==GL_INVERT || op==GL_INCR_WRAP || op==GL_DECR_WRAP; }
-void glStencilOp(GLenum fail,GLenum depth_fail,GLenum pass) {
-  if(!stencil_op(fail) || !stencil_op(depth_fail) || !stencil_op(pass)) { error(GL_INVALID_ENUM); return; }
-  if(current) { current->raster.stencil_fail=fail; current->raster.stencil_depth_fail=depth_fail; current->raster.stencil_pass=pass; }
+void glStencilOpSeparate(GLenum face,GLenum fail,GLenum depth_fail,GLenum pass) {
+  if(!stencil_face(face) || !stencil_op(fail) || !stencil_op(depth_fail) || !stencil_op(pass)) { error(GL_INVALID_ENUM); return; }
+  if(!current) return;
+  if(face!=GL_BACK) { current->raster.stencil_fail=fail; current->raster.stencil_depth_fail=depth_fail; current->raster.stencil_pass=pass; }
+  if(face!=GL_FRONT) { current->raster.back_stencil_fail=fail; current->raster.back_stencil_depth_fail=depth_fail; current->raster.back_stencil_pass=pass; }
 }
-void glStencilMask(GLuint mask) { if(current) current->raster.stencil_write_mask=mask&255; }
+void glStencilOp(GLenum fail,GLenum depth_fail,GLenum pass) { glStencilOpSeparate(GL_FRONT_AND_BACK,fail,depth_fail,pass); }
+void glStencilMaskSeparate(GLenum face,GLuint mask) {
+  if(!stencil_face(face)) { error(GL_INVALID_ENUM); return; }
+  if(!current) return;
+  if(face!=GL_BACK) current->raster.stencil_write_mask=mask&255;
+  if(face!=GL_FRONT) current->raster.back_stencil_write_mask=mask&255;
+}
+void glStencilMask(GLuint mask) { glStencilMaskSeparate(GL_FRONT_AND_BACK,mask); }
 void glGetBooleanv(GLenum pname, GLboolean *values) {
   if(!current) return;
   if(!values) { error(GL_INVALID_VALUE); return; }
@@ -271,7 +289,7 @@ void glGenBuffers(GLsizei n, GLuint *names) {
   if(n<0 || (n && !names)) { error(GL_INVALID_VALUE); return; }
   unsigned free_slots=0;
   for(unsigned i=0;i<PS4GL_MAX_BUFFERS;++i) free_slots+=!current->buffers[i].name;
-  if((unsigned)n>free_slots) { error(GL_OUT_OF_MEMORY); return; }
+  if((unsigned)n>free_slots) { fprintf(stderr,"PS4GL buffer record limit: requested=%d available=%u limit=%u\n",n,free_slots,(unsigned)PS4GL_MAX_BUFFERS); error(GL_OUT_OF_MEMORY); return; }
   for(GLsizei j=0;j<n;++j) {
     while(current->next_buffer && find_buffer(current,current->next_buffer)) ++current->next_buffer;
     if(!current->next_buffer) { error(GL_OUT_OF_MEMORY); return; }
@@ -652,6 +670,8 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glCompressedTexImage2D);
   PROC(glMatrixMode); PROC(glLoadIdentity); PROC(glLoadMatrixf); PROC(glPushMatrix); PROC(glPopMatrix);
   PROC(glScalef); PROC(glTranslatef); PROC(glBegin); PROC(glEnd); PROC(glVertex3f); PROC(glColor3f); PROC(glColor4f);
+  PROC(glMultiTexCoord3f);
+  if(!strcmp(name,"glMultiTexCoord3fARB")) return (PS4GLProc)glMultiTexCoord3f;
   PROC(glTexCoord3f); PROC(glTexCoord2f); PROC(glAlphaFunc); PROC(glShadeModel); PROC(glCullFace); PROC(glFrontFace); PROC(glFlush);
   PROC(glBindAttribLocation); PROC(glGetAttribLocation);
   PROC(glCreateShader); PROC(glShaderSource); PROC(glCompileShader); PROC(glDeleteShader); PROC(glIsShader);
@@ -665,9 +685,9 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glGenFramebuffers); PROC(glBindFramebuffer); PROC(glDeleteFramebuffers); PROC(glIsFramebuffer);
   PROC(glFramebufferTexture2D); PROC(glCheckFramebufferStatus);
   PROC(glGenTextures); PROC(glBindTexture); PROC(glDeleteTextures); PROC(glIsTexture);
-  PROC(glTexEnvi); PROC(glActiveTexture); PROC(glPixelStorei); PROC(glReadPixels); PROC(glTexParameteri); PROC(glCopyTexSubImage2D); PROC(glTexImage1D); PROC(glTexImage2D); PROC(glTexSubImage2D);
+  PROC(glTexEnvi); PROC(glTexEnvfv); PROC(glActiveTexture); PROC(glPixelStorei); PROC(glReadPixels); PROC(glTexParameteri); PROC(glCopyTexSubImage2D); PROC(glTexImage1D); PROC(glTexImage2D); PROC(glTexSubImage2D);
   PROC(glUniform1i); PROC(glUniform1iv);
-  PROC(glColorMask); PROC(glClearDepth); PROC(glClearStencil); PROC(glDepthFunc); PROC(glStencilFunc); PROC(glStencilOp); PROC(glStencilMask);
+  PROC(glColorMask); PROC(glClearDepth); PROC(glClearStencil); PROC(glDepthFunc); PROC(glStencilFunc); PROC(glStencilOp); PROC(glStencilMask); PROC(glStencilFuncSeparate); PROC(glStencilOpSeparate); PROC(glStencilMaskSeparate);
   PROC(glGetUniformLocation); PROC(glUniform1f); PROC(glUniform2f); PROC(glUniform3f); PROC(glUniform4f);
   PROC(glUniform1fv); PROC(glUniform2fv); PROC(glUniform3fv); PROC(glUniform4fv); PROC(glUniformMatrix4fv);
   PROC(glGetProgramiv); PROC(glDrawArrays); PROC(glDrawElements);
@@ -876,7 +896,7 @@ static void texture_image(GLenum target, GLint level, GLint internal, GLsizei wi
   GLboolean rgb=internal==GL_RGB || internal==GL_RGB8;
   GLsizei storage_height=face>=0 ? height*6 : height;
   size_t bytes=(size_t)width*storage_height*4, old=(size_t)t->width*t->height*4;
-  if(bytes>PS4GL_TEXTURE_BUDGET-(current->texture_bytes-old)) { error(GL_OUT_OF_MEMORY); return; }
+  if(bytes>PS4GL_TEXTURE_BUDGET-(current->texture_bytes-old)) { fprintf(stderr,"PS4GL texture budget: texture=%u size=%dx%d requested=%zu resident=%zu limit=%u\n",t->name,width,height,bytes,current->texture_bytes,(unsigned)PS4GL_TEXTURE_BUDGET); error(GL_OUT_OF_MEMORY); return; }
   if(current->next_texture_revision==UINT64_MAX) { error(GL_OUT_OF_MEMORY); return; }
   unsigned char *copy=bytes ? calloc(1,bytes) : NULL;
   if(bytes && !copy) { error(GL_OUT_OF_MEMORY); return; }

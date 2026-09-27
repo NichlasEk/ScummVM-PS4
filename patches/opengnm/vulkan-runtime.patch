@@ -2888,3 +2888,38 @@ index 719e9a3..45d845d 100644
 +        }
 +    }
 +}
+--- a/src/vk_ps4_query.c
++++ b/src/vk_ps4_query.c
+@@ -44,6 +44,17 @@
+     *p++ = 0x15u | (1u << 8); /* GFX7 ZPASS_DONE, event index 1 */
+     *p++ = (uint32_t)addr; *p++ = (uint32_t)(addr >> 32);
+     cmd->gnm_cmd.cmdptr = p;
++}
++static void occlusion_finish(VkPs4CommandBuffer *cmd, uint64_t addr) {
++    if ((size_t)(cmd->gnm_cmd.endptr-cmd->gnm_cmd.cmdptr)<9) return;
++    uint32_t *p=cmd->gnm_cmd.cmdptr;
++    /* Poll this completion label, like the queue fence: INT_SEL=0. The
++     * generic OpenGNM EOP helper selects 3, unsupported by shadPS4. */
++    *p++=0xc0044700u; *p++=(uint32_t)GNM_CACHE_FLUSH_AND_INV_TS_EVENT | (5u<<8);
++    *p++=(uint32_t)addr; *p++=(uint32_t)((addr>>32)&0xffffu) | (1u<<29);
++    *p++=1; *p++=0;
++    *p++=0xc0016900u; *p++=1; *p++=0; /* DB_COUNT_CONTROL */
++    cmd->gnm_cmd.cmdptr=p;
+ }
+ static VkResult occlusion_results(VkPs4QueryPool *pool, uint32_t first,
+                                   uint32_t count, size_t size, void *data,
+@@ -292,13 +303,7 @@
+     uint64_t addr = pool->result_gpu_addr + query * query_stride(pool);
+     if (pool->create_info.queryType == VK_QUERY_TYPE_OCCLUSION) {
+         occlusion_sample(cmd,addr+8);
+-        sceGnmDrawCmdEventWriteEop(&cmd->gnm_cmd, GNM_CACHE_FLUSH_AND_INV_TS_EVENT,
+-                                 addr+256, GNM_DATA_SEL_SEND_DATA32, 1);
+-        if ((size_t)(cmd->gnm_cmd.endptr-cmd->gnm_cmd.cmdptr)>=3) {
+-            uint32_t *p=cmd->gnm_cmd.cmdptr;
+-            *p++=0xc0016900u; *p++=1; *p++=0; /* DB_COUNT_CONTROL */
+-            cmd->gnm_cmd.cmdptr=p;
+-        }
++        occlusion_finish(cmd,addr+256);
+         return;
+     }
+     /* Write the ZPASS count to the query slot and disable the counter */

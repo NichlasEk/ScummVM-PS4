@@ -105,7 +105,24 @@ typedef struct PS4GLBlend {
 #define GL_COMBINE 0x8570
 #define GL_COMBINE_RGB 0x8571
 #define GL_COMBINE_ALPHA 0x8572
+#define GL_TEXTURE 0x1702
+#define GL_TEXTURE_ENV_COLOR 0x2201
+#define GL_CONSTANT 0x8576
+#define GL_PRIMARY_COLOR 0x8577
+#define GL_PREVIOUS 0x8578
+#define GL_INTERPOLATE 0x8575
+#define GL_SOURCE0_RGB 0x8580
+#define GL_SOURCE1_RGB 0x8581
+#define GL_SOURCE2_RGB 0x8582
+#define GL_SOURCE0_ALPHA 0x8588
+#define GL_SOURCE1_ALPHA 0x8589
+#define GL_SOURCE2_ALPHA 0x858a
+#define GL_OPERAND0_RGB 0x8590
 #define GL_OPERAND1_RGB 0x8591
+#define GL_OPERAND2_RGB 0x8592
+#define GL_OPERAND0_ALPHA 0x8598
+#define GL_OPERAND1_ALPHA 0x8599
+#define GL_OPERAND2_ALPHA 0x859a
 #define GL_INCR 0x1e02
 #define GL_DECR 0x1e03
 #define GL_INVERT 0x150a
@@ -115,8 +132,10 @@ typedef struct PS4GLRaster {
   unsigned color_mask,depth_enabled,depth_write,stencil_enabled;
   GLenum depth_func,stencil_func,stencil_fail,stencil_depth_fail,stencil_pass;
   unsigned stencil_ref,stencil_mask,stencil_write_mask;
+  GLenum back_stencil_func,back_stencil_fail,back_stencil_depth_fail,back_stencil_pass;
+  unsigned back_stencil_ref,back_stencil_mask,back_stencil_write_mask;
 } PS4GLRaster;
-#define PS4GL_RASTER_DEFAULT { .color_mask=15,.depth_write=1,.depth_func=GL_LESS, .stencil_func=GL_ALWAYS, .stencil_fail=GL_KEEP,.stencil_depth_fail=GL_KEEP,.stencil_pass=GL_KEEP,.stencil_mask=255,.stencil_write_mask=255 }
+#define PS4GL_RASTER_DEFAULT { .color_mask=15,.depth_write=1,.depth_func=GL_LESS, .stencil_func=GL_ALWAYS, .stencil_fail=GL_KEEP,.stencil_depth_fail=GL_KEEP,.stencil_pass=GL_KEEP,.stencil_mask=255,.stencil_write_mask=255, .back_stencil_func=GL_ALWAYS,.back_stencil_fail=GL_KEEP,.back_stencil_depth_fail=GL_KEEP,.back_stencil_pass=GL_KEEP,.back_stencil_mask=255,.back_stencil_write_mask=255 }
 typedef struct PS4GLBlendVariant { PS4GLBlend state; PS4GLRaster raster; VkPipeline pipeline; VkRenderPass pass; } PS4GLBlendVariant;
 #define GL_BGR 0x80e0
 #define GL_BGRA 0x80e1
@@ -153,7 +172,7 @@ typedef struct PS4GLBlendVariant { PS4GLBlend state; PS4GLRaster raster; VkPipel
 #define PS4GL_TEXTURE_UNITS PS4GL_MAX_SAMPLERS
 #define PS4GL_MAX_TEXTURES 1024
 #define PS4GL_TEXTURE_LIMIT 2048
-#define PS4GL_TEXTURE_BUDGET (64u*1024u*1024u)
+#define PS4GL_TEXTURE_BUDGET (256u*1024u*1024u)
 typedef struct PS4GLTexture {
   GLuint name;
   GLboolean created;
@@ -191,7 +210,7 @@ typedef struct PS4GLTextureSnapshot {
 #define GL_DYNAMIC_DRAW 0x88e8
 #define GL_STREAM_DRAW 0x88e0
 #define GL_FLOAT 0x1406
-#define PS4GL_MAX_BUFFERS 512
+#define PS4GL_MAX_BUFFERS 4096
 #define PS4GL_MAX_ATTRIBS 8
 #define PS4GL_MAX_SNAPSHOTS 4096
 #define PS4GL_UPLOAD_PAGE_BYTES (1024u*1024u)
@@ -330,7 +349,7 @@ typedef struct PS4GLProgram {
 // Keep whole triangles/quads while amortizing draw/descriptor work.
 #define PS4GL_FIXED_VERTICES 3072
 #define PS4GL_MATRIX_DEPTH 32
-typedef struct PS4GLFixedVertex { GLfloat position[3], color[4], uv[3]; } PS4GLFixedVertex;
+typedef struct PS4GLFixedVertex { GLfloat position[3], color[4], uv[3], extra_uv[PS4GL_TEXTURE_UNITS-1][3]; } PS4GLFixedVertex;
 typedef struct PS4GLClientArray {
   GLint size; GLenum type; GLsizei stride; const void *pointer; GLuint buffer; GLboolean enabled;
 } PS4GLClientArray;
@@ -338,15 +357,19 @@ typedef struct PS4GLFixed {
   PS4GLClientArray clients[10]; /* position, color, normal, seven UV sets */
   unsigned client_texture;
 
-  GLfloat matrix[2][PS4GL_MATRIX_DEPTH][16], color[4], uv[3], alpha_ref;
+  GLfloat matrix[2][PS4GL_MATRIX_DEPTH][16], color[4], uv[3], extra_uv[PS4GL_TEXTURE_UNITS-1][3], alpha_ref;
   unsigned top[2], matrix_mode, count, pending_count;
   GLenum primitive, alpha_func, cull_face, front_face;
   GLboolean active, texture_enabled[PS4GL_TEXTURE_UNITS], alpha_enabled;
-  GLenum env_mode[PS4GL_TEXTURE_UNITS], env_rgb[PS4GL_TEXTURE_UNITS], env_alpha[PS4GL_TEXTURE_UNITS], env_operand1[PS4GL_TEXTURE_UNITS];
+  GLenum env_mode[PS4GL_TEXTURE_UNITS], env_rgb[PS4GL_TEXTURE_UNITS], env_alpha[PS4GL_TEXTURE_UNITS];
+  GLenum env_source_rgb[PS4GL_TEXTURE_UNITS][3], env_source_alpha[PS4GL_TEXTURE_UNITS][3];
+  GLenum env_operand_rgb[PS4GL_TEXTURE_UNITS][3], env_operand_alpha[PS4GL_TEXTURE_UNITS][3];
+  GLfloat env_color[PS4GL_TEXTURE_UNITS][4];
   GLuint programs[2], buffer;
   PS4GLFixedVertex vertices[PS4GL_FIXED_VERTICES], pending[4];
 } PS4GLFixed;
 void glTexEnvi(GLenum, GLenum, GLint);
+void glTexEnvfv(GLenum, GLenum, const GLfloat *);
 void glGenQueries(GLsizei, GLuint *);
 void glDeleteQueries(GLsizei, const GLuint *);
 GLboolean glIsQuery(GLuint);
@@ -375,6 +398,7 @@ void glEnd(void);
 void glVertex3f(GLfloat, GLfloat, GLfloat);
 void glColor3f(GLfloat, GLfloat, GLfloat);
 void glColor4f(GLfloat, GLfloat, GLfloat, GLfloat);
+void glMultiTexCoord3f(GLenum, GLfloat, GLfloat, GLfloat);
 void glTexCoord3f(GLfloat, GLfloat, GLfloat);
 void glTexCoord2f(GLfloat, GLfloat);
 void glAlphaFunc(GLenum, GLfloat);
@@ -564,6 +588,9 @@ void glColorMask(GLboolean,GLboolean,GLboolean,GLboolean);
 void glClearDepth(double);
 void glClearStencil(GLint);
 void glDepthFunc(GLenum);
+void glStencilFuncSeparate(GLenum, GLenum, GLint, GLuint);
+void glStencilOpSeparate(GLenum, GLenum, GLenum, GLenum);
+void glStencilMaskSeparate(GLenum, GLuint);
 void glStencilFunc(GLenum,GLint,GLuint);
 void glStencilOp(GLenum,GLenum,GLenum);
 void glStencilMask(GLuint);

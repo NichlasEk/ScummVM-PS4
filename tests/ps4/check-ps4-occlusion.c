@@ -27,5 +27,13 @@ int main(void) {
   for(unsigned i=4;i<72;++i) assert(!words[i]);
   occlusion_sample(&cmd,UINT64_C(0x123456788));
   assert(words[72]==0xc0024600u && words[73]==0x115 && words[74]==0x23456788 && words[75]==1);
+  occlusion_finish(&cmd,UINT64_C(0x123456880));
+  assert(cmd.gnm_cmd.cmdptr==words+85 && words[76]==0xc0044700u);
+  assert(words[77]==(GNM_CACHE_FLUSH_AND_INV_TS_EVENT | (5u<<8)));
+  assert(words[78]==0x23456880 && words[79]==0x20000001u);
+  assert(((words[79]>>24)&3)==0 && words[80]==1 && words[81]==0);
+  assert(words[82]==0xc0016900u && words[83]==1 && words[84]==0);
+  cmd.gnm_cmd.endptr=cmd.gnm_cmd.cmdptr+8;
+  occlusion_finish(&cmd,UINT64_C(0x123456880));assert(cmd.gnm_cmd.cmdptr==words+85);
   puts("PASS occlusion packets, pending/completed-zero distinction, RB deltas, invalid counter and output bounds");
 }

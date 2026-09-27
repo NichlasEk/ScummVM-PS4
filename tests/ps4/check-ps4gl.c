@@ -170,6 +170,17 @@ static void check_launcher_state(void) {
   assert(glIsEnabled(GL_DEPTH_TEST) && glIsEnabled(GL_STENCIL_TEST));
   glDepthFunc(GL_GEQUAL); glStencilFunc(GL_EQUAL,-9,~0u); glStencilOp(GL_REPLACE,GL_KEEP,GL_INCR_WRAP);
   assert(a.raster.depth_func==GL_GEQUAL && a.raster.stencil_ref==0 && a.raster.stencil_mask==255);
+  assert(a.raster.back_stencil_func==GL_EQUAL && a.raster.back_stencil_pass==GL_INCR_WRAP);
+  glStencilFuncSeparate(GL_BACK,GL_ALWAYS,999,15); glStencilOpSeparate(GL_BACK,GL_KEEP,GL_DECR_WRAP,GL_KEEP);
+  glStencilMaskSeparate(GL_BACK,7);
+  assert(!glGetError() && a.raster.back_stencil_ref==255 && a.raster.back_stencil_mask==15 && a.raster.stencil_mask==255);
+  assert(a.raster.back_stencil_depth_fail==GL_DECR_WRAP && a.raster.stencil_depth_fail==GL_KEEP && a.raster.stencil_pass==GL_INCR_WRAP);
+  assert(a.raster.back_stencil_write_mask==7 && a.raster.stencil_write_mask==255);
+  PS4GLRaster savedStencil=a.raster;
+  glStencilFuncSeparate(0xffff,GL_ALWAYS,0,255); assert(glGetError()==GL_INVALID_ENUM && !memcmp(&savedStencil,&a.raster,sizeof(savedStencil)));
+  glStencilOpSeparate(GL_BACK,GL_KEEP,0xffff,GL_KEEP); assert(glGetError()==GL_INVALID_ENUM && !memcmp(&savedStencil,&a.raster,sizeof(savedStencil)));
+  glStencilMask(255); assert(a.raster.back_stencil_write_mask==255);
+  assert(ps4glGetProcAddress("glStencilFuncSeparate") && ps4glGetProcAddress("glStencilOpSeparate"));
   PS4GLRaster state=a.raster; glStencilOp(GL_REPLACE,0xffff,GL_KEEP);
   assert(glGetError()==GL_INVALID_ENUM && !memcmp(&state,&a.raster,sizeof(state)));
   glColorMask(0,7,0,1); GLboolean rgba[4]; glGetBooleanv(GL_COLOR_WRITEMASK,rgba);
@@ -202,14 +213,15 @@ static void check_launcher_state(void) {
 }
 static void check_large_textures(void) {
   static PS4GLContext ctx; assert(ps4glInit(&ctx,1280,720)); ps4glMakeCurrent(&ctx);
-  GLuint ids[5]; glGenTextures(5,ids);
-  for (unsigned i=0;i<4;++i) {
+  enum { full_textures = PS4GL_TEXTURE_BUDGET / (2048u*2048u*4u) };
+  GLuint ids[full_textures+1]; glGenTextures(full_textures+1,ids);
+  for (unsigned i=0;i<full_textures;++i) {
     glBindTexture(GL_TEXTURE_2D,ids[i]);
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2048,2048,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
     assert(glGetError()==GL_NO_ERROR);
   }
   assert(ctx.texture_bytes==PS4GL_TEXTURE_BUDGET);
-  glBindTexture(GL_TEXTURE_2D,ids[4]);
+  glBindTexture(GL_TEXTURE_2D,ids[full_textures]);
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
   assert(glGetError()==GL_OUT_OF_MEMORY);
   glBindTexture(GL_TEXTURE_2D,ids[0]);
@@ -222,7 +234,7 @@ static void check_large_textures(void) {
   const unsigned char edge[]={7,23,201,255};
   glTexSubImage2D(GL_TEXTURE_2D,0,1279,719,1,1,GL_RGBA,GL_UNSIGNED_BYTE,edge);
   assert(glGetError()==GL_NO_ERROR && !memcmp(t->pixels+(1280*720-1)*4,edge,4));
-  glDeleteTextures(5,ids); assert(ctx.texture_bytes==0);
+  glDeleteTextures(full_textures+1,ids); assert(ctx.texture_bytes==0);
   ps4glMakeCurrent(NULL);
 }
 
@@ -302,9 +314,23 @@ static void check_fixed(void) {
   assert(ctx.fixed.env_alpha[0]==GL_REPLACE && ctx.fixed.env_alpha[1]==GL_MODULATE);
   glTexEnvi(GL_TEXTURE_ENV,GL_COMBINE_RGB,GL_ADD);
   glTexEnvi(GL_TEXTURE_ENV,GL_OPERAND1_RGB,GL_ONE_MINUS_SRC_ALPHA);
-  assert(ctx.fixed.env_rgb[0]==GL_ADD && ctx.fixed.env_operand1[0]==GL_ONE_MINUS_SRC_ALPHA);
+  assert(ctx.fixed.env_rgb[0]==GL_ADD && ctx.fixed.env_operand_rgb[0][1]==GL_ONE_MINUS_SRC_ALPHA);
   glTexEnvi(GL_TEXTURE_ENV,GL_COMBINE_ALPHA,0xdead);
   assert(glGetError()==GL_INVALID_ENUM && ctx.fixed.env_alpha[0]==GL_REPLACE);
+  assert(ps4glGetProcAddress("glTexEnvfv"));
+  GLfloat env[]={-.5f,.25f,.75f,2.f};
+  glTexEnvfv(GL_TEXTURE_ENV,GL_TEXTURE_ENV_COLOR,env);
+  assert(!glGetError() && ctx.fixed.env_color[0][0]==0 && ctx.fixed.env_color[0][1]==.25f && ctx.fixed.env_color[0][3]==1);
+  assert(ctx.fixed.env_color[1][1]==0);
+  glTexEnvi(GL_TEXTURE_ENV,GL_SOURCE1_RGB,GL_CONSTANT);
+  glTexEnvi(GL_TEXTURE_ENV,GL_SOURCE0_ALPHA,GL_CONSTANT);
+  assert(!glGetError() && ctx.fixed.env_source_rgb[0][1]==GL_CONSTANT && ctx.fixed.env_source_alpha[0][0]==GL_CONSTANT);
+  glTexEnvi(GL_TEXTURE_ENV,GL_SOURCE1_RGB,0xdead);
+  assert(glGetError()==GL_INVALID_ENUM && ctx.fixed.env_source_rgb[0][1]==GL_CONSTANT);
+  glTexEnvfv(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,env);
+  assert(glGetError()==GL_INVALID_ENUM && ctx.fixed.env_color[0][1]==.25f);
+  glTexEnvi(GL_TEXTURE_ENV,GL_SOURCE1_RGB,GL_PREVIOUS);
+  glTexEnvi(GL_TEXTURE_ENV,GL_SOURCE0_ALPHA,GL_TEXTURE);
   glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
   glAlphaFunc(GL_LESS,2); assert(ctx.fixed.alpha_ref==1);
   glAlphaFunc(GL_GREATER,-1); assert(ctx.fixed.alpha_ref==0);
@@ -313,6 +339,10 @@ static void check_fixed(void) {
   ctx.programs[0].components[0]=3; ctx.programs[0].components[1]=4; ctx.programs[0].components[2]=3;
   ctx.upload_vertices=upload; ps4glBeginPass((VkCommandBuffer)(uintptr_t)1);
   GLuint sentinel; glGenBuffers(1,&sentinel); glBindBuffer(GL_ARRAY_BUFFER,sentinel);
+  glMultiTexCoord3f(GL_TEXTURE0+1,.2f,.4f,.6f);
+  assert(ctx.fixed.uv[0]==0 && ctx.fixed.extra_uv[0][2]==.6f);
+  glMultiTexCoord3f(GL_TEXTURE0+PS4GL_TEXTURE_UNITS,1,1,1); assert(glGetError()==GL_INVALID_ENUM);
+  assert(ps4glGetProcAddress("glMultiTexCoord3fARB")==ps4glGetProcAddress("glMultiTexCoord3f"));
   expected_vertices=6; glBegin(GL_QUADS); glBegin(GL_TRIANGLES); assert(glGetError()==GL_INVALID_OPERATION);
   glLoadIdentity(); assert(glGetError()==GL_INVALID_OPERATION);
   for(int i=0;i<4;++i) { glColor4f(i,0,1,i*.25f); glTexCoord2f(i,.5f); glVertex3f(i,2,3); }
@@ -356,10 +386,12 @@ static void check_fixed(void) {
   assert(v[0].color[0]==.2f && v[0].color[3]==1);
   indices[2]=3;before=draws;glDrawElements(GL_TRIANGLES,3,GL_UNSIGNED_INT,indices);
   assert(glGetError()==GL_INVALID_OPERATION && draws==before && ctx.program==1);
+  strcpy(ctx.programs[0].attribute_names[3],"ps4gl_client_uv1");ctx.programs[0].components[3]=3;
   before=draws;glBegin(GL_TRIANGLES);
   for(unsigned i=0;i<3;++i) {glTexCoord3f(i,2,3);glVertex3f(50+i,0,0);}glEnd();
   assert(!glGetError() && draws==before+1 && ctx.program==1 && ctx.fixed.clients[0].buffer==sentinel);
   memcpy(v,snapshot,3*sizeof(*v));assert(v[0].position[0]==50 && v[2].position[0]==52 && v[1].uv[2]==3);
+  assert(v[0].extra_uv[0][0]==.2f && v[2].extra_uv[0][2]==.6f);
   glUseProgram(0);
   glDisableClientState(0x8074);
   glMatrixMode(GL_PROJECTION);glLoadIdentity();glOrtho(0,80,60,0,-1,1);glGetFloatv(GL_PROJECTION_MATRIX,m);

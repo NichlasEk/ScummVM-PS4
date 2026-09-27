@@ -227,7 +227,90 @@ input resolution and screen-copy textures consistent. Runtime capture confirms t
 readable UI text (/tmp/hpl-stretch-runtime.log). Input selection and gameplay
 remain separate runtime checks.
 
-A separate loading crash occurred after CreateAnim2D returned null and
-MaterialManager dereferenced it. The loader now diagnoses the material and
-texture name before access; finding the underlying missing/failed texture is
-still in progress.
+The loading crash was narrowed down to a null texture returned to
+MaterialManager (the earlier suspected animated-texture branch was not the
+failing path). Direct start-map loading reproduces it without replaying the
+story intro: boat_barrel.mat / boat_barrel.jpg, a present 512x512 JPEG.
+The bridge had 66,545,960 resident CPU texture bytes and rejected its 1,048,576
+byte upload at the 67,108,864-byte (64 MiB) limit, returning GL_OUT_OF_MEMORY.
+Evidence: /tmp/hpl-texture-runtime.log. The bounded CPU texture budget is now
+256 MiB; upload failure diagnostics identify the texture, dimensions and GL
+error. The budget test fills the configured cap, checks atomic rejection,
+shrinks storage and verifies all bytes are released. The first room now loads with 86,469,952 resident CPU texture bytes; GPU
+cache memory is separately accounted.
+
+Follow-up: the 256 MiB candidate passed the barrel texture load and reached
+RenderWorld, then stopped at an unresolved glTexEnvfv. Added bounded
+texture-environment constant color, RGB/alpha source and operand state, and
+replace/modulate/add/interpolate lowering for the existing unit-zero fixed
+shader. Host state and production shader compilation checks pass.
+
+The next run reached shadow rendering and found unresolved
+ glStencilFuncSeparate in SetStencilTwoSide. Separate front/back stencil
+function, reference, masks and operations now flow through the bridge to
+VkPipelineDepthStencilStateCreateInfo. The native driver already programs
+separate back-face state. Host tests cover independent faces, invalid-call
+atomicity and legacy both-face setters. The subset-loader audit now recognizes
+explicit aliases and passes all 128 required entries.
+
+Candidate eboot SHA-256:
+9479fb7c7b6125d8e76ec08df19ea8c04f1ec51e41d5ba6655f4751b4b75fff7
+The /tmp/hpl-stencil-runtime.log run still used direct-map loading: the
+runtime had moved show_menu=false within the INI section, so the initial
+exact-string restoration missed it. It reached DrawQuadMultiTex and stopped
+at unresolved glMultiTexCoord3fARB. Full post-intro gameplay is not yet
+validated. These follow-up fixes are not included in checkpoint 92a64d7.
+
+
+Added immediate multitexture coordinates and the ARB alias, with independent
+unit-zero/unit-one coordinates fed to the existing legacy shader attributes.
+The host test verifies the second coordinate set survives actual vertex
+packing and programmable-state restoration.
+
+That candidate reached GPU submission but shadPS4 stopped in
+PM4CmdEventWriteEop::SignalFence: occlusion completion had INT_SEL=3 from the
+generic OpenGNM helper. Completion now emits the same polled INT_SEL=0
+signal used for queue fences. The native packet test checks event index,
+data selection, interrupt selection, address, completion value and buffer
+bounds. Driver patch reverse-apply validation and native rebuild pass.
+Latest runtime: /tmp/hpl-eop-runtime.log.
+
+
+### Accepted first-room checkpoint (2026-09-27)
+
+The user confirmed the rendered boat cabin looks correct after disabling
+postprocessing. The accepted local target configuration is:
+
+```ini
+[penumbraoverture]
+post_effects=false
+show_pre_menu=false
+show_menu=false
+```
+
+These settings are in the untracked runtime scummvm.ini under
+.tools/xdg-scummvm-vulkan/shadPS4/data/scummvm-vulkan/. Apply post_effects=false
+when reproducing this checkpoint; it is not yet the engine default. The two
+show_* settings bypass the menu for direct first-room debugging. Set both to
+true for normal startup. The complete intro-to-game transition has not been
+revalidated with this final candidate.
+
+The additional missing geometry came from exhausting the 512 GL buffer-object
+slots. The bounded limit is now 4096. Client shader packing resolves attribute
+buffer objects once per draw instead of searching the buffer table for each
+vertex. The first room now renders its desk, map, bottle, walls and lighting.
+Evidence: /tmp/hpl-nopost-runtime.log, /tmp/hpl-nopost.png and the user's final
+cabin screenshot. A 120-frame interval took 10.783 seconds (about 11 fps);
+performance and mouse control still need work. Postprocessing enabled still
+produces black output, so bloom/depth-of-field are not accepted as working.
+The diagnostic upload/reuse deltas in that log cross per-frame counter resets
+and must not be interpreted as cumulative upload statistics.
+
+Looping world ambience affected by environmental audio now uses 30% output
+volume on PS4, preserving the logical volume used for fades. Non-looping speech
+is unchanged. The user confirmed the quieter background sounds better.
+
+Host validation passed for frame ownership, GL state/vertex packing, shader
+compilation, all 130 subset-loader entries and occlusion completion packets.
+The shared Watchmaker path has not had a new visual regression run. Real halo
+occlusion remains subject to the emulator limitation described above.

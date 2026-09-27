@@ -109,10 +109,13 @@ static VkResult create_pipeline(VkDevice device, VkRenderPass pass, const PS4GLP
   VkStencilOpState stencil={.failOp=native_stencil(raster->stencil_fail),.passOp=native_stencil(raster->stencil_pass),
     .depthFailOp=native_stencil(raster->stencil_depth_fail),.compareOp=(VkCompareOp)(raster->stencil_func-GL_NEVER),
     .compareMask=raster->stencil_mask,.writeMask=raster->stencil_write_mask,.reference=raster->stencil_ref};
+  VkStencilOpState back_stencil={.failOp=native_stencil(raster->back_stencil_fail),.passOp=native_stencil(raster->back_stencil_pass),
+    .depthFailOp=native_stencil(raster->back_stencil_depth_fail),.compareOp=(VkCompareOp)(raster->back_stencil_func-GL_NEVER),
+    .compareMask=raster->back_stencil_mask,.writeMask=raster->back_stencil_write_mask,.reference=raster->back_stencil_ref};
   VkPipelineDepthStencilStateCreateInfo depth={.sType=VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
     .depthTestEnable=raster->depth_enabled,.depthWriteEnable=raster->depth_write,
     .depthCompareOp=(VkCompareOp)(raster->depth_func-GL_NEVER),.stencilTestEnable=raster->stencil_enabled,
-    .front=stencil,.back=stencil,.maxDepthBounds=1.f};
+    .front=stencil,.back=back_stencil,.maxDepthBounds=1.f};
   VkGraphicsPipelineCreateInfo pci={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,.stageCount=2,.pStages=stages,
     .pVertexInputState=&vi,.pInputAssemblyState=&ia,.pViewportState=&vp,.pRasterizationState=&rs,
     .pMultisampleState=&ms,.pDepthStencilState=&depth,.pColorBlendState=&bs,.pDynamicState=&ds,.layout=p->layout,.renderPass=pass};
@@ -320,6 +323,7 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
     sources[i]=(p->cube_sampler_mask&(1u<<i)) ? ps4glCubeAtUnit(ctx,(unsigned)p->sampler_units[i]) : (p->one_dimensional_sampler_mask&(1u<<i)) ? ps4glOneDimensionalAtUnit(ctx,(unsigned)p->sampler_units[i]) : (p->rectangle_sampler_mask&(1u<<i)) ? ps4glRectangleAtUnit(ctx,(unsigned)p->sampler_units[i]) : ps4glTextureAtUnit(ctx,(unsigned)p->sampler_units[i]);
     if((sources[i] && ctx->framebuffer && sources[i]==ps4glFramebufferTextureObject(ctx)) || !sources[i] || !sources[i]->pixels || sources[i]->width<=0 || sources[i]->height<=0 ||
         (sources[i]->min_filter!=GL_NEAREST && sources[i]->min_filter!=GL_LINEAR)) {
+      static unsigned failures; if(failures++<16) fprintf(stderr,"HPL sampler rejected program=%u slot=%u unit=%d tex=%u size=%dx%d filter=%x\n",ctx->program,i,p->sampler_units[i],sources[i]?sources[i]->name:0,sources[i]?sources[i]->width:0,sources[i]?sources[i]->height:0,sources[i]?sources[i]->min_filter:0);
       if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
       return 0;
     }
@@ -328,6 +332,8 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
     if(!sources[i]->render_target && !find_texture_snapshot(ctx,sources[i]) && !duplicate)
       texture_bytes+=(size_t)sources[i]->width*sources[i]->height*4;
   }
+  static unsigned trace_draws;
+  if(trace_draws++<120) {fprintf(stderr,"HPL draw p=%u depth=%u/%x blend=%u mask=%u tex",ctx->program,ctx->raster.depth_enabled,ctx->raster.depth_func,ctx->blend.enabled,ctx->raster.color_mask);for(unsigned i=0;i<PS4GL_MAX_SAMPLERS;++i) if(sources[i]) fprintf(stderr," %u:u%d:t%u:%dx%d",i,p->sampler_units[i],sources[i]->name,sources[i]->width,sources[i]->height);fprintf(stderr,"\n");}
   /* Compact each reflected stage separately, preserving std140 offsets and
    * the native device's 256-byte uniform-buffer offset alignment. */
   size_t stage_bytes[2]={0,0};

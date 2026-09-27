@@ -1,5 +1,7 @@
 #include "ps4gl-frame.h"
 #include <string.h>
+#include <sys/time.h>
+#include <stdio.h>
 static int frame_result(PS4GLFrameOwner *f, VkResult r) {
   f->last_result=r;
   if(r!=VK_SUCCESS) { f->failed=1; return -1; }
@@ -90,6 +92,12 @@ int ps4glFramePresent(void *data) {
   if(f->state==1 && ps4glFrameSubmit(f)) return -1;
   VkPresentInfoKHR present={.sType=VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,.swapchainCount=1,.pSwapchains=&f->swap,.pImageIndices=&f->image};
   FRAME_TRY(vkQueuePresentKHR(f->queue,&present));
+  static double last_time; static unsigned last_uploads,last_reuses;
+  if(f->frames%120==0) {
+    struct timeval now;gettimeofday(&now,NULL);double t=now.tv_sec+now.tv_usec/1000000.;
+    fprintf(stderr,"HPL frame %u elapsed=%.3f draws=%u bytes=%zu textures=%zu uploads=%u reuses=%u\n",(unsigned)f->frames,last_time?t-last_time:0,f->context->snapshot_count,f->context->snapshot_bytes,f->context->texture_bytes,f->context->texture_snapshot_uploads-last_uploads,f->context->texture_snapshot_reuses-last_reuses);
+    last_time=t;last_uploads=f->context->texture_snapshot_uploads;last_reuses=f->context->texture_snapshot_reuses;
+  }
   if(frame_discard(f)) return -1;
   ++f->frames; return 0;
 }

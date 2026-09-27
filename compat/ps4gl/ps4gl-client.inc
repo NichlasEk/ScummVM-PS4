@@ -45,7 +45,7 @@ void glOrtho(double l, double r, double b, double t, double n, double f) {
   glTranslatef(-(r+l)/(r-l),-(t+b)/(t-b),-(f+n)/(f-n));
   glScalef(2/(r-l),2/(t-b),-2/(f-n));
 }
-static int client_read(const PS4GLClientArray *a, uint32_t index, GLfloat *v) {
+static int client_read_cached(const PS4GLClientArray *a, uint32_t index, GLfloat *v, const PS4GLBuffer *buffer) {
   if(!a->enabled) return 1;
   if(a->type!=GL_FLOAT || a->size<1 || a->size>4) {error(GL_INVALID_OPERATION);return 0;}
   size_t width=(size_t)a->size*4, stride=a->stride ? (size_t)a->stride : width;
@@ -53,13 +53,14 @@ static int client_read(const PS4GLClientArray *a, uint32_t index, GLfloat *v) {
   size_t offset=(size_t)index*stride;
   const unsigned char *base=a->pointer;
   if(a->buffer) {
-    PS4GLBuffer *buffer=NULL;
-    for(unsigned i=0;i<PS4GL_MAX_BUFFERS;++i) if(current->buffers[i].name==a->buffer) {buffer=&current->buffers[i];break;}
     size_t start=(uintptr_t)a->pointer;
     if(!buffer || start>buffer->size || offset>buffer->size-start || width>buffer->size-start-offset) {error(GL_INVALID_OPERATION);return 0;}
     base=buffer->data+start;
   } else if(!base || offset>UINTPTR_MAX-width || (uintptr_t)base>UINTPTR_MAX-offset-width) {error(GL_INVALID_OPERATION);return 0;}
   memcpy(v,base+offset,width); return 1;
+}
+static int client_read(const PS4GLClientArray *a, uint32_t index, GLfloat *v) {
+  return client_read_cached(a,index,v,a->buffer ? find_buffer(current,a->buffer) : NULL);
 }
 static const char *client_attributes[]={"ps4gl_client_vertex","ps4gl_client_color","ps4gl_client_normal","ps4gl_client_uv0","ps4gl_client_uv1"};
 static int client_uses_arrays(void) {
@@ -72,7 +73,12 @@ static void client_shader_draw(GLenum mode, GLint first, GLsizei count, GLenum t
   if(n>PS4GL_MAX_BUFFER_BYTES/(5*16)) {error(GL_OUT_OF_MEMORY);return;}
   GLfloat *data=malloc(n*5*16);
   if(!data) {error(GL_OUT_OF_MEMORY);return;}
-  GLint locations[5];for(unsigned j=0;j<5;++j) locations[j]=glGetAttribLocation(current->program,client_attributes[j]);
+  GLint locations[5]; const PS4GLBuffer *buffers[5];
+  for(unsigned j=0;j<5;++j) {
+    locations[j]=glGetAttribLocation(current->program,client_attributes[j]);
+    GLuint name=current->fixed.clients[j].buffer;
+    buffers[j]=name ? find_buffer(current,name) : NULL;
+  }
   const unsigned quad[]={0,1,2,0,2,3};
   for(size_t i=0;i<n;++i) {
     size_t source=mode==GL_QUADS ? (i/6)*4+quad[i%6] : i;
@@ -81,7 +87,7 @@ static void client_shader_draw(GLenum mode, GLint first, GLsizei count, GLenum t
       GLfloat *v=data+(i*5+j)*4;v[0]=v[1]=v[2]=0;v[3]=1;
       if(j==1) {memcpy(v,current->fixed.color,16);if(current->fixed.clients[j].enabled) v[3]=1;}
       if(j==2) v[2]=1;
-      if(locations[j]>=0 && !client_read(&current->fixed.clients[j],index,v)) {free(data);return;}
+      if(locations[j]>=0 && !client_read_cached(&current->fixed.clients[j],index,v,buffers[j])) {free(data);return;}
     }
   }
   PS4GLAttrib saved[PS4GL_MAX_ATTRIBS];memcpy(saved,current->attribs,sizeof(saved));

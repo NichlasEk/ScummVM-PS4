@@ -7,6 +7,10 @@ python3 - <<'PY'
 from pathlib import Path
 import re
 exports=set(re.findall(r'PROC\((gl\w+)\)',Path('compat/ps4gl/ps4gl.c').read_text()))
+# Explicit aliases are valid only when their destination is exported too.
+for alias, target in re.findall(r'strcmp\(name,"(gl\w+)"\)\) return \(PS4GLProc\)(gl\w+)',Path('compat/ps4gl/ps4gl.c').read_text()):
+    assert target in exports
+    exports.add(alias)
 loads=re.findall(r'PS4GL_LOAD\((gl\w+)\)',Path('compat/ps4gl/scummvm-context.inc').read_text())
 assert len(loads)==len(set(loads)), 'Duplicate subset loader entry'
 assert set(loads)<=exports, 'Subset loader requires unavailable GL functions'

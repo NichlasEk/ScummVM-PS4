@@ -2012,3 +2012,26 @@ Backup: artifacts/sotc/forest-bank-stop-backup/sotc-sotc.quick0, tick 378864.
 `audit-save.py --forest-entry-save` verifies actual movement from X=340,
 a round trip through save/load while still offscreen, 600 frames through the
 scripted continuation to bank 2 room 17, and subsequent user walking.
+
+### Post-reboot continuation check (2026-09-28)
+
+The copied forest-entry save still passes that regression, ending in bank 2,
+room 17 with free walking. The other transferred save is earlier (tick 377201,
+bank 1 room 2); it runs for 300 frames without a VM, rendering or animation
+failure. The generic `--resume-save` audit now checks those failures without
+assuming a particular door script advances while the game is idle.
+`--door-save artifacts/sotc/door-freeze-backup/frozen.quick0` retains the
+separate progress check for the previously frozen hall door. Under this
+instrumented environment, use `LSAN_OPTIONS=detect_leaks=0` for these
+otherwise passing audit executables; LeakSanitizer cannot finish under ptrace.
+
+The isolated SCVM00004 package was rebuilt successfully after the shared
+FLAC/VPX/A52/MT-32 configuration changes. Local PKG SHA-256:
+`b0fc5a701787b4580fb7e3a3debd54402e8439e523dc81b538d6c48c665cd054`.
+A 25-second shadPS4 smoke launched that executable with the original data,
+loaded the existing emulator save, and advanced the SOTC VM from tick 378865
+through 379000 before the intentional timeout. Log:
+`artifacts/sotc/emulator.log`. This does not establish new story progression
+or physical PS4 compatibility. The next gameplay validation remains a
+continuous route beyond bank 2 room 17, with a fresh save at the first new
+stop.

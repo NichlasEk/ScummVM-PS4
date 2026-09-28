@@ -468,6 +468,14 @@ public:
    }
    case 82: case 89:
     if (op.argument>=10) return t.result=kInvalidScript;
+    // A second script may reach a speech instruction while another script's
+    // dialogue is on screen. Keep this instruction at its PC until the shared
+    // dialogue channel is free; the requesting task has not started speaking.
+    {
+     bool pending=false;
+     if (!_animation || !_animation->dialoguePending(pending)) return t.result=kAnimationUnavailable;
+     if (pending) return t.result=kAnimationWait;
+    }
     if (!_animation || !_animation->dialogue(op.argument,op.value,op.comparison,op.variable)) return t.result=kAnimationUnavailable;
     t.flags|=0x40; t.pc=next; ++t.executed; return t.result=kAnimationWait;
    case 18: case 19:

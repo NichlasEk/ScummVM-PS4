@@ -2035,3 +2035,29 @@ through 379000 before the intentional timeout. Log:
 or physical PS4 compatibility. The next gameplay validation remains a
 continuous route beyond bank 2 room 17, with a fresh save at the first new
 stop.
+
+### Concurrent portrait dialogue in room 20 (2026-09-28)
+
+The live route reached bank 2 rooms 17, 18, 19 and 20. In room 20, task 9
+started opcode 89 (portrait dialogue: speaker 1, text 649, sequence 1,
+resource 4) while task 1's earlier dialogue was still on screen. The preview
+treated the occupied dialogue channel as `kAnimationUnavailable` and paused
+the scene at task 9 PC 0. The user's PS4 quick save from tick 382885 is backed
+up unchanged under `artifacts/sotc/room20-op89-backup/frozen.quick1`; the
+decompressed copy is used only by the host audit.
+
+An unopened dialogue instruction now waits at its original PC while another
+line is active. Once the channel clears, it loads its own text and portrait,
+then enters the existing dialogue-completion wait. This retains the earlier
+line and does not discard the new one. Resource and sequence failures remain
+explicit errors. The focused `audit-save.py --room20-save` replay verifies
+the wait, the later start, a nonempty line, and no stopped tasks under
+ASan/UBSan. The full save/cinematic audit passed (74 commands, 2,564 frames),
+as did the VM audit and isolated PS4 build/package.
+
+The rebuilt executable was launched from the original saved profile in
+shadPS4. Its log shows task 9 waiting at PC 0, then starting text 649 with
+portrait 4 and advancing to PC 6 without a scene pause. Evidence:
+`artifacts/sotc/room20-op89-fixed.log`. Package SHA-256:
+`ee11836a1cd8c6249f9bb0ab28b586dc7ce6194f76ae0cf93286b0f34d56a590`.
+The later story path and physical PS4 behavior remain to be tested.

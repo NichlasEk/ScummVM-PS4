@@ -510,20 +510,31 @@ bool StartupScene::choiceText(unsigned index,Common::String &text) {
  return true;
 }
 bool StartupScene::dialogue(unsigned speaker,unsigned text,unsigned seq,unsigned portrait) {
- if (!_ready || !_machine || speaker>=10 || _talking) return false;
- if (_textFile.empty() && !readFile("E.CC4",_textFile)) return false;
+ if (!_ready || !_machine || speaker>=10 || _talking) {
+  warning("[sotc-dialogue] unavailable bank=%u room=%u speaker=%u talking=%u",bank(),room(),speaker,unsigned(_talking));
+  return false;
+ }
+ if (_textFile.empty() && !readFile("E.CC4",_textFile)) {
+  warning("[sotc-dialogue] E.CC4 unavailable"); return false;
+ }
  byte decoded[16384]; unsigned size=0;
- if (!dialogueRecord(Cc4View(_textFile.data(),_textFile.size()),_state.word(0x2e16)+3,text,decoded,sizeof(decoded),size)) return false;
+ if (!dialogueRecord(Cc4View(_textFile.data(),_textFile.size()),_state.word(0x2e16)+3,text,decoded,sizeof(decoded),size)) {
+  warning("[sotc-dialogue] text unavailable bank=%u text=%u",_state.word(0x2e16),text); return false;
+ }
  unsigned id=speaker;
  if (portrait!=256) {
   id=10; ScriptActor actor=*_machine->actor(id);
-  if (!reset(id,actor) || !resource(id,portrait)) return false;
+  if (!reset(id,actor) || !resource(id,portrait)) {
+   warning("[sotc-dialogue] portrait unavailable bank=%u resource=%u",bank(),portrait); return false;
+  }
   actor.x=0; actor.y=199; _machine->setActor(id,actor);
  }
  ScriptActor actor=*_machine->actor(id);
  _talkSequence=_animations[id].sequence; _talkStep=actor.step; _talkGate=_animations[id].gate;
  if (seq!=255) {
-  if (!sequence(id,seq,actor)) return false;
+  if (!sequence(id,seq,actor)) {
+   warning("[sotc-dialogue] sequence unavailable bank=%u resource=%u sequence=%u",bank(),portrait,seq); return false;
+  }
   _machine->setActor(id,actor);
  }
  _dialogueText.clear();

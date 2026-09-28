@@ -19,6 +19,7 @@ p.add_argument('--cobble-save',type=Path,help='Exercise Cobble doorway from the 
 p.add_argument('--forest-save',type=Path,help='Exercise the west exit from Cobble house in a copied save')
 p.add_argument('--resume-save',type=Path,help='Resume a copied save for 300 frames without script or animation failures')
 p.add_argument('--door-save',type=Path,help='Resume the frozen hall-door save and require its script to advance')
+p.add_argument('--room20-save',type=Path,help='Resume the overlapping portrait dialogue in room 20')
 p.add_argument('--probe-save',type=Path,help='Load a copied pharmacy save and verify resume, movement and exit')
 a=p.parse_args()
 root=Path(__file__).resolve().parents[2]
@@ -102,6 +103,25 @@ int main(int argc,char **argv) {
    for(unsigned i=0;i<200;++i){assert(scene.movePlayer(m));assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);}
    assert(m.actor(0)->x!=oldX || m.actor(0)->y!=oldY);
    std::cout<<"Offscreen entrance, mid-entry save restore and free walking pass\n";
+   return 0;
+  }
+  if(argc>2 && std::string(argv[2])=="room20") {
+   assert(scene.bank()==2 && scene.room()==20 && saved.ticks==382885);
+   bool waited=false,started=false;
+   for(unsigned i=0;i<300;++i){
+    if(i && i%60==0)scene.finishDialogue();
+    assert(scene.movePlayer(m));m.tick();
+    if(!scene.serviceRoom(m,status)){std::cerr<<status<<" frame="<<i<<std::endl;assert(false);}
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+    for(unsigned j=0;j<m.count();++j)assert(m.task(j)->result<kUnknownWait);
+    if(m.task(9)->opcode==89 && m.task(9)->pc==0 && m.task(9)->result==kAnimationWait)waited=true;
+    if(m.task(9)->executed && m.task(9)->pc==6){
+     assert((m.task(9)->flags&0x40) && !scene.dialogueText().empty());
+     started=true;break;
+    }
+   }
+   assert(waited && started);
+   std::cout<<"Room 20: portrait dialogue waited for the active line, then started without a script stop\n";
    return 0;
   }
   if(argc>2 && std::string(argv[2])=="pharmacy-movement") {
@@ -640,7 +660,11 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- subprocess.run([str(t/'test')]+([str(a.forest_entry_save.resolve()),'forest-entry'] if a.forest_entry_save else [str(a.pharmacy_movement_save.resolve()),'pharmacy-movement'] if a.pharmacy_movement_save else [str(a.room19_save.resolve()),'room19'] if a.room19_save else [str(a.inn_seat_save.resolve()),'seat'] if a.inn_seat_save else [str(a.inn_stuck_save.resolve()),'stuck'] if a.inn_stuck_save else [str(a.inn_entry_save.resolve()),'entry'] if a.inn_entry_save else [str(a.inn_save.resolve()),'inn'] if a.inn_save else [str(a.map_save.resolve()),'map'] if a.map_save else [str(a.bedroom_save.resolve()),'bedroom'] if a.bedroom_save else [str(a.cobble_save.resolve()),'cobble'] if a.cobble_save else [str(a.forest_save.resolve()),'forest'] if a.forest_save else [str(a.door_save.resolve()),'door'] if a.door_save else [str(a.resume_save.resolve()),'resume'] if a.resume_save else [str(a.probe_save.resolve())] if a.probe_save else []),cwd=a.directory.resolve(),check=True)
+ selected=[(a.room20_save,'room20'),(a.forest_entry_save,'forest-entry'),(a.pharmacy_movement_save,'pharmacy-movement'),(a.room19_save,'room19'),(a.inn_seat_save,'seat'),(a.inn_stuck_save,'stuck'),(a.inn_entry_save,'entry'),(a.inn_save,'inn'),(a.map_save,'map'),(a.bedroom_save,'bedroom'),(a.cobble_save,'cobble'),(a.forest_save,'forest'),(a.door_save,'door'),(a.resume_save,'resume'),(a.probe_save,'probe')]
+ selected=[(path,mode) for path,mode in selected if path]
+ if len(selected)>1: p.error('Select only one save probe')
+ command=[str(t/'test')]+([str(selected[0][0].resolve()),selected[0][1]] if selected else [])
+ subprocess.run(command,cwd=a.directory.resolve(),check=True)
 
  if a.cobble_save:
   for x in (143,153):

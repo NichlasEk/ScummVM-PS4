@@ -70,27 +70,6 @@
  // This file is part of HPL1 Engine
 --- a/engines/hpl1/engine/impl/SDLTexture.cpp
 +++ b/engines/hpl1/engine/impl/SDLTexture.cpp
-@@ -226,7 +226,7 @@
- 	GLenum format = 0;
- 	switch (lChannels) {
- 	case 1:
--		format = GL_R;
-+		format = GL_RED;
- 		break;
- 	case 2:
- 		format = GL_RG;
---- a/engines/hpl1/engine/impl/shaders/hpl1_Ambient_Color.fragment
-+++ b/engines/hpl1/engine/impl/shaders/hpl1_Ambient_Color.fragment
-@@ -9,7 +9,6 @@
- /// AMBIENT DIFFUSE COLOR FRAG PROGRAM ////////////
- ///////////////////////////////////////////////////////
- 
--in vec4 vLightColor;
- in vec2 vUv;
- 
- OUTPUT
---- a/engines/hpl1/engine/impl/SDLTexture.cpp
-+++ b/engines/hpl1/engine/impl/SDLTexture.cpp
 @@ -77,6 +77,11 @@
  						 bool abCompress)
  	: iTexture(asName, "OGL", apPxlFmt, apLowLevelGraphics, aType, abUseMipMaps, aTarget, abCompress) {
@@ -103,9 +82,53 @@
  
  	if (aType == eTextureType_RenderTarget) {
  		Hpl1::logError(Hpl1::kDebugTextures, "use of render target%s", ".");
+@@ -226,7 +231,7 @@
+ 	GLenum format = 0;
+ 	switch (lChannels) {
+ 	case 1:
+-		format = GL_R;
++		format = GL_RED;
+ 		break;
+ 	case 2:
+ 		format = GL_RG;
+@@ -584,8 +589,11 @@
+ 		glTexImage2D(GLTarget, 0, internalFormat, _width, _height,
+ 					 0, format, GL_UNSIGNED_BYTE, pPixelSrc);
+ 
+-	if (glGetError() != GL_NO_ERROR)
++	GLenum uploadError = glGetError();
++	if (uploadError != GL_NO_ERROR) {
++		warning("Texture %s: upload %ux%u failed, GL error 0x%x", msName.c_str(), _width, _height, uploadError);
+ 		return false;
++	}
+ 
+ 	if (mbUseMipMaps && mTarget != eTextureTarget_Rect)
+ 		generateMipmaps(mTarget);
+--- a/engines/hpl1/engine/impl/shaders/hpl1_Ambient_Color.fragment
++++ b/engines/hpl1/engine/impl/shaders/hpl1_Ambient_Color.fragment
+@@ -9,7 +9,6 @@
+ /// AMBIENT DIFFUSE COLOR FRAG PROGRAM ////////////
+ ///////////////////////////////////////////////////////
+ 
+-in vec4 vLightColor;
+ in vec2 vUv;
+ 
+ OUTPUT
 --- a/engines/hpl1/engine/impl/LowLevelGraphicsSDL.cpp
 +++ b/engines/hpl1/engine/impl/LowLevelGraphicsSDL.cpp
-@@ -275,7 +275,12 @@
+@@ -145,6 +145,11 @@
+ 	}
+ 	mlBpp = alBpp;
+ 	mlMultisampling = alMultisampling;
++#ifdef __PS4__
++	// Match the native SDL/Vulkan display so projection, screen copies and
++	// backend input scaling all describe the full drawable.
++	mvScreenSize = cVector2l(1280, 720);
++#endif
+ 	initGraphics3d(mvScreenSize.x, mvScreenSize.y);
+ 	SetupGL();
+ 	ShowCursor(false);
+@@ -275,7 +280,12 @@
  		return 1; // gl 1.4
  
  	case eGraphicCaps_GL_MultiTexture:
@@ -118,9 +141,7 @@
  
  	default:
  		break;
---- a/engines/hpl1/engine/impl/LowLevelGraphicsSDL.cpp
-+++ b/engines/hpl1/engine/impl/LowLevelGraphicsSDL.cpp
-@@ -604,7 +604,7 @@
+@@ -599,7 +609,7 @@
  }
  
  void cLowLevelGraphicsSDL::applyGammaCorrection() {
@@ -194,42 +215,6 @@
  	}
  	tolerance = ClampValue(tolerance, dgFloat32(0.0f), dgFloat32(0.125f));
  	return (NewtonCollision *)world->CreateConvexHull(count, vertexCloud,
---- a/engines/hpl1/engine/graphics/BillBoard.cpp
-+++ b/engines/hpl1/engine/graphics/BillBoard.cpp
-@@ -434,6 +434,15 @@
- //-----------------------------------------------------------------------
- 
- void cBillboard::SetIsHalo(bool abX) {
-+#ifdef __PS4__
-+	// The PS4 GL subset has no occlusion-query interface yet. Hide optional
-+	// halo sprites instead of drawing them through walls or calling a null API.
-+	if (abX) {
-+		mbIsHalo = false;
-+		SetHaloAlpha(0);
-+		return;
-+	}
-+#endif
- 	mbIsHalo = abX;
- 
- 	if (mbIsHalo) {
---- a/engines/hpl1/engine/graphics/BillBoard.cpp
-+++ b/engines/hpl1/engine/graphics/BillBoard.cpp
-@@ -434,15 +434,6 @@
- //-----------------------------------------------------------------------
- 
- void cBillboard::SetIsHalo(bool abX) {
--#ifdef __PS4__
--	// The PS4 GL subset has no occlusion-query interface yet. Hide optional
--	// halo sprites instead of drawing them through walls or calling a null API.
--	if (abX) {
--		mbIsHalo = false;
--		SetHaloAlpha(0);
--		return;
--	}
--#endif
- 	mbIsHalo = abX;
- 
- 	if (mbIsHalo) {
 --- a/engines/hpl1/engine/graphics/Renderer3D.cpp
 +++ b/engines/hpl1/engine/graphics/Renderer3D.cpp
 @@ -500,8 +500,14 @@
@@ -258,35 +243,6 @@
  		pTex->SetFrameTime(fFrameTime);
  		pTex->SetAnimMode(animMode);
  
---- a/engines/hpl1/engine/impl/LowLevelGraphicsSDL.cpp
-+++ b/engines/hpl1/engine/impl/LowLevelGraphicsSDL.cpp
-@@ -145,6 +145,11 @@
- 	}
- 	mlBpp = alBpp;
- 	mlMultisampling = alMultisampling;
-+#ifdef __PS4__
-+	// Match the native SDL/Vulkan display so projection, screen copies and
-+	// backend input scaling all describe the full drawable.
-+	mvScreenSize = cVector2l(1280, 720);
-+#endif
- 	initGraphics3d(mvScreenSize.x, mvScreenSize.y);
- 	SetupGL();
- 	ShowCursor(false);
---- a/engines/hpl1/engine/impl/SDLTexture.cpp
-+++ b/engines/hpl1/engine/impl/SDLTexture.cpp
-@@ -589,8 +589,11 @@
- 		glTexImage2D(GLTarget, 0, internalFormat, _width, _height,
- 					 0, format, GL_UNSIGNED_BYTE, pPixelSrc);
- 
--	if (glGetError() != GL_NO_ERROR)
-+	GLenum uploadError = glGetError();
-+	if (uploadError != GL_NO_ERROR) {
-+		warning("Texture %s: upload %ux%u failed, GL error 0x%x", msName.c_str(), _width, _height, uploadError);
- 		return false;
-+	}
- 
- 	if (mbUseMipMaps && mTarget != eTextureTarget_Rect)
- 		generateMipmaps(mTarget);
 --- a/engines/hpl1/engine/impl/CGProgram.cpp
 +++ b/engines/hpl1/engine/impl/CGProgram.cpp
 @@ -92,6 +92,11 @@
@@ -384,3 +340,1012 @@
  
  		char sTempVec[256];
  		snprintf(sTempVec, 256, "%.1f", mpInit->mpButtonHandler->mfMouseSensitivity);
+--- a/engines/hpl1/penumbra-overture/Init.cpp
++++ b/engines/hpl1/penumbra-overture/Init.cpp
+@@ -72,6 +72,7 @@
+ 
+ #include "common/config-manager.h"
+ #include "hpl1/graphics.h"
++#include "hpl1/hpl1.h"
+ #include "hpl1/serialize.h"
+ 
+ // Global init...
+@@ -181,7 +182,8 @@
+ 	msLanguageFile = "English.lang"; // TODO: replace with proper language support
+ 	mDifficulty = static_cast<eGameDifficulty>(getIntConfig("difficulty", eGameDifficulty_Normal));
+ 
+-	msStartMap = getStringConfig("starting_map", "level00_01_boat_cabin.dae");
++	const bool isBlackPlague = Hpl1::g_engine->getGameId() == "penumbrablackplague";
++	msStartMap = getStringConfig("starting_map", isBlackPlague ? "level01_cells.dae" : "level00_01_boat_cabin.dae");
+ 	msStartLink = getStringConfig("starting_map_position", "link01");
+ 	mlFSAA = getIntConfig("fsaa", 0);
+ 	mbPostEffects = getBoolConfig("post_effects", true);
+@@ -239,7 +241,8 @@
+ 	mbUseSoundHardware = mpGame->GetSound()->GetLowLevel()->IsHardwareAccelerated();
+ 
+ 	mbShowPreMenu = getBoolConfig("show_pre_menu", true);
+-	mbShowIntro = getBoolConfig("show_intro", true);
++	// The current IntroStory implements Overture only. Do not play it for BP.
++	mbShowIntro = !isBlackPlague && getBoolConfig("show_intro", true);
+ 	mbShowMenu = getBoolConfig("show_menu", true);
+ 
+ 	mfMaxPhysicsTimeStep = 1.0f / mfPhysicsUpdatesPerSec;
+@@ -256,6 +259,7 @@
+ 
+ 	// Add loaders
+ 	mpGame->GetResources()->AddEntity3DLoader(hplNew(cEntityLoader_GameObject, ("Object", this)));
++	mpGame->GetResources()->AddEntity3DLoader(hplNew(cEntityLoader_GameObject, ("Wheel", this)));
+ 	mpGame->GetResources()->AddEntity3DLoader(hplNew(cEntityLoader_GameItem, ("Item", this)));
+ 	mpGame->GetResources()->AddEntity3DLoader(hplNew(cEntityLoader_GameSwingDoor, ("SwingDoor", this)));
+ 	mpGame->GetResources()->AddEntity3DLoader(hplNew(cEntityLoader_GameLamp, ("Lamp", this)));
+--- a/engines/hpl1/penumbra-overture/GameEnemy.cpp
++++ b/engines/hpl1/penumbra-overture/GameEnemy.cpp
+@@ -1503,6 +1503,8 @@
+ 
+ //-----------------------------------------------------------------------
+ 
++#include "hpl1/penumbra-overture/GameEnemy_Infected.inc"
++
+ void cEntityLoader_GameEnemy::AfterLoad(TiXmlElement *apRootElem, const cMatrixf &a_mtxTransform,
+ 										cWorld3D *apWorld) {
+ 	iGameEnemy *pEnemy = NULL;
+@@ -1525,7 +1527,9 @@
+ 
+ 	TiXmlElement *pGameElem = apRootElem->FirstChildElement("GAME");
+ 
+-	if (sSubtype == "Dog") {
++	if (sSubtype == "Infected") {
++		pEnemy = hplNew(cGameEnemy_Infected, (mpInit, mpEntity->GetName(), pGameElem));
++	} else if (sSubtype == "Dog") {
+ 		pEnemy = hplNew(cGameEnemy_Dog, (mpInit, mpEntity->GetName(), pGameElem));
+ 	}
+ #ifndef DEMO_VERSION
+@@ -1536,6 +1540,9 @@
+ 	}
+ #endif
+ 
++	if (!pEnemy)
++		error("Unsupported HPL enemy subtype '%s' in entity '%s'", sSubtype.c_str(), mpEntity->GetName().c_str());
++
+ 	pEnemy->msSubType = sSubtype;
+ 	pEnemy->msEnemyType = msName;
+ 	pEnemy->msFileName = msFileName;
+@@ -1579,6 +1586,7 @@
+ 
+ 					kBeginSerialize(iGameEnemy_SaveData, iGameEntity_SaveData)
+ 						kSerializeVar(mbHasBeenActivated, eSerializeType_Bool)
++	kSerializeVar(mbHasFlashlight, eSerializeType_Bool)
+ 							kSerializeVar(mvCharBodyPosition, eSerializeType_Vector3f)
+ 								kSerializeVar(mvCharBodyRotation, eSerializeType_Vector3f)
+ 									kSerializeVar(mlCurrentPatrolNode, eSerializeType_Int32)
+@@ -1614,6 +1622,7 @@
+ 	iGameEnemy_SaveData *pData = static_cast<iGameEnemy_SaveData *>(apSaveData);
+ 
+ 	kCopyToVar(pData, mbHasBeenActivated);
++	kCopyToVar(pData, mbHasFlashlight);
+ 
+ 	pData->mvCharBodyPosition = mpMover->GetCharBody()->GetPosition();
+ 
+@@ -1642,6 +1651,7 @@
+ //-----------------------------------------------------------------------
+ 
+ void iGameEnemy::LoadFromSaveData(iGameEntity_SaveData *apSaveData) {
++	if(static_cast<iGameEnemy_SaveData *>(apSaveData)->mbHasFlashlight)AddFlashlight();
+ 	super::LoadFromSaveData(apSaveData);
+ 	iGameEnemy_SaveData *pData = static_cast<iGameEnemy_SaveData *>(apSaveData);
+ 
+--- /dev/null
++++ b/engines/hpl1/penumbra-overture/GameEnemy_Infected.inc
+@@ -0,0 +1,148 @@
++/* Black Plague humanoid AI. Shared navigation, perception, physics and save
++ * state remain in iGameEnemy; no quadruped jump/eat/rise states are reused. */
++class cGameEnemy_Infected;
++class cInfectedState : public iGameEnemyState {
++public:
++ cInfectedState(int id, cInit *init, iGameEnemy *enemy) : iGameEnemyState(id,init,enemy) {}
++ void OnEnterState(iGameEnemyState *) override;
++ void OnLeaveState(iGameEnemyState *) override {}
++ void OnUpdate(float dt) override;
++ void OnDraw() override {}
++ void OnPostSceneDraw() override {}
++ void OnSeePlayer(const cVector3f &pos, float chance) override;
++ bool OnHearNoise(const cVector3f &pos,float volume) override;
++ void OnTakeHit(float damage) override;
++ void OnDeath(float) override { mpEnemy->ChangeState(STATE_DEAD); }
++ void OnAnimationOver(const tString &) override;
++ void OnFlashlight(const cVector3f &pos) override { OnHearNoise(pos,1.f); }
++};
++class cGameEnemy_Infected : public iGameEnemy {
++public:
++ float attackRange,attackTime,minDamage,maxDamage,huntSpeed,idleFov,huntFov;
++ float seeChance,hearVolume,timer,repath;
++ bool hit,waiting;
++ tString hitSound;
++ cLight3DSpot *flashlight = nullptr;
++ cGameEnemy_Infected(cInit *init,const tString &name,TiXmlElement *game) : iGameEnemy(init,name,game) {
++  LoadBaseProperties(game);
++  attackRange=cString::ToFloat(game->Attribute("AttackDamageRange"),1.5f);
++  attackTime=cString::ToFloat(game->Attribute("AttackStillDamageTime"),0.5f);
++  minDamage=cString::ToFloat(game->Attribute("AttackMinDamage"),10.f);
++  maxDamage=cString::ToFloat(game->Attribute("AttackMaxDamage"),10.f);
++  huntSpeed=cString::ToFloat(game->Attribute("HuntSpeed"),3.f);
++  idleFov=cMath::ToRad(cString::ToFloat(game->Attribute("IdleFOV"),90.f));
++  huntFov=cMath::ToRad(cString::ToFloat(game->Attribute("HuntFOV"),120.f));
++  seeChance=cString::ToFloat(game->Attribute("IdleMinSeeChance"),0.3f);
++  hearVolume=cString::ToFloat(game->Attribute("IdleMinHearVolume"),0.3f);
++  hitSound=cString::ToString(game->Attribute("AttackHitSound"),"");
++  timer=repath=0; hit=waiting=false;
++  // Existing scripts and serialized states use these stable state IDs.
++  for(int i=0;i<STATE_NUM;++i) AddState(hplNew(cInfectedState,(i,init,this)));
++ }
++ void OnLoad() override { ChangeState(STATE_IDLE); }
++ void OnUpdate(float) override {
++  if(flashlight) flashlight->SetVisible(IsActive());
++ }
++ void AddFlashlight() override {
++  if(flashlight)return;
++  mbHasFlashlight=true;
++  flashlight=mpInit->mpGame->GetScene()->GetWorld3D()->CreateLightSpot(msName+"_flashlight", "",false);
++  flashlight->SetFOV(cMath::ToRad(45));flashlight->SetAspect(1);
++  flashlight->SetFarAttenuation(12);flashlight->SetDiffuseColor(cColor(1,1,0.8f,1));
++  flashlight->SetCastShadows(true);
++  if(!mpMeshEntity->AttachEntityToParent(flashlight,"LeftHand"))warning("Cannot attach Infected flashlight to LeftHand");
++  mvLights.push_back(flashlight);
++  msStoppedAnim="IdleFlashlight";msWalkAnim="WalkFlashlight";msRunAnim="RunFlashlight";
++ }
++ bool MoveToPos(const cVector3f &pos) override {
++  SetTempPosition(pos); ChangeState(STATE_MOVETO); return mpMover->MoveToPos(pos);
++ }
++ void ShowPlayer(const cVector3f &pos) override { SetLastPlayerPos(pos); ChangeState(STATE_HUNT); }
++ bool IsFighting() override { return mlCurrentState==STATE_HUNT || mlCurrentState==STATE_ATTACK; }
++ void Animate(const tString &name,bool loop) {
++  if(mpMeshEntity->GetAnimationStateFromName(name)) PlayAnim(name,loop,0.2f);
++  else UseMoveStateAnimations();
++ }
++};
++void cInfectedState::OnEnterState(iGameEnemyState *) {
++ cGameEnemy_Infected *e=static_cast<cGameEnemy_Infected *>(mpEnemy);
++ e->timer=0; e->repath=0; e->hit=false; e->waiting=false;
++ if(mlId==STATE_DEAD) {
++  mpMover->Stop(); mpEnemy->GetMeshEntity()->SetSkeletonPhysicsActive(true);
++  mpMover->GetCharBody()->SetActive(false);
++  mpInit->mpMusicHandler->RemoveAttacker(mpEnemy); return;
++ }
++ mpEnemy->SetupBody(); mpEnemy->UseMoveStateAnimations();
++ mpEnemy->SetFOV(mlId==STATE_HUNT ? e->huntFov : e->idleFov);
++ if(mlId==STATE_HUNT) mpMover->GetCharBody()->SetMaxPositiveMoveSpeed(eCharDir_Forward,e->huntSpeed);
++ if(mlId==STATE_ATTACK) { mpMover->Stop(); e->Animate("SwingClawsStill_01",false); }
++ if(mlId==STATE_KNOCKDOWN) { mpMover->Stop(); e->Animate("Flinch",false); }
++ if(mlId==STATE_IDLE || mlId==STATE_PATROL) mpInit->mpMusicHandler->RemoveAttacker(mpEnemy);
++}
++void cInfectedState::OnSeePlayer(const cVector3f &pos,float chance) {
++ cGameEnemy_Infected *e=static_cast<cGameEnemy_Infected *>(mpEnemy);
++ if(mlId==STATE_DEAD || chance<e->seeChance) return;
++ mpEnemy->SetLastPlayerPos(pos);
++ if(mlId!=STATE_ATTACK && mlId!=STATE_HUNT && mlId!=STATE_KNOCKDOWN) mpEnemy->ChangeState(STATE_HUNT);
++}
++bool cInfectedState::OnHearNoise(const cVector3f &pos,float volume) {
++ cGameEnemy_Infected *e=static_cast<cGameEnemy_Infected *>(mpEnemy);
++ if(mlId==STATE_DEAD || mlId==STATE_HUNT || mlId==STATE_ATTACK || volume<e->hearVolume) return false;
++ mpEnemy->SetTempPosition(pos);mpEnemy->ChangeState(STATE_INVESTIGATE);return true;
++}
++void cInfectedState::OnTakeHit(float damage) {
++ if(mlId!=STATE_DEAD && damage>0) mpEnemy->ChangeState(STATE_KNOCKDOWN);
++}
++void cInfectedState::OnAnimationOver(const tString &) {
++ if(mlId==STATE_ATTACK || mlId==STATE_KNOCKDOWN) mpEnemy->ChangeState(STATE_HUNT);
++}
++void cInfectedState::OnUpdate(float dt) {
++ cGameEnemy_Infected *e=static_cast<cGameEnemy_Infected *>(mpEnemy);
++ e->timer+=dt; e->repath-=dt;
++ if(mlId==STATE_DEAD) return;
++ if(mlId==STATE_IDLE) { if(mpEnemy->GetPatrolNodeNum()) mpEnemy->ChangeState(STATE_PATROL); return; }
++ if(mlId==STATE_PATROL) {
++  if(!mpEnemy->GetPatrolNodeNum()) {mpEnemy->ChangeState(STATE_IDLE);return;}
++  if(mpMover->IsMoving()) return;
++  if(e->waiting) {
++   if(e->timer<mpEnemy->GetWaitTime()) return;
++   mpEnemy->IncCurrentPatrolNode(); e->waiting=false;mpEnemy->UseMoveStateAnimations();
++  }
++  cEnemyPatrolNode *patrol=mpEnemy->CurrentPatrolNode();
++  cAINode *node=mpMover->GetNodeContainer() ? mpMover->GetNodeContainer()->GetNodeFromName(patrol->msNodeName) : nullptr;
++  if(!node) {warning("Infected patrol node '%s' is missing",patrol->msNodeName.c_str());mpEnemy->ChangeState(STATE_IDLE);return;}
++  if(cMath::Vector3DistSqr(mpMover->GetCharBody()->GetFeetPosition(),node->GetPosition())<0.5f) {
++   mpEnemy->SetWaitTime(patrol->mfWaitTime);e->waiting=true;e->timer=0;
++   if(patrol->msAnimation!="") e->Animate(patrol->msAnimation,false);
++  } else if(e->repath<=0) {mpMover->MoveToPos(node->GetPosition());e->repath=1;}
++  return;
++ }
++ if(mlId==STATE_HUNT) {
++  if(mpEnemy->CanSeePlayer()) mpEnemy->SetLastPlayerPos(mpPlayer->GetCharacterBody()->GetFeetPosition());
++  float distance=mpMover->DistanceToChar(mpPlayer->GetCharacterBody());
++  if(distance<=e->attackRange && mpMover->FreeDirectPathToChar(mpPlayer->GetCharacterBody())) {mpEnemy->ChangeState(STATE_ATTACK);return;}
++  if(e->repath<=0) {mpMover->MoveToPos(mpEnemy->GetLastPlayerPos());e->repath=0.5f;}
++  if(e->timer>15 && !mpEnemy->CanSeePlayer() && !mpMover->IsMoving()) mpEnemy->ChangeState(STATE_IDLE);
++  return;
++ }
++ if(mlId==STATE_ATTACK) {
++  mpMover->TurnToPos(mpPlayer->GetCharacterBody()->GetFeetPosition());
++  if(!e->hit && e->timer>=e->attackTime) {
++   e->hit=true;
++   if(mpMover->DistanceToChar(mpPlayer->GetCharacterBody())<=e->attackRange && mpMover->FreeDirectPathToChar(mpPlayer->GetCharacterBody())) {
++    mpPlayer->Damage(cMath::RandRectf(e->minDamage,e->maxDamage),ePlayerDamageType_BloodSplash);
++    mpEnemy->PlaySound(e->hitSound);
++   }
++  }
++  if(e->timer>2) mpEnemy->ChangeState(STATE_HUNT);
++  return;
++ }
++ if(mlId==STATE_KNOCKDOWN) {if(e->timer>1)mpEnemy->ChangeState(STATE_HUNT);return;}
++ if(mlId==STATE_INVESTIGATE || mlId==STATE_MOVETO) {
++  if(e->timer<=dt) mpMover->MoveToPos(mpEnemy->GetTempPosition());
++  if(!mpMover->IsMoving() && e->timer>0.5f)mpEnemy->ChangeState(STATE_IDLE);
++  return;
++ }
++ // Non-humanoid state IDs in old saves/scripts return to normal patrol.
++ mpEnemy->ChangeState(STATE_IDLE);
++}
+--- a/engines/hpl1/engine/system/low_level_system.cpp
++++ b/engines/hpl1/engine/system/low_level_system.cpp
+@@ -35,6 +35,7 @@
+ static void scriptEngineLog(const asSMessageInfo *msg) {
+ 	switch (msg->type) {
+ 	case asMSGTYPE_ERROR:
++		warning("HPL script %s:%d:%d: %s", msg->section, msg->row, msg->col, msg->message);
+ 		Hpl1::logError(Hpl1::kDebugScripts, "%s (%d, %d) : %s\n", msg->section, msg->row, msg->col, msg->message);
+ 		break;
+ 	case asMSGTYPE_WARNING:
+--- a/engines/hpl1/penumbra-overture/RadioHandler.h
++++ b/engines/hpl1/penumbra-overture/RadioHandler.h
+@@ -45,7 +45,10 @@
+ 	tWString msText;
+ 	tString msSound;
+ 
+-	iSoundChannel *mpChannel;
++	iSoundChannel *mpChannel = nullptr;
++	bool spatial = false;
++	cVector3f position;
++	float minDistance = 1, maxDistance = 10;
+ };
+ 
+ typedef Common::List<cRadioMessage *> tRadioMessageList;
+@@ -59,6 +62,13 @@
+ 	~cRadioHandler();
+ 
+ 	void Add(const tWString &asText, const tString &asSound);
++	void AddAt(const tWString &text, const tString &sound, const cVector3f &pos, float minDist, float maxDist);
++	void Stop(float fade = 0);
++	float stopTime = 0, stopDuration = 0, stopVolume = 0;
++ struct Environment { tString sector,file; float fade; int priority; };
++ Common::Array<Environment> environments;
++ tString currentEnvironment;
++ void LinkEnvironment(const tString &sector,const tString &file,float fade,int priority);
+ 
+ 	void Update(float afTimeStep);
+ 	void OnDraw();
+--- a/engines/hpl1/penumbra-overture/RadioHandler.cpp
++++ b/engines/hpl1/penumbra-overture/RadioHandler.cpp
+@@ -84,7 +84,56 @@
+ 
+ //-----------------------------------------------------------------------
+ 
++void cRadioHandler::AddAt(const tWString &text, const tString &sound, const cVector3f &pos, float minDist, float maxDist) {
++ Add(text,sound);
++ cRadioMessage *message=mlstMessages.back();
++ message->spatial=true;message->position=pos;
++ message->minDistance=MAX(0.f,minDist);message->maxDistance=MAX(message->minDistance+0.01f,maxDist);
++}
++void cRadioHandler::Stop(float fade) {
++ STLDeleteAll(mlstMessages);mlstMessages.clear();msOnEndCallback="";
++ if(fade>0 && mpCurrentMessage && mpSoundHandler->IsValid(mpCurrentMessage->mpChannel)) {
++  stopTime=stopDuration=fade;stopVolume=mpCurrentMessage->mpChannel->GetVolume();return;
++ }
++ stopTime=0;
++ if(mpCurrentMessage) {
++  if(mpSoundHandler->IsValid(mpCurrentMessage->mpChannel)) mpCurrentMessage->mpChannel->Stop();
++  hplDelete(mpCurrentMessage);mpCurrentMessage=NULL;
++ }
++ Reset();
++}
++
++void cRadioHandler::LinkEnvironment(const tString &sector,const tString &file,float fade,int priority) {
++ if(sector=="")environments.clear();
++ Environment entry;entry.sector=sector;entry.file=file;entry.fade=fade;entry.priority=priority;
++ environments.push_back(entry);
++}
+ void cRadioHandler::Update(float afTimeStep) {
++ if(stopTime>0) {
++  stopTime-=afTimeStep;
++  if(stopTime<=0)Stop();
++  else if(mpCurrentMessage && mpSoundHandler->IsValid(mpCurrentMessage->mpChannel))mpCurrentMessage->mpChannel->SetVolume(stopVolume*stopTime/stopDuration);
++ }
++
++ if(!environments.empty() && mpInit->mpGame->GetScene()->GetWorld3D()) {
++  const Environment *selected=nullptr;
++  auto *world=mpInit->mpGame->GetScene()->GetWorld3D();
++  cVector3f pos=mpInit->mpPlayer->GetCamera()->GetPosition();
++  for(uint i=0;i<environments.size();++i) {
++   const Environment &entry=environments[i];
++   auto *sector=entry.sector=="" ? nullptr : world->GetPortalContainer()->GetSector(entry.sector);
++   bool inside=entry.sector=="" || (sector && cMath::PointBVCollision(pos,*sector->GetBV()));
++   if(inside && (!selected || entry.priority>selected->priority))selected=&entry;
++  }
++  if(selected && selected->file!=currentEnvironment) {
++   currentEnvironment=selected->file;
++   auto *sound=mpInit->mpGame->GetSound()->GetLowLevel();
++   auto *environment=sound->IsEnvAudioAvailable() ? sound->LoadSoundEnvironment(currentEnvironment) : nullptr;
++   if(environment)sound->SetSoundEnvironment(environment);
++   else warning("Sound environment unavailable: %s",currentEnvironment.c_str());
++  }
++ }
++
+ 	if (mpInit->mpPlayer->IsDead()) {
+ 		STLDeleteAll(mlstMessages);
+ 		mlstMessages.clear();
+@@ -120,6 +169,13 @@
+ 
+ 		// Start newer message
+ 		mpCurrentMessage->mpChannel = mpSoundHandler->PlayStream(mpCurrentMessage->msSound, false, 1);
++		if(mpCurrentMessage->spatial && mpCurrentMessage->mpChannel) {
++		 mpCurrentMessage->mpChannel->Set3D(true);
++		 mpCurrentMessage->mpChannel->SetPositionRelative(false);
++		 mpCurrentMessage->mpChannel->SetPosition(mpCurrentMessage->position);
++		 mpCurrentMessage->mpChannel->SetMinDistance(mpCurrentMessage->minDistance);
++		 mpCurrentMessage->mpChannel->SetMaxDistance(mpCurrentMessage->maxDistance);
++		}
+ 	}
+ 
+ 	////////////////////////
+--- a/engines/hpl1/penumbra-overture/GameLink.h
++++ b/engines/hpl1/penumbra-overture/GameLink.h
+@@ -49,6 +49,12 @@
+ 	float mfFadeInTime;
+ 	tString msLoadTextCat;
+ 	tString msLoadTextEntry;
++	tString msLoadingImage;
++	bool mbLocked = false;
++	tString msLockedSound;
++	tString msLockedCat;
++	tString msLockedEntry;
++
+ 
+ 	iGameEntity *CreateEntity();
+ };
+@@ -74,6 +80,12 @@
+ 	float mfFadeInTime;
+ 	tString msLoadTextCat;
+ 	tString msLoadTextEntry;
++	tString msLoadingImage;
++	bool mbLocked = false;
++	tString msLockedSound;
++	tString msLockedCat;
++	tString msLockedEntry;
++
+ 
+ 	// SaveObject implementation
+ 	iGameEntity_SaveData *CreateSaveData();
+--- a/engines/hpl1/penumbra-overture/GameLink.cpp
++++ b/engines/hpl1/penumbra-overture/GameLink.cpp
+@@ -26,6 +26,8 @@
+  */
+ 
+ #include "hpl1/penumbra-overture/GameLink.h"
++#include "hpl1/penumbra-overture/EffectHandler.h"
++#include "hpl1/penumbra-overture/GlobalInit.h"
+ #include "hpl1/engine/engine.h"
+ 
+ #include "hpl1/penumbra-overture/Init.h"
+@@ -107,9 +109,15 @@
+ }
+ 
+ void cGameLink::OnPlayerInteract() {
++ if(mbLocked && mpInit->mpPlayer->GetPickedDist()<=1.8f) {
++  mpInit->mpGame->GetSound()->GetSoundHandler()->PlayGui(msLockedSound,false,1);
++  mpInit->mpEffectHandler->GetSubTitle()->Add(kTranslate(msLockedCat,msLockedEntry),3,false);
++  return;
++ }
+ 	// if(mpInit->mpRadioHandler->IsActive()) return;
+ 
+ 	if (mpInit->mpPlayer->GetPickedDist() <= 1.8 && msMapFile != "") {
++		mpInit->mpMapHandler->msLoadingImage=msLoadingImage;
+ 		mpInit->mpMapHandler->ChangeMap(msMapFile, msMapPos, msStartSound, msStopSound, mfFadeOutTime,
+ 										mfFadeInTime, msLoadTextCat, msLoadTextEntry);
+ 	}
+@@ -141,6 +149,11 @@
+ 							kSerializeVar(mfFadeInTime, eSerializeType_Float32)
+ 								kSerializeVar(msLoadTextCat, eSerializeType_String)
+ 									kSerializeVar(msLoadTextEntry, eSerializeType_String)
++	kSerializeVar(msLoadingImage, eSerializeType_String)
++	kSerializeVar(msLockedEntry, eSerializeType_String)
++	kSerializeVar(msLockedCat, eSerializeType_String)
++	kSerializeVar(msLockedSound, eSerializeType_String)
++	kSerializeVar(mbLocked, eSerializeType_Bool)
+ 										kEndSerialize()
+ 
+ 	//-----------------------------------------------------------------------
+@@ -169,6 +182,11 @@
+ 	kCopyToVar(pData, mfFadeInTime);
+ 	kCopyToVar(pData, msLoadTextCat);
+ 	kCopyToVar(pData, msLoadTextEntry);
++	kCopyToVar(pData, msLoadingImage);
++	kCopyToVar(pData, msLockedEntry);
++	kCopyToVar(pData, msLockedCat);
++	kCopyToVar(pData, msLockedSound);
++	kCopyToVar(pData, mbLocked);
+ 
+ 	pData->mvSize = mvBodies[0]->GetShape()->GetSize();
+ }
+@@ -187,5 +205,10 @@
+ 	kCopyFromVar(pData, mfFadeInTime);
+ 	kCopyFromVar(pData, msLoadTextCat);
+ 	kCopyFromVar(pData, msLoadTextEntry);
+-}
+-//-----------------------------------------------------------------------
++	kCopyFromVar(pData, msLoadingImage);
++	kCopyFromVar(pData, msLockedEntry);
++	kCopyFromVar(pData, msLockedCat);
++	kCopyFromVar(pData, msLockedSound);
++	kCopyFromVar(pData, mbLocked);
++}
++//-----------------------------------------------------------------------
+--- a/engines/hpl1/penumbra-overture/Player.h
++++ b/engines/hpl1/penumbra-overture/Player.h
+@@ -240,6 +240,8 @@
+ 	void SetMass(float afX);
+ 
+ 	void SetPower(float afX);
++	tString msLowPowerCallback;
++	float mfLowPowerThreshold = -1;
+ 	void AddPower(float afX);
+ 	float GetPower() { return mfPower; }
+ 
+--- a/engines/hpl1/penumbra-overture/Player.cpp
++++ b/engines/hpl1/penumbra-overture/Player.cpp
+@@ -289,16 +289,15 @@
+ //-----------------------------------------------------------------------
+ 
+ void cPlayer::SetPower(float afX) {
+-	mfPower = afX;
+-}
+-
+-void cPlayer::AddPower(float afX) {
+-	mfPower += afX;
+-	if (mfPower > 100)
+-		mfPower = 100;
+-	if (mfPower < 0)
+-		mfPower = 0;
+-}
++ float oldPower=mfPower;
++ mfPower=cMath::Clamp(afX,0.f,100.f);
++ if(oldPower>mfLowPowerThreshold && mfPower<=mfLowPowerThreshold && msLowPowerCallback!="") {
++  tString callback=msLowPowerCallback; msLowPowerCallback="";
++  mpInit->RunScriptCommand(callback+"()");
++ }
++}
++
++void cPlayer::AddPower(float afX) { SetPower(mfPower + afX); }
+ 
+ //-----------------------------------------------------------------------
+ 
+@@ -1572,6 +1571,8 @@
+ 	kSaveData_SaveTo(mbItemFlash);
+ 	kSaveData_SaveTo(mfHealth);
+ 	kSaveData_SaveTo(mfPower);
++	kSaveData_SaveTo(msLowPowerCallback);
++	kSaveData_SaveTo(mfLowPowerThreshold);
+ 	kSaveData_SaveTo(mfMass);
+ 
+ 	///////////////////////////////////////
+@@ -1651,6 +1652,8 @@
+ 	kSaveData_LoadFrom(mbItemFlash);
+ 	kSaveData_LoadFrom(mfHealth);
+ 	kSaveData_LoadFrom(mfPower);
++	kSaveData_LoadFrom(msLowPowerCallback);
++	kSaveData_LoadFrom(mfLowPowerThreshold);
+ 	// kSaveData_LoadFrom(mfMass); //Skip this
+ 
+ 	///////////////////////////////////////
+--- a/engines/hpl1/penumbra-overture/GameObject.h
++++ b/engines/hpl1/penumbra-overture/GameObject.h
+@@ -44,6 +44,10 @@
+ 
+ public:
+ 	eObjectInteractMode mInteractMode;
++	float mfWheelAngle = 0;
++	tString msWheelEnter;
++	tString msWheelLeave;
++
+ 
+ 	iGameEntity *CreateEntity();
+ };
+@@ -164,6 +168,12 @@
+ 	friend class cGameObjectBodyCallback;
+ 
+ public:
++	bool mbWheel = false;
++	float mfWheelPrevious = 0, mfWheelMin = 0, mfWheelMax = 0;
++	int mlWheelLimit = 0;
++	tString msWheelMinSound, msWheelMaxSound;
++	float GetWheelAngle() const { return mfWheelAngle; }
++	void SetWheelCallback(const tString &type,const tString &fn) { if(type=="Enter") msWheelEnter=fn; else msWheelLeave=fn; }
+ 	cGameObject(cInit *apInit, const tString &asName);
+ 	~cGameObject(void);
+ 
+@@ -217,6 +227,10 @@
+ 	float mfAttractCount;
+ 
+ 	eObjectInteractMode mInteractMode;
++	float mfWheelAngle = 0;
++	tString msWheelEnter;
++	tString msWheelLeave;
++
+ 
+ 	float mfForwardUpMul;
+ 	float mfForwardRightMul;
+--- a/engines/hpl1/penumbra-overture/GameObject.cpp
++++ b/engines/hpl1/penumbra-overture/GameObject.cpp
+@@ -207,6 +207,7 @@
+ 
+ 	// Set the engine objects to the object
+ 	pObject->SetBodies(mvBodies);
++	pObject->SetJoints(mvJoints);
+ 	pObject->SetBeams(mvBeams);
+ 	pObject->SetMeshEntity(mpEntity);
+ 	pObject->SetParticleSystems(mvParticleSystems);
+@@ -220,6 +221,13 @@
+ 		////////////////////////////////////////////
+ 		// General
+ 		pObject->mInteractMode = ToInteractMode(pGameElem->Attribute("InteractMode"));
++		if(msName=="Wheel") {
++		 pObject->mbWheel=true; pObject->mInteractMode=eObjectInteractMode_Move;
++		 pObject->mfWheelMin=cString::ToFloat(pGameElem->Attribute("MinLimit"),-360);
++		 pObject->mfWheelMax=cString::ToFloat(pGameElem->Attribute("MaxLimit"),360);
++		 pObject->msWheelMinSound=cString::ToString(pGameElem->Attribute("MinSound"),"");
++		 pObject->msWheelMaxSound=cString::ToString(pGameElem->Attribute("MaxSound"),"");
++		}
+ 
+ 		pObject->mfHealth = cString::ToFloat(pGameElem->Attribute("Health"), 0);
+ 		pObject->mlToughness = cString::ToInt(pGameElem->Attribute("Toughness"), 0);
+@@ -480,6 +488,27 @@
+ //-----------------------------------------------------------------------
+ 
+ void cGameObject::Update(float afTimeStep) {
++ if(mbWheel && !mvJoints.empty()) {
++  float angle=cMath::ToDeg(mvJoints[0]->GetAngle());
++  float delta=angle-mfWheelPrevious;
++  if(delta>180)delta-=360; if(delta< -180)delta+=360;
++  mfWheelPrevious=angle;mfWheelAngle+=delta;
++  int state=mfWheelAngle<=mfWheelMin ? -1 : mfWheelAngle>=mfWheelMax ? 1 : 0;
++  if(state!=0 && mvJoints[0]->GetChildBody()) {
++   // Stop only outward velocity; reversing the wheel remains possible.
++   if((state>0 && delta>0)||(state<0 && delta<0))mvJoints[0]->GetChildBody()->SetAngularVelocity(0);
++   mfWheelAngle=cMath::Clamp(mfWheelAngle,mfWheelMin,mfWheelMax);
++  }
++  if(state!=mlWheelLimit) {
++   int old=mlWheelLimit; mlWheelLimit=state;
++   if(old!=0 && msWheelLeave!="")mpInit->RunScriptCommand(msWheelLeave+"(\""+msName+"\",0,"+cString::ToString(old)+")");
++   if(state!=0) {
++    mpInit->mpGame->GetSound()->GetSoundHandler()->PlayGui(state>0?msWheelMaxSound:msWheelMinSound,false,1);
++    if(msWheelEnter!="")mpInit->RunScriptCommand(msWheelEnter+"(\""+msName+"\",1,"+cString::ToString(state)+")");
++   }
++  }
++ }
++
+ 	UpdateAttraction(afTimeStep);
+ 
+ 	////////////////////////////////
+@@ -960,6 +989,9 @@
+ 
+ kBeginSerialize(cGameObject_SaveData, iGameEntity_SaveData)
+ 	kSerializeVar(mInteractMode, eSerializeType_Int32)
++	kSerializeVar(msWheelLeave, eSerializeType_String)
++	kSerializeVar(msWheelEnter, eSerializeType_String)
++	kSerializeVar(mfWheelAngle, eSerializeType_Float32)
+ 		kSerializeVar(mfMaxInteractDist, eSerializeType_Float32)
+ 			kEndSerialize()
+ 
+@@ -982,6 +1014,9 @@
+ 	cGameObject_SaveData *pData = static_cast<cGameObject_SaveData *>(apSaveData);
+ 
+ 	kCopyToVar(pData, mInteractMode);
++	kCopyToVar(pData, msWheelLeave);
++	kCopyToVar(pData, msWheelEnter);
++	kCopyToVar(pData, mfWheelAngle);
+ }
+ 
+ //-----------------------------------------------------------------------
+@@ -991,5 +1026,12 @@
+ 	cGameObject_SaveData *pData = static_cast<cGameObject_SaveData *>(apSaveData);
+ 
+ 	kCopyFromVar(pData, mInteractMode);
+-}
+-//-----------------------------------------------------------------------
++	kCopyFromVar(pData, msWheelLeave);
++	kCopyFromVar(pData, msWheelEnter);
++	kCopyFromVar(pData, mfWheelAngle);
++	if(mbWheel && !mvJoints.empty()) {
++	 mfWheelPrevious=cMath::ToDeg(mvJoints[0]->GetAngle());
++	 mlWheelLimit=mfWheelAngle<=mfWheelMin ? -1 : mfWheelAngle>=mfWheelMax ? 1 : 0;
++	}
++}
++//-----------------------------------------------------------------------
+--- a/engines/hpl1/penumbra-overture/GameSwingDoor.h
++++ b/engines/hpl1/penumbra-overture/GameSwingDoor.h
+@@ -40,6 +40,11 @@
+ 
+ public:
+ 	bool mbLocked;
++	tString msLockedCat;
++	tString msLockedEntry;
++	tString msLockedSound;
++	bool mbLockedFeedback = false;
++
+ 
+ 	tString msBreakSound;
+ 	tString msBreakEntity;
+@@ -80,6 +85,8 @@
+ 	void SetupPhysics(cWorld3D *apWorld);
+ 
+ 	void SetLocked(bool abX);
++	tString msLockedCat, msLockedEntry, msLockedSound;
++	bool mbLockedFeedback = false;
+ 
+ 	// SaveObject implementation
+ 	iGameEntity_SaveData *CreateSaveData();
+--- a/engines/hpl1/penumbra-overture/GameSwingDoor.cpp
++++ b/engines/hpl1/penumbra-overture/GameSwingDoor.cpp
+@@ -26,6 +26,8 @@
+  */
+ 
+ #include "hpl1/penumbra-overture/GameSwingDoor.h"
++#include "hpl1/penumbra-overture/EffectHandler.h"
++#include "hpl1/penumbra-overture/GlobalInit.h"
+ #include "hpl1/engine/engine.h"
+ 
+ #include "hpl1/penumbra-overture/EffectHandler.h"
+@@ -194,6 +196,11 @@
+ 	if (fDist > mfMaxInteractDist)
+ 		return;
+ 
++	if(mbLocked && mbLockedFeedback) {
++	 mpInit->mpGame->GetSound()->GetSoundHandler()->PlayGui(msLockedSound,false,1);
++	 mpInit->mpEffectHandler->GetSubTitle()->Add(kTranslate(msLockedCat,msLockedEntry),3,false);
++	 return;
++	}
+ 	// Set some properties
+ 	mpInit->mpPlayer->mfForwardUpMul = 1.0f;
+ 	mpInit->mpPlayer->mfForwardRightMul = 1.0f;
+@@ -369,6 +376,10 @@
+ 
+ kBeginSerialize(cGameSwingDoor_SaveData, iGameEntity_SaveData)
+ 	kSerializeVar(mbLocked, eSerializeType_Bool)
++	kSerializeVar(mbLockedFeedback, eSerializeType_Bool)
++	kSerializeVar(msLockedSound, eSerializeType_String)
++	kSerializeVar(msLockedEntry, eSerializeType_String)
++	kSerializeVar(msLockedCat, eSerializeType_String)
+ 
+ 		kSerializeVar(msBreakSound, eSerializeType_String)
+ 			kSerializeVar(msBreakEntity, eSerializeType_String)
+@@ -394,6 +405,10 @@
+ 	cGameSwingDoor_SaveData *pData = static_cast<cGameSwingDoor_SaveData *>(apSaveData);
+ 
+ 	kCopyToVar(pData, mbLocked);
++	kCopyToVar(pData, mbLockedFeedback);
++	kCopyToVar(pData, msLockedSound);
++	kCopyToVar(pData, msLockedEntry);
++	kCopyToVar(pData, msLockedCat);
+ 
+ 	kCopyToVar(pData, msBreakSound);
+ 	kCopyToVar(pData, msBreakEntity);
+@@ -411,7 +426,11 @@
+ 	kCopyFromVar(pData, msBreakPS);
+ 
+ 	SetLocked(pData->mbLocked);
+-}
+-//-----------------------------------------------------------------------
+-
+-//-----------------------------------------------------------------------
++	kCopyFromVar(pData, mbLockedFeedback);
++	kCopyFromVar(pData, msLockedSound);
++	kCopyFromVar(pData, msLockedEntry);
++	kCopyFromVar(pData, msLockedCat);
++}
++//-----------------------------------------------------------------------
++
++//-----------------------------------------------------------------------
+--- a/engines/hpl1/penumbra-overture/GameEnemy.h
++++ b/engines/hpl1/penumbra-overture/GameEnemy.h
+@@ -128,6 +128,7 @@
+ 
+ public:
+ 	bool mbHasBeenActivated;
++	bool mbHasFlashlight = false;
+ 
+ 	cVector3f mvCharBodyPosition;
+ 	cVector3f mvCharBodyRotation;
+@@ -226,6 +227,7 @@
+ 	virtual void ShowPlayer(const cVector3f &avPlayerFeetPos) {}
+ 
+ 	virtual bool IsFighting() { return false; }
++	virtual void AddFlashlight() { warning("Flashlight requested for unsupported enemy subtype"); }
+ 
+ 	// Physics
+ 	void SetupBody();
+@@ -402,6 +404,7 @@
+ 	float mfPoseCount;
+ 
+ 	bool mbHasBeenActivated;
++	bool mbHasFlashlight = false;
+ 
+ 	bool mbUsesTriggers;
+ 
+--- a/engines/hpl1/penumbra-overture/GameScripts.cpp
++++ b/engines/hpl1/penumbra-overture/GameScripts.cpp
+@@ -1569,6 +1569,80 @@
+ 
+ //-----------------------------------------------------------------------
+ 
++
++static void StopAllRadioMessages(float fade) { gpInit->mpRadioHandler->Stop(fade); }
++SCRIPT_DEFINE_FUNC_1(void, StopAllRadioMessages, float)
++static void SetLowPowerCallback(tString func,float threshold) {
++ gpInit->mpPlayer->msLowPowerCallback=func;gpInit->mpPlayer->mfLowPowerThreshold=threshold;
++}
++SCRIPT_DEFINE_FUNC_2(void, SetLowPowerCallback, string, float)
++static void AddRadioMessageAtPos(tString cat,tString entry,tString sound,tString entity,float minDist,float maxDist) {
++ cInit *mpInit=gpInit;
++ GAME_ENTITY_BEGIN(entity)
++ cVector3f pos=pEntity->GetBodyNum() ? pEntity->GetBody(0)->GetWorldPosition() : pEntity->GetMeshEntity()->GetWorldPosition();
++ gpInit->mpRadioHandler->AddAt(kTranslate(cat,entry),sound,pos,minDist,maxDist);
++}
++SCRIPT_DEFINE_FUNC_6(void, AddRadioMessageAtPos, string, string, string, string, float, float)
++static void TeleportPlayerToArea(tString name) {
++ auto *world=gpInit->mpGame->GetScene()->GetWorld3D();
++ auto *start=world->GetStartPosEntity(name);
++ auto *entity=gpInit->mpMapHandler->GetGameEntity(name);
++ if(start)gpInit->mpPlayer->GetCharacterBody()->SetFeetPosition(start->GetWorldMatrix().GetTranslation());
++ else if(entity && entity->GetBodyNum())gpInit->mpPlayer->GetCharacterBody()->SetFeetPosition(entity->GetBody(0)->GetWorldPosition());
++ else warning("Missing teleport area: %s",name.c_str());
++}
++SCRIPT_DEFINE_FUNC_1(void, TeleportPlayerToArea, string)
++static void SetLinkLocked(tString name,bool locked) {
++ GAME_ENTITY_BEGIN(name)
++ if(pEntity->GetType()==eGameEntityType_Link)static_cast<cGameLink *>(pEntity)->mbLocked=locked;
++}
++SCRIPT_DEFINE_FUNC_2(void, SetLinkLocked, string, bool)
++static void SetupLinkLockedProp(tString name,tString sound,tString cat,tString entry) {
++ GAME_ENTITY_BEGIN(name)
++ if(pEntity->GetType()!=eGameEntityType_Link)return;
++ auto *link=static_cast<cGameLink *>(pEntity);link->msLockedSound=sound;link->msLockedCat=cat;link->msLockedEntry=entry;
++}
++SCRIPT_DEFINE_FUNC_4(void, SetupLinkLockedProp, string, string, string, string)
++static void SetDoorLockedProperties(tString name,tString cat,tString entry,tString sound,bool feedback) {
++ GAME_ENTITY_BEGIN(name)
++ if(pEntity->GetType()!=eGameEntityType_SwingDoor)return;
++ auto *door=static_cast<cGameSwingDoor *>(pEntity);door->msLockedCat=cat;door->msLockedEntry=entry;door->msLockedSound=sound;door->mbLockedFeedback=feedback;
++}
++SCRIPT_DEFINE_FUNC_5(void, SetDoorLockedProperties, string, string, string, string, bool)
++static float GetWheelAngle(tString name) {
++ auto *entity=gpInit->mpMapHandler->GetGameEntity(name);
++ if(!entity || entity->GetType()!=eGameEntityType_Object) {warning("Missing wheel: %s",name.c_str());return 0;}
++ return static_cast<cGameObject *>(entity)->GetWheelAngle();
++}
++SCRIPT_DEFINE_FUNC_1(float, GetWheelAngle, string)
++static void SetWheelCallback(tString name,tString type,tString func) {
++ GAME_ENTITY_BEGIN(name)
++ if(pEntity->GetType()==eGameEntityType_Object)static_cast<cGameObject *>(pEntity)->SetWheelCallback(type,func);
++}
++SCRIPT_DEFINE_FUNC_3(void, SetWheelCallback, string, string, string)
++static void AddInfectedFlashlight(tString name) {
++ GAME_ENTITY_BEGIN(name)
++ if(pEntity->GetType()==eGameEntityType_Enemy)static_cast<iGameEnemy *>(pEntity)->AddFlashlight();
++}
++SCRIPT_DEFINE_FUNC_1(void, AddInfectedFlashlight, string)
++static void LinkSoundEnvToAllSectors(tString file,float fade) {gpInit->mpRadioHandler->LinkEnvironment("",file,fade,0);}
++SCRIPT_DEFINE_FUNC_2(void, LinkSoundEnvToAllSectors, string, float)
++static void LinkSoundEnvToSector(tString sector,tString file,float fade,int priority) {gpInit->mpRadioHandler->LinkEnvironment(sector,file,fade,priority);}
++SCRIPT_DEFINE_FUNC_4(void, LinkSoundEnvToSector, string, string, float, int)
++
++
++static void ChangeMapImage(tString map,tString pos,tString start,tString stop,float out,float in,tString cat,tString entry,tString image) {
++ ChangeMap(map,pos,start,stop,out,in,cat,entry);
++ gpInit->mpMapHandler->msLoadingImage=image;
++}
++SCRIPT_DEFINE_FUNC_9(void, ChangeMapImage, string, string, string, string, float, float, string, string, string)
++static void SetupLinkImage(tString name,tString map,tString pos,tString start,tString stop,float out,float in,tString image) {
++ SetupLink(name,map,pos,start,stop,out,in);
++ GAME_ENTITY_BEGIN(name)
++ if(pEntity->GetType()==eGameEntityType_Link)static_cast<cGameLink *>(pEntity)->msLoadingImage=image;
++}
++SCRIPT_DEFINE_FUNC_8(void, SetupLinkImage, string, string, string, string, string, float, float, string)
++
+ void cGameScripts::Init() {
+ 	LowLevelSystem *pLowLevelSystem = gpInit->mpGame->GetSystem()->GetLowLevel();
+ 	gsTempString = new tWString;
+@@ -1594,6 +1668,22 @@
+ 	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(AddSubTitleTempString));
+ 
+ 	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(AddRadioMessage));
++ pLowLevelSystem->addScriptFunc("void ChangeMap(string,string,string,string,float,float,string,string,string)",GenericScript::ChangeMapImage_Generic,asCALL_GENERIC);
++ pLowLevelSystem->addScriptFunc("void SetupLink(string,string,string,string,string,float,float,string)",GenericScript::SetupLinkImage_Generic,asCALL_GENERIC);
++
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(StopAllRadioMessages));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(SetLowPowerCallback));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(AddRadioMessageAtPos));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(TeleportPlayerToArea));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(SetLinkLocked));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(SetupLinkLockedProp));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(SetDoorLockedProperties));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(GetWheelAngle));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(SetWheelCallback));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(AddInfectedFlashlight));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(LinkSoundEnvToAllSectors));
++	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(LinkSoundEnvToSector));
++
+ 	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(SetRadioOnEndCallback));
+ 
+ 	pLowLevelSystem->addScriptFunc(SCRIPT_REGISTER_FUNC(SetMessagesOverCallback));
+--- a/engines/hpl1/penumbra-overture/MapHandler.h
++++ b/engines/hpl1/penumbra-overture/MapHandler.h
+@@ -211,6 +211,7 @@
+ 
+ 	bool IsDestroyingAll() { return mbDestroyingAll; }
+ 
++	tString msLoadingImage;
+ 	bool IsChangingMap() { return mMapChanger.mbActive; }
+ 
+ 	/////////////////////////////////////////
+--- a/engines/hpl1/penumbra-overture/MapHandler.cpp
++++ b/engines/hpl1/penumbra-overture/MapHandler.cpp
+@@ -1269,7 +1269,8 @@
+ 			mpInit->mpMapLoadText->SetText(mMapChanger.msLoadTextCat, mMapChanger.msLoadTextEntry);
+ 			mpInit->mpMapLoadText->SetActive(true);
+ 		} else {
+-			mpInit->mpGraphicsHelper->DrawLoadingScreen("other_loading.jpg");
++			mpInit->mpGraphicsHelper->DrawLoadingScreen(msLoadingImage.empty() ? "other_loading.jpg" : msLoadingImage);
++			msLoadingImage="";
+ 		}
+ 
+ 		// Fade in here so that script will over ride it.
+--- a/engines/hpl1/engine/game/ScriptFuncs.cpp
++++ b/engines/hpl1/engine/game/ScriptFuncs.cpp
+@@ -1081,6 +1081,9 @@
+ 	Warning("Body property '%s' does not exist!\n", asProp.c_str());
+ }
+ SCRIPT_DEFINE_FUNC_3(void, SetBodyProperty, string, string, float)
++static void SetBodyPropertyBool(tString name,tString prop,bool value) { SetBodyProperty(name,prop,value?1.f:0.f); }
++SCRIPT_DEFINE_FUNC_3(void, SetBodyPropertyBool, string, string, bool)
++
+ 
+ //-----------------------------------------------------------------------
+ 
+@@ -1422,6 +1425,7 @@
+ 	gpSystem->GetLowLevel()->addScriptFunc(SCRIPT_REGISTER_FUNC(GetJointProperty));
+ 	gpSystem->GetLowLevel()->addScriptFunc(SCRIPT_REGISTER_FUNC(GetBodyProperty));
+ 	gpSystem->GetLowLevel()->addScriptFunc(SCRIPT_REGISTER_FUNC(SetBodyProperty));
++ gpSystem->GetLowLevel()->addScriptFunc("void SetBodyProperty(string,string,bool)",GenericScript::SetBodyPropertyBool_Generic,asCALL_GENERIC);
+ 	gpSystem->GetLowLevel()->addScriptFunc(SCRIPT_REGISTER_FUNC(SetJointProperty));
+ 	gpSystem->GetLowLevel()->addScriptFunc(SCRIPT_REGISTER_FUNC(AttachBodiesWithJoint));
+ 
+--- a/engines/hpl1/penumbra-overture/SaveHandler.h
++++ b/engines/hpl1/penumbra-overture/SaveHandler.h
+@@ -214,6 +214,8 @@
+ 	float mfHealth;
+ 
+ 	float mfPower;
++	tString msLowPowerCallback;
++	float mfLowPowerThreshold = -1;
+ 
+ 	float mfMass;
+ 
+--- a/engines/hpl1/penumbra-overture/SaveHandler.cpp
++++ b/engines/hpl1/penumbra-overture/SaveHandler.cpp
+@@ -824,6 +824,8 @@
+ 
+ 											kSerializeVar(mfHealth, eSerializeType_Float32)
+ 												kSerializeVar(mfPower, eSerializeType_Float32)
++	kSerializeVar(msLowPowerCallback, eSerializeType_String)
++	kSerializeVar(mfLowPowerThreshold, eSerializeType_Float32)
+ 													kSerializeVar(mfMass, eSerializeType_Float32)
+ 
+ 														kSerializeClassContainer(mvOnCameraPS, cPlayer_GlobalSave_CameraPS, eSerializeType_Class)
+--- a/engines/hpl1/engine/impl/SqScript.cpp
++++ b/engines/hpl1/engine/impl/SqScript.cpp
+@@ -106,8 +106,11 @@
+ //-----------------------------------------------------------------------
+ 
+ bool cSqScript::Run(const tString &asFuncLine) {
+-	ExecuteString(mpScriptEngine, asFuncLine.c_str(), _module);
+-	return true;
++	asIScriptContext *context=mpScriptEngine->CreateContext();
++	int result=ExecuteString(mpScriptEngine, asFuncLine.c_str(), _module,context);
++	if(result!=asEXECUTION_FINISHED)warning("HPL script call %s failed (%d): %s",asFuncLine.c_str(),result,context->GetExceptionString()?context->GetExceptionString():"no exception text");
++	context->Release();
++	return result==asEXECUTION_FINISHED;
+ }
+ 
+ //-----------------------------------------------------------------------
+--- a/engines/hpl1/detection_tables.h
++++ b/engines/hpl1/detection_tables.h
+@@ -24,6 +24,7 @@
+ const PlainGameDescriptor GAME_NAMES[] = {
+ 	{"penumbraoverture", "Penumbra: Overture"},
+ 	{"penumbrablackplague", "Penumbra: Black Plague"},
++	{"penumbrarequiem", "Penumbra: Requiem"},
+ 	{0, 0}
+ };
+ 
+@@ -85,6 +86,17 @@
+ 		GUIO0()
+ 	},
+ 
++	// Owned Penumbra Collection expansion; gameplay support is experimental.
++	{
++		"penumbrarequiem",
++		nullptr,
++		AD_ENTRY1s("Requiem.exe", "8810d6b5d6790595dab4aae580d6a57c", 2998272),
++		Common::Language::EN_ANY,
++		Common::kPlatformWindows,
++		ADGF_UNSTABLE,
++		GUIO0()
++	},
++
+ 	AD_TABLE_END_MARKER
+ };
+ 
+--- a/engines/hpl1/penumbra-overture/Init.cpp
++++ b/engines/hpl1/penumbra-overture/Init.cpp
+@@ -156,8 +156,9 @@
+ 
+ 	// MAIN INIT /////////////////////
+ 
++	const bool isRequiem = Hpl1::g_engine->getGameId() == "penumbrarequiem";
+ 	mpConfig = new cConfigFile(_W(""));
+-	mpGameConfig = new cConfigFile(_W("config/game.cfg"));
++	mpGameConfig = new cConfigFile(isRequiem ? _W("expansion01/config/requiem_game.cfg") : _W("config/game.cfg"));
+ 	mpGameConfig->Load();
+ 
+ 	_firstStart = getBoolConfig("first-start", true);
+@@ -178,12 +179,12 @@
+ 
+ 	mbSimpleSwingInOptions = false;
+ 
+-	msGlobalScriptFile = getStringConfig("global_script", "global_script.hps");
+-	msLanguageFile = "English.lang"; // TODO: replace with proper language support
++	msGlobalScriptFile = getStringConfig("global_script", isRequiem ? "requiem_global_script.hps" : "global_script.hps");
++	msLanguageFile = isRequiem ? "English_exp.lang" : "English.lang"; // TODO: replace with proper language support
+ 	mDifficulty = static_cast<eGameDifficulty>(getIntConfig("difficulty", eGameDifficulty_Normal));
+ 
+ 	const bool isBlackPlague = Hpl1::g_engine->getGameId() == "penumbrablackplague";
+-	msStartMap = getStringConfig("starting_map", isBlackPlague ? "level01_cells.dae" : "level00_01_boat_cabin.dae");
++	msStartMap = getStringConfig("starting_map", isRequiem ? "level00.dae" : isBlackPlague ? "level01_cells.dae" : "level00_01_boat_cabin.dae");
+ 	msStartLink = getStringConfig("starting_map_position", "link01");
+ 	mlFSAA = getIntConfig("fsaa", 0);
+ 	mbPostEffects = getBoolConfig("post_effects", true);
+@@ -242,7 +243,7 @@
+ 
+ 	mbShowPreMenu = getBoolConfig("show_pre_menu", true);
+ 	// The current IntroStory implements Overture only. Do not play it for BP.
+-	mbShowIntro = !isBlackPlague && getBoolConfig("show_intro", true);
++	mbShowIntro = !isBlackPlague && !isRequiem && getBoolConfig("show_intro", true);
+ 	mbShowMenu = getBoolConfig("show_menu", true);
+ 
+ 	mfMaxPhysicsTimeStep = 1.0f / mfPhysicsUpdatesPerSec;
+@@ -250,7 +251,7 @@
+ 	cMath::Randomize();
+ 
+ 	// RESOURCE INIT /////////////////////
+-	mpGame->GetResources()->LoadResourceDirsFile("resources.cfg");
++	mpGame->GetResources()->LoadResourceDirsFile(isRequiem ? "requiem_resources.cfg" : "resources.cfg");
+ 
+ 	// LANGUAGE ////////////////////////////////
+ 	mpGame->GetResources()->SetLanguageFile(msLanguageFile);
+@@ -286,7 +287,7 @@
+ 	mpGame->GetSound()->GetLowLevel()->SetVolume(1);
+ 
+ 	// PHYSICS INIT /////////////////////
+-	mpGame->GetPhysics()->LoadSurfaceData("materials.cfg");
++	mpGame->GetPhysics()->LoadSurfaceData(isRequiem ? "requiem_materials.cfg" : "materials.cfg");
+ 
+ 	// EARLY GAME INIT /////////////////////
+ 	mpEffectHandler = hplNew(cEffectHandler, (this));

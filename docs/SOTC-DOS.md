@@ -1,5 +1,10 @@
 # Shadow of the Comet: initial DOS investigation
 
+**Full-build integration (2026-09-27):** this engine/extension is included in
+our combined Vulkan package. See [FULL-BUILD.md](FULL-BUILD.md) for activation,
+build commands and the distinction from the historical isolated testbenches.
+The progression notes below do not imply a complete verified playthrough.
+
 Inspected 2026-09-23. A separate resource-preview engine now exists; this is not a playable game.
 
 ## Local evidence

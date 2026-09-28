@@ -6,6 +6,13 @@ in shadPS4 0.18.0. The real launcher is visible and the pointer can be
 controlled with keyboard-emulated sticks or a PC mouse. The user has confirmed DOTT running on a real PS4. The latest pointer/storage
 changes still need hardware testing; save/load validation remains pending.
 
+## Combined build with the local engines
+
+The experimental Vulkan build includes our Prisoner of Ice and Shadow of the
+Comet engines, the Jönssonligan Director 7 extension, Watchmaker/Penumbra work,
+and FLAC, VP8/VP9, AC-3 and MT-32 support. See [full build, activation and
+validation limits](docs/FULL-BUILD.md) for the build commands and per-game notes.
+
 ## Install on PS4 and add games
 
 The default package contains **no games**. It has the ScummVM icon, a 8× faster

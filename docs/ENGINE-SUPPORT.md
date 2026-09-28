@@ -2,6 +2,22 @@
 
 Build: ScummVM 2.9.1. The 1.09 baseline below is extended by the 1.11 JPEG and 1.12 MP3 ports.
 
+## Optional codec and MIDI additions (2026-09-27)
+
+The shared configuration now enables FLAC, VP8/VP9, A/52 (AC-3) and the bundled
+MT-32 emulator. This closes the four identified codec/MIDI build gaps, including
+SLUDGE's VP8 movie path and the MPEG-2 + AC-3 condition for Zork Grand Inquisitor
+DVD movies. FLAC, VP8 and A/52 decoding passed an isolated target smoke test in
+shadPS4. MT-32 needs user-supplied ROMs; synthesis remains unverified.
+See [build details, tests and setup](PS4-OPTIONAL-CODECS.md).
+
+The combined Vulkan package also includes the local PICE and SOTC engines;
+see [full build and activation](FULL-BUILD.md).
+
+The lists below include historical checkpoints. The experimental Vulkan build
+also contains the subsequent Watchmaker and Penumbra work; enabled engines do
+not imply complete gameplay or native PS4 validation.
+
 ## PNG and Theora ports (packages 1.16 / 1.17, 2026-09-25)
 
 Static zlib 1.3.2 and libpng 1.6.58 remove the dependency blockers for
@@ -71,7 +87,8 @@ This records **compiled availability**, not a promise that every game works.
 The build requests all upstream engines except the TestBed and Playground3D
 test engines. Upstream configure excludes engines whose mandatory dependencies
 are unavailable. Experimental engines are deliberately included in this broad
-build. The separate native Prisoner of Ice preview is not part of this package.
+build. At this historical checkpoint the native Prisoner of Ice preview was separate.
+The current full builds also include PICE and SOTC; see FULL-BUILD.md.
 
 ## What is included
 
@@ -210,8 +227,9 @@ TestBed and Playground3D are deliberately disabled test engines and omitted.
    The Watchmaker requires classic OpenGL. The SDL software-output backend
    provides neither. These need a PS4 graphics backend or an engine-supported
    alternative rather than another configure flag.
-4. **Optional audio:** FLAC and other disabled codecs may be required by
-   particular compressed editions, even when their engine is available.
+4. **Optional audio:** FLAC and A/52 are now enabled; MT-32 is available with
+   user-supplied ROMs. Other disabled optional codecs and synthesizers still
+   require assessment for specific editions.
 5. **Gameplay verification:** test startup, input, rendering, audio, save/load
    and progression using owned game data in shadPS4 and on physical PS4.
 

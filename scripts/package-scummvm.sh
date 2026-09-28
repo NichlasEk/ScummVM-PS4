@@ -58,6 +58,11 @@ cp "$root/build/ps4-png/install/share/licenses/"{libpng-LICENSE,zlib-LICENSE} "$
 cp "$root/build/ps4-theora/install/share/licenses/libtheora-COPYING" "$stage/data/"
 cp "$root/build/ps4-mpeg2/install/share/licenses/libmpeg2-COPYING" "$stage/data/"
 cp "$root/build/ps4-gif/install/share/licenses/giflib-COPYING" "$stage/data/"
+cp "$root/build/ps4-flac/install/share/licenses/flac-COPYING.Xiph" "$stage/data/"
+cp "$root/build/ps4-vpx/install/share/licenses/libvpx-LICENSE" "$stage/data/"
+cp "$root/build/ps4-vpx/install/share/licenses/libvpx-PATENTS" "$stage/data/"
+cp "$root/build/ps4-a52/install/share/licenses/liba52-COPYING" "$stage/data/"
+cp "$source_dir/LICENSES/COPYING.LGPL" "$stage/data/mt32emu-COPYING.LGPL"
 cp "$source_dir/COPYING" "$stage/data/COPYING"
 cp "$source_dir/COPYRIGHT" "$stage/data/COPYRIGHT"
 cp "$source_dir/common/lua/COPYRIGHT" "$stage/data/lua-COPYRIGHT"
@@ -86,6 +91,7 @@ package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right
     data/libjpeg-turbo-LICENSE.md data/libjpeg-turbo-README.ijg data/libmad-COPYING data/libmad-COPYRIGHT
     data/freetype-FTL.TXT data/freetype-LICENSE.TXT data/freetype-GPLv2.TXT
     data/libogg-COPYING data/libvorbis-COPYING data/libpng-LICENSE data/zlib-LICENSE data/libtheora-COPYING data/libmpeg2-COPYING data/giflib-COPYING
+    data/flac-COPYING.Xiph data/libvpx-LICENSE data/libvpx-PATENTS data/liba52-COPYING data/mt32emu-COPYING.LGPL
     data/lua-COPYRIGHT data/vkeybd_default.zip data/scummremastered.zip data/gui-icons.dat games/README.txt)
 if [[ ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} == 1 ]]; then
  for spec in 'opengnm/LICENSE:OpenGNM-LICENSE' 'opengnm-psbc/LICENSE:PSBC-LICENSE' 'vulkan-ps4/LICENSE:Vulkan-PS4-LICENSE'; do

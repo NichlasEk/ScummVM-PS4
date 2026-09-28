@@ -1028,3 +1028,55 @@
  	if (_outputSurface) {
  		_outputSurface->free();
  		delete _outputSurface;
+--- a/audio/softsynth/mt32/mmath.h
++++ b/audio/softsynth/mt32/mmath.h
+@@ -18,6 +18,10 @@
+ #ifndef MT32EMU_MMATH_H
+ #define MT32EMU_MMATH_H
+ 
++#ifdef __PS4__
++// OpenOrbis libc++ cmath expects the integer abs declaration first.
++#include <cstdlib>
++#endif
+ #include <cmath>
+ 
+ namespace MT32Emu {
+--- a/audio/softsynth/mt32/srchelper/srctools/src/FIRResampler.cpp
++++ b/audio/softsynth/mt32/srchelper/srctools/src/FIRResampler.cpp
+@@ -14,6 +14,10 @@
+  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#ifdef __PS4__
++// OpenOrbis libc++ cmath expects the integer abs declaration first.
++#include <cstdlib>
++#endif
+ #include <cmath>
+ #include <cstring>
+ 
+--- a/audio/softsynth/mt32/srchelper/srctools/src/ResamplerModel.cpp
++++ b/audio/softsynth/mt32/srchelper/srctools/src/ResamplerModel.cpp
+@@ -14,6 +14,10 @@
+  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#ifdef __PS4__
++// OpenOrbis libc++ cmath expects the integer abs declaration first.
++#include <cstdlib>
++#endif
+ #include <cmath>
+ #include <cstddef>
+ 
+--- a/audio/softsynth/mt32/srchelper/srctools/src/SincResampler.cpp
++++ b/audio/softsynth/mt32/srchelper/srctools/src/SincResampler.cpp
+@@ -14,6 +14,10 @@
+  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#ifdef __PS4__
++// OpenOrbis libc++ cmath expects the integer abs declaration first.
++#include <cstdlib>
++#endif
+ #include <cmath>
+ 
+ #ifdef SRCTOOLS_SINC_RESAMPLER_DEBUG_LOG

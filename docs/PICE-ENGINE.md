@@ -1,5 +1,10 @@
 # Prisoner of Ice engine development
 
+**Full-build integration (2026-09-27):** this engine/extension is included in
+our combined Vulkan package. See [FULL-BUILD.md](FULL-BUILD.md) for activation,
+build commands and the distinction from the historical isolated testbenches.
+The progression notes below do not imply a complete verified playthrough.
+
 Current continuation: [playthrough and regression ledger](PICE-PLAYTHROUGH.md).
 
 Latest: [Hamsun inventory, medal use and Nordic text](PICE-HAMSUN-INPUT.md).

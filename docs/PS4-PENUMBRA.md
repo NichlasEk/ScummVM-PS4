@@ -331,3 +331,100 @@ for this control. Current local launch restores show_menu/show_pre_menu=true;
 post_effects=false remains. Build/package passed. The user accepted Overture as finished after this
 control update (2026-09-27). Runtime: /tmp/hpl-input-runtime.log. The known
 postprocessing fallback and hardware-validation limits above remain recorded.
+
+
+### Black Plague: first-room compatibility blocker (2026-09-27)
+
+The user confirmed the menu works. New Game then ran Overture's hard-coded
+IntroStory and requested absent intro_02_*.ogg etc., finally loading the absent
+Overture map level00_01_boat_cabin.dae. The caller continued without a world,
+crashing in iCharacterBody::SetYaw (guest 0x16ff7a4).
+Evidence: /tmp/hpl-blackplague-runtime.log.
+
+Black Plague's own config/default_settings.cfg specifies level01_cells.dae,
+link01. The engine now chooses that default for penumbrablackplague and does
+not run the Overture-only IntroStory for it. This is a temporary missing-intro
+limitation, not an implementation of Black Plague's intro.
+
+A direct load of the correct cells map exposed a deeper unsupported feature:
+cEntityLoader_GameEnemy::AfterLoad supports only Dog, Spider and Worm. The
+map requests Infected; pEnemy remains null and the following msSubType string
+assignment crashes at guest 0x3fb154e. Captured stack includes AfterLoad at
+0x17822f8 and the string Infected. Evidence:
+/tmp/hpl-blackplague-cells-trace.log. A guard now reports the unsupported enemy
+instead of dereferencing null. It intentionally does not silently remove the
+enemy or replace it with a different creature. Black Plague is NOT playable;
+its missing gameplay/AI support needs implementation and script validation.
+
+Local diagnostic profile uses show_menu/show_pre_menu/show_intro=false and
+starting_map=level01_cells.dae. Overture's accepted target is unchanged.
+
+Guard validation: rebuilt/package passed, loader audit passed all 130 entries.
+/tmp/hpl-blackplague-guard.log reports the unsupported Infected entity and exits
+with status 1 instead of the null-pointer access violation.
+
+### Black Plague gameplay implementation candidate
+
+Implemented a distinct Infected humanoid class using HPL's character bodies,
+perception and navigation. It implements idle, patrol/wait, investigate, move,
+pursuit, melee, flinch and death states, reads the shipped movement/damage/FOV
+properties and uses the humanoid animation names. Flashlights attach to the
+LeftHand bone and switch movement animations. Flashlight presence is saved.
+This is an initial implementation, not a claim of exact original AI parity:
+weapons, throat grabs, door breaking and later scripted enemy callbacks remain
+unfinished. Other unsupported enemy subtypes retain an explicit error.
+
+The first cells map and global script now compile. Added wheel entity loading,
+accumulated hinge angles, limit callbacks and saved angle/callback state;
+locked link/door feedback and persistence; radio stop/fade and positioned
+messages; area teleport; low-battery callbacks; and overloads for Black
+Plague's body flags, loading-screen images and links. Sector sound environment
+selection is tracked, but the existing audio backend advertises no environment
+support, so reverb is unavailable (reported instead of calling fatal stubs).
+Script runtime exceptions now propagate to diagnostics instead of returning
+success unconditionally. Existing Overture signatures are retained.
+
+Runtime /tmp/hpl-bp-save-runtime.log reaches the actual cell room, invokes its
+scripts without reported compilation/execution errors or the prior null
+crash. Capture /tmp/hpl-bp-first-script.png shows the cell; the later scripted
+camera capture is /tmp/hpl-bp-running.png. The new run is deliberately a direct
+map test, with the standalone Overture intro suppressed. Cell-room geometry
+uses ~107 MB texture storage and 336 draw snapshots. A measured 120-frame
+interval took 32.767 seconds (~3.7 fps): performance remains a substantial
+limitation. Black Plague mouse sensitivity is locally 400 (4.0), independently
+of Overture's default 2.0, following user feedback that motion is smooth but
+turns too little. User interaction and actual save/reload behavior still need
+validation; compilation/serialization declarations alone do not prove them.
+
+Validation: native build/package pass, loader audit pass, and an isolated
+baseline->patch application exactly reproduces all 43 HPL source files and
+reverse-checks successfully. The patch was consolidated so newly added files
+can be reversed/reapplied reliably by the overlay builder. Watchmaker/Overture
+have not been rerun after these shared HPL changes.
+
+A static call-name audit finds no remaining missing registered function names
+in level02_vents, but does not verify signatures or behavior. Later maps still
+request unsupported APIs including OpenScreenGui, lever callbacks/stuck state,
+MoveEntityToArea, dream filters, Infected weapons, notebook callbacks, gas-mask
+queries, stick-area attachment, wheel connections, security cameras and ending
+sequences. These are outstanding implementation work; Black Plague must not
+be described as complete or fully playable from this first-room checkpoint.
+
+### Requiem initial runtime test
+
+Requiem is bundled inside Black Plague/redist, with Requiem.exe and
+expansion01/. Added a separate experimental detector/target penumbrarequiem
+for the owned executable (2998272 bytes, first-5000-byte MD5
+8810d6b5d6790595dab4aae580d6a57c). Its startup selects requiem_resources.cfg,
+requiem_materials.cfg, expansion01/config/requiem_game.cfg, English_exp.lang,
+requiem_global_script.hps and level00.dae/link01. It does not run Overture's
+standalone intro. Local target uses direct map loading, post_effects=false,
+and hpl_mouse_sensitivity=400. Shared game assets remain unchanged.
+
+Build/package and subset audit pass. /tmp/hpl-requiem-runtime.log confirms
+correct target selection and first-map rendering (~66.9 MB textures, 248 draw
+snapshots; a 120-frame interval took 10.150 seconds). Neither global nor first
+map scripts compile yet: TurnOffGlowStick, DropFlare, StartDreamFilter,
+StopDreamFilter, StartImageFlash and StartEnding1 are unimplemented. This is a
+rendering/input trial only, not playable Requiem progression. The test window
+is left open for visual feedback.

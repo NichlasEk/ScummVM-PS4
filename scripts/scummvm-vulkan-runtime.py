@@ -155,6 +155,11 @@ def runtime_patches(root):
     edit('audio/softsynth/fmtowns_pc98/towns_pc98_fmsynth.cpp', [
         ('TownsPC98_FmSynth::ChanInternal::ChanInternal() {\n\tmemset(this, 0, sizeof(ChanInternal));\n}',
          'TownsPC98_FmSynth::ChanInternal::ChanInternal()\n\t: enableLeft(false), enableRight(false), updateEnvelopeParameters(false),\n\t  feedbuf{}, algorithm(0), ampModSvty(0), frqModSvty(0), opr{} {\n}')])
+    # Based on upstream 5f91b1bbd2123c7dd3fa11c8153fa617e4c1fea0: D5-D10
+    # share CASt headers. Keep the newer parser gate opt-in for this D7 trial.
+    edit('engines/director/cast.cpp', [
+        ('} else if (_version >= kFileVer500 && _version < kFileVer600) {\n\t\tcastType = stream.readUint32();',
+         '} else if (_version >= kFileVer500 && (_version < kFileVer600 ||\n\t\t(_version < kFileVer800 && Common::String(_vm->getGameId()) == "jonssonligan1" &&\n\t\t ConfMan.hasKey("ps4_director7_experimental") && ConfMan.getBool("ps4_director7_experimental")))) {\n\t\tcastType = stream.readUint32();')])
     # Watchmaker keeps its existing geometry code; the experimental bridge
     # lowers its bounded immediate-mode subset to shaders. Do not enable the
     # general classic-GL renderer selection in other engines.
@@ -172,6 +177,7 @@ def runtime_patches(root):
     for name, text in modified.items():
         patches.extend(difflib.unified_diff(originals[name].splitlines(True), text.splitlines(True), fromfile='a/'+name, tofile='b/'+name))
     from pathlib import Path
+    patches.extend((Path(__file__).resolve().parents[1] / "patches/scummvm/director7-experimental.patch").read_text().splitlines(True))
     patches.extend((Path(__file__).resolve().parents[1] / "patches/scummvm/watchmaker-experimental.patch").read_text().splitlines(True))
     patches.extend((Path(__file__).resolve().parents[1] / "patches/scummvm/hpl1-experimental.patch").read_text().splitlines(True))
     return patches

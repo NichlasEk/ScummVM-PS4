@@ -172,7 +172,8 @@ Common::Error SotcEngine::run() {
  auto sceneStep = [&]() {
   if(startupMachine.waitingForInput())return;
   if (!startupScene.fading() && !startupScene.movePlayer(startupMachine)) { scriptStatus="Movement update failed (see log)";runScene=false; sceneFault=true; redraw=true; return; }
-  startupMachine.setScriptInput(mapActive() ? mapDirections : 0,mapActive() && mapConfirm);mapConfirm=false;
+  const unsigned directionBits[5]={0,1,8,2,4};
+  startupMachine.setScriptInput(mapActive() ? mapDirections : directionBits[heldDirection],mapActive() && mapConfirm);mapConfirm=false;
   scriptStatus = stepStartupScripts(startupMachine, ++scriptTicks);
   if(startupScene.cinematicActive())heldDirection=0;
   if(startupMachine.menuRequested()){startupMachine.dismissMenuRequest();mainMenu=true;menuSelection=0;_mixer->pauseAll(true);redraw=true;return;}
@@ -848,10 +849,11 @@ Common::Error SotcEngine::run() {
      }
     }
     if (direction && (pressed || released)) {
-     if (sceneFault || startupScene.scriptWalking() || !startupScene.dialogueText().empty()) continue;
+     if (sceneFault || !startupScene.dialogueText().empty()) continue;
      if (released && heldDirection!=direction) continue;
-     startupScene.cancelRoute();
      heldDirection=pressed ? direction : 0;
+     if (startupScene.scriptWalking()) { redraw=true; continue; }
+     startupScene.cancelRoute();
      if (!startupScene.walk(pressed ? direction : 0,startupMachine)) { runScene=false; sceneFault=true; }
      else if (pressed) resumeScene();
      redraw=true; continue;

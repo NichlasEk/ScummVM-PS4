@@ -255,12 +255,16 @@ bool StartupScene::serviceRoom(ScriptMachine &machine,Common::String &status) {
  if(destinationBank!=bank()) {
   // Axx indices are local to a bank. Keep only global RES resources; a
   // cached A00 index must never masquerade as the same index in A01.
-  for(unsigned i=0;i<20;++i) if(next._types[i]==0) next._actorData[i].clear();
   unsigned playerSlot=next._slots[0];
   if(playerSlot>=20) {status="Player resource unavailable";cancelFade();return false;}
-  if(next._types[playerSlot]==0) {
+  // The death bank contains only MORT.VA2. Its init hides actor 0 before
+  // binding that resource, but control/entrance still consult his old sprite.
+  const bool deathRoom=destinationBank==3 && destination==0;
+  for(unsigned i=0;i<20;++i) if(next._types[i]==0 && (!deathRoom || i!=playerSlot)) next._actorData[i].clear();
+  if(next._types[playerSlot]==0 && !deathRoom) {
    Pak actors;
    if(!actors.open(Common::String::format("A%02u.PAK",destinationBank)) || !actors.load(next._indices[playerSlot],next._actorData[playerSlot])) {
+    warning("[sotc-room] player resource unavailable %u/%u -> %u/%u slot=%u index=%u",bank(),room(),destinationBank,destination,playerSlot,next._indices[playerSlot]);
     status="Player bank resource unavailable";cancelFade();return false;
    }
   }
@@ -344,7 +348,9 @@ bool StartupScene::snapshot(Snapshot &s,bool reloadResources,unsigned version) {
    if(!occupied) continue;
    Pak pak;
    if(_types[i]==0) {
-    if(!pak.open(Common::String::format("A%02u.PAK",_state.word(0x2df2))) || !pak.load(_indices[i],_actorData[i])) return false;
+    const unsigned sourceBank=_state.word(0x2df2)==3 && room()==0 && i==_slots[0]
+     ? _state.word(0x2df0) : _state.word(0x2df2);
+    if(!pak.open(Common::String::format("A%02u.PAK",sourceBank)) || !pak.load(_indices[i],_actorData[i])) return false;
    } else if(_types[i]==1) {
     if(!pak.open("RES.PAK") || !pak.load(2,_actorData[i])) return false;
    } else if(_types[i]==2) _actorData[i]=_scenery;

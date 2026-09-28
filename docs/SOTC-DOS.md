@@ -2061,3 +2061,39 @@ portrait 4 and advancing to PC 6 without a scene pause. Evidence:
 `artifacts/sotc/room20-op89-fixed.log`. Package SHA-256:
 `ee11836a1cd8c6249f9bb0ab28b586dc7ce6194f76ae0cf93286b0f34d56a590`.
 The later story path and physical PS4 behavior remain to be tested.
+
+### Priest sequence and death room (2026-09-28)
+
+The next user save (`quick0`, tick 383038) is in bank 2 room 19 while a
+scripted route carries Parker from X=248 to X=140. Room 19 then locks
+movement for its priest cutscene. Pressing right during that route cannot
+override the script, and the saved branch proceeds to the death room. The
+original compressed save is backed up unchanged at
+`artifacts/sotc/priest-escape-backup/quick0.gz`; `quick0.raw` is its audit
+copy. This save is already past the earlier room 20 input opportunity.
+
+The host previously fed directional script input only to the pencil map.
+Regular scenes now receive the held D-pad/arrow direction in the DOS bit
+layout, including while a scripted route is active. The earlier room 20
+script can therefore read its right-direction check. Physical walking
+remains governed by the scene's control lock.
+
+The death bank contains only `MORT.VA2`; it has no player sprite at the
+index inherited from bank 2. Room 3/0 hides Parker but uses his previous
+sprite to finish its initialization and entrance setup. The room switch now
+retains that sprite for this death room, while clearing other bank-local
+resources. Loading a save made there resolves the retained sprite from the
+previous bank recorded in the room state.
+
+`audit-save.py --room20-save` now continues through rooms 19 and 3/0.
+`audit-save.py --priest-save` replays the user's latest save with right held,
+round-trips a save in the death room, and reaches the menu request without
+stopped scripts. The full save/cinematic audit still passes (74 commands,
+2,564 frames), as does the VM audit. The PS4 preview package was rebuilt;
+its SHA-256 is `5cb677cbcea902fcbd402f6b19785a1a65585c47275ee3636ea185dff6d6adb3`.
+The earlier room 20 right-direction branch still needs live playthrough
+validation; the available saves are later than that decision.
+The rebuilt executable also booted in shadPS4 from the existing profile and
+resumed bank 2 room 19 through its portrait dialogue. Its log records
+`[sotc-room] entered bank=3 room=0` with no scene pause or missing-resource
+message. The death-room save round trip was verified in the host replay.

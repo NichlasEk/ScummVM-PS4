@@ -20,6 +20,7 @@ p.add_argument('--forest-save',type=Path,help='Exercise the west exit from Cobbl
 p.add_argument('--resume-save',type=Path,help='Resume a copied save for 300 frames without script or animation failures')
 p.add_argument('--door-save',type=Path,help='Resume the frozen hall-door save and require its script to advance')
 p.add_argument('--room20-save',type=Path,help='Resume the overlapping portrait dialogue in room 20')
+p.add_argument('--priest-save',type=Path,help='Resume priest escape from the latest room 19 save')
 p.add_argument('--probe-save',type=Path,help='Load a copied pharmacy save and verify resume, movement and exit')
 a=p.parse_args()
 root=Path(__file__).resolve().parents[2]
@@ -82,6 +83,31 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="priest") {
+   assert(scene.bank()==2 && scene.room()==19);
+   bool enteredDeathRoom=false,menuReady=false;
+   for(unsigned i=0;i<400;++i){
+    if(i%30==0)scene.finishDialogue();
+    if(i==50)assert(scene.walk(2,m)); // The cutscene keeps player control locked.
+    m.setScriptInput(8,false); // Held right must not interrupt scripted movement.
+    if(m.waitingForInput())m.acknowledgeInput();
+    assert(scene.movePlayer(m));m.tick();
+    if(!scene.serviceRoom(m,status)){std::cerr<<"Priest: "<<status<<" frame="<<i<<" bank="<<scene.bank()<<" room="<<scene.room()<<std::endl;return 2;}
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+    for(unsigned j=0;j<m.count();++j)assert(m.task(j)->result<kUnknownWait);
+    if(scene.bank()==3 && scene.room()==0 && !enteredDeathRoom){
+     enteredDeathRoom=true;
+     auto before=state(m,scene);
+     assert(writeQuickSave(files,"death",m,scene,saved));
+     assert(readQuickSave(files,"death",m,scene,saved,pixels,status));
+     assert(state(m,scene)==before);
+    }
+    if(enteredDeathRoom && m.menuRequested()){menuReady=true;break;}
+   }
+   assert(enteredDeathRoom && menuReady);
+   std::cout<<"Priest cutscene: held input stayed locked; death room loaded and returned to menu\n";
+   return 0;
+  }
   if(argc>2 && std::string(argv[2])=="forest-entry") {
    assert(scene.bank()==2 && scene.room()==3 && m.actor(0)->x==340);
    m.tick();assert(scene.serviceRoom(m,status));assert(scene.movePlayer(m));
@@ -122,6 +148,19 @@ int main(int argc,char **argv) {
    }
    assert(waited && started);
    std::cout<<"Room 20: portrait dialogue waited for the active line, then started without a script stop\n";
+   for(unsigned i=0;i<800;++i){
+    if(i%60==0)scene.finishDialogue();
+    assert(scene.movePlayer(m));m.tick();
+    if(!scene.serviceRoom(m,status)){
+     std::cerr<<"After portrait: "<<status<<" frame="<<i<<" bank="<<scene.bank()<<" room="<<scene.room()<<std::endl;
+     return 2;
+    }
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+    for(unsigned j=0;j<m.count();++j)assert(m.task(j)->result<kUnknownWait);
+    if(scene.bank()==3 && scene.room()==0)break;
+   }
+   assert(scene.bank()==3 && scene.room()==0);
+   std::cout<<"After portrait: scripted room 19 and death room loaded without a resource stop\n";
    return 0;
   }
   if(argc>2 && std::string(argv[2])=="pharmacy-movement") {
@@ -660,7 +699,7 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- selected=[(a.room20_save,'room20'),(a.forest_entry_save,'forest-entry'),(a.pharmacy_movement_save,'pharmacy-movement'),(a.room19_save,'room19'),(a.inn_seat_save,'seat'),(a.inn_stuck_save,'stuck'),(a.inn_entry_save,'entry'),(a.inn_save,'inn'),(a.map_save,'map'),(a.bedroom_save,'bedroom'),(a.cobble_save,'cobble'),(a.forest_save,'forest'),(a.door_save,'door'),(a.resume_save,'resume'),(a.probe_save,'probe')]
+ selected=[(a.priest_save,'priest'),(a.room20_save,'room20'),(a.forest_entry_save,'forest-entry'),(a.pharmacy_movement_save,'pharmacy-movement'),(a.room19_save,'room19'),(a.inn_seat_save,'seat'),(a.inn_stuck_save,'stuck'),(a.inn_entry_save,'entry'),(a.inn_save,'inn'),(a.map_save,'map'),(a.bedroom_save,'bedroom'),(a.cobble_save,'cobble'),(a.forest_save,'forest'),(a.door_save,'door'),(a.resume_save,'resume'),(a.probe_save,'probe')]
  selected=[(path,mode) for path,mode in selected if path]
  if len(selected)>1: p.error('Select only one save probe')
  command=[str(t/'test')]+([str(selected[0][0].resolve()),selected[0][1]] if selected else [])

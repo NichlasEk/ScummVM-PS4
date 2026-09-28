@@ -2097,3 +2097,34 @@ The rebuilt executable also booted in shadPS4 from the existing profile and
 resumed bank 2 room 19 through its portrait dialogue. Its log records
 `[sotc-room] entered bank=3 room=0` with no scene pause or missing-resource
 message. The death-room save round trip was verified in the host replay.
+
+### Replayable priest escape (2026-09-28)
+
+The user still could not flee from the newer room 19 saves. Those saves are
+already in a scripted capture sequence. A copy of the older room 20 save was
+used to rebuild that room before its direction check. The generated recovery
+save (`artifacts/sotc/escape-followup/retry.quick0.raw`, generation 56) was
+round-tripped through the save loader, then installed as the latest quick0
+in the isolated shadPS4 profile. The previous quick0 and quick1 are backed
+up unchanged at `artifacts/sotc/priest-escape-backup/quick0.gz` and
+`artifacts/sotc/escape-followup/quick1.gz`.
+
+The replay showed that held right takes room 20 task 2 through its right
+branch, then reaches room 18 by way of room 19. Its first room 18 pursuer
+started at X=330 and failed collision at X=329. Offscreen scripted entrants
+now ignore border collision until they reach the screen. The focused replay
+passes another 120 frames in room 18 without movement or script failures.
+
+Live shadPS4 loaded the recovery save and reached room 20 task 2 PC 26, so
+the right branch did trigger. The screenshot then showed `Scene paused - not
+gameplay` with two waiting tasks and zero stopped tasks. A leftover A-key
+debug binding had toggled `runScene` off. That binding was removed and WASD
+was added as regular directional input. Direction events are now retained
+while dialogue is displayed, since the room 20 script reads input during
+that dialogue. The screen prompts for right during the active escape check.
+
+Focused recovery replay, the full save/cinematic audit (74 commands and
+2,564 frames), VM audit, and isolated PS4 build pass. The rebuilt package
+SHA-256 is `3257efd301ab7336b3e0972faf9e59e3dd5bdf60a5eadbd8d9a2860add97d190`.
+The rebuilt executable loaded the recovery save in shadPS4. A complete
+live playthrough beyond room 18 remains open.

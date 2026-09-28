@@ -417,7 +417,10 @@ Common::Error SotcEngine::run() {
    } else { shownDialogue.clear(); dialoguePage=0; }
    font->drawString(&surface, title, 2, 201, 316, 7);
    font->drawString(&surface, actorTitle, 2, 214, 316, 7);
-   font->drawString(&surface, showStartup ? (mapActive() ? "D-pad: move pencil  Cross / click: mark" : startupMachine.waitingForInput() ? "Click / Cross: continue" : startupScene.cinematicActive() ? "Cross: skip  Options: menu" : !startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "F8: start scene  L1/R1: figure", 2, 227, 316, 7);
+   const ScriptTask *escapeTask=startupMachine.count()>2 ? startupMachine.task(2) : nullptr;
+   bool escapePrompt=startupScene.bank()==2 && startupScene.room()==20 && escapeTask &&
+    escapeTask->pc<59 && escapeTask->result!=kDisabled;
+   font->drawString(&surface, showStartup ? (mapActive() ? "D-pad: move pencil  Cross / click: mark" : escapePrompt ? "Hold RIGHT (D-pad / arrow / D) to flee" : startupMachine.waitingForInput() ? "Click / Cross: continue" : startupScene.cinematicActive() ? "Cross: skip  Options: menu" : !startupScene.dialogueText().empty() ? "Cross / click: next dialogue page" : "Click / Cross: walk  D-pad: steer") : "F8: start scene  L1/R1: figure", 2, 227, 316, 7);
    if (mainMenu) {
     surface.fillRect(Common::Rect(320,240),0);
     if (!menuBackground.empty()) memcpy(surface.getBasePtr(0,0),menuBackground.data(),64000);
@@ -560,7 +563,7 @@ Common::Error SotcEngine::run() {
     bool up=event.type==Common::EVENT_KEYUP || event.type==Common::EVENT_JOYBUTTON_UP;
     unsigned bit=0;
     if(event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) {
-     switch(event.kbd.keycode){case Common::KEYCODE_UP:bit=1;break;case Common::KEYCODE_DOWN:bit=2;break;case Common::KEYCODE_LEFT:bit=4;break;case Common::KEYCODE_RIGHT:bit=8;break;default:break;}
+     switch(event.kbd.keycode){case Common::KEYCODE_UP:case Common::KEYCODE_w:bit=1;break;case Common::KEYCODE_DOWN:case Common::KEYCODE_s:bit=2;break;case Common::KEYCODE_LEFT:case Common::KEYCODE_a:bit=4;break;case Common::KEYCODE_RIGHT:case Common::KEYCODE_d:bit=8;break;default:break;}
     } else if(down || up) {
      switch(event.joystick.button){case Common::JOYSTICK_BUTTON_DPAD_UP:bit=1;break;case Common::JOYSTICK_BUTTON_DPAD_DOWN:bit=2;break;case Common::JOYSTICK_BUTTON_DPAD_LEFT:bit=4;break;case Common::JOYSTICK_BUTTON_DPAD_RIGHT:bit=8;break;default:break;}
     }
@@ -823,18 +826,15 @@ Common::Error SotcEngine::run() {
     if (startupAvailable) { if (!startupScene.scriptWalking()) { startupScene.cancelRoute(); startupScene.walk(0,startupMachine); } heldDirection=0; showStartup = !showStartup; pal = 0; redraw = true; }
     continue;
    }
-   if (showStartup && event.type == Common::EVENT_KEYDOWN && event.kbd.keycode == Common::KEYCODE_a) {
-    runScene = !runScene; nextSceneFrame=_system->getMillis()+100; redraw=true; continue;
-   }
    if (showStartup) {
     unsigned direction=0; bool pressed=false, released=false;
     if (event.type==Common::EVENT_KEYDOWN || event.type==Common::EVENT_KEYUP) {
      pressed=event.type==Common::EVENT_KEYDOWN; released=!pressed;
      switch (event.kbd.keycode) {
-     case Common::KEYCODE_UP: direction=1; break;
-     case Common::KEYCODE_RIGHT: direction=2; break;
-     case Common::KEYCODE_DOWN: direction=3; break;
-     case Common::KEYCODE_LEFT: direction=4; break;
+     case Common::KEYCODE_UP: case Common::KEYCODE_w: direction=1; break;
+     case Common::KEYCODE_RIGHT: case Common::KEYCODE_d: direction=2; break;
+     case Common::KEYCODE_DOWN: case Common::KEYCODE_s: direction=3; break;
+     case Common::KEYCODE_LEFT: case Common::KEYCODE_a: direction=4; break;
      default: break;
      }
     } else if (event.type==Common::EVENT_JOYBUTTON_DOWN || event.type==Common::EVENT_JOYBUTTON_UP) {
@@ -849,10 +849,12 @@ Common::Error SotcEngine::run() {
      }
     }
     if (direction && (pressed || released)) {
-     if (sceneFault || !startupScene.dialogueText().empty()) continue;
+     if (sceneFault) continue;
      if (released && heldDirection!=direction) continue;
      heldDirection=pressed ? direction : 0;
-     if (startupScene.scriptWalking()) { redraw=true; continue; }
+     // Scripted escape checks still read direction while a line or route is
+     // active. Only physical walking waits for those scene controls to clear.
+     if (startupScene.scriptWalking() || !startupScene.dialogueText().empty()) { redraw=true; continue; }
      startupScene.cancelRoute();
      if (!startupScene.walk(pressed ? direction : 0,startupMachine)) { runScene=false; sceneFault=true; }
      else if (pressed) resumeScene();

@@ -21,6 +21,9 @@ p.add_argument('--resume-save',type=Path,help='Resume a copied save for 300 fram
 p.add_argument('--door-save',type=Path,help='Resume the frozen hall-door save and require its script to advance')
 p.add_argument('--room20-save',type=Path,help='Resume the overlapping portrait dialogue in room 20')
 p.add_argument('--priest-save',type=Path,help='Resume priest escape from the latest room 19 save')
+p.add_argument('--escape-retry-save',type=Path,help='Probe replaying room 20 before its direction check')
+p.add_argument('--retry-latest-save',type=Path,help='Current latest raw save for recovery generation')
+p.add_argument('--retry-output-save',type=Path,help='Write a verified raw recovery save here')
 p.add_argument('--probe-save',type=Path,help='Load a copied pharmacy save and verify resume, movement and exit')
 a=p.parse_args()
 root=Path(__file__).resolve().parents[2]
@@ -83,6 +86,37 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="escape-retry") {
+   assert(scene.bank()==2 && scene.room()==20);
+   m.requestRoom(2,20);assert(scene.serviceRoom(m,status));
+   if(argc>4){
+    std::ifstream latest(argv[3],std::ios::binary);assert(latest);
+    files.files["probe.quick1"]={std::istreambuf_iterator<char>(latest),std::istreambuf_iterator<char>()};
+    auto before=state(m,scene);
+    assert(writeQuickSave(files,"probe",m,scene,saved));
+    assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
+    assert(state(m,scene)==before);
+    std::ofstream out(argv[4],std::ios::binary);assert(out);
+    const auto &bytes=files.files["probe.quick0"];
+    out.write((const char*)bytes.data(),bytes.size());assert(out.good());
+    std::cout<<"Recovery save written: "<<bytes.size()<<" bytes\n";
+   }
+   bool checked=false;unsigned escapeFrames=0;
+   for(unsigned i=0;i<1200;++i){
+    if(i%30==0)scene.finishDialogue();
+    m.setScriptInput(8,false);
+    if(!scene.fading())assert(scene.movePlayer(m));m.tick();
+    if(!scene.serviceRoom(m,status)){std::cerr<<"Retry: "<<status<<" frame="<<i<<std::endl;return 2;}
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+    for(unsigned j=0;j<m.count();++j)assert(m.task(j)->result<kUnknownWait);
+    if(scene.bank()==2 && scene.room()==20 && m.task(2)->pc>=24 && m.task(2)->pc<=30)checked=true;
+    if(scene.bank()==2 && scene.room()==18 && ++escapeFrames>=120)break;
+   }
+   assert(checked && escapeFrames==120 && scene.bank()==2 && scene.room()==18);
+   assert(m.actor(4)->x<320);
+   std::cout<<"Recovery: right branch reached room 18; offscreen pursuer entered without movement failure\n";
+   return 0;
+  }
   if(argc>2 && std::string(argv[2])=="priest") {
    assert(scene.bank()==2 && scene.room()==19);
    bool enteredDeathRoom=false,menuReady=false;
@@ -699,10 +733,13 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- selected=[(a.priest_save,'priest'),(a.room20_save,'room20'),(a.forest_entry_save,'forest-entry'),(a.pharmacy_movement_save,'pharmacy-movement'),(a.room19_save,'room19'),(a.inn_seat_save,'seat'),(a.inn_stuck_save,'stuck'),(a.inn_entry_save,'entry'),(a.inn_save,'inn'),(a.map_save,'map'),(a.bedroom_save,'bedroom'),(a.cobble_save,'cobble'),(a.forest_save,'forest'),(a.door_save,'door'),(a.resume_save,'resume'),(a.probe_save,'probe')]
+ selected=[(a.escape_retry_save,'escape-retry'),(a.priest_save,'priest'),(a.room20_save,'room20'),(a.forest_entry_save,'forest-entry'),(a.pharmacy_movement_save,'pharmacy-movement'),(a.room19_save,'room19'),(a.inn_seat_save,'seat'),(a.inn_stuck_save,'stuck'),(a.inn_entry_save,'entry'),(a.inn_save,'inn'),(a.map_save,'map'),(a.bedroom_save,'bedroom'),(a.cobble_save,'cobble'),(a.forest_save,'forest'),(a.door_save,'door'),(a.resume_save,'resume'),(a.probe_save,'probe')]
  selected=[(path,mode) for path,mode in selected if path]
  if len(selected)>1: p.error('Select only one save probe')
  command=[str(t/'test')]+([str(selected[0][0].resolve()),selected[0][1]] if selected else [])
+ if a.retry_latest_save or a.retry_output_save:
+  if not (a.escape_retry_save and a.retry_latest_save and a.retry_output_save): p.error('Retry output requires escape retry and latest save')
+  command += [str(a.retry_latest_save.resolve()),str(a.retry_output_save.resolve())]
  subprocess.run(command,cwd=a.directory.resolve(),check=True)
 
  if a.cobble_save:

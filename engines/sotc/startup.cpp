@@ -864,8 +864,11 @@ bool StartupScene::moveOthers(ScriptMachine &machine) {
    int x=actor.x,y=actor.y;
    if (a.direction==1) --y; if (a.direction==2) ++x;
    if (a.direction==3) ++y; if (a.direction==4) --x;
-   if (!_collisionBypass[id] && collisionAt(x,y,a.direction,machine,id)) {
-    debug("[sotc-actor-move] blocked actor=%u candidate=%d,%d",id,x,y); return false;
+   // Scripted arrivals may begin outside the 320x200 room. The border is
+   // not terrain for the entrant until his footprint reaches the screen.
+   const bool entering=(actor.x<0 || actor.x>=320 || actor.y<0 || actor.y>=200);
+   if (!_collisionBypass[id] && !entering && collisionAt(x,y,a.direction,machine,id)) {
+    warning("[sotc-actor-move] blocked actor=%u candidate=%d,%d target=%d,%d",id,x,y,_moves[id].x,_moves[id].y); return false;
    }
    actor.x=x; actor.y=y; machine.setActor(id,actor);
    if ((a.direction==2 || a.direction==4) && x==_moves[id].x && y!=_moves[id].y) {

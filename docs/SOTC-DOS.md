@@ -2184,3 +2184,22 @@ the walking sequence against the restored animation. The copied-save
 interior reached by the house script. After rebuilding and restarting shadPS4,
 the user's copied save also resumed through that transition with no stopped
 scripts. Later bed and doctor sequences await live playthrough.
+
+### Shared NPC detours and the doctor visit (2026-09-28)
+
+The next live stop was a movement failure during the doctor visit in bank 1
+room 2. Task 10 requested actor 1 at (40,159), but the horizontal-first walk
+hit terrain at (56,120). NPC movement now falls back to the same bounded
+route search used for Parker, with the moving NPC's own footprint and
+collision checks. Cached detours handle multiple turns and are recalculated
+if blocked or invalidated by a scripted reposition. Animation deltas still
+determine travel speed. Unreachable destinations report a movement failure.
+
+Detour points are transient; existing saves keep their original format and
+rebuild NPC paths from the saved position and destination on loading.
+The expanded `--house-stuck-save` regression runs the entire doctor visit,
+round-trips a save during the detour, and reaches journal progress 11 after
+the script restores player control. A separate same-axis movement test routes
+an NPC around staggered barriers and checks every footprint against them.
+The full save/cinematic audit, pharmacy overlapping animation/movement, and
+inn NPC departure regressions also pass.

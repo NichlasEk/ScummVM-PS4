@@ -310,6 +310,7 @@ bool StartupScene::snapshot(Snapshot &s,bool reloadResources,unsigned version) {
  s.require(_ready);
  for(unsigned i=0;i<11;++i) {
   s.value(_moves[i].active); s.value(_moves[i].x); s.value(_moves[i].y);
+  if(s.reading()){_moves[i].route.clear();_moves[i].replan=i && _moves[i].active;}
   Animation &a=_animations[i];
   s.value(a.sequence,65535); s.value(a.substep,65535); s.value(a.mode,2);
   s.value(a.gate,255); s.value(a.base,65535); s.value(a.direction,4);
@@ -800,24 +801,29 @@ bool StartupScene::approach(unsigned id,int x,int y,bool &pending) {
  if(!projectApproach(_state.range(0x339e,320),x,y,a.halfWidth,a.footHeight))return false;
  return move(id,x,y,pending);
 }
+bool StartupScene::walkActor(unsigned id,unsigned direction) {
+ unsigned seq=direction+3,slot=_slots[id];
+ if(slot>=20)return false;
+ const Common::Array<byte> &data=_actorData[slot];
+ unsigned count=va2SequenceLength(data.data(),data.size(),seq);SequenceStep first;
+ if(!count || !va2Step(data.data(),data.size(),seq,0,first))return false;
+ Animation &animation=_animations[id];
+ animation.sequence=seq;animation.direction=direction;animation.base=4;animation.mode=0;animation.gate=255;
+ ScriptActor actor=*_machine->actor(id);actor.step=0;actor.steps=count;
+ return _machine->setActor(id,actor);
+}
 bool StartupScene::move(unsigned id,unsigned x,unsigned y,bool &pending) {
  if (!_ready || !_machine || id>=10) return false;
  if (id) {
   ScriptActor a=*_machine->actor(id);
   if (x>510 || y>255) return false;
+  _moves[id].route.clear();_moves[id].replan=false;
   pending=int(x)!=a.x || int(y)!=a.y;
   if (!pending) { _moves[id].active=false; return true; }
   unsigned direction=int(x)>a.x ? 2 : int(x)<a.x ? 4 : int(y)>a.y ? 3 : 1;
-  unsigned seq=direction+3,slot=_slots[id];
-  if (slot>=20) return false;
-  const Common::Array<byte> &data=_actorData[slot];
-  unsigned count=va2SequenceLength(data.data(),data.size(),seq); SequenceStep first;
-  if (!count || !va2Step(data.data(),data.size(),seq,0,first)) return false;
-  Animation &animation=_animations[id];
-  animation.sequence=seq; animation.direction=direction; animation.base=4; animation.mode=0; animation.gate=255;
-  a.step=0; a.steps=count; _machine->setActor(id,a);
+  if(!walkActor(id,direction))return false;
   _moves[id].x=x; _moves[id].y=y; _moves[id].active=true;
-  debug("[sotc-actor-move] actor=%u target=%u,%u sequence=%u",id,x,y,seq);
+  debug("[sotc-actor-move] actor=%u target=%u,%u sequence=%u",id,x,y,direction+3);
   return true;
  }
  unsigned oldMode=_animations[0].mode; _animations[0].mode=0;
@@ -860,6 +866,29 @@ bool StartupScene::moveOthers(ScriptMachine &machine) {
   if (!_moves[id].active) continue;
   if (!_visible[id]) { _moves[id].active=false; continue; }
   ScriptActor actor=*machine.actor(id); Animation &a=_animations[id];
+  ActorMove &movement=_moves[id];
+  if(actor.x==movement.x && actor.y==movement.y){movement.active=false;movement.route.clear();a.base=0;continue;}
+  if(!movement.route.empty()) {
+   unsigned p=movement.route.back();int dx=int(p%320)-actor.x,dy=int(p/320)-actor.y;
+   // Another script may reposition the actor while its movement is pending.
+   if((dx<0 ? -dx : dx)+(dy<0 ? -dy : dy)!=1)movement.replan=true;
+  }
+  if(movement.replan) {
+   movement.replan=false;movement.route.clear();
+   if(!_collisionBypass[id] && actor.x>=0 && actor.x<320 && actor.y>=0 && actor.y<200 &&
+      movement.x>=0 && movement.x<320 && movement.y>=0 && movement.y<200) {
+    Route route;
+    if(!route.find(actor.x,actor.y,movement.x,movement.y,[&](int x,int y,unsigned d){return !collisionAt(x,y,d,machine,id);})) {
+     warning("[sotc-actor-move] no route actor=%u from=%d,%d target=%d,%d",id,actor.x,actor.y,movement.x,movement.y);return false;
+    }
+    for(unsigned n=0;n<route.count;++n)movement.route.push_back(route.points[n]);
+   }
+  }
+  if(!movement.route.empty()) {
+   unsigned p=movement.route.back();
+   unsigned direction=int(p%320)>actor.x ? 2 : int(p%320)<actor.x ? 4 : int(p/320)>actor.y ? 3 : 1;
+   if(direction!=a.direction) {if(!walkActor(id,direction))return false;actor=*machine.actor(id);}
+  }
   // DOS 0x82c4 moves walking actors even when another task selects a
   // mode-2 sequence. Its frame deltas remain the movement source.
   unsigned slot=_slots[id]; if (slot>=20) return false;
@@ -872,17 +901,31 @@ bool StartupScene::moveOthers(ScriptMachine &machine) {
   unsigned budget=unsigned(delta<0 ? -delta : delta);
   while (budget-- && _moves[id].active) {
    int x=actor.x,y=actor.y;
+   const bool routed=!movement.route.empty();
+   if(routed) {
+    unsigned p=movement.route.back();
+    unsigned direction=int(p%320)>x ? 2 : int(p%320)<x ? 4 : int(p/320)>y ? 3 : 1;
+    if(direction!=a.direction)break;
+   }
    if (a.direction==1) --y; if (a.direction==2) ++x;
    if (a.direction==3) ++y; if (a.direction==4) --x;
    // Scripted arrivals may begin outside the 320x200 room. The border is
    // not terrain for the entrant until his footprint reaches the screen.
    const bool entering=(actor.x<0 || actor.x>=320 || actor.y<0 || actor.y>=200);
    if (!_collisionBypass[id] && !entering && collisionAt(x,y,a.direction,machine,id)) {
+    // Use the same bounded search as the player, with this actor's footprint.
+    // Replan if another moving actor obstructs an already chosen detour.
+    if(movement.x>=0 && movement.x<320 && movement.y>=0 && movement.y<200) {
+     movement.replan=true;movement.route.clear();
+     break;
+    }
     warning("[sotc-actor-move] blocked actor=%u candidate=%d,%d target=%d,%d",id,x,y,_moves[id].x,_moves[id].y); return false;
    }
    actor.x=x; actor.y=y; machine.setActor(id,actor);
-   if ((a.direction==2 || a.direction==4) && x==_moves[id].x && y!=_moves[id].y) {
-    // Continue a two-axis scripted destination with its remaining vertical leg.
+   if(routed)movement.route.pop_back();
+   if (!routed && (((a.direction==2 || a.direction==4) && x==_moves[id].x && y!=_moves[id].y) ||
+       ((a.direction==1 || a.direction==3) && y==_moves[id].y && x!=_moves[id].x))) {
+    // Continue a two-axis scripted destination with its remaining leg.
     // Walking still uses the resource's deltas and collision predicates.
     bool pending=false;
     if(!move(id,_moves[id].x,_moves[id].y,pending)) return false;

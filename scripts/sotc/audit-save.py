@@ -69,6 +69,7 @@ class SaveFileManager {public:std::map<String,Array<byte>> files;bool fail=false
 ''')
  (t/'test.cpp').write_text(r'''
 #include "sotc/save.h"
+#include "sotc/collision.h"
 #include <cassert>
 #include <iostream>
 #include <fstream>
@@ -97,6 +98,40 @@ int main(int argc,char **argv) {
    }
    assert(scene.bank()==1 && scene.room()==2);
    std::cout<<"Copied house save reached bank 1 room 2\n";
+   bool restoredDetour=false;
+   for(unsigned i=0;i<4000 && m.journalProgress()!=11;++i){
+    if(i%30==0)scene.finishDialogue();
+    assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+    if(!restoredDetour && m.task(10)->pc==34 && m.actor(1)->y>120){
+     auto before=state(m,scene);
+     assert(writeQuickSave(files,"doctor",m,scene,saved));
+     assert(readQuickSave(files,"doctor",m,scene,saved,pixels,status));
+     assert(state(m,scene)==before);restoredDetour=true;
+    }
+   }
+   assert(restoredDetour && m.journalProgress()==11);
+   std::cout<<"Doctor visit completed; journal progress 11 and player control restored\n";
+   // Generic detour: staggered barriers require several turns even though
+   // the requested destination lies on the same horizontal axis.
+   byte ground[]={0,0,159,0};assert(scene.terrain(Cc4View(ground,sizeof(ground))));
+   for(unsigned id=2;id<10;++id)assert(scene.hide(id));
+   assert(scene.bypass(0));
+   ScriptActor actor=*m.actor(1);assert(scene.reset(1,actor));
+   assert(scene.typedResource(1,0,1));actor.x=100;actor.y=175;assert(m.setActor(1,actor));
+   unsigned first[]={130,140,140,183},second[]={165,160,175,199};
+   assert(scene.obstacle(first)&&scene.obstacle(second));
+   bool pending=false,below=false,above=false;
+   assert(scene.move(1,200,175,pending)&&pending);
+   for(unsigned i=0;i<1000 && pending;++i){
+    assert(scene.movePlayer(m));assert(scene.advance(m)==0);
+    assert(scene.movementPending(1,pending));
+    const auto &a=*m.actor(1);below|=a.y>185;above|=a.y<160;
+    assert(!intersects(footprint(a.x,a.y,a.halfWidth,a.footHeight),{130,140,140,183}));
+    assert(!intersects(footprint(a.x,a.y,a.halfWidth,a.footHeight),{165,160,175,199}));
+   }
+   assert(!pending && below && above && m.actor(1)->x==200 && m.actor(1)->y==175);
+   std::cout<<"NPC routed around staggered barriers without crossing their footprints\n";
    return 0;
   }
   if(argc>2 && std::string(argv[2])=="forest-exit") {

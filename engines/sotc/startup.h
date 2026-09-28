@@ -10,7 +10,13 @@ namespace Sotc {
 class ScriptMachine;
 
 class StartupScene : public ScriptAnimation {
- struct ActorMove { bool active=false; int x=0,y=0; } _moves[11];
+ struct ActorMove {
+  bool active=false; int x=0,y=0;
+  // Detours are transient; saved destinations rebuild them after loading.
+  bool replan=false;
+  Common::Array<unsigned> route;
+ } _moves[11];
+ bool walkActor(unsigned id,unsigned direction);
  bool moveOthers(ScriptMachine &machine);
  Common::Array<int> _lightningRequests,_lightningLines;
  Cutscene _cinematic;

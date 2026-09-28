@@ -2126,5 +2126,6 @@ that dialogue. The screen prompts for right during the active escape check.
 Focused recovery replay, the full save/cinematic audit (74 commands and
 2,564 frames), VM audit, and isolated PS4 build pass. The rebuilt package
 SHA-256 is `3257efd301ab7336b3e0972faf9e59e3dd5bdf60a5eadbd8d9a2860add97d190`.
-The rebuilt executable loaded the recovery save in shadPS4. A complete
-live playthrough beyond room 18 remains open.
+The rebuilt executable loaded the recovery save in shadPS4. Its live log
+shows bank 2 rooms 19 and 18 entered in sequence, with no scene pause or
+blocked actor movement. Play beyond room 18 remains open.

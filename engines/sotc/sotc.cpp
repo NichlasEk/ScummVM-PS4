@@ -856,8 +856,10 @@ Common::Error SotcEngine::run() {
      // active. Only physical walking waits for those scene controls to clear.
      if (startupScene.scriptWalking() || !startupScene.dialogueText().empty()) { redraw=true; continue; }
      startupScene.cancelRoute();
-     if (!startupScene.walk(pressed ? direction : 0,startupMachine)) { runScene=false; sceneFault=true; }
-     else if (pressed) resumeScene();
+     if (!startupScene.walk(pressed ? direction : 0,startupMachine)) {
+      debug("[sotc-input] manual walk deferred direction=%u",direction);
+      heldDirection=0;
+     } else if (pressed) resumeScene();
      redraw=true; continue;
     }
    }

@@ -22,6 +22,7 @@ p.add_argument('--door-save',type=Path,help='Resume the frozen hall-door save an
 p.add_argument('--room20-save',type=Path,help='Resume the overlapping portrait dialogue in room 20')
 p.add_argument('--priest-save',type=Path,help='Resume priest escape from the latest room 19 save')
 p.add_argument('--escape-retry-save',type=Path,help='Probe replaying room 20 before its direction check')
+p.add_argument('--forest-pause-save',type=Path,help='Reproduce release during a scripted player pose')
 p.add_argument('--retry-latest-save',type=Path,help='Current latest raw save for recovery generation')
 p.add_argument('--retry-output-save',type=Path,help='Write a verified raw recovery save here')
 p.add_argument('--probe-save',type=Path,help='Load a copied pharmacy save and verify resume, movement and exit')
@@ -86,6 +87,18 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="forest-pause") {
+   assert(scene.bank()==2);
+   ScriptActor player=*m.actor(0);
+   assert(scene.sequence(0,0,player));assert(m.setActor(0,player));
+   assert(scene.walk(0,m)); // Releasing a direction cannot pause the scene.
+   assert(scene.walk(3,m)); // Nor can a new manual direction interrupt the pose.
+   assert(!scene.walk(3,m,true)); // Scripted movement still reports a conflict.
+   assert(scene.movePlayer(m));m.tick();
+   for(unsigned j=0;j<m.count();++j)assert(m.task(j)->result<kUnknownWait);
+   std::cout<<"Scripted player pose ignored manual press/release without stopping VM\n";
+   return 0;
+  }
   if(argc>2 && std::string(argv[2])=="escape-retry") {
    assert(scene.bank()==2 && scene.room()==20);
    m.requestRoom(2,20);assert(scene.serviceRoom(m,status));
@@ -733,7 +746,7 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- selected=[(a.escape_retry_save,'escape-retry'),(a.priest_save,'priest'),(a.room20_save,'room20'),(a.forest_entry_save,'forest-entry'),(a.pharmacy_movement_save,'pharmacy-movement'),(a.room19_save,'room19'),(a.inn_seat_save,'seat'),(a.inn_stuck_save,'stuck'),(a.inn_entry_save,'entry'),(a.inn_save,'inn'),(a.map_save,'map'),(a.bedroom_save,'bedroom'),(a.cobble_save,'cobble'),(a.forest_save,'forest'),(a.door_save,'door'),(a.resume_save,'resume'),(a.probe_save,'probe')]
+ selected=[(a.forest_pause_save,'forest-pause'),(a.escape_retry_save,'escape-retry'),(a.priest_save,'priest'),(a.room20_save,'room20'),(a.forest_entry_save,'forest-entry'),(a.pharmacy_movement_save,'pharmacy-movement'),(a.room19_save,'room19'),(a.inn_seat_save,'seat'),(a.inn_stuck_save,'stuck'),(a.inn_entry_save,'entry'),(a.inn_save,'inn'),(a.map_save,'map'),(a.bedroom_save,'bedroom'),(a.cobble_save,'cobble'),(a.forest_save,'forest'),(a.door_save,'door'),(a.resume_save,'resume'),(a.probe_save,'probe')]
  selected=[(path,mode) for path,mode in selected if path]
  if len(selected)>1: p.error('Select only one save probe')
  command=[str(t/'test')]+([str(selected[0][0].resolve()),selected[0][1]] if selected else [])

@@ -600,7 +600,9 @@ bool StartupScene::walk(unsigned direction, ScriptMachine &machine,bool scripted
  if (!_ready || direction>4) return false;
  const unsigned masks[5]={0,1,8,2,4};
  if (!scripted && direction && (_inputLocks & masks[direction])) return true;
- if (_animations[0].mode==2) return false;
+ // A held manual direction can be released during a scripted pose. The
+ // animation owns actor 0 until it completes, so ignore manual walking here.
+ if (_animations[0].mode==2) return !scripted;
  bool moving=direction!=0;
  if (moving==_walking && (!moving || direction==_walkDirection)) return true;
  unsigned facing=moving ? direction : _walkDirection;

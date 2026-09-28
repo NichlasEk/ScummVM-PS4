@@ -2129,3 +2129,23 @@ SHA-256 is `3257efd301ab7336b3e0972faf9e59e3dd5bdf60a5eadbd8d9a2860add97d190`.
 The rebuilt executable loaded the recovery save in shadPS4. Its live log
 shows bank 2 rooms 19 and 18 entered in sequence, with no scene pause or
 blocked actor movement. Play beyond room 18 remains open.
+
+### Manual key release during the forest animation (2026-09-28)
+
+The live route continued to bank 2 room 17. At tick 383986, task 3 was
+waiting normally on opcode 87 and no task was stopped. Immediately after a
+Down key release (`[sotc-input] type=2 key=274`), `runScene` became false
+without a VM or render error. The manual release called `walk(0)` while
+actor 0 was in script-owned animation mode 2; `walk` returned false and the
+input handler promoted that harmless conflict into a scene fault. The
+latest pre-pause save is backed up unchanged at
+`artifacts/sotc/forest-pause-backup/quick1.gz` (tick 383730).
+
+Manual press/release now returns success without modifying a script-owned
+pose. Scripted movement still reports a conflicting request. The UI input
+handler also logs and ignores any other rejected manual walk request
+instead of stopping simulation. `audit-save.py --forest-pause-save` tests
+both behaviors against the copied user save. The full save/cinematic audit
+and VM audit pass, and the PS4 preview package rebuilds. Package SHA-256:
+`23276e0dbbabc5bd6a166e61d953684eab6172a20136aa558e90f2fa539db5ce`.
+shadPS4 loaded the existing tick 383730 save with the rebuilt executable.

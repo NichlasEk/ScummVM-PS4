@@ -2149,3 +2149,38 @@ both behaviors against the copied user save. The full save/cinematic audit
 and VM audit pass, and the PS4 preview package rebuilds. Package SHA-256:
 `23276e0dbbabc5bd6a166e61d953684eab6172a20136aa558e90f2fa539db5ce`.
 shadPS4 loaded the existing tick 383730 save with the rebuilt executable.
+
+### Offscreen departure from bank 2 room 0 (2026-09-28)
+
+The live route passed the previous forest pause and reached bank 2 room 0.
+At tick 384182, task 2 opcode 36 requested a player destination of
+X=320, Y=190 from X=300, Y=195. The route planner rejects X=320 because
+its visible grid ends at X=319, so task 2 stopped at PC 26. The following
+instructions hide Parker and request room 17; this movement wait only needs
+to reach the visible right edge.
+
+For a scripted player destination beyond the right edge, movement now plans
+to X=319 and chooses the nearest reachable ground point within 16 pixels
+of the authored Y. The copied-save `audit-save.py --forest-exit-save` probe
+recreates the room 0 destination and reaches X=319, Y=194 with no movement
+failure. The full save/cinematic audit (74 commands, 2,564 frames) and PS4
+build still pass. shadPS4 then entered bank 6 room 17.
+
+### Wrong player animation after crossing into bank 6 (2026-09-28)
+
+The live scene showed a large man in front of the house and held room 17
+task 6 at PC 45 indefinitely. A copied save at tick 384240 reproduced the
+stall: Parker remained at (10,186) through 500 simulated frames. The room
+change had loaded A06.PAK entry 0 into his existing A02.PAK entry 0 slot.
+Entry numbers are local to each bank; A06 entry 0 is the large foreground
+animation and has no walking displacement for Parker's active sequence.
+
+Cross-bank changes now retain the active player animation until a script binds
+a replacement. Cached Axx resource identities include their source bank, so
+save restoration and later resource lookup use the correct file. The older
+bank 6 room 17 save is recovered using its recorded previous bank and restarts
+the walking sequence against the restored animation. The copied-save
+`audit-save.py --house-stuck-save` probe now reaches bank 1 room 2, the
+interior reached by the house script. After rebuilding and restarting shadPS4,
+the user's copied save also resumed through that transition with no stopped
+scripts. Later bed and doctor sequences await live playthrough.

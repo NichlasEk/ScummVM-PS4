@@ -63,7 +63,7 @@ bool StartupScene::load(Common::Array<byte> &pixels, Common::String &status, Scr
  }
  for (unsigned i = 0; i < 20; ++i) {
   unsigned slot = 0x3286 + i * 6, type = state.byte(slot);
-  _types[i]=type; _indices[i]=state.byte(slot+1);
+  _types[i]=type; _indices[i]=state.byte(slot+1) | (type==0 ? (bank+1)<<8 : 0);
   // Resource ID/type metadata is portable; the serialized far pointer is not.
   bool occupied = state.word(slot + 2) || state.word(slot + 4);
   if (!occupied) continue;
@@ -253,21 +253,11 @@ bool StartupScene::serviceRoom(ScriptMachine &machine,Common::String &status) {
  next._state.setWord(0x2df6,room()); next._state.setWord(0x2df0,_state.word(0x2df2));
  next._state.setWord(0x2df2,destinationBank);
  if(destinationBank!=bank()) {
-  // Axx indices are local to a bank. Keep only global RES resources; a
-  // cached A00 index must never masquerade as the same index in A01.
+  // Axx indices are local to a bank. Keep the player's current animation
+  // until the destination script explicitly binds another resource.
   unsigned playerSlot=next._slots[0];
   if(playerSlot>=20) {status="Player resource unavailable";cancelFade();return false;}
-  // The death bank contains only MORT.VA2. Its init hides actor 0 before
-  // binding that resource, but control/entrance still consult his old sprite.
-  const bool deathRoom=destinationBank==3 && destination==0;
-  for(unsigned i=0;i<20;++i) if(next._types[i]==0 && (!deathRoom || i!=playerSlot)) next._actorData[i].clear();
-  if(next._types[playerSlot]==0 && !deathRoom) {
-   Pak actors;
-   if(!actors.open(Common::String::format("A%02u.PAK",destinationBank)) || !actors.load(next._indices[playerSlot],next._actorData[playerSlot])) {
-    warning("[sotc-room] player resource unavailable %u/%u -> %u/%u slot=%u index=%u",bank(),room(),destinationBank,destination,playerSlot,next._indices[playerSlot]);
-    status="Player bank resource unavailable";cancelFade();return false;
-   }
-  }
+  for(unsigned i=0;i<20;++i) if(next._types[i]==0 && i!=playerSlot) next._actorData[i].clear();
  }
  next._state.setWord(0x2df8,destination); next._state.setWord(0x2e02,candidate.count());
  next._state.setWord(0x3542,0); next._state.setWord(0x2dfc,0);
@@ -348,9 +338,17 @@ bool StartupScene::snapshot(Snapshot &s,bool reloadResources,unsigned version) {
    if(!occupied) continue;
    Pak pak;
    if(_types[i]==0) {
-    const unsigned sourceBank=_state.word(0x2df2)==3 && room()==0 && i==_slots[0]
-     ? _state.word(0x2df0) : _state.word(0x2df2);
-    if(!pak.open(Common::String::format("A%02u.PAK",sourceBank)) || !pak.load(_indices[i],_actorData[i])) return false;
+    unsigned sourceBank=(_indices[i]>>8) ? (_indices[i]>>8)-1 : _state.word(0x2df2);
+    // Older saves did not record an Axx resource's source bank. Recover the
+    // authored player sprite in the two known cross-bank scripted arrivals.
+    if(!(_indices[i]>>8) && i==_slots[0] &&
+       ((_state.word(0x2df2)==3 && room()==0) ||
+        (_state.word(0x2df2)==6 && room()==17 && _state.word(0x2df0)==2))) {
+     sourceBank=_state.word(0x2df0);
+     if(_state.word(0x2df2)==6) _walking=false;
+    }
+    if(sourceBank>9 || !pak.open(Common::String::format("A%02u.PAK",sourceBank)) || !pak.load(_indices[i]&255,_actorData[i])) return false;
+    _indices[i]=(_indices[i]&255)|((sourceBank+1)<<8);
    } else if(_types[i]==1) {
     if(!pak.open("RES.PAK") || !pak.load(2,_actorData[i])) return false;
    } else if(_types[i]==2) _actorData[i]=_scenery;
@@ -831,7 +829,17 @@ bool StartupScene::move(unsigned id,unsigned x,unsigned y,bool &pending) {
   _moves[0].active=true;_moves[0].x=x;_moves[0].y=y;_scriptRoute=true;
   pending=true;return true;
  }
- if (!destination(x,y,*_machine,true)) { warning("[sotc-move] actor=0 from=%d,%d target=%u,%u",_machine->actor(0)->x,_machine->actor(0)->y,x,y); _animations[0].mode=oldMode; return false; }
+ // The bounded path planner ends at X=319. Some scripts ask for X=320 and
+ // switch rooms immediately after this movement wait; reaching the visible
+ // border completes that authored departure.
+ bool routed=false;
+ if(x>=320 && y<200) {
+  // The last column's ground can lie a few pixels below the authored
+  // offscreen coordinate. Choose the nearest reachable border footprint.
+  for(unsigned yy=y;yy<200 && yy<=y+16 && !routed;++yy)routed=destination(319,yy,*_machine,true);
+  for(int yy=int(y)-1;yy>=0 && yy>=int(y)-16 && !routed;--yy)routed=destination(319,yy,*_machine,true);
+ } else routed=destination(x,y,*_machine,true);
+ if (!routed) { warning("[sotc-move] actor=0 from=%d,%d target=%u,%u",_machine->actor(0)->x,_machine->actor(0)->y,x,y); _animations[0].mode=oldMode; return false; }
  pending=_following; return true;
 }
 bool StartupScene::movementPending(unsigned id,bool &pending) {
@@ -992,8 +1000,9 @@ bool StartupScene::reset(unsigned id, ScriptActor &actor) {
 bool StartupScene::resource(unsigned id,unsigned index) {return typedResource(id,index,0);}
 bool StartupScene::typedResource(unsigned id,unsigned index,unsigned type) {
  if (!_ready || id>=11) return false;
+ unsigned identity=index | (type==0 ? (bank()+1)<<8 : 0);
  for (unsigned slot=0;slot<20;++slot) {
-  if (!_actorData[slot].empty() && _types[slot]==type && _indices[slot]==index) {
+  if (!_actorData[slot].empty() && _types[slot]==type && _indices[slot]==identity) {
    _slots[id]=slot; return true;
   }
  }
@@ -1004,7 +1013,7 @@ bool StartupScene::typedResource(unsigned id,unsigned index,unsigned type) {
   if (used) continue;
   Pak actors; Common::Array<byte> data;
   if (!actors.open(type==1 ? Common::String("RES.PAK") : Common::String::format("A%02u.PAK",_state.word(0x2df2))) || !actors.load(type==1 ? 2 : index,data)) return false;
-  _actorData[slot]=data; _types[slot]=type; _indices[slot]=index; _slots[id]=slot;
+  _actorData[slot]=data; _types[slot]=type; _indices[slot]=identity; _slots[id]=slot;
   return true;
  }
  return false;

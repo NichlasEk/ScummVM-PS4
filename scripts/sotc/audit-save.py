@@ -23,6 +23,8 @@ p.add_argument('--room20-save',type=Path,help='Resume the overlapping portrait d
 p.add_argument('--priest-save',type=Path,help='Resume priest escape from the latest room 19 save')
 p.add_argument('--escape-retry-save',type=Path,help='Probe replaying room 20 before its direction check')
 p.add_argument('--forest-pause-save',type=Path,help='Reproduce release during a scripted player pose')
+p.add_argument('--forest-exit-save',type=Path,help='Probe the authored X=320 forest departure')
+p.add_argument('--house-stuck-save',type=Path,help='Probe the scripted return to the house from a copied save')
 p.add_argument('--retry-latest-save',type=Path,help='Current latest raw save for recovery generation')
 p.add_argument('--retry-output-save',type=Path,help='Write a verified raw recovery save here')
 p.add_argument('--probe-save',type=Path,help='Load a copied pharmacy save and verify resume, movement and exit')
@@ -87,6 +89,30 @@ int main(int argc,char **argv) {
   files.files["probe.quick0"]={std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
   assert(readQuickSave(files,"probe",m,scene,saved,pixels,status));
   std::cout<<"Copied save tick="<<saved.ticks<<" bank="<<scene.bank()<<" room="<<scene.room()<<" running="<<saved.running<<" fault="<<saved.fault<<std::endl;
+  if(argc>2 && std::string(argv[2])=="house-stuck") {
+   assert(scene.bank()==6 && scene.room()==17);
+   for(unsigned i=0;i<500 && scene.bank()==6;++i){
+    assert(scene.movePlayer(m));m.tick();assert(scene.serviceRoom(m,status));
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+   }
+   assert(scene.bank()==1 && scene.room()==2);
+   std::cout<<"Copied house save reached bank 1 room 2\n";
+   return 0;
+  }
+  if(argc>2 && std::string(argv[2])=="forest-exit") {
+   assert(scene.bank()==2);
+   m.requestRoom(2,0);assert(scene.serviceRoom(m,status));
+   ScriptActor player=*m.actor(0);player.x=300;player.y=195;assert(m.setActor(0,player));
+   bool pending=false;
+   assert(scene.move(0,320,190,pending) && pending);
+   for(unsigned i=0;i<200 && pending;++i){
+    assert(scene.movePlayer(m));assert(scene.movementPending(0,pending));
+    assert(scene.render(pixels,status,m));assert(scene.advance(m)==0);
+   }
+   assert(!pending && m.actor(0)->x==319 && m.actor(0)->y>=190 && m.actor(0)->y<=199);
+   std::cout<<"Scripted X=320 departure reached the right screen edge at y="<<m.actor(0)->y<<"\n";
+   return 0;
+  }
   if(argc>2 && std::string(argv[2])=="forest-pause") {
    assert(scene.bank()==2);
    ScriptActor player=*m.actor(0);
@@ -746,7 +772,7 @@ int main(int argc,char **argv) {
 }
 ''')
  subprocess.run(['c++','-std=c++11','-Wall','-Wextra','-Wno-misleading-indentation','-g','-fsanitize=address,undefined','-I',str(t),'-I',str(root/'engines'),str(t/'test.cpp'),*[str(root/'engines/sotc'/f) for f in ['startup.cpp','save.cpp','pak.cpp']],'-o',str(t/'test')],check=True)
- selected=[(a.forest_pause_save,'forest-pause'),(a.escape_retry_save,'escape-retry'),(a.priest_save,'priest'),(a.room20_save,'room20'),(a.forest_entry_save,'forest-entry'),(a.pharmacy_movement_save,'pharmacy-movement'),(a.room19_save,'room19'),(a.inn_seat_save,'seat'),(a.inn_stuck_save,'stuck'),(a.inn_entry_save,'entry'),(a.inn_save,'inn'),(a.map_save,'map'),(a.bedroom_save,'bedroom'),(a.cobble_save,'cobble'),(a.forest_save,'forest'),(a.door_save,'door'),(a.resume_save,'resume'),(a.probe_save,'probe')]
+ selected=[(a.house_stuck_save,'house-stuck'),(a.forest_exit_save,'forest-exit'),(a.forest_pause_save,'forest-pause'),(a.escape_retry_save,'escape-retry'),(a.priest_save,'priest'),(a.room20_save,'room20'),(a.forest_entry_save,'forest-entry'),(a.pharmacy_movement_save,'pharmacy-movement'),(a.room19_save,'room19'),(a.inn_seat_save,'seat'),(a.inn_stuck_save,'stuck'),(a.inn_entry_save,'entry'),(a.inn_save,'inn'),(a.map_save,'map'),(a.bedroom_save,'bedroom'),(a.cobble_save,'cobble'),(a.forest_save,'forest'),(a.door_save,'door'),(a.resume_save,'resume'),(a.probe_save,'probe')]
  selected=[(path,mode) for path,mode in selected if path]
  if len(selected)>1: p.error('Select only one save probe')
  command=[str(t/'test')]+([str(selected[0][0].resolve()),selected[0][1]] if selected else [])

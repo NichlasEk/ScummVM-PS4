@@ -16,6 +16,8 @@
 #include "SDL_events.h"
 #include "SDL_log.h"
 #include <orbis/UserService.h>
+#include <orbis/libkernel.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 static PS4GLSDLOwner owner;
@@ -39,6 +41,12 @@ static int video_init(_THIS) {
   if(!available() || !on_thread()) return SDL_SetError("Vulkan owner missing or wrong thread");
   SDL_DisplayMode mode={.format=SDL_PIXELFORMAT_RGBA8888,.w=owner.width,.h=owner.height,.refresh_rate=60};
   if(SDL_AddBasicVideoDisplay(&mode)<0) return -1;
+  int controller_only=sceKernelOpen("/app0/scummvm-controller-only.txt",O_RDONLY,0);
+  if(controller_only>=0) {
+    sceKernelClose(controller_only);
+    SDL_Log("PS4 USB mouse disabled by controller-only package");
+    video_active=SDL_TRUE; return 0;
+  }
   int user;
   const uint8_t mouse_open[8]={1}; /* Merge host/USB mice into one pointer. */
   if(sceUserServiceGetInitialUser(&user)>=0 && sceMouseInit()>=0)

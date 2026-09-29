@@ -14,6 +14,17 @@ def runtime_patches(root):
             text = text.replace(old, new)
         modified[name] = text
 
+    edit('backends/graphics3d/openglsdl/openglsdl-graphics3d.h', [
+        ('\tvoid drawOverlay();', '\tvoid drawOverlay();\n\tvoid drawPS4MenuCursor();\n\tOpenGL::TiledSurface *_ps4MenuCursor = nullptr;')])
+    from pathlib import Path
+    cursor = (Path(__file__).resolve().parents[1] / 'compat/ps4gl/scummvm-menu-cursor.inc').read_text()
+    edit('backends/graphics3d/openglsdl/openglsdl-graphics3d.cpp', [
+        ('\t_overlayScreen->draw(_surfaceRenderer);', '\t_overlayScreen->draw(_surfaceRenderer);\n\tdrawPS4MenuCursor();'),
+        ('void OpenGLSdlGraphics3dManager::closeOverlay() {', 'void OpenGLSdlGraphics3dManager::closeOverlay() {\n\tdelete _ps4MenuCursor;\n\t_ps4MenuCursor = nullptr;'),
+        ('\tSDL_ShowCursor(visible ? SDL_ENABLE : SDL_DISABLE);\n\treturn true;',
+         '\tSDL_ShowCursor(SDL_DISABLE);\n\treturn WindowedGraphicsManager::showMouse(visible);'),
+        ('void OpenGLSdlGraphics3dManager::drawOverlay() {', cursor + '\nvoid OpenGLSdlGraphics3dManager::drawOverlay() {')])
+
     edit('backends/graphics/opengl/texture.cpp', [
         ('\tbind();\n\n\tGL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER', '\t// Preserve the requested filter while context recreation has no texture.\n\tif (!_glTexture)\n\t\treturn;\n\tbind();\n\n\tGL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER')])
     edit('backends/graphics/opengl/opengl-graphics.cpp', [

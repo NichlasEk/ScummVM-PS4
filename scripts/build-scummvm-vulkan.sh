@@ -111,6 +111,10 @@ PY
 "$root/scripts/build-ps4-sdlgl.sh"
 "$root/scripts/build-ps4-glslang.sh"
 native="$root/.tools/opengnm-stack"
+# Do not link a stale ICD after editing the durable native runtime patch.
+mkdir -p "$root/artifacts/scummvm-vulkan"
+git -C "$native/vulkan-ps4" apply --reverse --check "$root/patches/opengnm/vulkan-runtime.patch"
+make -C "$native/vulkan-ps4" -f Makefile.orbis -j"${BUILD_JOBS:-12}" > "$root/artifacts/scummvm-vulkan/native-build.log" 2>&1
 for archive in "$native/vulkan-ps4/libvulkan_ps4.a" "$native/opengnm/libopengnm.a" "$native/opengnm-psbc/libpsbc.orbis.a"; do
  [[ -f "$archive" ]] || { echo "Build native Vulkan dependencies first: scripts/build-vulkan-probe.sh --sdlgl" >&2; exit 1; }
 done
@@ -156,5 +160,5 @@ echo "Experimental ScummVM ELF: $SCUMMVM_BUILD_DIR/scummvm"
 
 export SCUMMVM_STAGE_DIR="$root/build/scummvm-vulkan-pkg"
 export SCUMMVM_TITLE_ID=SCVM00010 SCUMMVM_CONTENT_ID=IV0000-SCVM00010_00-SCUMMVMPVULKAN01
-export SCUMMVM_TITLE='ScummVM Vulkan Experimental' SCUMMVM_PACKAGE_NAME=ScummVM-PS4-Vulkan-Experimental.pkg
+export SCUMMVM_TITLE="${SCUMMVM_TITLE:-ScummVM Vulkan Experimental}" SCUMMVM_PACKAGE_NAME=ScummVM-PS4-Vulkan-Experimental.pkg
 "$root/scripts/package-scummvm.sh" > "$root/artifacts/scummvm-vulkan/package.log" 2>&1

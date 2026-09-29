@@ -11,6 +11,13 @@ content_id=${SCUMMVM_CONTENT_ID:-IV0000-SCVM00002_00-SCUMMVMPS4000001}
 title_id=${SCUMMVM_TITLE_ID:-SCVM00002}
 app_title=${SCUMMVM_TITLE:-"ScummVM PS4"}
 output_name=${SCUMMVM_PACKAGE_NAME:-ScummVM-PS4-2.9.1.pkg}
+app_version=${SCUMMVM_APP_VERSION:-1.17}
+controller_only=${SCUMMVM_CONTROLLER_ONLY:-0}
+[[ "$controller_only" == 0 || "$controller_only" == 1 ]] || exit 2
+[[ "$app_version" =~ ^[0-9]+\.[0-9]+$ ]] || exit 2
+if [[ "$controller_only" == 1 && ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} != 1 ]]; then
+ echo 'Controller-only marker is supported by the experimental Vulkan backend only' >&2; exit 2
+fi
 dott_source=
 if [[ ${1:-} == --with-dott && $# == 2 ]]; then
     dott_source=$(CDPATH= cd -- "$2" && pwd)
@@ -80,8 +87,8 @@ if [[ -e "$sfo" ]]; then mv "$sfo" "$sfo.previous"; fi
 for pair in APP_TYPE:1 ATTRIBUTE:0 DOWNLOAD_DATA_SIZE:0 SYSTEM_VER:0; do
  "${pkgtool}" sfo_setentry "$sfo" "${pair%%:*}" --type Integer --maxsize 4 --value "${pair#*:}"
 done
-"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value 1.17
-"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value 1.17
+"$pkgtool" sfo_setentry "$sfo" APP_VER --type Utf8 --maxsize 8 --value "$app_version"
+"$pkgtool" sfo_setentry "$sfo" VERSION --type Utf8 --maxsize 8 --value "$app_version"
 "$pkgtool" sfo_setentry "$sfo" CATEGORY --type Utf8 --maxsize 4 --value gd
 "$pkgtool" sfo_setentry "$sfo" CONTENT_ID --type Utf8 --maxsize 48 --value "$content_id"
 "$pkgtool" sfo_setentry "$sfo" TITLE_ID --type Utf8 --maxsize 12 --value "$title_id"
@@ -94,6 +101,24 @@ package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right
     data/flac-COPYING.Xiph data/libvpx-LICENSE data/libvpx-PATENTS data/liba52-COPYING data/mt32emu-COPYING.LGPL
     data/lua-COPYRIGHT data/vkeybd_default.zip data/scummremastered.zip data/gui-icons.dat games/README.txt)
 if [[ ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} == 1 ]]; then
+ if [[ ${SCUMMVM_OPERATION_SUBMIT:-0} == 1 ]]; then
+  printf '1\n' > "$stage/scummvm-operation-submit.txt"
+  package_files+=(scummvm-operation-submit.txt)
+ else
+  rm -f "$stage/scummvm-operation-submit.txt"
+ fi
+ if [[ ${SCUMMVM_SERIAL_SUBMIT:-0} == 1 ]]; then
+  printf '1\n' > "$stage/scummvm-serial-submit.txt"
+  package_files+=(scummvm-serial-submit.txt)
+ else
+  rm -f "$stage/scummvm-serial-submit.txt"
+ fi
+ if [[ "$controller_only" == 1 ]]; then
+  printf '1\n' > "$stage/scummvm-controller-only.txt"
+  package_files+=(scummvm-controller-only.txt)
+ else
+  rm -f "$stage/scummvm-controller-only.txt"
+ fi
  for spec in 'opengnm/LICENSE:OpenGNM-LICENSE' 'opengnm-psbc/LICENSE:PSBC-LICENSE' 'vulkan-ps4/LICENSE:Vulkan-PS4-LICENSE'; do
   cp "$root/.tools/opengnm-stack/${spec%%:*}" "$stage/data/${spec#*:}"
   package_files+=("data/${spec#*:}")

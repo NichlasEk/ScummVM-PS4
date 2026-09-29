@@ -1,3 +1,4 @@
+static int glfbo_fail(int line) { fprintf(report,"FAIL GL framebuffer assertion line %d\n",line); fflush(report); return 2; }
 #ifdef SDLGL_PROBE
 static GLuint capture_texture,capture_fbo;
 static int prepare_capture_probe(void) {
@@ -9,22 +10,22 @@ static int prepare_capture_probe(void) {
   glEnable(GL_SCISSOR_TEST); glScissor(0,0,8,3); glClearColor(1,0,0,1); glClear(GL_COLOR_BUFFER_BIT); glDisable(GL_SCISSOR_TEST);
   unsigned char untouched[4]={3,4,5,6};
   glReadPixels(0,0,1,1,GL_RGBA,GL_UNSIGNED_BYTE,untouched);
-  if(glGetError()!=GL_INVALID_OPERATION || untouched[0]!=3) return 2;
+  if(glGetError()!=GL_INVALID_OPERATION || untouched[0]!=3) return glfbo_fail(__LINE__);
   glBindFramebuffer(GL_FRAMEBUFFER,0); return 0;
 }
 static int check_capture_probe(void) {
   glBindFramebuffer(GL_FRAMEBUFFER,capture_fbo); glPixelStorei(GL_PACK_ALIGNMENT,8);
   unsigned char pixels[64]; memset(pixels,0xa5,sizeof(pixels));
   glReadPixels(2,1,3,4,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
-  if(glGetError()) return 2;
+  if(glGetError()) return glfbo_fail(__LINE__);
   for(unsigned y=0;y<4;++y) for(unsigned x=0;x<16;++x) {
     unsigned char expected=x>=12 ? 0xa5 : x%4==0 || x%4==3 || (x%4==2 && y>=2) ? 255 : 0;
-    if(pixels[y*16+x]!=expected) { fprintf(report,"FAIL GL readback y=%u byte=%u got=%u expected=%u\n",y,x,pixels[y*16+x],expected); return 2; }
+    if(pixels[y*16+x]!=expected) { fprintf(report,"FAIL GL readback y=%u byte=%u got=%u expected=%u\n",y,x,pixels[y*16+x],expected); return glfbo_fail(__LINE__); }
   }
   glReadPixels(7,7,3,4,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
-  if(glGetError()!=GL_INVALID_VALUE || pixels[0]!=255) return 2;
+  if(glGetError()!=GL_INVALID_VALUE || pixels[0]!=255) return glfbo_fail(__LINE__);
   glReadPixels(0,0,0,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
-  if(glGetError()) return 2;
+  if(glGetError()) return glfbo_fail(__LINE__);
   glPixelStorei(GL_PACK_ALIGNMENT,4); glBindFramebuffer(GL_FRAMEBUFFER,0);
   glDeleteFramebuffers(1,&capture_fbo); glDeleteTextures(1,&capture_texture);
   ps4glReleaseVertexSnapshots(ps4glCurrentContext());
@@ -97,11 +98,11 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   GLuint live_programs[2]={programs[0],programs[1]}, linked_during_frame=0;
   if(frame==0) {
     PS4GLContext *ctx=ps4glCurrentContext();
-    if(!ctx->command) return 2;
+    if(!ctx->command) return glfbo_fail(__LINE__);
     const char *bool_vertex="#version 110\nattribute vec2 a_position; attribute vec4 a_color; attribute vec2 a_texCoords; uniform mat4 u_transform; uniform bool flipY; varying vec4 v_color; varying vec2 v_texCoords; void main(){v_color=a_color;v_texCoords=a_texCoords;vec4 p=u_transform*vec4(a_position,0.,1.);if(!flipY)p.y=-p.y;gl_Position=p;}";
     linked_during_frame=compile_glsl_program(ctx->program_device,ctx->program_pass,bool_vertex,legacy_color);
     glUniform1i(glGetUniformLocation(linked_during_frame,"flipY"),-7);
-    if(!linked_during_frame || glGetError()) return 2;
+    if(!linked_during_frame || glGetError()) return glfbo_fail(__LINE__);
     live_programs[0]=linked_during_frame; programs=live_programs;
     fprintf(report,"PASS SDL fresh shader link during active recording\n");
   }
@@ -120,25 +121,25 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,target_width,target_height,0,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
   glGenFramebuffers(1,&framebuffer); glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
   glClear(GL_COLOR_BUFFER_BIT);
-  if(glGetError()!=GL_INVALID_FRAMEBUFFER_OPERATION) return 2;
+  if(glGetError()!=GL_INVALID_FRAMEBUFFER_OPERATION) return glfbo_fail(__LINE__);
   glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,0);
-  if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return 2;
+  if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return glfbo_fail(__LINE__);
 #ifdef SDLGL_PROBE
   if(frame%2) {
     unsigned before=ps4glCurrentContext()->snapshot_count;
     glDisable(GL_SCISSOR_TEST); glClearColor(0,0,1,1); glClear(GL_COLOR_BUFFER_BIT);
-    if(glGetError() || ps4glCurrentContext()->snapshot_count!=before) return 2;
+    if(glGetError() || ps4glCurrentContext()->snapshot_count!=before) return glfbo_fail(__LINE__);
     fprintf(report,"PASS SDL full target clear skips obsolete upload\n");
   }
 #endif
   glViewport(0,0,target_width,target_height/2); glDisable(GL_BLEND); glDisable(GL_SCISSOR_TEST);
   glUseProgram(programs[0]); GLint color=glGetUniformLocation(programs[0],"color");
-  if(color<0) return 2;
+  if(color<0) return glfbo_fail(__LINE__);
   glUniform4f(color,1,0,0,1); draw_gl_color(programs[0]);
   glUseProgram(programs[1]); draw_gl_surface();
-  if(glGetError()!=GL_INVALID_OPERATION) return 2; /* feedback */
+  if(glGetError()!=GL_INVALID_OPERATION) return glfbo_fail(__LINE__); /* feedback */
   glTexSubImage2D(GL_TEXTURE_2D,0,0,0,1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
-  if(glGetError()!=GL_INVALID_OPERATION) return 2; /* stale CPU shadow */
+  if(glGetError()!=GL_INVALID_OPERATION) return glfbo_fail(__LINE__); /* stale CPU shadow */
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(0,0,320,720); draw_gl_surface();
   glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
   glEnable(GL_SCISSOR_TEST); glScissor(target_width/2,target_height/2,target_width/2,target_height/2); glClearColor(0,1,0,1); glClear(GL_COLOR_BUFFER_BIT);
@@ -153,11 +154,11 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glBindFramebuffer(GL_FRAMEBUFFER,0); glViewport(640,0,640,720);
   glUseProgram(programs[1]); draw_gl_surface();
   glDeleteTextures(1,&texture);
-  if(glGetError() || glIsTexture(texture)) return 2;
+  if(glGetError() || glIsTexture(texture)) return glfbo_fail(__LINE__);
   glBindFramebuffer(GL_FRAMEBUFFER,framebuffer);
-  if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return 2;
+  if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return glfbo_fail(__LINE__);
   glDeleteFramebuffers(1,&framebuffer);
-  if(glGetError()!=GL_NO_ERROR) return 2;
+  if(glGetError()!=GL_NO_ERROR) return glfbo_fail(__LINE__);
   /* Keep a GPU-only result alive across fences and snapshot collection. */
   static GLuint persistent_texture, persistent_framebuffer;
   if(frame==0) {
@@ -168,10 +169,12 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
     glGenFramebuffers(1,&persistent_framebuffer); glBindFramebuffer(GL_FRAMEBUFFER,persistent_framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,persistent_texture,0);
     glViewport(0,0,8,8); glUseProgram(programs[0]);
-    unsigned before=ps4glCurrentContext()->snapshot_count;
+    unsigned uploads_before=ps4glCurrentContext()->texture_snapshot_uploads;
     glUniform4f(color,1,0,1,1); draw_gl_color(programs[0]);
-    /* One vertex and one uniform snapshot; no upload of undefined texels. */
-    if(ps4glCurrentContext()->snapshot_count!=before+2) return 2;
+    /* Vertex-ID shaders need no vertex snapshot; measure the actual property:
+     * drawing into undefined storage must not upload undefined texture pixels. */
+    if(glGetError() || ps4glCurrentContext()->texture_snapshot_uploads!=uploads_before)
+      return glfbo_fail(__LINE__);
     fprintf(report,"PASS GL undefined target skips initialization copy\n");
   } else {
     glBindTexture(GL_TEXTURE_2D,persistent_texture);
@@ -195,12 +198,12 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,offset_texture,0);
   glEnable(GL_SCISSOR_TEST); glScissor(0,0,0,0); glClear(GL_COLOR_BUFFER_BIT); glDisable(GL_SCISSOR_TEST);
   PS4GLContext *offset_ctx=ps4glCurrentContext();
-  if(!offset_ctx->snapshots[offset_ctx->snapshot_count-1].offset) return 2;
+  if(!offset_ctx->snapshots[offset_ctx->snapshot_count-1].offset) return glfbo_fail(__LINE__);
   glBindFramebuffer(GL_FRAMEBUFFER,0); draw_gl_surface();
   glDeleteTextures(1,&offset_texture); glDeleteFramebuffers(1,&offset_fbo);
   fprintf(report,"PASS GL framebuffer import from upload page offset\n");
   if(frame==7) { glDeleteFramebuffers(1,&persistent_framebuffer); glDeleteTextures(1,&persistent_texture); }
-  if(glGetError()!=GL_NO_ERROR) return 2;
+  if(glGetError()!=GL_NO_ERROR) return glfbo_fail(__LINE__);
 #ifdef SDLGL_PROBE
   /* Clear a small default-target rectangle after draws. Surrounding pixels
    * retain their earlier values; fractional colors expose sRGB conversion. */
@@ -213,7 +216,7 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   draw_gl_color(programs[0]);
   glScissor(100,100,40,30); glClearColor(.002f,0,1,1); glClear(GL_COLOR_BUFFER_BIT);
   glDisable(GL_SCISSOR_TEST);
-  if(glGetError()!=GL_NO_ERROR) return 2;
+  if(glGetError()!=GL_NO_ERROR) return glfbo_fail(__LINE__);
   /* Stencil-only geometry must not leak color or depth writes. */
   glUseProgram(programs[0]); glDisable(GL_BLEND); glDisable(GL_SCISSOR_TEST);
   glDepthMask(GL_TRUE); glStencilMask(~0u); glClearDepth(1); glClearStencil(0);
@@ -233,13 +236,13 @@ static int draw_gl_framebuffer(const GLuint *programs, unsigned frame) {
   depth_matrix[14]=.5f; glUniformMatrix4fv(transform,1,GL_FALSE,depth_matrix);
   glUniform4f(glGetUniformLocation(programs[0],"color"),1,1,0,1); draw_gl_color(programs[0]);
   depth_matrix[14]=0; glUniformMatrix4fv(transform,1,GL_FALSE,depth_matrix); glDisable(GL_DEPTH_TEST);
-  if(glGetError()) return 2;
+  if(glGetError()) return glfbo_fail(__LINE__);
   fprintf(report,"PASS depth and stencil draw commands; awaiting asymmetric pixel oracle\n");
   if(linked_during_frame) glDeleteProgram(linked_during_frame);
   fprintf(report,"PASS SDL VideoOut full and partial sRGB attachment clears; struct uniforms and fragment coordinates\n");
-  if(strip_modes!=7) return 2;
+  if(strip_modes!=7) return glfbo_fail(__LINE__);
   fprintf(report,"PASS SDL triangle strips arrays uint16 uint32 and retained indices\n");
-  if(frame==7 && prepare_capture_probe()) return 2;
+  if(frame==7 && prepare_capture_probe()) return glfbo_fail(__LINE__);
 #endif
   fprintf(report,"PASS GL framebuffer targets orientation lifetime and rejected feedback\n");
   return 0;

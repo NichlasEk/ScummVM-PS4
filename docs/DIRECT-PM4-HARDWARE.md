@@ -255,3 +255,9 @@ with `scripts/build-scummvm-vulkan.sh`.
 
 Package SHA-256: `2bb17d613016841290ca36a7655f002e44e8d0bd7b10bde593eb842bbf14cbbc`.
 USB copy was read back and matched this SHA-256; the prior package was retained.
+
+### Physical confirmation, 2026-09-29
+
+The user reports ScummVM Clear 1.24 works on the physical PS4 and played
+Thimbleweed Park. This supersedes the pending hardware status for that
+application/game; other engines and the entire game remain unverified.

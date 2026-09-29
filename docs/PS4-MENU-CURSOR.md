@@ -63,3 +63,7 @@ menu entry and verify the game's own cursor returns without an extra arrow.
 Package validation and all 219 extracted manifest-file checks passed.
 SHA-256: `87a1b574782a49bf3b17a0866b0c9dcd65a6595fe2a07fe14fc6272662da773f`.
 Audit: `artifacts/scummvm-vulkan/cursor-125-package-audit.json`.
+
+## USB delivery 2026-09-29
+
+See [USB delivery checks and console test steps](USB-TEST-2026-09-29.md).

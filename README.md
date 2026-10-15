@@ -17,8 +17,9 @@ PS4 compatibility. See [fixes and test evidence](experiments/scummvm-2026.4.0/RE
 - [x] Grim Fandango: correctly scaled intro and first office scene; user-confirmed
   movement after D-pad mapping and vertex-offset fixes. Offscreen depth/stencil,
   later areas and save/load remain unverified or incomplete.
-- [ ] The Longest Journey: original actor shader fails in the bridge.
-  Adapted shader pairs pass host compile/link/reflection; runtime retest pending.
+- [x] The Longest Journey: menu and opening cabin dialogue render in shadPS4;
+  missing actor parts restored by the unbound-texture fix. Gameplay, save/load
+  and performance validation remain pending.
 
 ## Combined build with the local engines
 

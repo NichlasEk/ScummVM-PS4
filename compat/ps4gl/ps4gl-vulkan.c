@@ -321,9 +321,11 @@ static int upload_uniforms(PS4GLContext *ctx, const PS4GLProgram *p) {
   const PS4GLTexture *sources[PS4GL_MAX_SAMPLERS]={0};
   for(unsigned i=0;i<PS4GL_MAX_SAMPLERS;++i) if(p->sampler_mask&(1u<<i)) {
     sources[i]=(p->cube_sampler_mask&(1u<<i)) ? ps4glCubeAtUnit(ctx,(unsigned)p->sampler_units[i]) : (p->one_dimensional_sampler_mask&(1u<<i)) ? ps4glOneDimensionalAtUnit(ctx,(unsigned)p->sampler_units[i]) : (p->rectangle_sampler_mask&(1u<<i)) ? ps4glRectangleAtUnit(ctx,(unsigned)p->sampler_units[i]) : ps4glTextureAtUnit(ctx,(unsigned)p->sampler_units[i]);
+    if(!sources[i] && !((p->cube_sampler_mask|p->one_dimensional_sampler_mask|p->rectangle_sampler_mask)&(1u<<i)))
+      sources[i]=unbound_texture_2d();
     if((sources[i] && ctx->framebuffer && sources[i]==ps4glFramebufferTextureObject(ctx)) || !sources[i] || !sources[i]->pixels || sources[i]->width<=0 || sources[i]->height<=0 ||
         (sources[i]->min_filter!=GL_NEAREST && sources[i]->min_filter!=GL_LINEAR)) {
-      static unsigned failures; if(failures++<16) fprintf(stderr,"HPL sampler rejected program=%u slot=%u unit=%d tex=%u size=%dx%d filter=%x\n",ctx->program,i,p->sampler_units[i],sources[i]?sources[i]->name:0,sources[i]?sources[i]->width:0,sources[i]?sources[i]->height:0,sources[i]?sources[i]->min_filter:0);
+      static unsigned failures[PS4GL_MAX_PROGRAMS]; if(ctx->program<PS4GL_MAX_PROGRAMS && failures[ctx->program]++<16) fprintf(stderr,"HPL sampler rejected program=%u slot=%u unit=%d tex=%u size=%dx%d filter=%x\n",ctx->program,i,p->sampler_units[i],sources[i]?sources[i]->name:0,sources[i]?sources[i]->width:0,sources[i]?sources[i]->height:0,sources[i]?sources[i]->min_filter:0);
       if(!ctx->error) ctx->error=GL_INVALID_OPERATION;
       return 0;
     }

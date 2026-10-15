@@ -328,3 +328,23 @@ Verified in shadPS4: Up produces key 273 down/up and moves Manny in the office
 (`grim-dpad-mapped.log`, `grim-dpad-before.png`, `grim-dpad-after.png` under
 `artifacts/upstream-2026.4.0`). The test executable includes temporary engine
 input tracing; exported source patches omit that tracing.
+
+### The Longest Journey: missing untextured actor parts
+
+The opening dialogue scene exposed a PS4GL descriptor restriction: the actor
+shader has a texture sampler even when `textured` is false, and the engine binds
+texture zero for solid-color materials. The bridge rejected the entire draw,
+omitting arms, hands and legs. The 2D sampler path now supplies a cached opaque
+black 1x1 descriptor for an unbound texture, allowing the inactive sampling branch
+to retain the material color. Bound incomplete textures and non-2D targets remain
+subject to the existing validation. No skeletal-animation workaround was needed.
+
+The frame-owner/PS4GL ASan and UBSan suite passes, including fallback pixel content,
+100-frame cache retention and teardown. Native build passes. A controlled shadPS4
+start renders complete actors in the opening cabin scene (`tlj-after-fallback.png`
+and `tlj-fallback-probe.log` under `artifacts/upstream-2026.4.0`); the prior log
+`tlj-actor-probe2.log` records rejected program-5 draws with texture zero.
+Temporary direct-start changes were reverted before producing the normal candidate
+(`tlj-fallback-clean-build.log`). The running diagnostic still uses that direct
+start, but the staged eboot uses normal menus. Input, later scenes, save/load and
+physical PS4 behavior remain unverified. Intro playback was slow in this test.

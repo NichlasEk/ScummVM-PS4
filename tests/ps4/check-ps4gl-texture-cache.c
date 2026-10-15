@@ -45,5 +45,15 @@ int main(void) {
   for(unsigned i=0;i<PS4GL_TEXTURE_CACHE_SLOTS;++i) {t=original;cache_retired_texture(&ctx,&t);assert(t.borrowed_snapshot);}
   t=original;cache_retired_texture(&ctx,&t);assert(!t.borrowed_snapshot); // full-cache fallback
   retire_texture_cache(&ctx,1); assert(ctx.texture_cache_bytes==0 && destroyed==3+PS4GL_TEXTURE_CACHE_SLOTS);
+  const PS4GLTexture *fallback=unbound_texture_2d();
+  assert(!fallback->name && fallback->width==1 && fallback->height==1 &&
+         !memcmp(fallback->pixels,"\0\0\0\377",4));
+  t=(PS4GLTextureSnapshot){.sampler=(VkSampler)(uintptr_t)9,.source_revision=1,
+    .allocation_bytes=4096,.min_filter=GL_NEAREST,.mag_filter=GL_NEAREST,
+    .wrap_s=GL_CLAMP_TO_EDGE,.wrap_t=GL_CLAMP_TO_EDGE};
+  cache_retired_texture(&ctx,&t); assert(t.borrowed_snapshot);
+  for(unsigned i=0;i<100;++i) {retire_texture_cache(&ctx,0); assert(ctx.texture_cache_bytes==4096);}
+  assert(texture_snapshot_matches(&ctx.texture_cache[0],fallback));
+  retire_texture_cache(&ctx,1); assert(!ctx.texture_cache_bytes);
   puts("PASS persistent texture cache: retirement ownership, 100-frame reuse, content/sampler invalidation, deleted names, target exclusion, bounds and teardown");
 }

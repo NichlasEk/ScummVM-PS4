@@ -1,0 +1,36 @@
+--- a/engines/pice/interface.cpp
++++ b/engines/pice/interface.cpp
+@@ -52,9 +52,9 @@
+  if(_console) {
+   Common::Array<byte> doubled; doubled.resize(low.size()*4);
+   for(int y=0;y<bounds.height()*2;++y) for(int x=0;x<bounds.width()*2;++x) doubled[y*bounds.width()*2+x]=low[(y/2)*bounds.width()+x/2];
+-  CursorMan.replaceCursor(doubled.data(),bounds.width()*2,bounds.height()*2,CLIP(-bounds.left,0,int(bounds.width())-1)*2,CLIP(-bounds.top,0,int(bounds.height())-1)*2,transparent,false);
++  CursorMan.replaceCursor(doubled.data(),bounds.width()*2,bounds.height()*2,CLIP(-bounds.left,0,int(bounds.width())-1)*2,CLIP(-bounds.top,0,int(bounds.height())-1)*2,transparent);
+  } else {
+- CursorMan.replaceCursor(&low[0],bounds.width(),bounds.height(),CLIP(-bounds.left,0,int(bounds.width())-1),CLIP(-bounds.top,0,int(bounds.height())-1),transparent,false);
++ CursorMan.replaceCursor(&low[0],bounds.width(),bounds.height(),CLIP(-bounds.left,0,int(bounds.width())-1),CLIP(-bounds.top,0,int(bounds.height())-1),transparent);
+  }
+  return true;
+ }
+--- a/engines/pice/input.cpp
++++ b/engines/pice/input.cpp
+@@ -183,7 +183,7 @@
+      if(transparent<256) {
+       for(uint i=0;i<w*h;++i) if(!opaque[i]) pixels[i]=transparent;
+       byte palette[768]; _system->getPaletteManager()->grabPalette(palette,0,256);
+-      CursorMan.replaceCursorPalette(palette,0,256); CursorMan.replaceCursor(pixels,w,h,w/2,h/2,transparent,false);
++      CursorMan.replaceCursorPalette(palette,0,256); CursorMan.replaceCursor(pixels,w,h,w/2,h/2,transparent);
+       _cursorItem=selected; return;
+      }
+     }
+--- a/engines/pice/detection.cpp
++++ b/engines/pice/detection.cpp
+@@ -17,7 +17,7 @@
+  {"pice", "Macintosh English/Swedish CD",
+   AD_ENTRY2s("KSVGA.KRO", "a28f988a822ecca247a59c46dcc99b73", 45719789,
+              "W_KLANG.KRO", "bf5b0447a3530f478b0a100f94066b94", 32919521),
+-  Common::SE_SWE, Common::kPlatformMacintosh, ADGF_UNSTABLE, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
++  Common::SV_SWE, Common::kPlatformMacintosh, ADGF_UNSTABLE, GUIO2(GUIO_NOMIDI, GUIO_NOLAUNCHLOAD)},
+  {"pice", "Windows 95 multilingual CD",
+   AD_ENTRY2s("KSVGA.KRO", "f933283265f8e8816acac67c9d72da85", 45874865,
+              "KSOUNDW.KRO", "bfbfd6fe1f15d4eaa8b7bf71cdd1cf4d", 7160115),

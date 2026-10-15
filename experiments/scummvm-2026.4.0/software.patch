@@ -1,0 +1,1080 @@
+--- a/audio/softsynth/mt32/mmath.h
++++ b/audio/softsynth/mt32/mmath.h
+@@ -18,6 +18,10 @@
+ #ifndef MT32EMU_MMATH_H
+ #define MT32EMU_MMATH_H
+ 
++#ifdef __PS4__
++// OpenOrbis libc++ cmath expects the integer abs declaration first.
++#include <cstdlib>
++#endif
+ #include <cmath>
+ 
+ namespace MT32Emu {
+--- a/audio/softsynth/mt32/srchelper/srctools/src/FIRResampler.cpp
++++ b/audio/softsynth/mt32/srchelper/srctools/src/FIRResampler.cpp
+@@ -14,6 +14,10 @@
+  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#ifdef __PS4__
++// OpenOrbis libc++ cmath expects the integer abs declaration first.
++#include <cstdlib>
++#endif
+ #include <cmath>
+ #include <cstring>
+ 
+--- a/audio/softsynth/mt32/srchelper/srctools/src/ResamplerModel.cpp
++++ b/audio/softsynth/mt32/srchelper/srctools/src/ResamplerModel.cpp
+@@ -14,6 +14,10 @@
+  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#ifdef __PS4__
++// OpenOrbis libc++ cmath expects the integer abs declaration first.
++#include <cstdlib>
++#endif
+ #include <cmath>
+ #include <cstddef>
+ 
+--- a/audio/softsynth/mt32/srchelper/srctools/src/SincResampler.cpp
++++ b/audio/softsynth/mt32/srchelper/srctools/src/SincResampler.cpp
+@@ -14,6 +14,10 @@
+  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
++#ifdef __PS4__
++// OpenOrbis libc++ cmath expects the integer abs declaration first.
++#include <cstdlib>
++#endif
+ #include <cmath>
+ 
+ #ifdef SRCTOOLS_SINC_RESAMPLER_DEBUG_LOG
+--- a/backends/events/sdl/sdl-common-events.cpp
++++ b/backends/events/sdl/sdl-common-events.cpp
+@@ -194,6 +194,16 @@
+ }
+ 
+ int SdlEventSource::mapSDLJoystickButtonToOSystem(Uint8 sdlButton) {
++#ifdef __PS4__
++	// OpenOrbis indexes Options/L3/R3 after unused Share/Guide slots.
++	switch (sdlButton) {
++	case 9: return Common::JOYSTICK_BUTTON_START;
++	case 11: return Common::JOYSTICK_BUTTON_LEFT_STICK;
++	case 12: return Common::JOYSTICK_BUTTON_RIGHT_STICK;
++	case 17: return Common::JOYSTICK_BUTTON_BACK;
++	default: if (sdlButton >= 6) return -1;
++	}
++#endif
+ 	const Common::JoystickButton osystemButtons[] = {
+ 	    Common::JOYSTICK_BUTTON_A,
+ 	    Common::JOYSTICK_BUTTON_B,
+--- a/backends/events/sdl/sdl2-events.cpp
++++ b/backends/events/sdl/sdl2-events.cpp
+@@ -20,6 +20,9 @@
+  */
+ 
+ #include "common/scummsys.h"
++#ifdef __PS4__
++#include <orbis/Pad.h>
++#endif
+ 
+ #if defined(SDL_BACKEND)
+ 
+@@ -661,6 +664,28 @@
+ 		return true;
+ 	}
+ 
++#ifdef __PS4__
++	// This SDL PS4 driver drops stick-neutral events and uses nonstandard axes.
++	// Read axes from the already-open pad so releasing a stick stops the cursor.
++	if (_joystick) {
++		static int16 previous[4] = {0, 0, 0, 0};
++		OrbisPadData pad = {};
++		bool connected = scePadReadState(SDL_JoystickInstanceID(_joystick), &pad) == 0 && pad.connected;
++		const uint8 values[4] = {pad.leftStick.x, pad.leftStick.y, pad.rightStick.x, pad.rightStick.y};
++		for (int axis = 0; axis < 4; ++axis) {
++			int position = connected ? (int(values[axis]) - 128) * 256 : 0;
++			if (position > -4096 && position < 4096)
++				position = 0;
++			if (previous[axis] != position) {
++				previous[axis] = position;
++				event.type = Common::EVENT_JOYAXIS_MOTION;
++				event.joystick.axis = axis;
++				event.joystick.position = position;
++				return true;
++			}
++		}
++	}
++#endif
+ 	SDL_Event ev;
+ 	while (SDL_PollEvent(&ev)) {
+ 		preprocessEvents(&ev);
+@@ -867,9 +892,17 @@
+ 		case SDL_JOYBUTTONUP:
+ 			return handleJoyButtonUp(ev, event);
+ 		case SDL_JOYAXISMOTION:
++#ifdef __PS4__
++			return false; // direct pad axes and mapped D-pad buttons
++#else
+ 			return handleJoyAxisMotion(ev, event);
++#endif
+ 		case SDL_JOYHATMOTION:
++#ifdef __PS4__
++			return false; // direct pad axes and mapped D-pad buttons
++#else
+ 			return handleJoyHatMotion(ev, event);
++#endif
+ 		default:
+ 			break;
+ 		}
+--- a/backends/fs/posix/posix-fs-factory.cpp
++++ b/backends/fs/posix/posix-fs-factory.cpp
+@@ -40,7 +40,10 @@
+ }
+ 
+ AbstractFSNode *POSIXFilesystemFactory::makeCurrentDirectoryFileNode() const {
+-#if defined(__ANDROID__)
++#if defined(__PS4__)
++	// PS4 has no reliable process working directory; never return a null node.
++	return new POSIXFilesystemNode("/app0");
++#elif defined(__ANDROID__)
+ 	// Keep this here if we still want to maintain support for the Android SDL port, since this affects that too
+ 	//
+ 	// For Android it does not make sense to have "." in Search Manager as a current directory file node, so we skip it here
+--- a/backends/fs/posix/posix-fs.cpp
++++ b/backends/fs/posix/posix-fs.cpp
+@@ -34,6 +34,17 @@
+ #include "backends/fs/posix/posix-fs.h"
+ #include "backends/fs/posix/posix-iostream.h"
+ #include "common/algorithm.h"
++#ifdef __PS4__
++#include "backends/fs/posix/ps4-dirent.h"
++static unsigned ps4ListingRejected;
++static int ps4ListingError;
++extern "C" unsigned ps4_listing_rejected(void) { return ps4ListingRejected; }
++extern "C" int ps4_listing_errno(void) { return ps4ListingError; }
++extern "C" void ps4_refresh_usb_mounts(void);
++extern "C" int ps4_usb_has_entries(const char *path);
++#include "common/textconsole.h"
++#include "common/config-manager.h"
++#endif
+ 
+ #include <sys/param.h>
+ #include <sys/stat.h>
+@@ -56,15 +67,41 @@
+ #endif
+ 
+ bool POSIXFilesystemNode::exists() const {
++	#ifdef __PS4__
++	// OpenOrbis/shadPS4 does not provide a usable access() implementation.
++	struct stat st;
++	if (stat(_path.c_str(), &st) != 0)
++		return false;
++	return true;
++#else
+ 	return access(_path.c_str(), F_OK) == 0;
++#endif
+ }
+ 
+ bool POSIXFilesystemNode::isReadable() const {
++	#ifdef __PS4__
++	// OpenOrbis/shadPS4 does not provide a usable access() implementation.
++	struct stat st;
++	if (stat(_path.c_str(), &st) != 0)
++		return false;
++	return (st.st_mode & (S_IRUSR | S_IRGRP | S_IROTH)) != 0;
++#else
+ 	return access(_path.c_str(), R_OK) == 0;
++#endif
+ }
+ 
+ bool POSIXFilesystemNode::isWritable() const {
++	#ifdef __PS4__
++	// OpenOrbis/shadPS4 does not provide a usable access() implementation.
++	struct stat st;
++	if (stat(_path.c_str(), &st) != 0)
++		return false;
++	if (_path == "/app0" || _path.hasPrefix("/app0/"))
++		return false;
++	return (st.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH)) != 0;
++#else
+ 	return access(_path.c_str(), W_OK) == 0;
++#endif
+ }
+ 
+ void POSIXFilesystemNode::setFlags() {
+@@ -168,6 +205,84 @@
+ 	}
+ #endif
+ 
++#ifdef __PS4__
++	// The sandbox root may not be enumerable. Present reachable storage roots
++	// directly, checking them anew so USB hotplug is reflected in the browser.
++	if (_path == "/") {
++		if (ConfMan.get("ps4_usb_sandbox") != "false")
++			ps4_refresh_usb_mounts();
++		if (mode == Common::FSNode::kListFilesOnly)
++			return true;
++		const char *paths[] = {"/data/scummvm/games", "/mnt/usb0", "/mnt/usb1",
++			"/mnt/usb2", "/mnt/usb3", "/mnt/usb4", "/mnt/usb5",
++			"/mnt/usb6", "/mnt/usb7", "/app0/games"};
++		const char *names[] = {"Internal storage - games", "USB 0", "USB 1",
++			"USB 2", "USB 3", "USB 4", "USB 5", "USB 6", "USB 7",
++			"Bundled games"};
++		for (unsigned i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
++			POSIXFilesystemNode *entry = new POSIXFilesystemNode(paths[i]);
++			if (i >= 1 && i <= 8 && !ps4_usb_has_entries(paths[i])) {
++				delete entry;
++				entry = new POSIXFilesystemNode(Common::String::format("/scummvm_usb%u", i - 1));
++			}
++			if (entry->_isValid && entry->_isDirectory &&
++			    (!(i >= 1 && i <= 8) || ps4_usb_has_entries(entry->_path.c_str()))) {
++				entry->_displayName = names[i];
++				myList.push_back(entry);
++			} else {
++				delete entry;
++			}
++		}
++		return true;
++	}
++#endif
++
++#ifdef __PS4__
++	// Bypass libc readdir: its implementation trusts d_reclen without bounds
++	// checks. Validate each kernel record before using its name or advancing.
++	ps4ListingRejected = 0; ps4ListingError = 0;
++	warning("[ps4-fs] listing %s", _path.c_str());
++	int fd = open(_path.c_str(), O_RDONLY | O_DIRECTORY);
++	if (fd < 0) {
++		ps4ListingError = errno;
++		warning("[ps4-fs] open failed: %s errno=%d", _path.c_str(), errno);
++		return false;
++	}
++	byte buffer[4096];
++	bool valid = true;
++	for (;;) {
++		int count = getdents(fd, reinterpret_cast<struct dirent *>(buffer), sizeof(buffer));
++		if (count == 0) break;
++		if (count < 0 || count > int(sizeof(buffer))) {
++			warning("[ps4-fs] getdents failed: %s count=%d errno=%d", _path.c_str(), count, errno);
++			valid = false; break;
++		}
++		for (uint offset = 0; offset < uint(count); ) {
++			uint16 recordSize;
++			uint8 nameSize;
++			if (!ps4DirentRecord(buffer + offset, count - offset, recordSize, nameSize)) {
++				warning("[ps4-fs] invalid directory record: %s offset=%u bytes=%d", _path.c_str(), offset, count);
++				valid = false; break;
++			}
++			Common::String name(reinterpret_cast<const char *>(buffer + offset + 8), nameSize);
++			offset += recordSize;
++			if (name == "." || name == ".." || (!hidden && name[0] == '.')) continue;
++			POSIXFilesystemNode entry(*this);
++			entry._displayName = name;
++			if (entry._path.lastChar() != '/') entry._path += '/';
++			entry._path += name;
++			entry.setFlags();
++			if (!entry._isValid) { ++ps4ListingRejected; ps4ListingError = errno; }
++			if (!entry._isValid || (mode == Common::FSNode::kListFilesOnly && entry._isDirectory) ||
++			    (mode == Common::FSNode::kListDirectoriesOnly && !entry._isDirectory)) continue;
++			myList.push_back(new POSIXFilesystemNode(entry));
++		}
++		if (!valid) break;
++	}
++	close(fd);
++	warning("[ps4-fs] listing finished: %s valid=%d entries=%u", _path.c_str(), valid, myList.size());
++	return valid;
++#else
+ 	DIR *dirp = opendir(_path.c_str());
+ 	struct dirent *dp;
+ 
+@@ -244,9 +359,17 @@
+ 	closedir(dirp);
+ 
+ 	return true;
++#endif
+ }
+ 
+ AbstractFSNode *POSIXFilesystemNode::getParent() const {
++#ifdef __PS4__
++	if (_path == "/data/scummvm/games" || _path == "/app0/games" ||
++	    (_path.hasPrefix("/mnt/usb") && _path.size() == 9) ||
++	    (_path.hasPrefix("/usb") && _path.size() == 5) ||
++	    (_path.hasPrefix("/scummvm_usb") && _path.size() == 13))
++		return makeNode("/");
++#endif
+ 	if (_path == "/")
+ 		return 0;	// The filesystem root has no parent
+ 
+--- /dev/null
++++ b/backends/fs/posix/ps4-dirent.h
+@@ -0,0 +1,21 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#ifndef BACKENDS_FS_POSIX_PS4_DIRENT_H
++#define BACKENDS_FS_POSIX_PS4_DIRENT_H
++#include <stddef.h>
++#include <stdint.h>
++#include <string.h>
++// PS4/FreeBSD getdents records: ino32, reclen16, type8, namlen8, name.
++// Never dereference a record or construct a string before validating bounds.
++static inline bool ps4DirentRecord(const uint8_t *data, size_t available,
++                                  uint16_t &recordSize, uint8_t &nameSize) {
++ recordSize = nameSize = 0;
++ if (!data || available < 9) return false;
++ const uint16_t length = uint16_t(data[4]) | (uint16_t(data[5]) << 8);
++ const uint8_t names = data[7];
++ if (length < 9 || length > available || names == 0 || size_t(names) + 9 > length)
++  return false;
++ if (data[8 + names] != 0 || memchr(data + 8, 0, names) || memchr(data + 8, '/', names))
++  return false;
++ recordSize = length; nameSize = names; return true;
++}
++#endif
+--- /dev/null
++++ b/backends/graphics/surfacesdl/ps4-framebuffer.h
+@@ -0,0 +1,38 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#ifndef BACKENDS_GRAPHICS_PS4_FRAMEBUFFER_H
++#define BACKENDS_GRAPHICS_PS4_FRAMEBUFFER_H
++#include <stdint.h>
++#include <stddef.h>
++#include <string.h>
++// Opaque RGB565 -> native 32-bit framebuffer, nearest-neighbour scaling.
++// Destination rectangle must be contained in the framebuffer. Pitch is bytes.
++static inline bool ps4Scale565(const void *src, int sw, int sh, int sp,
++                               void *dst, int dw, int dh, int dp,
++                               int vx, int vy, int vw, int vh,
++                               const uint32_t *colors) {
++ if (!src || !dst || !colors || sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0 ||
++     sw > 4096 || sh > 4096 || dw > 4096 || dh > 4096 ||
++     sp < sw*2 || dp < dw*4 || vx < 0 || vy < 0 || vw <= 0 || vh <= 0 ||
++     vx > dw || vy > dh || vw > dw-vx || vh > dh-vy) return false;
++ int columns[4096];
++ for (int x = 0; x < vw; ++x) columns[x] = ((2*x+1)*sw)/(2*vw);
++ int previous = -1;
++ for (int y = 0; y < dh; ++y) {
++  uint8_t *row = static_cast<uint8_t *>(dst) + size_t(y)*dp;
++  if (y < vy || y >= vy+vh) { memset(row, 0, dw*4); continue; }
++  int sy = ((2*(y-vy)+1)*sh)/(2*vh);
++  if (sy == previous) { memcpy(row, row-dp, dw*4); continue; }
++  memset(row, 0, vx*4);
++  memset(row+(vx+vw)*4, 0, (dw-vx-vw)*4);
++  const uint8_t *source = static_cast<const uint8_t *>(src) + size_t(sy)*sp;
++  for (int x = 0; x < vw; ++x) {
++   uint16_t pixel;
++   memcpy(&pixel, source+columns[x]*2, 2);
++   uint32_t color = colors[pixel];
++   memcpy(row+(vx+x)*4, &color, 4);
++  }
++  previous = sy;
++ }
++ return true;
++}
++#endif
+--- a/backends/graphics/surfacesdl/surfacesdl-graphics.cpp
++++ b/backends/graphics/surfacesdl/surfacesdl-graphics.cpp
+@@ -1,3 +1,9 @@
++#ifdef __PS4__
++#include "backends/graphics/surfacesdl/ps4-framebuffer.h"
++static uint32_t ps4ScaleMs, ps4PresentMs;
++extern "C" uint32_t ps4_frame_scale_ms(void) { return ps4ScaleMs; }
++extern "C" uint32_t ps4_frame_present_ms(void) { return ps4PresentMs; }
++#endif
+ /* ScummVM - Graphic Adventure Engine
+  *
+  * ScummVM is the legal property of its developers, whose names
+@@ -320,7 +326,13 @@
+ 		return _videoMode.aspectRatioCorrection;
+ #endif
+ 	case OSystem::kFeatureVSync:
++#ifdef __PS4__
++		// SDL's PS4 framebuffer always waits for the VideoOut flip. Reporting
++		// false makes the GUI sleep for a frame before waiting for another.
++		return true;
++#else
+ 		return _videoMode.vsync;
++#endif
+ 	case OSystem::kFeatureFilteringMode:
+ 		return _videoMode.filtering;
+ 	case OSystem::kFeatureCursorPalette:
+@@ -1204,6 +1216,10 @@
+ }
+ 
+ void SurfaceSdlGraphicsManager::internUpdateScreen() {
++#ifdef __PS4__
++	// The software framebuffer needs a complete backing image on each flip.
++	_forceRedraw = true;
++#endif
+ 	SDL_Surface *srcSurf, *origSurf;
+ 	int height, width;
+ 	int scale1;
+@@ -1590,7 +1606,15 @@
+ #endif
+ 
+ 	if (doPresent) {
++#ifndef __PS4__
+ 		SDL_RenderPresent(_renderer);
++#endif
++#ifdef __PS4__
++		uint32 presentStart = SDL_GetTicks();
++		if (SDL_UpdateWindowSurface(_window->getSDLWindow()) != 0)
++			error("PS4 framebuffer update failed: %s", SDL_GetError());
++		ps4PresentMs = SDL_GetTicks() - presentStart;
++#endif
+ 	}
+ #else
+ 	if (_isDoubleBuf)
+@@ -3092,7 +3116,12 @@
+ 	if (_videoMode.vsync) {
+ 		rendererFlags |= SDL_RENDERER_PRESENTVSYNC;
+ 	}
++#ifdef __PS4__
++	SDL_Surface *framebuffer = SDL_GetWindowSurface(_window->getSDLWindow());
++	_renderer = framebuffer ? SDL_CreateSoftwareRenderer(framebuffer) : nullptr;
++#else
+ 	_renderer = SDL_CreateRenderer(_window->getSDLWindow(), -1, rendererFlags);
++#endif
+ #endif
+ 	if (!_renderer) {
+ 		if (_videoMode.vsync) {
+@@ -3157,7 +3186,9 @@
+ }
+ 
+ void SurfaceSdlGraphicsManager::SDL_UpdateRects(SDL_Surface *screen, int numrects, SDL_Rect *rects) {
++#ifndef __PS4__
+ 	SDL_UpdateTexture(_screenTexture, nullptr, screen->pixels, screen->pitch);
++#endif
+ 
+ 	SDL_Rect viewport;
+ 
+@@ -3179,6 +3210,36 @@
+ 
+ 	int rotangle = (int)_rotationMode;
+ 
++#ifdef __PS4__
++	uint32 started = SDL_GetTicks();
++	SDL_Surface *framebuffer = SDL_GetWindowSurface(_window->getSDLWindow());
++	// Avoid SDL's generic full-frame conversion and scaling on every cursor move.
++	// Cache the exact SDL color mapping once per destination format.
++	static uint32 colors[65536];
++	static uint32 colorFormat = 0;
++	bool copied = false;
++	if (screen->format->format == SDL_PIXELFORMAT_RGB565 && framebuffer->format->BytesPerPixel == 4 &&
++	    !SDL_MUSTLOCK(screen) && !SDL_MUSTLOCK(framebuffer)) {
++		if (colorFormat != framebuffer->format->format) {
++			for (uint i = 0; i < 65536; ++i) {
++				Uint8 r, g, b;
++				SDL_GetRGB(i, screen->format, &r, &g, &b);
++				colors[i] = SDL_MapRGB(framebuffer->format, r, g, b);
++			}
++			colorFormat = framebuffer->format->format;
++		}
++		copied = ps4Scale565(screen->pixels, screen->w, screen->h, screen->pitch,
++		                    framebuffer->pixels, framebuffer->w, framebuffer->h, framebuffer->pitch,
++		                    viewport.x, viewport.y, viewport.w, viewport.h, colors);
++	}
++	if (!copied) {
++		SDL_SetClipRect(framebuffer, nullptr);
++		SDL_FillRect(framebuffer, nullptr, 0);
++		if (SDL_BlitScaled(screen, nullptr, framebuffer, &viewport) != 0)
++			error("PS4 framebuffer blit failed: %s", SDL_GetError());
++	}
++	ps4ScaleMs = SDL_GetTicks() - started;
++#else
+ 	SDL_RenderClear(_renderer);
+ 
+ 	if (rotangle != 0) {
+@@ -3198,6 +3259,7 @@
+ 		SDL_RenderCopy(_renderer, _screenTexture, nullptr, &viewport);
+ #endif
+ 	}
++#endif
+ }
+ 
+ int SurfaceSdlGraphicsManager::SDL_SetColors(SDL_Surface *surface, SDL_Color *colors, int firstcolor, int ncolors) {
+--- a/backends/keymapper/virtual-mouse.cpp
++++ b/backends/keymapper/virtual-mouse.cpp
+@@ -29,8 +29,15 @@
+ #include "common/translation.h"
+ 
+ #include "gui/gui-manager.h"
++#ifdef __PS4__
++#include "common/textconsole.h"
++#endif
+ 
+ namespace Common {
++#ifdef __PS4__
++static uint32 s_ps4PointerHz = 0;
++extern "C" uint32 ps4_pointer_update_hz(void) { return s_ps4PointerHz; }
++#endif
+ 
+ VirtualMouse::VirtualMouse(EventDispatcher *eventDispatcher) :
+ 		_eventDispatcher(eventDispatcher),
+@@ -60,6 +67,23 @@
+ 	if (curTime < _lastUpdateMillis + kUpdateDelay) {
+ 		return false;
+ 	}
++#ifdef __PS4__
++	// Integrate by elapsed time, not number of GUI/game iterations. Do not
++	// convert pauses or debugger stalls into a large cursor jump.
++	uint32 elapsed = curTime - _lastUpdateMillis;
++	float movementScale = float(MIN<uint32>(elapsed, 32)) / kUpdateDelay;
++	static uint32 samples = 0, totalMillis = 0, largestGap = 0;
++	if (_mouseVelocityX != 0.f || _mouseVelocityY != 0.f) {
++		++samples; totalMillis += elapsed; largestGap = MAX(largestGap, elapsed);
++		if (totalMillis >= 500) s_ps4PointerHz = (samples * 1000 + totalMillis / 2) / totalMillis;
++		if (totalMillis >= 5000) {
++			warning("[ps4-pointer] updates=%u elapsed_ms=%u largest_gap_ms=%u raw_axis=%d,%d", samples, totalMillis, largestGap, _inputAxisPositionX, _inputAxisPositionY);
++			samples = totalMillis = largestGap = 0;
++		}
++	}
++#else
++	float movementScale = 1.0f;
++#endif
+ 	_lastUpdateMillis = curTime;
+ 
+ 	// Adjust the speed of the cursor according to the virtual screen resolution
+@@ -73,8 +97,8 @@
+ 	float screenSizeSpeedModifier = screenSize.width() / (float)kDefaultScreenWidth;
+ 
+ 	// Compute the movement delta when compared to the previous update
+-	float deltaX = _subPixelRemainderX + _mouseVelocityX * _slowModifier * screenSizeSpeedModifier * 10.f;
+-	float deltaY = _subPixelRemainderY + _mouseVelocityY * _slowModifier * screenSizeSpeedModifier * 10.f;
++	float deltaX = _subPixelRemainderX + _mouseVelocityX * _slowModifier * screenSizeSpeedModifier * 10.f * movementScale;
++	float deltaY = _subPixelRemainderY + _mouseVelocityY * _slowModifier * screenSizeSpeedModifier * 10.f * movementScale;
+ 
+ 	Common::Point delta;
+ 	delta.x = deltaX;
+@@ -186,12 +210,22 @@
+ 	float analogX  = (float)_inputAxisPositionX;
+ 	float analogY  = (float)_inputAxisPositionY;
+ 	float deadZone = (float)ConfMan.getInt("joystick_deadzone") * 1000.0f;
++#ifdef __PS4__
++	deadZone = CLIP(deadZone, 0.0f, float(JOYAXIS_MAX - 1));
++#endif
+ 
+ 	float magnitude = sqrt(analogX * analogX + analogY * analogY);
+ 
+-	if (magnitude >= deadZone) {
++	if (magnitude > deadZone) {
+ 		float scalingFactor = 1.0f / magnitude * (magnitude - deadZone) / (JOYAXIS_MAX - deadZone);
+ 		float speedFactor = computeJoystickMouseSpeedFactor();
++#ifdef __PS4__
++		// Cubic radial response: small deflections retain subpixel precision,
++		// full deflection retains the 1.02 maximum. Cap diagonal magnitude.
++		float amount = MIN(1.0f, (magnitude - deadZone) / (JOYAXIS_MAX - deadZone));
++		scalingFactor = amount * amount * amount / magnitude;
++		speedFactor *= 2.0f;
++#endif
+ 		_mouseVelocityX = analogX * scalingFactor * speedFactor;
+ 		_mouseVelocityY = analogY * scalingFactor * speedFactor;
+ 	} else {
+--- a/backends/platform/sdl/posix/posix-main.cpp
++++ b/backends/platform/sdl/posix/posix-main.cpp
+@@ -19,6 +19,14 @@
+  *
+  */
+ 
++#ifdef __PS4__
++#define FORBIDDEN_SYMBOL_ALLOW_ALL
++#include <stdio.h>
++#include <sys/stat.h>
++#include <unistd.h>
++extern "C" void ps4_release_usb_mounts(void);
++#endif
++
+ #include "common/scummsys.h"
+ 
+ #if defined(POSIX) && !defined(MACOSX) && !defined(SAMSUNGTV) && !defined(MAEMO) && !defined(OPENDINGUX) && !defined(OPENPANDORA) && !defined(PLAYSTATION3) && !defined(PSP2) && !defined(NINTENDO_SWITCH)  && !defined(__EMSCRIPTEN__) && !defined(MIYOO) && !defined(MIYOOMINI) && !defined(SAILFISH)
+@@ -34,6 +42,37 @@
+ #include "base/main.h"
+ 
+ int main(int argc, char *argv[]) {
++#ifdef __PS4__
++	setvbuf(stdout, nullptr, _IONBF, 0);
++	printf("[scummvm-ps4] entered main\n");
++	mkdir("/data/scummvm-2026-software", 0777);
++	mkdir("/data/scummvm-2026-software/saves", 0777);
++	mkdir("/data/scummvm-2026-software/games", 0777);
++	chdir("/app0");
++	// Seed writable settings only on first launch; preserve user changes.
++	FILE *config = fopen("/data/scummvm-2026-software/scummvm.ini", "r");
++	if (config) {
++		fclose(config);
++	} else {
++		config = fopen("/data/scummvm-2026-software/scummvm.ini", "w");
++		if (config) {
++			FILE *defaults = fopen("/app0/scummvm-default.ini", "r");
++			if (defaults) {
++				char buffer[1024];
++				size_t count;
++				while ((count = fread(buffer, 1, sizeof(buffer), defaults)) != 0)
++					fwrite(buffer, 1, count, config);
++				fclose(defaults);
++			} else {
++			fputs("[scummvm]\nextrapath=/app0/data\nthemepath=/app0/data\n"
++			      "savepath=/data/scummvm-2026-software/saves\nbrowser_lastpath=/\n"
++			      "gui_theme=scummremastered\njoystick_num=0\nfullscreen=false\n"
++			      "gfx_mode=normal\n", config);
++			}
++			fclose(config);
++		}
++	}
++#endif
+ 
+ 	// Create our OSystem instance
+ 	g_system = new OSystem_POSIX();
+@@ -57,6 +96,9 @@
+ 
+ 	// Free OSystem
+ 	g_system->destroy();
++#ifdef __PS4__
++	ps4_release_usb_mounts();
++#endif
+ 
+ 	return res;
+ }
+--- a/backends/platform/sdl/posix/posix.cpp
++++ b/backends/platform/sdl/posix/posix.cpp
+@@ -44,6 +44,9 @@
+ #endif
+ 
+ #include "common/textconsole.h"
++#ifdef __PS4__
++#include "common/config-manager.h"
++#endif
+ 
+ #include <stdlib.h>
+ #include <errno.h>
+@@ -79,6 +82,10 @@
+ }
+ 
+ void OSystem_POSIX::initBackend() {
++#ifdef __PS4__
++	if (!ConfMan.hasKey("vkeybdpath"))
++		ConfMan.set("vkeybdpath", "/app0/data", Common::ConfigManager::kSessionDomain);
++#endif
+ 	// Create the savefile manager
+ 	if (_savefileManager == 0)
+ 		_savefileManager = new POSIXSaveFileManager();
+@@ -112,6 +119,9 @@
+ }
+ 
+ Common::Path OSystem_POSIX::getDefaultConfigFileName() {
++#ifdef __PS4__
++	return Common::Path("/data/scummvm-2026-software/scummvm.ini", '/');
++#endif
+ 	const Common::String baseConfigName = "scummvm.ini";
+ 
+ 	Common::String configFile;
+@@ -336,6 +346,9 @@
+ }
+ 
+ Common::Path OSystem_POSIX::getDefaultLogFileName() {
++#ifdef __PS4__
++	return Common::Path("/data/scummvm-2026-software/scummvm.log", '/');
++#endif
+ 	Common::String logFile;
+ 
+ 	// On POSIX systems we follow the XDG Base Directory Specification for
+--- a/backends/platform/sdl/sdl-window.cpp
++++ b/backends/platform/sdl/sdl-window.cpp
+@@ -222,7 +222,10 @@
+ }
+ 
+ bool SdlWindow::lockMouse(bool lock) {
+-#if SDL_VERSION_ATLEAST(3, 0, 0)
++#if defined(__PS4__)
++	// OpenOrbis has no OS pointer; virtual mouse supplies relative motion.
++	_inputLockState = lock;
++#elif SDL_VERSION_ATLEAST(3, 0, 0)
+ 	SDL_SetWindowRelativeMouseMode(_window, lock);
+ 	_inputLockState = lock;
+ #elif SDL_VERSION_ATLEAST(2, 0, 0)
+@@ -424,6 +427,17 @@
+ }
+ 
+ bool SdlWindow::createOrUpdateWindow(int width, int height, uint32 flags) {
++#ifdef __PS4__
++	// OpenOrbis has a fixed display; game sizes are scaled by the renderer.
++	if (!_window) {
++		SDL_DisplayMode mode;
++		if (SDL_GetCurrentDisplayMode(0, &mode) != 0)
++			return false;
++		_window = SDL_CreateWindow(_windowCaption.c_str(), 0, 0, mode.w, mode.h, 0);
++	}
++	_lastFlags = 0;
++	return _window != nullptr;
++#endif
+ #if SDL_VERSION_ATLEAST(3, 0, 0)
+ 	if (_inputGrabState) {
+ 		flags |= SDL_WINDOW_MOUSE_GRABBED;
+--- a/backends/platform/sdl/sdl.cpp
++++ b/backends/platform/sdl/sdl.cpp
+@@ -217,7 +217,11 @@
+ 	if (f == kFeatureOpenUrl) return true;
+ #endif
+ 	if (f == kFeatureJoystickDeadzone || f == kFeatureKbdMouseSpeed) {
++#ifdef __PS4__
++		return true;
++#else
+ 		return _eventSource->isJoystickConnected();
++#endif
+ 	}
+ #if defined(MACOSX) && SDL_VERSION_ATLEAST(2, 0, 4)
+ 	// WORKAROUND: see SdlEventSource::handleMouseMotion()
+--- a/engines/dialogs.cpp
++++ b/engines/dialogs.cpp
+@@ -345,6 +345,15 @@
+ 		setSubtitleSettingsState(true); // could disable controls by GUI options
+ 	}
+ 
++#ifdef __PS4__
++	// Expose pointer controls in the in-game options, not only the launcher.
++	if (g_system->hasFeature(OSystem::kFeatureKbdMouseSpeed) ||
++		g_system->hasFeature(OSystem::kFeatureJoystickDeadzone)) {
++		tab->addTab(_("Control"), "GlobalConfig_Control");
++		addControlControls(tab, "GlobalConfig_Control.");
++	}
++#endif
++
+ 	//
+ 	// The Keymap tab
+ 	//
+--- a/engines/stark/metaengine.cpp
++++ b/engines/stark/metaengine.cpp
+@@ -41,7 +41,12 @@
+ 			_s("Load modded assets"),
+ 			_s("Enable loading of external replacement assets."),
+ 			"enable_assets_mod",
++#if defined(__PS4__)
++			// The PS4 port uses TinyGL, which cannot load replacement assets.
++			false,
++#else
+ 			true,
++#endif
+ 			0,
+ 			0
+ 		}
+--- a/gui/browser.cpp
++++ b/gui/browser.cpp
+@@ -33,6 +33,14 @@
+ #endif
+ 
+ #include "common/translation.h"
++#ifdef __PS4__
++extern "C" const char *ps4_usb_status_text(void);
++extern "C" uint32 ps4_pointer_update_hz(void);
++extern "C" uint32 ps4_frame_scale_ms(void);
++extern "C" uint32 ps4_frame_present_ms(void);
++extern "C" unsigned ps4_listing_rejected(void);
++extern "C" int ps4_listing_errno(void);
++#endif
+ 
+ namespace GUI {
+ 
+@@ -60,7 +68,7 @@
+ 	_showHidden = false;
+ 
+ 	// Headline - TODO: should be customizable during creation time
+-	new StaticTextWidget(this, "Browser.Headline", title);
++	_usbHeadline = new StaticTextWidget(this, "Browser.Headline", title);
+ 	new ButtonWidget(this, "Browser.Help", _("Help"), Common::U32String(), kHelpCmd);
+ 
+ 	// Current path - TODO: handle long paths ?
+@@ -110,8 +118,20 @@
+ 		_node = Common::FSNode(ConfMan.getPath("browser_lastpath"));
+ 
+ 	if (!_node.isDirectory())
++#ifdef __PS4__
++		_node = Common::FSNode("/"); // Start at storage shortcuts if a saved USB path vanished.
++#else
+ 		_node = Common::FSNode(".");
+-
++#endif
++
++#ifdef __PS4__
++	// Migrate existing installations once, then respect the user's checkbox.
++	if (!ConfMan.getBool("ps4_hidden_default_applied", Common::ConfigManager::kApplicationDomain)) {
++		ConfMan.setBool("gui_browser_show_hidden", true, Common::ConfigManager::kApplicationDomain);
++		ConfMan.setBool("ps4_hidden_default_applied", true, Common::ConfigManager::kApplicationDomain);
++		ConfMan.flushToDisk();
++	}
++#endif
+ 	_showHidden = ConfMan.getBool("gui_browser_show_hidden", Common::ConfigManager::kApplicationDomain);
+ 	_showHiddenWidget->setState(_showHidden);
+ 
+@@ -136,7 +156,7 @@
+ 			// If nothing is selected in the list widget, choose the current dir.
+ 			// Else, choose the dir that is selected.
+ 			int selection = _fileList->getSelected();
+-			if (selection >= 0)
++			if (selection >= 0 && uint(selection) < _nodeContent.size())
+ 				_choice = _nodeContent[selection];
+ 			else
+ 				_choice = _node;
+@@ -144,7 +164,7 @@
+ 			close();
+ 		} else {
+ 			int selection = _fileList->getSelected();
+-			if (selection < 0)
++			if (selection < 0 || uint(selection) >= _nodeContent.size())
+ 				break;
+ 			if (_nodeContent[selection].isDirectory()) {
+ 				_node = _nodeContent[selection];
+@@ -162,6 +182,8 @@
+ 		break;
+ 	case kListItemActivatedCmd:
+ 	case kListItemDoubleClickedCmd:
++		if (data >= _nodeContent.size())
++			break;
+ 		if (_nodeContent[data].isDirectory()) {
+ 			_node = _nodeContent[data];
+ 			updateListing();
+@@ -175,7 +197,7 @@
+ 		// We do not allow selecting directories in directory
+ 		// browser mode, thus we will invalidate the selection
+ 		// when the user selects a directory over here.
+-		if (data != (uint32)-1 && _isDirBrowser && !_nodeContent[data].isDirectory())
++		if (data < _nodeContent.size() && _isDirBrowser && !_nodeContent[data].isDirectory())
+ 			_fileList->setSelected(-1);
+ 		break;
+ 	case kHiddenCmd:
+@@ -207,6 +229,19 @@
+ 		_nodeContent.clear();
+ 	else
+ 		Common::sort(_nodeContent.begin(), _nodeContent.end());
++
++#ifdef __PS4__
++	if (_node.getPath() == Common::Path("/") && ConfMan.get("ps4_usb_sandbox") != "false") {
++		Common::String status(ps4_usb_status_text());
++		uint32 hz = ps4_pointer_update_hz();
++		if (hz) status += Common::String::format(" | input %u Hz", hz);
++		status += Common::String::format(" | draw %u/%u ms", ps4_frame_scale_ms(), ps4_frame_present_ms());
++		_usbHeadline->setLabel(Common::U32String(status));
++	} else {
++		Common::String status = Common::String::format("%u entries | unreadable %u | error %d", _nodeContent.size(), ps4_listing_rejected(), ps4_listing_errno());
++		_usbHeadline->setLabel(Common::U32String(status));
++	}
++#endif
+ 
+ 	// Populate the ListWidget
+ 	Common::U32StringArray list;
+--- a/gui/browser.h
++++ b/gui/browser.h
+@@ -29,6 +29,7 @@
+ namespace GUI {
+ 
+ class ListWidget;
++class StaticTextWidget;
+ class EditTextWidget;
+ class CheckboxWidget;
+ class CommandSender;
+@@ -44,6 +45,7 @@
+ 	const Common::FSNode	&getResult() { return _choice; }
+ 
+ protected:
++	StaticTextWidget *_usbHeadline;
+ 	ListWidget		*_fileList;
+ 	EditTextWidget	*_currentPath;
+ 	Common::FSNode	_node;
+--- a/gui/options.cpp
++++ b/gui/options.cpp
+@@ -1444,11 +1444,18 @@
+ 
+ 	// Keyboard and joystick mouse speed
+ 	if (g_system->hasFeature(OSystem::kFeatureKbdMouseSpeed)) {
++#ifdef __PS4__
++		const char *stickHelp = "Analog stick pointer speed: 3 slowest, 10 normal, 20 fastest";
++		_kbdMouseSpeedDesc = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedDesc",
++			g_gui.useLowResGUI() ? _("Stick speed:") : _("Stick sensitivity:"), _(stickHelp));
++		_kbdMouseSpeedSlider = new SliderWidget(boss, prefix + "grKbdMouseSpeedSlider", _(stickHelp), kKbdMouseSpeedChanged);
++#else
+ 		if (!g_gui.useLowResGUI())
+ 			_kbdMouseSpeedDesc = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedDesc", _("Pointer Speed:"), _("Speed for keyboard/joystick mouse pointer control"));
+ 		else
+ 			_kbdMouseSpeedDesc = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedDesc", _c("Pointer Speed:", "lowres"), _("Speed for keyboard/joystick mouse pointer control"));
+ 		_kbdMouseSpeedSlider = new SliderWidget(boss, prefix + "grKbdMouseSpeedSlider", _("Speed for keyboard/joystick mouse pointer control"), kKbdMouseSpeedChanged);
++#endif
+ 		_kbdMouseSpeedLabel = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedLabel", Common::U32String("  "), Common::U32String(), ThemeEngine::kFontStyleBold, Common::UNK_LANG, false);
+ 		_kbdMouseSpeedSlider->setMinValue(0);
+ 		_kbdMouseSpeedSlider->setMaxValue(7);
+--- a/gui/themes/common/highres_layout.stx
++++ b/gui/themes/common/highres_layout.stx
+@@ -1989,6 +1989,12 @@
+ 		</layout>
+ 	</dialog>
+ 
++	<dialog name = 'GlobalConfig_Control' overlays = 'Dialog.GlobalConfig.TabWidget'>
++		<layout type = 'vertical' padding = '0, 0, 0, 0'>
++			<import layout = 'Dialog.GlobalOptions_Control' />
++		</layout>
++	</dialog>
++
+ 	<dialog name = 'GlobalConfig_Audio' overlays = 'Dialog.GlobalConfig.TabWidget'>
+ 		<layout type = 'vertical' padding = '8, 8, 8, 8' spacing = '8'>
+ 			<layout type = 'horizontal' padding = '0, 0, 0, 0'>
+--- a/gui/themes/common/lowres_layout.stx
++++ b/gui/themes/common/lowres_layout.stx
+@@ -1818,6 +1818,12 @@
+ 		</layout>
+ 	</dialog>
+ 
++	<dialog name = 'GlobalConfig_Control' overlays = 'Dialog.GlobalConfig.TabWidget'>
++		<layout type = 'vertical' padding = '0, 0, 0, 0'>
++			<import layout = 'Dialog.GlobalOptions_Control' />
++		</layout>
++	</dialog>
++
+ 	<dialog name = 'GlobalConfig_Audio' overlays = 'Dialog.GlobalConfig.TabWidget'>
+ 		<layout type = 'vertical' padding = '8, 8, 8, 8'>
+ 			<layout type = 'horizontal' padding = '0, 0, 0, 0' spacing = '6' align = 'center'>
+--- a/gui/themes/default.inc
++++ b/gui/themes/default.inc
+@@ -2949,6 +2949,11 @@
+ "<widget name='Container'/>"
+ "</layout>"
+ "</dialog>"
++"<dialog name='GlobalConfig_Control' overlays='Dialog.GlobalConfig.TabWidget'>"
++"<layout type='vertical' padding='0,0,0,0'>"
++"<import layout='Dialog.GlobalOptions_Control'/>"
++"</layout>"
++"</dialog>"
+ "<dialog name='GlobalConfig_Audio' overlays='Dialog.GlobalConfig.TabWidget'>"
+ "<layout type='vertical' padding='8,8,8,8' spacing='8'>"
+ "<layout type='horizontal' padding='0,0,0,0'>"
+@@ -5460,6 +5465,11 @@
+ "<widget name='Container'/>"
+ "</layout>"
+ "</dialog>"
++"<dialog name='GlobalConfig_Control' overlays='Dialog.GlobalConfig.TabWidget'>"
++"<layout type='vertical' padding='0,0,0,0'>"
++"<import layout='Dialog.GlobalOptions_Control'/>"
++"</layout>"
++"</dialog>"
+ "<dialog name='GlobalConfig_Audio' overlays='Dialog.GlobalConfig.TabWidget'>"
+ "<layout type='vertical' padding='8,8,8,8'>"
+ "<layout type='horizontal' padding='0,0,0,0' spacing='6' align='center'>"
+--- a/gui/themes/scummclassic/classic_layout.stx
++++ b/gui/themes/scummclassic/classic_layout.stx
+@@ -1624,6 +1624,12 @@
+ 		</layout>
+ 	</dialog>
+ 
++	<dialog name = 'GlobalConfig_Control' overlays = 'Dialog.GlobalConfig.TabWidget'>
++		<layout type = 'vertical' padding = '0, 0, 0, 0'>
++			<import layout = 'Dialog.GlobalOptions_Control' />
++		</layout>
++	</dialog>
++
+ 	<dialog name = 'GlobalConfig_Audio' overlays = 'Dialog.GlobalConfig.TabWidget'>
+ 		<layout type = 'vertical' padding = '8, 8, 8, 8' spacing = '8'>
+ 			<layout type = 'horizontal' padding = '0, 0, 0, 0'>
+--- a/gui/themes/scummclassic/classic_layout_lowres.stx
++++ b/gui/themes/scummclassic/classic_layout_lowres.stx
+@@ -1648,6 +1648,12 @@
+ 		</layout>
+ 	</dialog>
+ 
++	<dialog name = 'GlobalConfig_Control' overlays = 'Dialog.GlobalConfig.TabWidget'>
++		<layout type = 'vertical' padding = '0, 0, 0, 0'>
++			<import layout = 'Dialog.GlobalOptions_Control' />
++		</layout>
++	</dialog>
++
+ 	<dialog name = 'GlobalConfig_Audio' overlays = 'Dialog.GlobalConfig.TabWidget'>
+ 		<layout type = 'vertical' padding = '8, 8, 8, 8'>
+ 			<layout type = 'horizontal' padding = '0, 0, 0, 0' spacing = '6' align = 'center'>
+--- a/image/gif.cpp
++++ b/image/gif.cpp
+@@ -38,7 +38,7 @@
+ 
+ namespace Image {
+ 
+-GIFDecoder::GIFDecoder() : _outputSurface(nullptr), _palette(0) {
++GIFDecoder::GIFDecoder() : _outputSurface(nullptr), _palette(0), _hasTransparentColor(false), _transparentColor(0) {
+ }
+ 
+ GIFDecoder::~GIFDecoder() {
+@@ -82,16 +82,24 @@
+ 	const int width = gif->SWidth;
+ 	const int height = gif->SHeight;
+ 
+-	const ColorMapObject *colorMap = gif->SColorMap;
+-	_hasTransparentColor = false;
+-	for (int i = 0; i < gif->ExtensionBlockCount; ++i) {
+-		const ExtensionBlock &eb = gif->ExtensionBlocks[i];
+-		GraphicsControlBlock gcb;
+-		DGifExtensionToGCB(eb.ByteCount, eb.Bytes, &gcb);
+-		if (gcb.TransparentColor != NO_TRANSPARENT_COLOR) {
+-			_hasTransparentColor = true;
+-			_transparentColor = gcb.TransparentColor;
+-			break;
++	// The first frame may have its own palette and occupy only part of the canvas.
++	const GifImageDesc &desc = gifImage->ImageDesc;
++	const ColorMapObject *colorMap = desc.ColorMap ? desc.ColorMap : gif->SColorMap;
++	if (!colorMap || colorMap->ColorCount <= 0 || colorMap->ColorCount > 256 ||
++	    width <= 0 || height <= 0 || desc.Width <= 0 || desc.Height <= 0 ||
++	    desc.Left < 0 || desc.Top < 0 || desc.Left + desc.Width > width ||
++	    desc.Top + desc.Height > height) {
++		DGIF_CLOSE_FILE_COMPAT(gif);
++		return false;
++	}
++	GraphicsControlBlock gcb;
++	_hasTransparentColor = DGifSavedExtensionToGCB(gif, 0, &gcb) == GIF_OK &&
++	                       gcb.TransparentColor >= 0 && gcb.TransparentColor < colorMap->ColorCount;
++	_transparentColor = _hasTransparentColor ? gcb.TransparentColor : 0;
++	for (size_t i = 0; i < (size_t)desc.Width * desc.Height; ++i) {
++		if (gifImage->RasterBits[i] >= colorMap->ColorCount) {
++			DGIF_CLOSE_FILE_COMPAT(gif);
++			return false;
+ 		}
+ 	}
+ 
+@@ -106,35 +114,23 @@
+ 						colorMap->Colors[i].Blue);
+ 	}
+ 
+-	// TODO: support transparency
+-
+ 	_outputSurface->create(width, height, format);
+-	const uint8 *in = (const uint8 *)gifImage->RasterBits;
+-	uint8 *pixelPtr = (uint8 *)_outputSurface->getBasePtr(0, 0);
+-#if GIFLIB_MAJOR < 5
+-	const bool deinterlace = gif->Image.Interlace;
+-#else
+-	// Starting from giflib 5.0, DGifSlurp deinterlaces pixel data.
+-	const bool deinterlace = false;
+-#endif
+-	if (deinterlace) {
+-		const int interlacedOffset[] = {0, 4, 2, 1};
+-		const int interlacedJumps[] = {8, 8, 4, 2};
+-		for (int i = 0; i < 4; ++i) {
+-			for (int row = interlacedOffset[i]; row < height; row += interlacedJumps[i]) {
+-				memcpy(pixelPtr + width * row, in, width);
+-				in += width;
+-			}
+-		}
+-	} else {
+-		memcpy(pixelPtr, in, width * height);
+-	}
++	const byte background = _hasTransparentColor ? _transparentColor :
++	                        (colorMap == gif->SColorMap && gif->SBackGroundColor < colorCount ? gif->SBackGroundColor : 0);
++	for (int row = 0; row < height; ++row)
++		memset(_outputSurface->getBasePtr(0, row), background, width);
++	// Our giflib 5 target already deinterlaces DGifSlurp output.
++	for (int row = 0; row < desc.Height; ++row)
++		memcpy(_outputSurface->getBasePtr(desc.Left, desc.Top + row),
++		       gifImage->RasterBits + row * desc.Width, desc.Width);
+ 
+ 	DGIF_CLOSE_FILE_COMPAT(gif);
+ 	return true;
+ }
+ 
+ void GIFDecoder::destroy() {
++	_hasTransparentColor = false;
++	_transparentColor = 0;
+ 	if (_outputSurface) {
+ 		_outputSurface->free();
+ 		delete _outputSurface;

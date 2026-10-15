@@ -52,7 +52,7 @@
  #ifdef SRCTOOLS_SINC_RESAMPLER_DEBUG_LOG
 --- a/backends/events/sdl/sdl-common-events.cpp
 +++ b/backends/events/sdl/sdl-common-events.cpp
-@@ -194,6 +194,16 @@
+@@ -194,6 +194,20 @@
  }
  
  int SdlEventSource::mapSDLJoystickButtonToOSystem(Uint8 sdlButton) {
@@ -62,6 +62,10 @@
 +	case 9: return Common::JOYSTICK_BUTTON_START;
 +	case 11: return Common::JOYSTICK_BUTTON_LEFT_STICK;
 +	case 12: return Common::JOYSTICK_BUTTON_RIGHT_STICK;
++	case 13: return Common::JOYSTICK_BUTTON_DPAD_UP;
++	case 14: return Common::JOYSTICK_BUTTON_DPAD_DOWN;
++	case 15: return Common::JOYSTICK_BUTTON_DPAD_LEFT;
++	case 16: return Common::JOYSTICK_BUTTON_DPAD_RIGHT;
 +	case 17: return Common::JOYSTICK_BUTTON_BACK;
 +	default: if (sdlButton >= 6) return -1;
 +	}
@@ -110,7 +114,7 @@
  	SDL_Event ev;
  	while (SDL_PollEvent(&ev)) {
  		preprocessEvents(&ev);
-@@ -867,9 +892,17 @@
+@@ -867,9 +892,19 @@
  		case SDL_JOYBUTTONUP:
  			return handleJoyButtonUp(ev, event);
  		case SDL_JOYAXISMOTION:
@@ -121,7 +125,9 @@
 +#endif
  		case SDL_JOYHATMOTION:
 +#ifdef __PS4__
-+			return false; // direct pad axes and mapped D-pad buttons
++			// Buttons 13-16 carry the same D-pad through the keymapper. Hat
++			// synthesis uses pushEvent(), bypassing it; avoid duplicate events.
++			return false;
 +#else
  			return handleJoyHatMotion(ev, event);
 +#endif
@@ -346,9 +352,65 @@
  		return true;
  	}
  
+@@ -477,12 +480,19 @@
+ 	const bool engineSupportsArbitraryResolutions = !g_engine || !render3d || g_engine->hasFeature(Engine::kSupportsArbitraryResolutions);
+ 	// Prefer to render on framebuffer if antialiasing is requested: this avoids recreating the window
+ 	// This is only needed for 3D rendering
++	// The PS4 bridge supports color-texture FBOs; depth remains a port limitation.
++	// Enable this bounded backend path for Grim without advertising renderbuffers.
++	const bool backendFramebuffer = OpenGLContext.framebufferObjectSupported
++#ifdef __PS4__
++		|| ConfMan.get("engineid") == "grim"
++#endif
++		;
+ 	const bool renderToFrameBuffer = render3d && (!engineSupportsArbitraryResolutions
+ #if !USE_FORCED_GLES
+ 			|| _libretroPipeline
+ #endif
+ 			|| (antialiasing && OpenGLContext.framebufferObjectMultisampleSupported)) &&
+-		OpenGLContext.framebufferObjectSupported;
++		backendFramebuffer;
+ 
+ #if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
+ 	// Create the 3D renderer first to allow the platform specific code know we are in 3D
 --- a/backends/graphics/opengl/renderer3d.cpp
 +++ b/backends/graphics/opengl/renderer3d.cpp
-@@ -221,7 +221,7 @@
+@@ -61,7 +61,9 @@
+ 		// This avoids to call glDeleteFramebuffers and glDeleteRenderbuffers
+ 		// on platforms not supporting it
+ 		glDeleteFramebuffers(ARRAYSIZE(_frameBuffers), _frameBuffers);
++#ifndef __PS4__
+ 		glDeleteRenderbuffers(ARRAYSIZE(_renderBuffers), _renderBuffers);
++#endif
+ 		memset(_renderBuffers, 0, sizeof(_renderBuffers));
+ 		memset(_frameBuffers, 0, sizeof(_frameBuffers));
+ 	}
+@@ -166,12 +168,15 @@
+ 
+ 	if (!_frameBuffers[0]) {
+ 		glGenFramebuffers(multiSample ? 2 : 1, _frameBuffers);
++#ifndef __PS4__
+ 		glGenRenderbuffers(multiSample ? 3 : 2, _renderBuffers);
++#endif
+ 	}
+ 
+ 	glBindFramebuffer(GL_FRAMEBUFFER, _frameBuffers[multiSample ? 1 : 0]);
+ 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _texture.getGLTexture(), 0);
+ 
++#ifndef __PS4__
+ #if !USE_FORCED_GLES2 || defined(USE_GLAD)
+ 	if (multiSample) {
+ 		glBindFramebuffer(GL_FRAMEBUFFER, _frameBuffers[0]);
+@@ -204,6 +209,8 @@
+ #endif
+ 	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+ 
++#endif // PS4 bridge does not yet expose renderbuffer storage.
++
+ 	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+ 	if (status != GL_FRAMEBUFFER_COMPLETE) {
+ 		error("Framebuffer is not complete! status: %d", status);
+@@ -221,7 +228,7 @@
  }
  
  void Renderer3D::leave3D() {
@@ -357,7 +419,7 @@
  	if (OpenGLContext.type == kContextGL) {
  		// Save current state (only available on OpenGL)
  		glPushAttrib(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_ENABLE_BIT |
-@@ -239,6 +239,15 @@
+@@ -239,6 +246,15 @@
  	} else
  #endif
  	{
@@ -373,7 +435,7 @@
  		// Save context by ourselves
  #define CTX_STATE(gl_param) _save ## gl_param = glIsEnabled(gl_param)
  #define CTX_BOOLEAN(gl_param) glGetBooleanv(gl_param, &_save ## gl_param)
-@@ -304,7 +313,7 @@
+@@ -304,7 +320,7 @@
  	Pipeline::disable();
  
  	if (_stackLevel) {
@@ -382,7 +444,7 @@
  		if (OpenGLContext.type == kContextGL) {
  			glMatrixMode(GL_TEXTURE);
  			glPopMatrix();
-@@ -327,6 +336,15 @@
+@@ -327,6 +343,15 @@
  			CTX_STATE(GL_SCISSOR_TEST);
  			CTX_STATE(GL_STENCIL_TEST);
  
@@ -398,7 +460,7 @@
  			glDepthMask(_saveGL_DEPTH_WRITEMASK);
  
  			glBlendFuncSeparate(_saveGL_BLEND_SRC_RGB[0], _saveGL_BLEND_DST_RGB[0],
-@@ -355,10 +373,17 @@
+@@ -355,10 +380,17 @@
  		glDisable(GL_DEPTH_TEST);
  		glDepthFunc(GL_LESS);
  
@@ -416,7 +478,7 @@
  
  		glDisable(GL_SCISSOR_TEST);
  		glScissor(0, 0, g_system->getWidth(), g_system->getHeight());
-@@ -369,11 +394,13 @@
+@@ -369,11 +401,13 @@
  		glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
  
  		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);

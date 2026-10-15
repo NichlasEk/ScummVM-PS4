@@ -31,4 +31,4 @@ done
 bash "$root/experiments/scummvm-2026.4.0/configure.sh"
 printf '\nLDFLAGS += -Wl,--wrap=main -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -Wl,-z,max-page-size=0x4000\nLIBS += %s\n' "$bridge/ps4gl-main.o" >> "$SCUMMVM_BUILD_DIR/config.mk"
 # These objects are passed through LIBS, which upstream does not track as prerequisites.
-printf '\nscummvm: %s %s\n' "$bridge/ps4gl.o" "$bridge/ps4gl-glsl.o" >> "$SCUMMVM_BUILD_DIR/config.mk"
+printf '\n.DEFAULT_GOAL := all\nbase/version.o: %s %s\n' "$bridge/ps4gl.o" "$bridge/ps4gl-glsl.o" >> "$SCUMMVM_BUILD_DIR/config.mk"

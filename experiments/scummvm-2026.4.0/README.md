@@ -308,3 +308,23 @@ The experiment configure script rebuilds changed bridge objects and declares
 link dependencies, avoiding stale executables when only the bridge changes.
 Physical PS4 testing remains separate. Commercial data is neither packaged nor
 committed. The previous 0.04 release package is preserved.
+
+### Grim follow-up: viewport and frozen frames
+
+The bounded PS4 color-FBO route presents Grim at its original 4:3 aspect ratio.
+The first gameplay frame previously failed with `VK_ERROR_FEATURE_NOT_PRESENT`: the
+native fetch-shader path rejects nonzero `firstVertex`. PS4GL now lowers those
+array draws to explicit indices while retaining the original vertex IDs.
+The frame-owner/PS4GL ASan and UBSan checks pass, including offset triangle indices.
+A shadPS4 run reaches Manny's office without the presentation failure
+(`artifacts/upstream-2026.4.0/grim-fix3.log`, `grim-fix3-scene.png`).
+This is not full gameplay or physical PS4 validation. Offscreen depth/stencil
+storage is still missing from the color-FBO path and needs follow-up.
+
+The PS4 SDL D-pad now maps button indices 13–16 through the normal keymapper.
+Hat synthesis is suppressed to avoid duplicate raw events: `pushEvent()` bypasses
+the mapper, so enabling hats alone did not trigger Grim's arrow-key actions.
+Verified in shadPS4: Up produces key 273 down/up and moves Manny in the office
+(`grim-dpad-mapped.log`, `grim-dpad-before.png`, `grim-dpad-after.png` under
+`artifacts/upstream-2026.4.0`). The test executable includes temporary engine
+input tracing; exported source patches omit that tracing.

@@ -933,9 +933,11 @@ int main(void) {
   glDrawArrays(GL_TRIANGLE_STRIP,1,4); assert(!glGetError());
   const uint32_t offset_strip[]={1,2,3,3,2,4};
   assert(snapshot_vertex_bytes==40 && snapshot_size==64 && !memcmp(snapshot+40,offset_strip,sizeof(offset_strip)));
-  expected_vertices=3; expected_first=2;
+  expected_vertices=3; expected_indices=3;
   glDrawArrays(GL_TRIANGLES,2,3); assert(!glGetError() && snapshot_vertex_bytes==40);
-  expected_first=0;
+  const uint32_t offset_triangles[]={2,3,4};
+  assert(snapshot_type==GL_UNSIGNED_INT && snapshot_size==52 &&
+         !memcmp(snapshot+40,offset_triangles,sizeof(offset_triangles)));
   glDrawArrays(GL_TRIANGLE_STRIP,2,4); assert(glGetError()==GL_INVALID_OPERATION);
   glDrawArrays(GL_TRIANGLES,INT_MAX,3); assert(glGetError()==GL_INVALID_VALUE);
   expected_indices=9;

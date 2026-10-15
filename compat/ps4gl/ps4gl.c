@@ -575,8 +575,11 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     pipeline=current->select_pipeline(current,p); if(!pipeline) return;
   }
   const int strip=mode==GL_TRIANGLE_STRIP;
+  /* Native fetch shaders require zero firstVertex. Preserve GL vertex IDs
+   * through explicit indices instead of rebasing the vertex buffer. */
+  const int indexed_arrays=!type && !strip && first>0;
   uint32_t draw_count=(uint32_t)count;
-  GLenum draw_type=type;
+  GLenum draw_type=indexed_arrays ? GL_UNSIGNED_INT : type;
   if(strip) {
     /* Triangulate into the existing triangle-list pipeline. Bound expansion
      * before multiplication/allocation; keep vertex IDs and provoking vertex. */
@@ -605,7 +608,7 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     if(p->vertex_stride && max_index>=INT32_MAX) { error(GL_INVALID_OPERATION); return; }
     vertices=p->vertex_stride ? max_index+1 : 0;
   }
-  if(strip) index_bytes=(size_t)draw_count*sizeof(uint32_t);
+  if(strip || indexed_arrays) index_bytes=(size_t)draw_count*sizeof(uint32_t);
   if(p->vertex_stride || draw_type) {
     if(!current->upload_vertices) { error(GL_INVALID_OPERATION); return; }
     if(p->vertex_stride && vertices>PS4GL_MAX_BUFFER_BYTES/p->vertex_stride) { error(GL_OUT_OF_MEMORY); return; }
@@ -622,6 +625,9 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
         out[i*3+1]=element_index(index_data,type,i+1-(i&1))+(type ? 0u : (uint32_t)first);
         out[i*3+2]=element_index(index_data,type,i+2)+(type ? 0u : (uint32_t)first);
       }
+    } else if(ok && indexed_arrays) {
+      uint32_t *out=(uint32_t *)((unsigned char *)packed+vertex_bytes);
+      for(uint32_t i=0;i<draw_count;++i) out[i]=(uint32_t)first+i;
     } else if(ok && index_bytes) memcpy((unsigned char *)packed+vertex_bytes,index_data,index_bytes);
     if(ok) ok=current->upload_vertices(current,packed,bytes,vertex_bytes,draw_type);
     free(packed);

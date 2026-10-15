@@ -14,8 +14,9 @@ PS4 compatibility. See [fixes and test evidence](experiments/scummvm-2026.4.0/RE
 
 - [x] Myst III: Exile: menu, New Game, intro and opening panorama; user-confirmed
   after framebuffer-copy and vertex-offset fixes. Save/load and later areas pending.
-- [ ] Grim Fandango: intro starts, but its viewport uses the wrong dimensions.
-  A fix is implemented and awaits a new runtime test.
+- [x] Grim Fandango: correctly scaled intro and first office scene; user-confirmed
+  movement after D-pad mapping and vertex-offset fixes. Offscreen depth/stencil,
+  later areas and save/load remain unverified or incomplete.
 - [ ] The Longest Journey: original actor shader fails in the bridge.
   Adapted shader pairs pass host compile/link/reflection; runtime retest pending.
 

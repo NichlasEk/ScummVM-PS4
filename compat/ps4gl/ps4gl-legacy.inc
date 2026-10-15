@@ -98,7 +98,7 @@ static int legacy_preprocess(int fragment, const char *source, LegacySource *out
          legacy_token(out->text,&q,name,sizeof(name)) && legacy_token(out->text,&q,equal,sizeof(equal)) && !strcmp(equal,"=") &&
          legacy_token(out->text,&q,value,sizeof(value)) && legacy_token(out->text,&q,semi,sizeof(semi)) && !strcmp(semi,";")) {
         char *end; unsigned long v=strtoul(value,&end,10);
-        if(!*end && v && v<=64) {
+        if(!*end && v && v<=128) {
           if(out->constant_count==16) goto unsupported;
           strcpy(out->constant_names[out->constant_count],name); out->constants[out->constant_count++]=(unsigned)v;
         }
@@ -151,7 +151,7 @@ static int legacy_preprocess(int fragment, const char *source, LegacySource *out
         count=0;
         for(unsigned c=0;c<out->constant_count;++c) if(!strcmp(token,out->constant_names[c])) count=out->constants[c];
       }
-      if(!count || count>64) goto unsupported;
+      if(!count || count>128) goto unsupported;
       d->count=(unsigned)count;
       if(!legacy_token(out->text,&at,token,sizeof(token)) || strcmp(token,"]") ||
          !legacy_token(out->text,&at,token,sizeof(token))) goto unsupported;

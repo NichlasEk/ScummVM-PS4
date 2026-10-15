@@ -6,6 +6,19 @@ in shadPS4 0.18.0. The real launcher is visible and the pointer can be
 controlled with keyboard-emulated sticks or a PC mouse. The user has confirmed DOTT running on a real PS4. The latest pointer/storage
 changes still need hardware testing; save/load validation remains pending.
 
+## ScummVM 2026.4.0 hardware-renderer tests
+
+Startup checks in shadPS4 0.18.0 (2026-10-15), using the experimental Vulkan
+port. Checked boxes cover only the behavior described, not full-game or physical
+PS4 compatibility. See [fixes and test evidence](experiments/scummvm-2026.4.0/README.md#3d-engine-validation-2026-10-15).
+
+- [x] Myst III: Exile: menu, New Game, intro and opening panorama; user-confirmed
+  after framebuffer-copy and vertex-offset fixes. Save/load and later areas pending.
+- [ ] Grim Fandango: intro starts, but its viewport uses the wrong dimensions.
+  A fix is implemented and awaits a new runtime test.
+- [ ] The Longest Journey: original actor shader fails in the bridge.
+  Adapted shader pairs pass host compile/link/reflection; runtime retest pending.
+
 ## Combined build with the local engines
 
 The experimental Vulkan build includes our Prisoner of Ice and Shadow of the

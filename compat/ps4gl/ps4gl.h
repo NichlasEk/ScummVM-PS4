@@ -553,6 +553,7 @@ void glActiveTexture(GLenum);
 void glPixelStorei(GLenum, GLint);
 void glReadPixels(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *);
 void glTexParameteri(GLenum, GLenum, GLint);
+void glCopyTexImage2D(GLenum, GLint, GLenum, GLint, GLint, GLsizei, GLsizei, GLint);
 void glCopyTexSubImage2D(GLenum, GLint, GLint, GLint, GLint, GLint, GLsizei, GLsizei);
 void glTexImage1D(GLenum, GLint, GLint, GLsizei, GLint, GLenum, GLenum, const void *);
 void glTexImage2D(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *);

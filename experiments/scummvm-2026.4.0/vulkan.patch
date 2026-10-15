@@ -963,7 +963,7 @@
  		}
 --- a/graphics/opengl/context.cpp
 +++ b/graphics/opengl/context.cpp
-@@ -91,6 +91,161 @@
+@@ -91,6 +91,162 @@
  	}
  
  	type = contextType;
@@ -1036,6 +1036,7 @@
 +	PS4GL_LOAD(glReadPixels);
 +	PS4GL_LOAD(glTexParameteri);
 +	PS4GL_LOAD(glCopyTexSubImage2D);
++	PS4GL_LOAD(glCopyTexImage2D);
 +	PS4GL_LOAD(glTexImage1D);
 +	PS4GL_LOAD(glTexImage2D);
 +	PS4GL_LOAD(glTexSubImage2D);
@@ -1125,6 +1126,18 @@
  
  #ifdef USE_GLAD
  	int gladVersion;
+--- a/graphics/opengl/shader.cpp
++++ b/graphics/opengl/shader.cpp
+@@ -78,6 +78,9 @@
+ 	"#define UBOOL_TEST(v) (v != 0)\n";
+ #else
+ static const char *const compatUniformBool =
++#ifdef __PS4__
++	"#define PS4_GLSL_BRIDGE 1\n"
++#endif
+ 	"#define UBOOL bool\n"
+ 	"#define UBOOL_TEST(v) v\n";
+ #endif
 --- a/gui/browser.cpp
 +++ b/gui/browser.cpp
 @@ -33,6 +33,14 @@

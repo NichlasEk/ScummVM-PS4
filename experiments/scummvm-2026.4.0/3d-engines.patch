@@ -1,0 +1,354 @@
+--- a/engines/grim/grim.cpp
++++ b/engines/grim/grim.cpp
+@@ -297,6 +297,12 @@
+ 	_softRenderer = matchingRendererType == Graphics::kRendererTypeTinyGL;
+ 	if (!_softRenderer) {
+ 		initGraphics3d(screenW, screenH);
++#ifdef __PS4__
++		// The PS4 presentation surface has a fixed size; use the dimensions
++		// negotiated by the backend for viewports, movies and projection.
++		screenW = g_system->getWidth();
++		screenH = g_system->getHeight();
++#endif
+ 	} else {
+ 		initGraphics(screenW, screenH, nullptr);
+ 	}
+--- a/engines/myst3/gfx_opengl_texture.cpp
++++ b/engines/myst3/gfx_opengl_texture.cpp
+@@ -121,7 +121,11 @@
+ }
+ 
+ void OpenGLTexture::copyFromFramebuffer(const Common::Rect &screen) {
++#ifdef __PS4__
++	internalFormat = GL_RGBA;
++#else
+ 	internalFormat = GL_RGB;
++#endif
+ 	width  = screen.width();
+ 	height = screen.height();
+ 	upsideDown = true;
+@@ -140,8 +144,14 @@
+ 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+ 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+ 
++#ifdef __PS4__
++	// Copy the current render target before presentation advances the swapchain.
++	// The bridge provides RGBA framebuffer copies without a CPU readback.
++	glCopyTexImage2D(GL_TEXTURE_2D, 0, internalFormat, screen.left, screen.top, internalWidth, internalHeight, 0);
++#else
+ 	g_system->presentBuffer();
+ 	glCopyTexImage2D(GL_TEXTURE_2D, 0, internalFormat, screen.left, screen.top, internalWidth, internalHeight, 0);
++#endif
+ }
+ 
+ } // End of namespace Myst3
+--- a/engines/stark/gfx/openglsactor.cpp
++++ b/engines/stark/gfx/openglsactor.cpp
+@@ -34,6 +34,17 @@
+ #include "graphics/opengl/shader.h"
+ 
+ namespace Stark {
++
++static Common::String lightUniformName(const char *field, uint index) {
++#ifdef __PS4__
++ Common::String name(field);
++ name.setChar(toupper(name[0]), 0);
++ return Common::String::format("lights%s[%u]", name.c_str(), index);
++#else
++ return Common::String::format("lights[%u].%s", index, field);
++#endif
++}
++
+ namespace Gfx {
+ 
+ OpenGLSActorRenderer::OpenGLSActorRenderer(OpenGLSDriver *gfx) :
+@@ -89,7 +100,11 @@
+ 
+ 	_shader->setUniform("modelViewMatrix", modelViewMatrix);
+ 	_shader->setUniform("projectionMatrix", projectionMatrix);
++#ifdef __PS4__
++	_shader->setUniform("normalMatrix", normalMatrix);
++#else
+ 	_shader->setUniform("normalMatrix", normalMatrix.getRotation());
++#endif
+ 	setBoneRotationArrayUniform(_shader, "boneRotation");
+ 	setBonePositionArrayUniform(_shader, "bonePosition");
+ 	setLightArrayUniform(lights);
+@@ -287,9 +302,9 @@
+ 		Math::Vector3d eyeDirection = viewMatrixRot * worldDirection;
+ 		eyeDirection.normalize();
+ 
+-		_shader->setUniform(Common::String::format("lights[%d].position", i).c_str(), eyePosition);
+-		_shader->setUniform(Common::String::format("lights[%d].direction", i).c_str(), eyeDirection);
+-		_shader->setUniform(Common::String::format("lights[%d].color", i).c_str(), l->color);
++		_shader->setUniform(lightUniformName("position", i).c_str(), eyePosition);
++		_shader->setUniform(lightUniformName("direction", i).c_str(), eyeDirection);
++		_shader->setUniform(lightUniformName("color", i).c_str(), l->color);
+ 
+ 		Math::Vector4d params;
+ 		params.x() = l->falloffNear;
+@@ -297,12 +312,12 @@
+ 		params.z() = l->innerConeAngle.getCosine();
+ 		params.w() = l->outerConeAngle.getCosine();
+ 
+-		_shader->setUniform(Common::String::format("lights[%d].params", i).c_str(), params);
++		_shader->setUniform(lightUniformName("params", i).c_str(), params);
+ 	}
+ 
+ 	for (uint i = lights.size() - 1; i < maxLights; i++) {
+ 		// Make sure unused lights are disabled
+-		_shader->setUniform(Common::String::format("lights[%d].position", i).c_str(), Math::Vector4d());
++		_shader->setUniform(lightUniformName("position", i).c_str(), Math::Vector4d());
+ 	}
+ }
+ 
+--- a/engines/stark/gfx/openglsprop.cpp
++++ b/engines/stark/gfx/openglsprop.cpp
+@@ -32,6 +32,17 @@
+ #include "graphics/opengl/shader.h"
+ 
+ namespace Stark {
++
++static Common::String lightUniformName(const char *field, uint index) {
++#ifdef __PS4__
++ Common::String name(field);
++ name.setChar(toupper(name[0]), 0);
++ return Common::String::format("lights%s[%u]", name.c_str(), index);
++#else
++ return Common::String::format("lights[%u].%s", index, field);
++#endif
++}
++
+ namespace Gfx {
+ 
+ OpenGLSPropRenderer::OpenGLSPropRenderer(Driver *gfx) :
+@@ -79,7 +90,11 @@
+ 
+ 	_shader->setUniform("modelViewMatrix", modelViewMatrix);
+ 	_shader->setUniform("projectionMatrix", projectionMatrix);
++#ifdef __PS4__
++	_shader->setUniform("normalMatrix", normalMatrix);
++#else
+ 	_shader->setUniform("normalMatrix", normalMatrix.getRotation());
++#endif
+ 	setLightArrayUniform(lights);
+ 
+ 	const Common::Array<Face> &faces = _model->getFaces();
+@@ -168,9 +183,9 @@
+ 		Math::Vector3d eyeDirection = viewMatrixRot * worldDirection;
+ 		eyeDirection.normalize();
+ 
+-		_shader->setUniform(Common::String::format("lights[%d].position", i).c_str(), eyePosition);
+-		_shader->setUniform(Common::String::format("lights[%d].direction", i).c_str(), eyeDirection);
+-		_shader->setUniform(Common::String::format("lights[%d].color", i).c_str(), l->color);
++		_shader->setUniform(lightUniformName("position", i).c_str(), eyePosition);
++		_shader->setUniform(lightUniformName("direction", i).c_str(), eyeDirection);
++		_shader->setUniform(lightUniformName("color", i).c_str(), l->color);
+ 
+ 		Math::Vector4d params;
+ 		params.x() = l->falloffNear;
+@@ -178,12 +193,12 @@
+ 		params.z() = l->innerConeAngle.getCosine();
+ 		params.w() = l->outerConeAngle.getCosine();
+ 
+-		_shader->setUniform(Common::String::format("lights[%d].params", i).c_str(), params);
++		_shader->setUniform(lightUniformName("params", i).c_str(), params);
+ 	}
+ 
+ 	for (uint i = lights.size() - 1; i < maxLights; i++) {
+ 		// Make sure unused lights are disabled
+-		_shader->setUniform(Common::String::format("lights[%d].position", i).c_str(), Math::Vector4d());
++		_shader->setUniform(lightUniformName("position", i).c_str(), Math::Vector4d());
+ 	}
+ }
+ 
+--- a/engines/stark/shaders/stark_actor.vertex
++++ b/engines/stark/shaders/stark_actor.vertex
+@@ -25,10 +25,26 @@
+ 
+ uniform mat4 modelViewMatrix;
+ uniform mat4 projectionMatrix;
++#ifdef PS4_GLSL_BRIDGE
++uniform mat4 normalMatrix;
++#else
+ uniform mat3 normalMatrix;
++#endif
+ uniform vec4 boneRotation[maxBones];
+ uniform vec3 bonePosition[maxBones];
++#ifdef PS4_GLSL_BRIDGE
++// Store each field in a std140 array supported by the PS4 uniform bridge.
++uniform vec4 lightsPosition[maxLights];
++uniform vec3 lightsDirection[maxLights];
++uniform vec3 lightsColor[maxLights];
++uniform vec4 lightsParams[maxLights];
++Light getLight(int i) {
++ return Light(lightsPosition[i], lightsDirection[i], lightsColor[i], lightsParams[i]);
++}
++#else
+ uniform Light lights[maxLights];
++Light getLight(int i) { return lights[i]; }
++#endif
+ uniform vec3 ambientColor;
+ uniform vec3 color;
+ uniform UBOOL textured;
+@@ -40,7 +56,7 @@
+ 	return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+ }
+ 
+-vec3 pointLight(vec3 position, vec3 color, float falloffNear, float falloffFar) {
++vec3 pointLight(vec3 position, vec3 lightTint, float falloffNear, float falloffFar) {
+ 	vec3 vertexToLight = position - eyePosition.xyz;
+ 
+ 	float dist = length(vertexToLight);
+@@ -49,16 +65,16 @@
+ 	vertexToLight = normalize(vertexToLight);
+ 	float incidence = max(0.0, dot(eyeNormal, vertexToLight));
+ 
+-	return color * attn * incidence;
++	return lightTint * attn * incidence;
+ }
+ 
+-vec3 directionalLight(vec3 direction, vec3 color) {
++vec3 directionalLight(vec3 direction, vec3 lightTint) {
+ 	float incidence = max(0.0, dot(eyeNormal, -direction));
+ 
+-	return color * incidence;
++	return lightTint * incidence;
+ }
+ 
+-vec3 spotLight(vec3 position, vec3 color, float falloffNear, float falloffFar, vec3 direction, float cosInnerAngle, float cosOuterAngle) {
++vec3 spotLight(vec3 position, vec3 lightTint, float falloffNear, float falloffFar, vec3 direction, float cosInnerAngle, float cosOuterAngle) {
+ 	vec3 vertexToLight = position - eyePosition.xyz;
+ 
+ 	float dist = length(vertexToLight);
+@@ -70,7 +86,7 @@
+ 	float cosAngle = max(0.0, dot(vertexToLight, -direction));
+ 	float cone = clamp((cosAngle - cosInnerAngle) / max(0.001, cosOuterAngle - cosInnerAngle), 0.0, 1.0);
+ 
+-	return color * attn * incidence * cone;
++	return lightTint * attn * incidence * cone;
+ }
+ 
+ void main()
+@@ -87,7 +103,7 @@
+ 	vec3 n1 = qrot(boneRotation[int(bone1)], normal);
+ 	vec3 n2 = qrot(boneRotation[int(bone2)], normal);
+ 	vec3 modelNormal = normalize(mix(n2, n1, boneWeight));
+-	eyeNormal = normalMatrix * modelNormal;
++	eyeNormal = mat3(normalMatrix) * modelNormal;
+ 	eyeNormal = normalize(eyeNormal);
+ 
+ 	// Compute the vertex position in screen-space
+@@ -103,14 +119,14 @@
+ 	// Shade the vertex color according to the lights
+ 	vec3 lightColor = ambientColor;
+ 	for (int i = 0; i < maxLights; i++) {
+-		int type = int(lights[i].position.w);
++		int type = int(getLight(i).position.w);
+ 		if (type == lightTypePoint) {
+-			lightColor += pointLight(lights[i].position.xyz, lights[i].color, lights[i].params.x, lights[i].params.y);
++			lightColor += pointLight(getLight(i).position.xyz, getLight(i).color, getLight(i).params.x, getLight(i).params.y);
+ 		} else if (type == lightTypeDirectional) {
+-			lightColor += directionalLight(lights[i].direction, lights[i].color);
++			lightColor += directionalLight(getLight(i).direction, getLight(i).color);
+ 		} else if (type == lightTypeSpot) {
+-			lightColor += spotLight(lights[i].position.xyz, lights[i].color, lights[i].params.x, lights[i].params.y,
+-			                        lights[i].direction, lights[i].params.z, lights[i].params.w);
++			lightColor += spotLight(getLight(i).position.xyz, getLight(i).color, getLight(i).params.x, getLight(i).params.y,
++			                        getLight(i).direction, getLight(i).params.z, getLight(i).params.w);
+ 		}
+ 	}
+ 
+--- a/engines/stark/shaders/stark_prop.vertex
++++ b/engines/stark/shaders/stark_prop.vertex
+@@ -20,15 +20,31 @@
+ 
+ uniform mat4 modelViewMatrix;
+ uniform mat4 projectionMatrix;
++#ifdef PS4_GLSL_BRIDGE
++uniform mat4 normalMatrix;
++#else
+ uniform mat3 normalMatrix;
++#endif
+ uniform UBOOL doubleSided;
+ uniform vec3 ambientColor;
++#ifdef PS4_GLSL_BRIDGE
++// Store each field in a std140 array supported by the PS4 uniform bridge.
++uniform vec4 lightsPosition[maxLights];
++uniform vec3 lightsDirection[maxLights];
++uniform vec3 lightsColor[maxLights];
++uniform vec4 lightsParams[maxLights];
++Light getLight(int i) {
++ return Light(lightsPosition[i], lightsDirection[i], lightsColor[i], lightsParams[i]);
++}
++#else
+ uniform Light lights[maxLights];
++Light getLight(int i) { return lights[i]; }
++#endif
+ 
+ vec4 eyePosition;
+ vec3 eyeNormal;
+ 
+-vec3 pointLight(vec3 position, vec3 color, float falloffNear, float falloffFar) {
++vec3 pointLight(vec3 position, vec3 lightTint, float falloffNear, float falloffFar) {
+ 	vec3 vertexToLight = position - eyePosition.xyz;
+ 
+ 	float dist = length(vertexToLight);
+@@ -37,16 +53,16 @@
+ 	vertexToLight = normalize(vertexToLight);
+ 	float incidence = max(0.0, dot(eyeNormal, vertexToLight));
+ 
+-	return color * attn * incidence;
++	return lightTint * attn * incidence;
+ }
+ 
+-vec3 directionalLight(vec3 direction, vec3 color) {
++vec3 directionalLight(vec3 direction, vec3 lightTint) {
+ 	float incidence = max(0.0, dot(eyeNormal, -direction));
+ 
+-	return color * incidence;
++	return lightTint * incidence;
+ }
+ 
+-vec3 spotLight(vec3 position, vec3 color, float falloffNear, float falloffFar, vec3 direction, float cosInnerAngle, float cosOuterAngle) {
++vec3 spotLight(vec3 position, vec3 lightTint, float falloffNear, float falloffFar, vec3 direction, float cosInnerAngle, float cosOuterAngle) {
+ 	vec3 vertexToLight = position - eyePosition.xyz;
+ 
+ 	float dist = length(vertexToLight);
+@@ -58,7 +74,7 @@
+ 	float cosAngle = max(0.0, dot(vertexToLight, -direction));
+ 	float cone = clamp((cosAngle - cosInnerAngle) / max(0.001, cosOuterAngle - cosInnerAngle), 0.0, 1.0);
+ 
+-	return color * attn * incidence * cone;
++	return lightTint * attn * incidence * cone;
+ }
+ 
+ void main() {
+@@ -70,21 +86,21 @@
+ 
+ 	// Compute the vertex position in screen-space
+ 	eyePosition = modelViewMatrix * vec4(position.xyz, 1.0);
+-	eyeNormal = normalMatrix * normal;
++	eyeNormal = mat3(normalMatrix) * normal;
+ 	eyeNormal = normalize(eyeNormal);
+ 	gl_Position = projectionMatrix * eyePosition;
+ 
+ 	// Shade the vertex color according to the lights
+ 	vec3 lightColor = ambientColor;
+ 	for (int i = 0; i < maxLights; i++) {
+-		int type = int(lights[i].position.w);
++		int type = int(getLight(i).position.w);
+ 		if (type == lightTypePoint) {
+-			lightColor += pointLight(lights[i].position.xyz, lights[i].color, lights[i].params.x, lights[i].params.y);
++			lightColor += pointLight(getLight(i).position.xyz, getLight(i).color, getLight(i).params.x, getLight(i).params.y);
+ 		} else if (type == lightTypeDirectional) {
+-			lightColor += directionalLight(lights[i].direction, lights[i].color);
++			lightColor += directionalLight(getLight(i).direction, getLight(i).color);
+ 		} else if (type == lightTypeSpot) {
+-			lightColor += spotLight(lights[i].position.xyz, lights[i].color, lights[i].params.x, lights[i].params.y,
+-									lights[i].direction, lights[i].params.z, lights[i].params.w);
++			lightColor += spotLight(getLight(i).position.xyz, getLight(i).color, getLight(i).params.x, getLight(i).params.y,
++									getLight(i).direction, getLight(i).params.z, getLight(i).params.w);
+ 		}
+ 	}
+ 

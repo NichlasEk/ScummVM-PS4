@@ -268,3 +268,43 @@ extraction. APP_VER 0.04 is staged at
 - Walking evidence: `jonsson-click-filter.log`, `jonsson-click-filter.png`.
 - Package/replay evidence: `jonsson-package-validation.log`,
   `jonsson-payload-check.json`, `jonsson-replay-final.log`.
+
+## 3D engine validation (2026-10-15)
+
+All three local English Windows data sets were started sequentially in shadPS4
+0.18.0. The baseline was APP_VER 0.04 (eboot hash recorded above). This is a
+hardware-renderer test through the Vulkan bridge, not a TinyGL acceptance test.
+
+- [x] Myst III: Exile: menu, New Game, intro and opening panorama now render;
+  the user confirmed the corrected panorama. Clicking New Game previously
+  called a null `glCopyTexImage2D` entry. The bridge now exports and loads this
+  function for RGBA/RGBA8 level-zero 2D/rectangle textures, using GPU copies.
+  Unsupported formats/levels fail explicitly. Myst captures RGBA before
+  presentation advances the swapchain. `glDrawArrays` now accepts a nonzero
+  first vertex, preserving indices and validating buffer bounds; the old
+  rejection discarded five of the six panorama faces. Initial pointer trouble
+  was not established as an engine bug: pointer motion worked on retest; the
+  click failure was the framebuffer-copy crash. Save/load and later areas remain
+  untested. Local evidence: `myst3-null-call.log`, `myst3-fix4-guest.log`,
+  `myst3-fix4-skip.png`, `myst3-fix4-eboot.sha256` under
+  `artifacts/upstream-2026.4.0/`. The tested binary includes temporary pointer
+  diagnostics; these are removed from the source checkpoint.
+- [ ] Grim Fandango: baseline intro runs with a small, misplaced viewport.
+  `3d-engines.patch` makes the PS4 shader renderer use the backend's negotiated
+  dimensions. Runtime confirmation is still pending at this checkpoint.
+- [ ] The Longest Journey: baseline fails compiling `stark_actor.vertex`.
+  PS4 shader variants use mat4 normal transforms and separate light-field arrays;
+  helper parameters avoid shadowing the color uniform. The bridge accepts
+  bounded arrays up to 128 entries for Stark's 70-bone skeleton, with the existing
+  8 KiB stage budget retained. All six adapted shader pairs pass host compilation,
+  linking and reflection. Runtime confirmation remains pending.
+
+Bridge state/copy/texture-cache tests pass with ASan/UBSan, including nonzero
+vertex offsets, out-of-range rejection, GPU-copy allocation and invalid-call
+storage preservation. GLSL regression tests pass, including a 70-element named
+array and rejection above 128. Evidence: `3d-copy-tests.log`, `3d-glsl-host.log`,
+`stark-shader-check.log`. Clean-source replay matches 104 modified files.
+The experiment configure script rebuilds changed bridge objects and declares
+link dependencies, avoiding stale executables when only the bridge changes.
+Physical PS4 testing remains separate. Commercial data is neither packaged nor
+committed. The previous 0.04 release package is preserved.

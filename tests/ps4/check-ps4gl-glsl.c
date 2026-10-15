@@ -174,7 +174,12 @@ int main(void) {
       free(words);
     }
   }
-  assert(!ps4glCompileLegacyGLSL(1,"#version 110\nuniform vec4 tooMany[65];void main(){gl_FragColor=tooMany[64];}",&words,&bytes,log,sizeof(log)));
+  /* Stark's skeleton has 70 bones; preserve the named array bound and stride. */
+  assert(ps4glCompileLegacyGLSL(0,"#version 110\nconst int maxBones=70;uniform vec4 bones[maxBones];void main(){gl_Position=bones[69];}",&words,&bytes,log,sizeof(log)));
+  PS4GLProgram skeleton={0}; assert(gl_reflect_uniforms(words,bytes,0,&skeleton));
+  assert(skeleton.uniform_count==1 && skeleton.uniforms[0].array_length==70 && skeleton.uniforms[0].array_stride[0]==16);
+  free(words);
+  assert(!ps4glCompileLegacyGLSL(1,"#version 110\nuniform vec4 tooMany[129];void main(){gl_FragColor=tooMany[128];}",&words,&bytes,log,sizeof(log)));
   /* Original Grim actor shader: flattened struct fields retain GL names and types. */
   if(!ps4glCompileLegacyGLSL(0,legacy_grim_actor_vertex,&words,&bytes,log,sizeof(log))) {
     fprintf(stderr,"Grim actor vertex: %s\n",log); abort();

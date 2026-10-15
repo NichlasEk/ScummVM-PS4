@@ -40,5 +40,10 @@ if [[ "$mode" == vulkan ]]; then
   patch --dry-run --batch --forward --fuzz=0 -p1 -d "$source" -i "$director"
   patch --batch --forward --fuzz=0 -p1 -d "$source" -i "$director"
  fi
+ three_d="$root/experiments/scummvm-2026.4.0/3d-engines.patch"
+ if ! patch --dry-run --batch --forward --fuzz=0 -R -p1 -d "$source" -i "$three_d" >/dev/null 2>&1; then
+  patch --dry-run --batch --forward --fuzz=0 -p1 -d "$source" -i "$three_d"
+  patch --batch --forward --fuzz=0 -p1 -d "$source" -i "$three_d"
+ fi
 fi
 printf 'Prepared: %s\n' "$source"

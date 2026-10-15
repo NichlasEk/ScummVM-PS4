@@ -546,8 +546,8 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   if (mode!=GL_TRIANGLES && mode!=GL_TRIANGLE_STRIP) { error(GL_INVALID_ENUM); return; }
   if (count<0 || first<0) { error(GL_INVALID_VALUE); return; }
   PS4GLProgram *p=program(current->program);
-  if(p && !first && !current->command && current->begin_frame && !current->begin_frame(current)) { error(GL_INVALID_OPERATION); return; }
-  if (!p || !current->command || first) { error(GL_INVALID_OPERATION); return; }
+  if(p && !current->command && current->begin_frame && !current->begin_frame(current)) { error(GL_INVALID_OPERATION); return; }
+  if (!p || !current->command) { error(GL_INVALID_OPERATION); return; }
   if(!prepare_target()) return;
   GLint *v=current->viewport;
   /* The initial native subset deliberately rejects out-of-target viewports. */
@@ -585,7 +585,8 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   }
   size_t index_bytes=0;
   const unsigned char *index_data=NULL;
-  uint32_t vertices=(uint32_t)count;
+  if(!type && (uint64_t)(unsigned)first+(unsigned)count>INT32_MAX) {error(GL_INVALID_VALUE);return;}
+  uint32_t vertices=(uint32_t)count+(type ? 0u : (uint32_t)first);
   if(type) {
     PS4GLBuffer *ibo=bound_buffer(GL_ELEMENT_ARRAY_BUFFER);
     if(!ibo) return;
@@ -617,9 +618,9 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
     if(ok && strip) {
       uint32_t *out=(uint32_t *)((unsigned char *)packed+vertex_bytes);
       for(uint32_t i=0;i<(uint32_t)count-2;++i) {
-        out[i*3]=element_index(index_data,type,i+(i&1));
-        out[i*3+1]=element_index(index_data,type,i+1-(i&1));
-        out[i*3+2]=element_index(index_data,type,i+2);
+        out[i*3]=element_index(index_data,type,i+(i&1))+(type ? 0u : (uint32_t)first);
+        out[i*3+1]=element_index(index_data,type,i+1-(i&1))+(type ? 0u : (uint32_t)first);
+        out[i*3+2]=element_index(index_data,type,i+2)+(type ? 0u : (uint32_t)first);
       }
     } else if(ok && index_bytes) memcpy((unsigned char *)packed+vertex_bytes,index_data,index_bytes);
     if(ok) ok=current->upload_vertices(current,packed,bytes,vertex_bytes,draw_type);
@@ -641,7 +642,7 @@ static void draw(GLenum mode, GLint first, GLsizei count, GLenum type, const voi
   vkCmdSetViewport(current->command,0,1,&vp);
   vkCmdSetScissor(current->command,0,1,&sc);
   if(draw_type) vkCmdDrawIndexed(current->command,draw_count,1,0,0,0);
-  else vkCmdDraw(current->command,draw_count,1,0,0);
+  else vkCmdDraw(current->command,draw_count,1,(uint32_t)first,0);
 }
 static void client_draw(GLenum, GLint, GLsizei, GLenum, const void *);
 static int client_uses_arrays(void);
@@ -685,7 +686,7 @@ PS4GLProc ps4glGetProcAddress(const char *name) {
   PROC(glGenFramebuffers); PROC(glBindFramebuffer); PROC(glDeleteFramebuffers); PROC(glIsFramebuffer);
   PROC(glFramebufferTexture2D); PROC(glCheckFramebufferStatus);
   PROC(glGenTextures); PROC(glBindTexture); PROC(glDeleteTextures); PROC(glIsTexture);
-  PROC(glTexEnvi); PROC(glTexEnvfv); PROC(glActiveTexture); PROC(glPixelStorei); PROC(glReadPixels); PROC(glTexParameteri); PROC(glCopyTexSubImage2D); PROC(glTexImage1D); PROC(glTexImage2D); PROC(glTexSubImage2D);
+  PROC(glTexEnvi); PROC(glTexEnvfv); PROC(glActiveTexture); PROC(glPixelStorei); PROC(glReadPixels); PROC(glTexParameteri); PROC(glCopyTexSubImage2D); PROC(glCopyTexImage2D); PROC(glTexImage1D); PROC(glTexImage2D); PROC(glTexSubImage2D);
   PROC(glUniform1i); PROC(glUniform1iv);
   PROC(glColorMask); PROC(glClearDepth); PROC(glClearStencil); PROC(glDepthFunc); PROC(glStencilFunc); PROC(glStencilOp); PROC(glStencilMask); PROC(glStencilFuncSeparate); PROC(glStencilOpSeparate); PROC(glStencilMaskSeparate);
   PROC(glGetUniformLocation); PROC(glUniform1f); PROC(glUniform2f); PROC(glUniform3f); PROC(glUniform4f);
@@ -914,6 +915,24 @@ void glTexImage1D(GLenum target, GLint level, GLint internal, GLsizei width, GLi
 void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void *pixels) {
   if(target==GL_TEXTURE_1D || target==GL_TEXTURE_CUBE_MAP) {error(GL_INVALID_ENUM);return;}
   texture_image(target,level,internal,width,height,border,format,type,pixels);
+}
+/* Allocate and copy on the GPU using the same bounded RGBA path as subimages.
+ * Other internal formats remain explicit errors until their conversion exists. */
+void glCopyTexImage2D(GLenum target, GLint level, GLenum internal, GLint x, GLint y,
+                      GLsizei width, GLsizei height, GLint border) {
+  if(!fixed_outside()) return;
+  if(target!=GL_TEXTURE_2D && target!=GL_TEXTURE_RECTANGLE) {error(GL_INVALID_ENUM);return;}
+  if(internal!=GL_RGBA && internal!=GL_RGBA8) {error(GL_INVALID_ENUM);return;}
+  PS4GLTexture *t=bound_texture(target); if(!t) return;
+  if(level || border || x<0 || y<0 || width<0 || height<0 || width>PS4GL_TEXTURE_LIMIT || height>PS4GL_TEXTURE_LIMIT) {error(GL_INVALID_VALUE);return;}
+  PS4GLTexture *source=ps4glFramebufferTextureObject(current);
+  int sw=source ? source->width : current->width, sh=source ? source->height : current->height;
+  if(x>sw || y>sh || width>sw-x || height>sh-y) {error(GL_INVALID_VALUE);return;}
+  if(t==source || !current->copy_texture) {error(GL_INVALID_OPERATION);return;}
+  uint64_t revision=t->revision;
+  glTexImage2D(target,0,internal,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+  if(t->revision==revision) return; /* Allocation/validation failed; preserve its error. */
+  glCopyTexSubImage2D(target,0,0,0,x,y,width,height);
 }
 void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y, GLsizei width, GLsizei height,
                      GLenum format, GLenum type, const void *pixels) {

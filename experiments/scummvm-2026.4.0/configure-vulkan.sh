@@ -21,5 +21,14 @@ target.write_text((root/'compat/ps4gl/ps4gl-main.c').read_text().replace('/data/
 PYMAIN
 sdk=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
 clang --target=x86_64-pc-freebsd12-elf -fPIC -O2 -D__PS4__ -D__ORBIS__ -isysroot "$sdk" -isystem "$sdk/include" -I"$root/compat/ps4gl" -I"$native/Vulkan-Headers/include" -I"$native/vulkan-ps4/include" -I"$root/.tools/glslang" -c "$root/artifacts/upstream-2026.4.0/ps4gl-main.c" -o "$bridge/ps4gl-main.o"
+# Compile the bridge sources changed by this experiment instead of reusing stale objects.
+for name in ps4gl ps4gl-glsl; do
+ clang --target=x86_64-pc-freebsd12-elf -fPIC -O2 -D__PS4__ -D__ORBIS__ \
+  -isysroot "$sdk" -isystem "$sdk/include" -I"$root/compat/ps4gl" \
+  -I"$native/Vulkan-Headers/include" -I"$root/.tools/glslang" \
+  -c "$root/compat/ps4gl/$name.c" -o "$bridge/$name.o"
+done
 bash "$root/experiments/scummvm-2026.4.0/configure.sh"
 printf '\nLDFLAGS += -Wl,--wrap=main -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -Wl,-z,max-page-size=0x4000\nLIBS += %s\n' "$bridge/ps4gl-main.o" >> "$SCUMMVM_BUILD_DIR/config.mk"
+# These objects are passed through LIBS, which upstream does not track as prerequisites.
+printf '\nscummvm: %s %s\n' "$bridge/ps4gl.o" "$bridge/ps4gl-glsl.o" >> "$SCUMMVM_BUILD_DIR/config.mk"

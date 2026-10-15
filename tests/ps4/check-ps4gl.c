@@ -12,7 +12,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdClearAttachments(VkCommandBuffer cmd, uint32_t n
  const VkClearAttachment *c, uint32_t nr, const VkClearRect *r) {
   assert(cmd && nc==1 && nr==1); ++calls; last=*r; color=*c;
 }
-static unsigned draws, expected_vertices=3;
+static unsigned draws, expected_vertices=3, expected_first;
 static VkViewport viewport;
 VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer cmd, VkPipelineBindPoint point, VkPipeline p) {
   assert(cmd && point==VK_PIPELINE_BIND_POINT_GRAPHICS && p);
@@ -24,7 +24,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdSetScissor(VkCommandBuffer cmd, uint32_t first, 
   assert(cmd && !first && count==1); last.rect=*r;
 }
 VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer cmd, uint32_t count, uint32_t instances, uint32_t first, uint32_t instance) {
-  assert(cmd && count==expected_vertices && instances==1 && !first && !instance); ++draws;
+  assert(cmd && count==expected_vertices && instances==1 && first==expected_first && !instance); ++draws;
 }
 static unsigned indexed_draws, uploads, expected_indices=3;
 static unsigned stream_vertices;
@@ -438,6 +438,28 @@ static void check_rectangle_textures(void) {
   glDeleteTextures(1,&cube);assert(!ps4glCubeAtUnit(&ctx,0));ps4glDestroyTextures(&ctx);
   puts("PASS rectangle target isolation, immutable target type, default filtering, non-mipmap bounds and deletion");
 }
+static unsigned copy_calls;
+static int copy_probe(PS4GLContext *c,PS4GLTexture *t,GLint dx,GLint dy,GLint x,GLint y,GLsizei w,GLsizei h) {
+  assert(c && t && !dx && !dy && x==2 && y==3 && w==4 && h==5);
+  assert(t->width==4 && t->height==5 && t->internal_format==GL_RGBA8);
+  ++copy_calls; return 1;
+}
+static void check_copy_image(void) {
+  static PS4GLContext c; assert(ps4glInit(&c,80,60)); ps4glMakeCurrent(&c);
+  c.copy_texture=copy_probe; c.command=(VkCommandBuffer)1;
+  GLuint t; glGenTextures(1,&t); glBindTexture(GL_TEXTURE_2D,t);
+  glCopyTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2,3,4,5,0);
+  assert(!glGetError() && copy_calls==1 && ps4glTextureAtUnit(&c,0)->width==4);
+  uint64_t revision=ps4glTextureAtUnit(&c,0)->revision;
+  glCopyTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,79,3,4,5,0); assert(glGetError()==GL_INVALID_VALUE);
+  glCopyTexImage2D(GL_TEXTURE_2D,1,GL_RGBA8,2,3,4,5,0); assert(glGetError()==GL_INVALID_VALUE);
+  glCopyTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2,3,4,5,1); assert(glGetError()==GL_INVALID_VALUE);
+  glCopyTexImage2D(GL_TEXTURE_2D,0,GL_RGB,2,3,4,5,0); assert(glGetError()==GL_INVALID_ENUM);
+  assert(copy_calls==1 && ps4glTextureAtUnit(&c,0)->revision==revision);
+  assert(ps4glGetProcAddress("glCopyTexImage2D"));
+  c.command=0; ps4glDestroyTextures(&c);
+  puts("PASS framebuffer copy allocation, GPU dispatch, format/bounds rejection and unchanged storage on invalid calls");
+}
 int main(void) {
   check_rectangle_textures();
   check_texture_records();
@@ -490,7 +512,7 @@ int main(void) {
   assert(last.rect.extent.width==80 && last.rect.extent.height==60);
   glEnable(GL_SCISSOR_TEST); glScissor(-2,50,12,20);
   glDrawArrays(GL_TRIANGLES,0,3); assert(draws==2 && last.rect.offset.y==0 && last.rect.extent.width==10);
-  glDrawArrays(GL_TRIANGLES,1,3); assert(glGetError()==GL_INVALID_OPERATION && draws==2);
+  glDrawArrays(GL_TRIANGLES,-1,3); assert(glGetError()==GL_INVALID_VALUE && draws==2);
   glDrawArrays(GL_TRIANGLES,0,-1); assert(glGetError()==GL_INVALID_VALUE);
   glDrawArrays(0xffff,0,3); assert(glGetError()==GL_INVALID_ENUM);
   glDeleteProgram(1); assert(glIsProgram(1));
@@ -907,6 +929,16 @@ int main(void) {
   const uint32_t ordered[]={0,1,2, 2,1,3, 2,3,4};
   assert(snapshot_type==GL_UNSIGNED_INT && snapshot_size==76 && snapshot_vertex_bytes==40);
   assert(!memcmp(snapshot,strip_vertices,40) && !memcmp(snapshot+40,ordered,sizeof(ordered)));
+  expected_indices=6;
+  glDrawArrays(GL_TRIANGLE_STRIP,1,4); assert(!glGetError());
+  const uint32_t offset_strip[]={1,2,3,3,2,4};
+  assert(snapshot_vertex_bytes==40 && snapshot_size==64 && !memcmp(snapshot+40,offset_strip,sizeof(offset_strip)));
+  expected_vertices=3; expected_first=2;
+  glDrawArrays(GL_TRIANGLES,2,3); assert(!glGetError() && snapshot_vertex_bytes==40);
+  expected_first=0;
+  glDrawArrays(GL_TRIANGLE_STRIP,2,4); assert(glGetError()==GL_INVALID_OPERATION);
+  glDrawArrays(GL_TRIANGLES,INT_MAX,3); assert(glGetError()==GL_INVALID_VALUE);
+  expected_indices=9;
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,2);
   uint16_t strip16[]={65535,4,1,1,3,2};
   glBufferData(GL_ELEMENT_ARRAY_BUFFER,sizeof(strip16),strip16,GL_STREAM_DRAW);
@@ -933,6 +965,7 @@ int main(void) {
   glDrawElements(GL_TRIANGLE_STRIP,4,GL_UNSIGNED_SHORT,(void *)UINTPTR_MAX); assert(glGetError()==GL_INVALID_OPERATION);
   assert(uploads==old_uploads && indexed_draws==old_draws);
   ps4glDestroyBuffers(&strips);
+  check_copy_image();
   check_s3tc();
   check_fixed();
   ps4glMakeCurrent(NULL);

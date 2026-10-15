@@ -8,7 +8,7 @@ case "$mode" in
  *) echo 'Usage: prepare.sh software|vulkan' >&2; exit 2 ;;
 esac
 clean="$root/.tools/upstream-2026.4.0/scummvm-2026.4.0"
-source="$root/.tools/upstream-2026.4.0/$folder"
+source=${SCUMMVM_SOURCE_DIR:-"$root/.tools/upstream-2026.4.0/$folder"}
 patch="$root/experiments/scummvm-2026.4.0/$mode.patch"
 local_patch="$root/experiments/scummvm-2026.4.0/local-engines.patch"
 if [[ ! -d "$clean" ]]; then
@@ -18,15 +18,22 @@ fi
 if [[ ! -d "$source" ]]; then
  cp -a --reflink=auto "$clean" "$source"
 fi
-if ! patch --dry-run --batch --fuzz=0 -R -p1 -d "$source" -i "$patch" >/dev/null 2>&1; then
+if ! patch --dry-run --batch --forward --fuzz=0 -R -p1 -d "$source" -i "$patch" >/dev/null 2>&1; then
  patch --dry-run --batch --forward --fuzz=0 -p1 -d "$source" -i "$patch"
  patch --batch --forward --fuzz=0 -p1 -d "$source" -i "$patch"
 fi
 if [[ ! -d "$source/engines/pice" && ! -d "$source/engines/sotc" ]]; then
  python3 "$root/scripts/sync-local-engines.py" "$source"
 fi
-if ! patch --dry-run --batch --fuzz=0 -R -p1 -d "$source" -i "$local_patch" >/dev/null 2>&1; then
+if ! patch --dry-run --batch --forward --fuzz=0 -R -p1 -d "$source" -i "$local_patch" >/dev/null 2>&1; then
  patch --dry-run --batch --forward --fuzz=0 -p1 -d "$source" -i "$local_patch"
  patch --batch --forward --fuzz=0 -p1 -d "$source" -i "$local_patch"
+fi
+if [[ "$mode" == vulkan ]]; then
+ extra="$root/experiments/scummvm-2026.4.0/extra-engines.patch"
+ if ! patch --dry-run --batch --forward --fuzz=0 -R -p1 -d "$source" -i "$extra" >/dev/null 2>&1; then
+  patch --dry-run --batch --forward --fuzz=0 -p1 -d "$source" -i "$extra"
+  patch --batch --forward --fuzz=0 -p1 -d "$source" -i "$extra"
+ fi
 fi
 printf 'Prepared: %s\n' "$source"

@@ -1,7 +1,8 @@
 # ScummVM 2026.4.0: PS4 upgrade assessment
 
 Initial audit: 2026-10-15. Follow-up: isolated software and Vulkan test packages
-now link and show the 2026.4.0 launcher in shadPS4. See the
+now link and show the 2026.4.0 launcher in shadPS4, including a full Vulkan
+candidate with 126 engines (Watchmaker and Macs2 included). See the
 [build experiment and current evidence](../experiments/scummvm-2026.4.0/README.md).
 The initial audit below is retained as the pre-port baseline, not current build status. Existing build scripts, maintained engines, patches and
 packages were not changed.

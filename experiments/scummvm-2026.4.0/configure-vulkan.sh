@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
-export SCUMMVM_SOURCE_DIR="$root/.tools/upstream-2026.4.0/ps4-vulkan"
-export SCUMMVM_BUILD_DIR="$root/build/scummvm-2026.4.0-vulkan"
+export SCUMMVM_SOURCE_DIR=${SCUMMVM_SOURCE_DIR:-"$root/.tools/upstream-2026.4.0/ps4-vulkan"}
+export SCUMMVM_BUILD_DIR=${SCUMMVM_BUILD_DIR:-"$root/build/scummvm-2026.4.0-vulkan"}
 export SCUMMVM_EXPERIMENTAL_VULKAN=1 SCUMMVM_SDL_CONFIG=scummvm-vulkan-sdl2-config
 export SCUMMVM_ENGINES=${SCUMMVM_ENGINES-scumm,pice,sotc}
 native="$root/.tools/opengnm-stack"

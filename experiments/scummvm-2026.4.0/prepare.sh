@@ -35,5 +35,10 @@ if [[ "$mode" == vulkan ]]; then
   patch --dry-run --batch --forward --fuzz=0 -p1 -d "$source" -i "$extra"
   patch --batch --forward --fuzz=0 -p1 -d "$source" -i "$extra"
  fi
+ director="$root/experiments/scummvm-2026.4.0/director7.patch"
+ if ! patch --dry-run --batch --forward --fuzz=0 -R -p1 -d "$source" -i "$director" >/dev/null 2>&1; then
+  patch --dry-run --batch --forward --fuzz=0 -p1 -d "$source" -i "$director"
+  patch --batch --forward --fuzz=0 -p1 -d "$source" -i "$director"
+ fi
 fi
 printf 'Prepared: %s\n' "$source"

@@ -1,0 +1,669 @@
+--- a/engines/director/cast.cpp
++++ b/engines/director/cast.cpp
+@@ -61,6 +61,8 @@
+ #include "director/lingo/lingodec/names.h"
+ #include "director/lingo/lingodec/resolver.h"
+ #include "director/lingo/lingodec/script.h"
++
++#include "director/ps4-jonsson.h"
+ 
+ namespace Director {
+ 
+@@ -2262,6 +2264,8 @@
+ 
+ Common::U32String Cast::decodeString(const Common::String &str) {
+ 	Common::CodePage encoding = getFileEncoding();
++	if (isPS4Jonsson() && encoding == Common::kWindows1252 && _macCharsToWin.empty())
++		return str.decode(Common::kMacRoman);
+ 
+ 	Common::String fixedStr;
+ 	if (encoding == Common::kWindows1252) {
+--- a/engines/director/channel.cpp
++++ b/engines/director/channel.cpp
+@@ -24,6 +24,7 @@
+ #include "director/score.h"
+ #include "director/cast.h"
+ #include "director/channel.h"
++#include "director/ps4-jonsson.h"
+ #include "director/picture.h"
+ #include "director/sprite.h"
+ #include "director/types.h"
+@@ -525,6 +526,14 @@
+ 	if (nextSprite) {
+ 		// for the non-puppet QDShape, since we won't use isDirty to check whether the QDShape is changed.
+ 		// so we may always keep the sprite info because we need it to draw QDShape.
++		if (isPS4Jonsson()) {
++			// Behavior bindings must follow score changes even for puppeted art.
++			_sprite->_spriteListIdx = nextSprite->_spriteListIdx;
++			_sprite->_behaviors = nextSprite->_behaviors;
++			_sprite->_spriteInfo = nextSprite->_spriteInfo;
++			_startFrame = nextSprite->_spriteInfo.startFrame;
++			_endFrame = nextSprite->_spriteInfo.endFrame;
++		}
+ 		if (_sprite->_puppet || _sprite->_autoPuppet || (!nextSprite->isQDShape() && partial)) {
+ 			// Updating scripts, etc. does not require a full re-render
+ 			_sprite->_scriptId = nextSprite->_scriptId;
+--- a/engines/director/debugger.cpp
++++ b/engines/director/debugger.cpp
+@@ -350,7 +350,7 @@
+ 
+ 	if (frameId >= 1 && frameId <= maxFrames) {
+ 		debugPrintf("Channel info for frame %d of %d\n", frameId, maxFrames);
+-		Frame *frame = score->_scoreCache[frameId - 1];
++		Frame *frame = (uint)frameId <= score->_scoreCache.size() ? score->_scoreCache[frameId - 1] : nullptr;
+ 		if (frame) {
+ 			debugPrintf("%s\n", frame->formatChannelInfo().c_str());
+ 		} else {
+--- a/engines/director/director.cpp
++++ b/engines/director/director.cpp
+@@ -49,6 +49,8 @@
+ #include "director/detection_paths.h"
+ #endif
+ 
++#include "director/ps4-jonsson.h"
++
+ namespace Director {
+ 
+ DirectorEngine *g_director;
+@@ -282,7 +284,7 @@
+ 	if (!debugChannelSet(-1, kDebugDesktop))
+ 		_wmMode |= Graphics::kWMModeFullscreen | Graphics::kWMModeNoDesktop;
+ 
+-	if (ConfMan.getBool("true_color") || (getGameFlags() & GF_TRUECOLOR) || debugChannelSet(-1, kDebug32bpp)) {
++	if (ConfMan.getBool("true_color") || (getGameFlags() & GF_TRUECOLOR) || debugChannelSet(-1, kDebug32bpp) || isPS4Jonsson()) {
+ 		// Both 16bpp and 32bpp formats are supported, but 32bpp is always reported to the scripts.
+ 		_pixelformat = g_system->getSupportedFormats().front();
+ 		_colorDepth = _pixelformat.isCLUT8() ? 8 : 32;
+--- a/engines/director/fonts.cpp
++++ b/engines/director/fonts.cpp
+@@ -27,6 +27,8 @@
+ #include "director/director.h"
+ #include "director/cast.h"
+ 
++#include "director/ps4-jonsson.h"
++
+ namespace Director {
+ 
+ void Cast::loadFontMap(Common::SeekableReadStreamEndian &stream) {
+@@ -93,16 +95,18 @@
+ 
+ 		Common::Platform platform = platformFromID(stream.readUint16());
+ 		uint16 id = stream.readUint16();
++		// Keep high-bit authored Windows IDs out of the Mac encoding namespace.
++		int preferredId = isPS4Jonsson() && platform == Common::kPlatformWindows ? -1 : id;
+ 
+ 		// Map cast font ID to window manager font ID
+ 		FontMapEntry *entry = new FontMapEntry;
+ 		if (platform == Common::kPlatformWindows && _fontXPlatformMap.contains(name)) {
+ 			FontXPlatformInfo *xinfo = _fontXPlatformMap[name];
+-			entry->toFont = _vm->_wm->_fontMan->registerFontName(xinfo->toFont, id);
++			entry->toFont = _vm->_wm->_fontMan->registerFontName(xinfo->toFont, preferredId);
+ 			entry->remapChars = xinfo->remapChars;
+ 			entry->sizeMap = xinfo->sizeMap;
+ 		} else {
+-			entry->toFont = _vm->_wm->_fontMan->registerFontName(name, id);
++			entry->toFont = _vm->_wm->_fontMan->registerFontName(name, preferredId);
+ 		}
+ 		_fontMap[id] = entry;
+ 
+--- a/engines/director/frame.cpp
++++ b/engines/director/frame.cpp
+@@ -28,6 +28,8 @@
+ #include "director/movie.h"
+ #include "director/sprite.h"
+ 
++#include "director/ps4-jonsson.h"
++
+ namespace Director {
+ 
+ Frame::Frame(Score *score, int numChannels) {
+@@ -39,6 +41,7 @@
+ }
+ 
+ void Frame::reset() {
++	memset(_ps4D7MainData, 0, sizeof(_ps4D7MainData));
+ 	// Reset main channels
+ 	_mainChannels = MainChannels();
+ 
+@@ -54,6 +57,7 @@
+ }
+ 
+ Frame::Frame(const Frame &frame) {
++	memcpy(_ps4D7MainData, frame._ps4D7MainData, sizeof(_ps4D7MainData));
+ 	_vm = frame._vm;
+ 	_numChannels = frame._numChannels;
+ 	_mainChannels.actionId = frame._mainChannels.actionId;
+@@ -1589,6 +1593,19 @@
+ }
+ 
+ void Frame::readMainChannelsD7(Common::MemoryReadStreamEndian &stream, uint16 offset, uint16 size) {
++	if (!isPS4Jonsson()) {
++		readMainChannelsD7Fields(stream, offset, size);
++		return;
++	}
++	// Authored deltas can end in the middle of a field; decode a complete header.
++	if (offset > sizeof(_ps4D7MainData) || size > sizeof(_ps4D7MainData) - offset ||
++	    stream.read(_ps4D7MainData + offset, size) != size)
++		error("Truncated Jonssonligan D7 main-channel delta");
++	Common::MemoryReadStreamEndian full(_ps4D7MainData, sizeof(_ps4D7MainData), stream.isBE());
++	readMainChannelsD7Fields(full, 0, sizeof(_ps4D7MainData));
++}
++
++void Frame::readMainChannelsD7Fields(Common::MemoryReadStreamEndian &stream, uint16 offset, uint16 size) {
+ 	if (debugChannelSet(8, kDebugLoading)) {
+ 		debugC(8, kDebugLoading, "Frame::readMainChannelsD7(): %d byte header", size);
+ 		stream.hexdump(size);
+--- a/engines/director/frame.h
++++ b/engines/director/frame.h
+@@ -195,6 +195,8 @@
+ 	Common::String formatChannelInfo();
+ 
+ private:
++	byte _ps4D7MainData[288] = {};
++	void readMainChannelsD7Fields(Common::MemoryReadStreamEndian &stream, uint16 offset, uint16 size);
+ 
+ 	void readChannelD2(Common::MemoryReadStreamEndian &stream, uint16 offset, uint16 size);
+ 	void readSpriteD2(Common::MemoryReadStreamEndian &stream, uint16 offset, uint16 size);
+--- a/engines/director/lingo/lingo-builtins.cpp
++++ b/engines/director/lingo/lingo-builtins.cpp
+@@ -20,6 +20,8 @@
+  */
+ 
+ #include "common/system.h"
++#include "common/archive.h"
++#include "common/savefile.h"
+ #include "common/translation.h"
+ 
+ #include "director/types.h"
+@@ -51,6 +53,8 @@
+ #include "director/lingo/lingo-utils.h"
+ 
+ #include "image/pict.h"
++
++#include "director/ps4-jonsson.h"
+ 
+ namespace Director {
+ 
+@@ -1134,8 +1138,14 @@
+ 
+ void LB::b_getAt(int nargs) {
+ 	Datum indexD = g_lingo->pop();
++	Datum list = g_lingo->pop();
++	if (isPS4Jonsson() && list.type == PARRAY && (indexD.type == SYMBOL || indexD.type == STRING)) {
++		g_lingo->push(list);
++		g_lingo->push(indexD);
++		b_getProp(2);
++		return;
++	}
+ 	TYPECHECK2(indexD, INT, FLOAT);
+-	Datum list = g_lingo->pop();
+ 	int index = indexD.asInt();
+ 
+ 	switch (list.type) {
+@@ -1208,7 +1218,9 @@
+ 	switch (list.type) {
+ 	case ARRAY: {
+ 		Datum d(0);
+-		int index = LC::compareArrays(LC::eqDataStrict, list, val, true).u.i;
++		// Authored A* code searches for newly allocated coordinate lists by value.
++		bool coordinateValues = isPS4Jonsson() && val.type == ARRAY;
++		int index = LC::compareArrays(coordinateValues ? LC::eqData : LC::eqDataStrict, list, val, true).u.i;
+ 		if (index > 0) {
+ 			d.u.i = index;
+ 		}
+@@ -1854,6 +1866,87 @@
+ 	g_lingo->push(d);
+ }
+ 
++// The PS4 backend exposes one fixed virtual display. DisplayRes must report
++// that display rather than attempt to change the host desktop resolution.
++class FixedDisplayRes : public Object<FixedDisplayRes> {
++public:
++ FixedDisplayRes() : Object<FixedDisplayRes>("DisplayRes") { _objType = kXtraObj; }
++};
++static void displayResRegister(int nargs) {
++ g_lingo->dropStack(nargs);
++ g_lingo->push(Datum(1));
++}
++static void displayResCurrent(int nargs) {
++ g_lingo->push(Datum(Common::String::format("%d %d %d 0 0 0 fixed",
++  g_system->getWidth(), g_system->getHeight(), g_system->getScreenFormat().bytesPerPixel * 8)));
++}
++static void displayResSet(int nargs) {
++ // Index 1 is the already-active, sole virtual mode; reject all other modes.
++ int mode = g_lingo->pop().asInt();
++ g_lingo->push(Datum(mode == 1 ? 1 : 0));
++}
++static void directorQuickTimeVersion(int nargs) { g_lingo->push(Datum(4)); }
++static Common::String preferenceFile(const Common::String &key) {
++ Common::String name("jonssonligan1-pref-");
++ for (uint i = 0; i < key.size(); ++i) name += Common::String::format("%02x", (byte)key[i]);
++ return name;
++}
++static void directorSetPref(int nargs) {
++ Common::String value = g_lingo->pop().asString();
++ Common::String key = g_lingo->pop().asString();
++ Common::OutSaveFile *out = g_system->getSavefileManager()->openForSaving(preferenceFile(key));
++ if (!out) { g_lingo->lingoError("SetPref: cannot open preferences"); return; }
++ out->write(value.c_str(), value.size()); out->finalize();
++ bool failed = out->err(); delete out;
++ if (failed) g_lingo->lingoError("SetPref: write failed");
++}
++static void directorGetPref(int nargs) {
++ Common::String key = g_lingo->pop().asString(), value;
++ Common::InSaveFile *in = g_system->getSavefileManager()->openForLoading(preferenceFile(key));
++ if (in) { while (!in->eos()) { char c = in->readByte(); if (!in->eos()) value += c; } delete in; }
++ g_lingo->push(Datum(value));
++}
++static void toolsDriveList(int nargs) { g_lingo->push(Datum("D")); }
++static void toolsDriveType(int nargs) {
++ Common::String drive = g_lingo->pop().asString();
++ g_lingo->push(Datum(drive.equalsIgnoreCase("D:\\") ? 4 : 0));
++}
++static void toolsFileExists(int nargs) {
++ Common::String file = g_lingo->pop().asString();
++ if (file.hasPrefixIgnoreCase("D:\\")) file = file.substr(3);
++ Common::Path path = findPath(file, false);
++ g_lingo->push(Datum(SearchMan.hasFile(path) ? 1 : 0));
++}
++void openJonssonTools() {
++ static const BuiltinProto functions[] = {
++  { "QuickTimeVersion", directorQuickTimeVersion, 0, 0, 700, FBLTIN },
++  { "SetPref", directorSetPref, 2, 2, 700, CBLTIN },
++  { "GetPref", directorGetPref, 1, 1, 700, FBLTIN },
++  { "tMsRegisterTOOLS", displayResRegister, 1, 1, 700, HBLTIN },
++  { "tMsGetDriveList", toolsDriveList, 0, 0, 700, HBLTIN },
++  { "tMsGetDriveType", toolsDriveType, 1, 1, 700, HBLTIN },
++  { "tMsDoesFileExist", toolsFileExists, 1, 1, 700, HBLTIN },
++  { nullptr, nullptr, 0, 0, 0, VOIDSYM }
++ };
++ g_lingo->initBuiltIns(functions);
++}
++
++static void openFixedDisplayRes() {
++ static const MethodProto methods[] = {
++  { "register", displayResRegister, 1, 1, 700 },
++  { nullptr, nullptr, 0, 0, 0 }
++ };
++ static const BuiltinProto functions[] = {
++  { "dresGetDisplaySettings", displayResCurrent, 0, 0, 700, HBLTIN },
++  { "dresGetCurrentDisplay", displayResCurrent, 0, 0, 700, HBLTIN },
++  { "dresDynamicSetDisplay", displayResSet, 1, 1, 700, HBLTIN },
++  { nullptr, nullptr, 0, 0, 0, VOIDSYM }
++ };
++ FixedDisplayRes::initMethods(methods);
++ g_lingo->exposeXObject("DisplayRes", new FixedDisplayRes());
++ g_lingo->initBuiltIns(functions);
++}
++
+ void LB::b_xtra(int nargs) {
+ 	Datum d = g_lingo->pop();
+ 	if (d.type == INT) {
+@@ -1865,6 +1958,11 @@
+ 		}
+ 	} else {
+ 		Common::String name = d.asString();
++		if (isPS4Jonsson() && name.equalsIgnoreCase("DisplayRes")) {
++			if (!g_lingo->_globalvars.contains(name)) openFixedDisplayRes();
++			g_lingo->push(g_lingo->_globalvars[name]);
++			return;
++		}
+ 		for (uint i = 0; i < g_lingo->_openXtras.size(); i++) {
+ 			if (name.equalsIgnoreCase(g_lingo->_openXtras[i])) {
+ 				Datum var = g_lingo->_openXtraObjects[i];
+--- a/engines/director/lingo/lingo-object.cpp
++++ b/engines/director/lingo/lingo-object.cpp
+@@ -192,6 +192,8 @@
+ #include "director/lingo/xtras/s/setmouse.h"
+ #include "director/lingo/xtras/t/timextra.h"
+ #include "director/lingo/xtras/x/xsound.h"
++
++#include "director/ps4-jonsson.h"
+ 
+ namespace Director {
+ 
+@@ -495,6 +497,8 @@
+ 	return name;
+ }
+ 
++void openJonssonTools();
++
+ void Lingo::openXLib(Common::String name, ObjectType type, const Common::Path &path) {
+ 	name = normalizeXLibName(name);
+ 
+@@ -516,7 +520,9 @@
+ 
+ 	_openXLibs[name] = type;
+ 
+-	if (_xlibOpeners.contains(name)) {
++	if (isPS4Jonsson() && name.equalsIgnoreCase("Tmstools")) {
++		openJonssonTools();
++	} else if (_xlibOpeners.contains(name)) {
+ 		(*_xlibOpeners[name])(type, path);
+ 	} else {
+ 		warning("Lingo::openXLib: Unimplemented xlib: '%s'", name.c_str());
+--- a/engines/director/lingo/lingo-the.cpp
++++ b/engines/director/lingo/lingo-the.cpp
+@@ -43,6 +43,8 @@
+ #include "director/lingo/lingo-code.h"
+ #include "director/lingo/lingo-the.h"
+ #include "director/debugger/debugtools.h"
++
++#include "director/ps4-jonsson.h"
+ 
+ namespace Director {
+ 
+@@ -119,6 +121,7 @@
+ 	{ kTheMouseChar,		"mouseChar",		false, 300, true },	//		D3 f
+ 	{ kTheMouseDown,		"mouseDown",		false, 200, true },	// D2 f
+ 	{ kTheMouseDownScript,  "mouseDownScript",	false, 200, false },// D2 p
++	{ kTheMouseLoc, "mouseLoc", false, 500, false },
+ 	{ kTheMouseH,			"mouseH",			false, 200, true },	// D2 f
+ 	{ kTheMouseItem,		"mouseItem",		false, 300, true },	//		D3 f
+ 	{ kTheMouseLine,		"mouseLine",		false, 300, true },	//		D3 f
+@@ -223,6 +226,7 @@
+ 	{ kTheSprite,	"left",			kTheLeft,		200 },// D2 p
+ 	{ kTheSprite,	"lineSize",		kTheLineSize,	200 },// D2 p
+ 	{ kTheSprite,	"loc",			kTheLoc,		400 },//				D4 p ???
++	{ kTheSprite, "locZ", kTheLocZ, 600 },
+ 	{ kTheSprite,	"locH",			kTheLocH,		200 },// D2 p
+ 	{ kTheSprite,	"locV",			kTheLocV,		200 },// D2 p
+ 	{ kTheSprite,	"member",		kTheMember,		500 },//					D5 p
+@@ -516,6 +520,10 @@
+ 	Score *score = movie->getScore();
+ 
+ 	switch (entity) {
++	case kTheFrontWindow:
++		// MacWindowManager owns MacWindow objects, not Lingo Window wrappers.
++		if (isPS4Jonsson()) d = Datum(g_director->getCurrentWindow());
++		break;
+ 	case kTheActiveWindow:
+ 		{
+ 			Window *win = (Window *)g_director->_wm->getWindow(g_director->_wm->getActiveWindow());
+@@ -533,7 +541,13 @@
+ 		warning("STUB: the alertHook");
+ 		break;
+ 	case kTheApplicationPath:
+-		warning("STUB: the applicationPath");
++		if (isPS4Jonsson()) {
++			Common::String exe = g_director->getEXEName();
++			uint pos = exe.findLastOf(g_director->_dirSeparator);
++			d = Datum(pos == Common::String::npos ? Common::String() : exe.substr(0, pos + 1));
++		} else {
++			warning("STUB: the applicationPath");
++		}
+ 		break;
+ 	case kTheBeepOn:
+ 		d = (int)movie->_isBeepOn;
+@@ -874,6 +888,9 @@
+ 		else
+ 			d.u.s = new Common::String();
+ 		break;
++	case kTheMouseLoc:
++		d = Datum(g_director->getCurrentWindow()->getMousePos());
++		break;
+ 	case kTheMouseH:
+ 		d = g_director->getCurrentWindow()->getMousePos().x;
+ 		break;
+@@ -1708,6 +1725,9 @@
+ 			d.u.farr->arr.push_back(position.x);
+ 			d.u.farr->arr.push_back(position.y);
+ 		}
++		break;
++	case kTheLocZ:
++		d = channel->_priority;
+ 		break;
+ 	case kTheLocH:
+ 		d = channel->getPosition().x;
+@@ -2019,6 +2039,14 @@
+ 			channel->setNeedsDraw();
+ 		}
+ 		channel->setPosition(d.asPoint().x, d.asPoint().y);
++		break;
++	case kTheLocZ:
++		if (isPS4Jonsson() && channel->_priority != d.asInt()) {
++			channel->_priority = d.asInt();
++			if (channel->_widget) channel->_widget->_priority = channel->_priority;
++			channel->setNeedsDraw();
++			movie->getWindow()->setDirty(true);
++		}
+ 		break;
+ 	case kTheLocH:
+ 		if (d.asInt() != channel->getPosition().x) {
+--- a/engines/director/lingo/lingo-the.h
++++ b/engines/director/lingo/lingo-the.h
+@@ -185,6 +185,7 @@
+ 	kTheWindowList,
+ 	kTheWords,
+ 	kTheXtras,
++	kTheMouseLoc,
+ 	kTheMaxTheEntityType		// This must be always last
+ };
+ 
+@@ -320,6 +321,7 @@
+ 	kTheWindowType,
+ 	kTheWordWrap,
+ 	kTheScrollTop,
++	kTheLocZ,
+ 	kTheMaxTheFieldType		// This must be always last
+ };
+ 
+--- a/engines/director/lingo/lingo.cpp
++++ b/engines/director/lingo/lingo.cpp
+@@ -41,6 +41,8 @@
+ #include "director/lingo/lingo-codegen.h"
+ #include "director/lingo/lingo-the.h"
+ 
++#include "director/ps4-jonsson.h"
++
+ namespace Director {
+ 
+ Lingo *g_lingo;
+@@ -843,6 +845,7 @@
+ void Lingo::resetLingo() {
+ 	debugC(3, kDebugLingoExec, "Resetting Lingo!");
+ 	cleanupLingo();
++	if (isPS4Jonsson()) _currentInputEvent = Symbol();
+ 	resetLingoGo();
+ }
+ 
+--- /dev/null
++++ b/engines/director/ps4-jonsson.h
+@@ -0,0 +1,16 @@
++// Local compatibility rules for the opt-in PS4 Jonssonligan experiment.
++#ifndef DIRECTOR_PS4_JONSSON_H
++#define DIRECTOR_PS4_JONSSON_H
++#include "common/config-manager.h"
++#include "director/director.h"
++namespace Director {
++inline bool isPS4Jonsson() {
++#ifdef __PS4__
++ return Common::String(g_director->getGameId()) == "jonssonligan1" &&
++  ConfMan.hasKey("ps4_director7_experimental") && ConfMan.getBool("ps4_director7_experimental");
++#else
++ return false;
++#endif
++}
++}
++#endif
+--- a/engines/director/score.cpp
++++ b/engines/director/score.cpp
+@@ -51,6 +51,8 @@
+ #include "director/castmember/movie.h"
+ #include "director/castmember/transition.h"
+ #include "director/debugger/debugtools.h"
++
++#include "director/ps4-jonsson.h"
+ 
+ namespace Director {
+ 
+@@ -1668,7 +1670,15 @@
+ }
+ 
+ uint16 Score::getSpriteIDFromPos(Common::Point pos) {
+-	for (int i = _channels.size() - 1; i >= 0; i--) {
++	Common::Array<int> order;
++	for (int i = _channels.size() - 1; i >= 0; --i) {
++		auto before = order.begin();
++		if (isPS4Jonsson())
++			while (before != order.end() && _channels[*before]->_priority >= _channels[i]->_priority) ++before;
++		else before = order.end();
++		order.insert(before, i);
++	}
++	for (int i : order) {
+ 		CollisionTest test = _channels[i]->isMouseIn(pos);
+ 		if (test == kCollisionYes)
+ 			return i;
+@@ -1680,7 +1690,15 @@
+ }
+ 
+ uint16 Score::getMouseSpriteIDFromPos(Common::Point pos) {
+-	for (int i = _channels.size() - 1; i >= 0; i--) {
++	Common::Array<int> order;
++	for (int i = _channels.size() - 1; i >= 0; --i) {
++		auto before = order.begin();
++		if (isPS4Jonsson())
++			while (before != order.end() && _channels[*before]->_priority >= _channels[i]->_priority) ++before;
++		else before = order.end();
++		order.insert(before, i);
++	}
++	for (int i : order) {
+ 		CollisionTest test = _channels[i]->isMouseIn(pos);
+ 		if (test == kCollisionYes && _channels[i]->_sprite->respondsToMouse())
+ 			return i;
+@@ -1692,7 +1710,15 @@
+ }
+ 
+ uint16 Score::getActiveSpriteIDFromPos(Common::Point pos) {
+-	for (int i = _channels.size() - 1; i >= 0; i--) {
++	Common::Array<int> order;
++	for (int i = _channels.size() - 1; i >= 0; --i) {
++		auto before = order.begin();
++		if (isPS4Jonsson())
++			while (before != order.end() && _channels[*before]->_priority >= _channels[i]->_priority) ++before;
++		else before = order.end();
++		order.insert(before, i);
++	}
++	for (int i : order) {
+ 		CollisionTest test = _channels[i]->isMouseIn(pos);
+ 		if (test == kCollisionYes && _channels[i]->_sprite->isActive())
+ 			return i;
+@@ -1730,7 +1756,13 @@
+ 			if (_channels[i]->getEditable()) {
+ 				appendix.push_back(_channels[i]);
+ 			} else {
+-				intersections.push_back(_channels[i]);
++				if (isPS4Jonsson()) {
++					auto before = intersections.begin();
++					while (before != intersections.end() && (*before)->_priority <= _channels[i]->_priority) ++before;
++					intersections.insert(before, _channels[i]);
++				} else {
++					intersections.push_back(_channels[i]);
++				}
+ 			}
+ 		}
+ 	}
+@@ -1972,6 +2004,7 @@
+ 	}
+ 
+ 	if (version >= kFileVer400) {
++		uint32 scoreHeaderPosition = _framesStream->pos();
+ 		_framesStreamSize = _framesStream->readUint32();
+ 		_frame1Offset = _framesStream->readUint32();
+ 		_numOfFrames = _framesStream->readUint32();
+@@ -1990,6 +2023,14 @@
+ 			_framesStream->readUint16(); // Skip
+ 		}
+ 
++		if (isPS4Jonsson() && version >= kFileVer700 && version < kFileVer800) {
++			if (_spriteRecordSize != 48 || _numChannels <= 6 || _numChannels > 1006 ||
++			    _frame1Offset < 20 || scoreHeaderPosition > dataSize || _frame1Offset > dataSize - scoreHeaderPosition)
++				error("Invalid Jonssonligan D7 score layout");
++			// Six 48-byte main channels precede the sprite channels.
++			_numChannelsDisplayed = _numChannels - 6;
++			_framesStream->seek(scoreHeaderPosition + _frame1Offset);
++		}
+ 		_firstFramePosition = _framesStream->pos();
+ 
+ 		debugC(1, kDebugLoading, "Score::loadFrames(): size: %d, frame1Offset: %d, numOfFrames: %d, version: %d, spriteRecordSize: %d, numChannels: %d, numChannelsDisplayed: %d",
+@@ -2030,7 +2071,11 @@
+ 	// Calculate number of frames and their positions
+ 	// numOfFrames in the header is often incorrect
+ 	for (_numFrames = 1; loadFrame(_numFrames, loadSprites); _numFrames++) {
+-		_scoreCache.push_back(new Frame(*_currentFrame));
++		// Main-movie playback reads score deltas directly. The full snapshot
++		// cache is for debugging/export and otherwise exhausts the PS4 heap
++		// with Jönsson's 1000-channel scenes. Keep embedded/film-loop caches.
++		if (!isPS4Jonsson() || loadSprites || _movie->_isEmbedded)
++			_scoreCache.push_back(new Frame(*_currentFrame));
+ 
+ 		for (int i = 0; i < (int)_currentFrame->_sprites.size(); i++) {
+ 			if (_currentFrame->_sprites[i]->_castId.member && i > _maxChannelsUsed)
+--- a/engines/director/sound.cpp
++++ b/engines/director/sound.cpp
+@@ -39,6 +39,8 @@
+ #include "director/window.h"
+ #include "director/castmember/sound.h"
+ 
++#include "director/ps4-jonsson.h"
++
+ namespace Director {
+ 
+ DirectorSound::DirectorSound(Window *window) : _window(window) {
+@@ -311,6 +313,16 @@
+ 			continue;
+ 
+ 		fade->lapsedTicks = _window->getVM()->getMacTicks() - fade->startTicks;
++		if (isPS4Jonsson() && (fade->totalTicks <= 0 || fade->lapsedTicks >= fade->totalTicks)) {
++			// The menu waits for the exact final volume before changing movie.
++			_mixer->setChannelVolume(it._value->handle, fade->targetVol);
++			it._value->volume = fade->targetVol;
++			bool autoStop = fade->autoStop;
++			delete fade;
++			it._value->fade = nullptr;
++			if (autoStop) stopSound(it._key);
++			continue;
++		}
+ 		if (fade->lapsedTicks > fade->totalTicks) {
+ 			if (fade->autoStop)
+ 				stopSound(it._key);
+--- a/engines/director/sprite.cpp
++++ b/engines/director/sprite.cpp
+@@ -26,6 +26,7 @@
+ #include "director/movie.h"
+ #include "director/score.h"
+ #include "director/sprite.h"
++#include "director/ps4-jonsson.h"
+ #include "director/castmember/castmember.h"
+ #include "director/castmember/digitalvideo.h"
+ #include "director/castmember/movie.h"
+@@ -362,8 +363,18 @@
+ 
+ 	// TODO: Check if we need to check against individual events like below
+ 	if (g_director->getVersion() >= 600) {
+-		if (_behaviors.size() > 0)
++		if (isPS4Jonsson()) {
++			// Decorative behaviors must not intercept the floor's mouse handler.
++			for (const auto &behavior : _behaviors) {
++				ScriptContext *script = _movie->getScriptContext(kScoreScript, behavior.memberID);
++				if (script && (script->_eventHandlers.contains(kEventGeneric) ||
++					script->_eventHandlers.contains(kEventMouseDown) ||
++					script->_eventHandlers.contains(kEventMouseUp)))
++					return true;
++			}
++		} else if (_behaviors.size() > 0) {
+ 			return true;
++		}
+ 	}
+ 
+ 	ScriptContext *spriteScript = _movie->getScriptContext(kScoreScript, _scriptId);
+@@ -633,7 +644,8 @@
+ 			case kCastDigitalVideo:
+ 				// A video the score sizes to 0x0 is intentionally invisible (a
+ 				// hidden timing/audio clock); keep it, don't force native size.
+-				if (_width > 0 && _height > 0) {
++				// Jönsson uses un-sized score sprites for its visible intro movies.
++				if (isPS4Jonsson() || (_width > 0 && _height > 0)) {
+ 					_width = dims.width();
+ 					_height = dims.height();
+ 				}

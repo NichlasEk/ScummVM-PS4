@@ -208,3 +208,63 @@ run. This is an opening-scene checkpoint, not a complete-game or physical PS4 te
 Audio playback is logged, but listening quality, sustained gameplay, save/load,
 Macs2 and physical PS4 operation still need separate verification. Game data and
 runtime screenshots remain local and are not bundled or committed.
+
+
+## Jönssonligan Director 7 migration (2026-10-15)
+
+`director7.patch` ports the remaining local compatibility layer to the Vulkan
+experiment. Enable it only for `jonssonligan1` with
+`ps4_director7_experimental=true`; launch the original `toInstall/Game.exe`.
+Game data and preferences remain outside the package.
+
+Upstream already supplies D7 cast, bitmap, script and sound readers, cast-library
+mapping, sprite-member references and per-property overrides. The old 2.9.1
+patch must not be applied wholesale. The new delta preserves these readers and
+adds the DisplayRes/TMSTools shims, save-backed preferences, Swedish font/name
+handling, true color, mouseLoc/frontWindow/locZ, coordinate-list comparisons,
+input reset, behavior updates for puppeted sprites and exact sound-fade completion.
+It also reconstructs partial D7 main-channel deltas and accounts for the six main channels in the score header.
+
+The following regressions were reproduced during migration:
+
+- The intro decoder advanced while its sprite had a zero-sized rectangle.
+  This target now uses the video cast's native dimensions for un-stretched
+  sprites, restoring the visible 600x250 intro. Other titles keep upstream's
+  zero-size handling. Film playback was visually checked and user-confirmed.
+- New Game exhausted flexible memory while entering Stockholm. Ordinary
+  scene playback now omits the full-frame debugger/export cache, which copied
+  all 1000 sprite channels per frame. Runtime score delta loading remains in
+  use; film-loop and embedded-movie caches are retained. The debugger's
+  explicit cached-frame lookup handles an absent cache.
+- The old `frontWindow` adaptation incorrectly treated a Mac GUI window as
+  a Lingo object in the new engine. It now returns the Director window wrapper
+  for this target, avoiding an invalid reference-count access in the first scene.
+- Upstream treated every D6+ behavior as a mouse handler, allowing decorative
+  sprites to intercept clicks before the floor and actors. For this target,
+  behavior scripts must contain a mouseDown/mouseUp or generic handler. This
+  restores the old port's click filtering without replacing upstream behavior
+  instances. Floor clicks now run the original handlers and visibly move a
+  character across the attic in shadPS4. Actor 102 changed position from
+  (267,286) to (296,258) during a logged walking animation.
+
+The host shadPS4 audio stream was muted in PipeWire during the initial tests;
+this was unmuted separately from the game changes. Runtime screenshots and
+logs are under `artifacts/upstream-2026.4.0/jonsson-*`. D7 film loops remain
+unsupported; minor rendering artifacts and warnings remain. Walking was also
+user-confirmed, but slow; emulator versus engine overhead has not been isolated.
+Full gameplay, save/load and physical PS4 validation remain outstanding.
+
+
+The final non-diagnostic build links with all 126 engines. Clean-source replay
+matches all 97 modified files. The live walking test used the same fixes with
+temporary diagnostic logging; this logging is removed from the final package.
+`pkg_validate` passes and all 239 GP4-listed payloads match a `pkg_makegp4`
+extraction. APP_VER 0.04 is staged at
+`build/scummvm-2026.4.0-jonsson-release-pkg` and packaged as
+`dist/upstream-2026.4.0/jonsson/ScummVM-2026.4.0-Vulkan-Test.pkg`.
+
+- PKG SHA-256: `a6fe6d643c719e4b3941913f48f35cce5f693548b6bf0979f2f44e7819da355a`.
+- Packaged eboot SHA-256: `70a3322eac2d43e8b1a4e812b20faf6efb834a137725cbc9362e716e7248839d`.
+- Walking evidence: `jonsson-click-filter.log`, `jonsson-click-filter.png`.
+- Package/replay evidence: `jonsson-package-validation.log`,
+  `jonsson-payload-check.json`, `jonsson-replay-final.log`.

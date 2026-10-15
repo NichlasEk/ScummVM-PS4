@@ -31,3 +31,14 @@ for engine in ('macs2','watchmaker'):
   a=old.read_text(); b=new.read_text()
   changes.extend(difflib.unified_diff(a.splitlines(True),b.splitlines(True),fromfile='a/'+name,tofile='b/'+name))
 (out/'extra-engines.patch').write_text(''.join(changes))
+
+# Rebase only the Director compatibility delta; upstream's D7 parsers stay intact.
+changes=[]
+source=clean.parent/'ps4-vulkan'
+for new in sorted((source/'engines/director').rglob('*')):
+ if not new.is_file(): continue
+ name=str(new.relative_to(source)); old=clean/name
+ if old.exists() and old.read_bytes() == new.read_bytes(): continue
+ a=old.read_text() if old.exists() else ''; b=new.read_text()
+ changes.extend(difflib.unified_diff(a.splitlines(True),b.splitlines(True),fromfile='a/'+name if old.exists() else '/dev/null',tofile='b/'+name))
+(out/'director7.patch').write_text(''.join(changes))

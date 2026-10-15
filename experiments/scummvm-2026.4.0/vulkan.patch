@@ -346,6 +346,104 @@
  		return true;
  	}
  
+--- a/backends/graphics/opengl/renderer3d.cpp
++++ b/backends/graphics/opengl/renderer3d.cpp
+@@ -221,7 +221,7 @@
+ }
+ 
+ void Renderer3D::leave3D() {
+-#if !USE_FORCED_GLES2
++#if !USE_FORCED_GLES2 && !defined(__PS4__)
+ 	if (OpenGLContext.type == kContextGL) {
+ 		// Save current state (only available on OpenGL)
+ 		glPushAttrib(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_ENABLE_BIT |
+@@ -239,6 +239,15 @@
+ 	} else
+ #endif
+ 	{
++#ifdef __PS4__
++		glGetIntegerv(GL_MATRIX_MODE, &_saveMatrixMode);
++		glMatrixMode(GL_PROJECTION);
++		glPushMatrix();
++		glMatrixMode(GL_MODELVIEW);
++		glPushMatrix();
++		_saveAlphaTest = glIsEnabled(GL_ALPHA_TEST);
++		_saveTexture2D = glIsEnabled(GL_TEXTURE_2D);
++#endif
+ 		// Save context by ourselves
+ #define CTX_STATE(gl_param) _save ## gl_param = glIsEnabled(gl_param)
+ #define CTX_BOOLEAN(gl_param) glGetBooleanv(gl_param, &_save ## gl_param)
+@@ -304,7 +313,7 @@
+ 	Pipeline::disable();
+ 
+ 	if (_stackLevel) {
+-#if !USE_FORCED_GLES2
++#if !USE_FORCED_GLES2 && !defined(__PS4__)
+ 		if (OpenGLContext.type == kContextGL) {
+ 			glMatrixMode(GL_TEXTURE);
+ 			glPopMatrix();
+@@ -327,6 +336,15 @@
+ 			CTX_STATE(GL_SCISSOR_TEST);
+ 			CTX_STATE(GL_STENCIL_TEST);
+ 
++#ifdef __PS4__
++			glMatrixMode(GL_MODELVIEW);
++			glPopMatrix();
++			glMatrixMode(GL_PROJECTION);
++			glPopMatrix();
++			glMatrixMode(_saveMatrixMode);
++			_saveAlphaTest ? glEnable(GL_ALPHA_TEST) : glDisable(GL_ALPHA_TEST);
++			_saveTexture2D ? glEnable(GL_TEXTURE_2D) : glDisable(GL_TEXTURE_2D);
++#endif
+ 			glDepthMask(_saveGL_DEPTH_WRITEMASK);
+ 
+ 			glBlendFuncSeparate(_saveGL_BLEND_SRC_RGB[0], _saveGL_BLEND_DST_RGB[0],
+@@ -355,10 +373,17 @@
+ 		glDisable(GL_DEPTH_TEST);
+ 		glDepthFunc(GL_LESS);
+ 
++#ifndef __PS4__
+ 		glEnable(GL_DITHER);
++#else
++		// The PS4 bridge renders without dithering and polygon depth bias.
++		glDisable(GL_DITHER);
++#endif
+ 
+ 		glDisable(GL_POLYGON_OFFSET_FILL);
++#ifndef __PS4__
+ 		glPolygonOffset(0.f, 0.f);
++#endif
+ 
+ 		glDisable(GL_SCISSOR_TEST);
+ 		glScissor(0, 0, g_system->getWidth(), g_system->getHeight());
+@@ -369,11 +394,13 @@
+ 		glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+ 
+ 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++#ifndef __PS4__
+ 		glLineWidth(1.f);
++#endif
+ 
+ 		glViewport(0, 0, g_system->getWidth(), g_system->getHeight());
+ 
+-#if !USE_FORCED_GLES2
++#if !USE_FORCED_GLES2 && !defined(__PS4__)
+ 		if (OpenGLContext.type == kContextGL) {
+ 			glDisable(GL_ALPHA_TEST);
+ 			glAlphaFunc(GL_ALWAYS, 0);
+--- a/backends/graphics/opengl/renderer3d.h
++++ b/backends/graphics/opengl/renderer3d.h
+@@ -55,6 +55,10 @@
+ protected:
+ 	void setup();
+ 
++#ifdef __PS4__
++	GLint _saveMatrixMode = GL_MODELVIEW;
++	GLboolean _saveAlphaTest = false, _saveTexture2D = false;
++#endif
+ 	int _stackLevel;
+ 	bool _inOverlay;
+ 	int _pendingScreenChangeWidth;
 --- a/backends/graphics/openglsdl/openglsdl-graphics.cpp
 +++ b/backends/graphics/openglsdl/openglsdl-graphics.cpp
 @@ -83,8 +83,8 @@

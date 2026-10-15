@@ -6,7 +6,8 @@ launcher in fresh shadPS4 profiles. Vulkan reports two successful presents.
 These are emulator launcher checks, not gameplay/input/save/load or physical
 PS4 validation. The combined Vulkan build now links with **126 top-level engines**, including
 Watchmaker and Macs2, and its launcher is also visually verified in a fresh
-shadPS4 profile. See the full-candidate result below.
+shadPS4 profile. The subsequent Watchmaker runtime fix reaches its menu and
+opening 3D scene; see the APP_VER 0.03 checkpoint below.
 
 The existing 2.9.1 port and packages are unchanged. The experiment uses
 `.tools/upstream-2026.4.0/`, `build/scummvm-2026.4.0-*`,
@@ -172,3 +173,38 @@ are not evidence for these new binaries. No games or ROMs are bundled.
 Both source preparation paths were replayed from pristine upstream: 77 patched
 Vulkan/local-engine files and 30 software/local-engine files match the working
 sources byte-for-byte. Shell/Python syntax checks also pass.
+
+
+## Watchmaker runtime fix (APP_VER 0.03, 2026-10-15)
+
+Watchmaker now passes startup, draws the full-screen menu and renders its opening
+3D scene in shadPS4 v0.18.0. The user confirmed startup and accepted the updated
+run. This is an opening-scene checkpoint, not a complete-game or physical PS4 test.
+
+- Adapted the unified 3D renderer to the bounded PS4 bridge: explicit state and
+  matrix save/restore replace unavailable desktop attribute stacks. Initialization
+  avoids unsupported dithering, polygon bias, line-width and desktop-only state
+  calls, including the null `glPolygonOffset` call caught in GDB.
+- Guarded the optional per-instance Watchmaker archive: when absent, use the
+  archive already registered in SearchMan instead of dereferencing a null pointer.
+- Use 1280x720 on PS4 so the direct-render viewport and game pointer coordinates
+  match the fixed swapchain. Added missing right-button events and key bounds.
+- Emulator controls in the isolated test profile: F7 captures/releases the host
+  mouse; WASD moves the pointer, N/Cross clicks, B/Circle right-clicks.
+- Full 126-engine rebuild passed. A pristine patch replay matches all 81 modified
+  files. Package validation and all 239 extracted payload hashes pass.
+- Package: `dist/upstream-2026.4.0/watchmaker/ScummVM-2026.4.0-Vulkan-Test.pkg`.
+  SHA-256: `ed13770af1ced9688d644012ba4bffc4bbb819559bb040db97bde2422b860dae`.
+  Eboot SHA-256: `1374c3841cb7e9821ea8cffddf01c63218bd52a097896ea9ef8cf0cee60e207b`.
+  APP_VER is 0.03. It uses the same linked ELF as the live test; SELF metadata
+  differs because packaging records the absolute rather than relative ELF path.
+  Live-tested eboot SHA-256:
+  `a170ecddc9e4a13b0aecc545d82b91aae512a2a878b8f660e3a57a16a716f773`.
+- Local evidence under `artifacts/upstream-2026.4.0/`: `watchmaker-fix3.log`,
+  `watchmaker-fix3-before-input.png` (menu), `watchmaker-pointer-right.png`
+  (opening 3D scene), `watchmaker-package-validation.log`,
+  `watchmaker-payload-check.json` and `watchmaker-replay.log`.
+
+Audio playback is logged, but listening quality, sustained gameplay, save/load,
+Macs2 and physical PS4 operation still need separate verification. Game data and
+runtime screenshots remain local and are not bundled or committed.

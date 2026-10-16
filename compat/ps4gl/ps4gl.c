@@ -223,7 +223,8 @@ const unsigned char *glGetString(GLenum name) {
      * OpenGL 2.x implementation from this diagnostic subset. */
     case GL_VERSION:return (const unsigned char *)"0.0 PS4GL experimental subset";
     case GL_SHADING_LANGUAGE_VERSION:return (const unsigned char *)"1.10 bounded translator";
-    case GL_EXTENSIONS:return (const unsigned char *)"";
+    /* Color-only RGBA texture FBOs; deliberately not ARB_framebuffer_object. */
+    case GL_EXTENSIONS:return (const unsigned char *)"GL_PS4_color_framebuffer";
     default:error(GL_INVALID_ENUM);return NULL;
   }
 }

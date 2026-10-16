@@ -45,7 +45,7 @@ for new in sorted((source/'engines/director').rglob('*')):
 
 # Hardware renderer adaptations for the 2026.4 engines.
 changes=[]
-for engine in ('grim', 'myst3', 'stark'):
+for engine in ('grim', 'myst3', 'stark', 'twp'):
  for old in sorted((clean/'engines'/engine).rglob('*')):
   if not old.is_file(): continue
   name=str(old.relative_to(clean)); new=source/name

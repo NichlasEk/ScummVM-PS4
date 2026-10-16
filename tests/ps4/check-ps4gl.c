@@ -471,7 +471,8 @@ int main(void) {
   assert(!ps4glInit(NULL,80,60) && !ps4glInit(&b,0,60));
   ps4glMakeCurrent(&a);
   assert(!strncmp((const char *)glGetString(GL_VERSION),"0.0 ",4));
-  assert(!*glGetString(GL_EXTENSIONS));
+  assert(strstr((const char *)glGetString(GL_EXTENSIONS), "GL_PS4_color_framebuffer"));
+  assert(!strstr((const char *)glGetString(GL_EXTENSIONS), "GL_ARB_framebuffer_object"));
   assert(!glGetString(0xdead) && glGetError()==GL_INVALID_ENUM);
   GLint capability=0; glGetIntegerv(GL_MAX_TEXTURE_SIZE,&capability); assert(capability==PS4GL_TEXTURE_LIMIT);
   glGetIntegerv(GL_MAX_VERTEX_ATTRIBS,&capability); assert(capability==PS4GL_MAX_ATTRIBS);

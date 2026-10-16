@@ -21,6 +21,19 @@ PS4 compatibility. See [fixes and test evidence](experiments/scummvm-2026.4.0/RE
   missing actor parts restored by the unbound-texture fix. Gameplay, save/load
   and performance validation remain pending.
 
+Additional local startup checks with the same build (details and evidence in the
+[experiment notes](experiments/scummvm-2026.4.0/README.md#additional-local-game-visual-checks-2026-10-15)):
+
+- [x] Day of the Tentacle: animated intro visible; gameplay not verified.
+- [x] Broken Sword 2.5: menu, pointer and confirmation dialog visible; gameplay pending.
+- [x] Buried in Time: logos, title animation and credits visible.
+- [x] Prisoner of Ice: startup movie visible; first room and skipping pending.
+- [x] Shadow of the Comet: intro pictures and dialogue visible.
+- [x] Thimbleweed Park: color-only FBO support enabled in candidate 0.06; tutorial visible and user-confirmed running in shadPS4. Physical PS4 validation pending.
+- [ ] Penumbra: Overture: intro/settings visible, but scene startup crashes in `NewtonCreateBox`.
+
+These are visual startup checks, not full-game compatibility results.
+
 ## Combined build with the local engines
 
 The experimental Vulkan build includes our Prisoner of Ice and Shadow of the

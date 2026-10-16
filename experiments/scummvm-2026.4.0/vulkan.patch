@@ -815,7 +815,7 @@
  #include "common/scummsys.h"
  
  #if defined(POSIX) && !defined(MACOSX) && !defined(SAMSUNGTV) && !defined(MAEMO) && !defined(OPENDINGUX) && !defined(OPENPANDORA) && !defined(PLAYSTATION3) && !defined(PSP2) && !defined(NINTENDO_SWITCH)  && !defined(__EMSCRIPTEN__) && !defined(MIYOO) && !defined(MIYOOMINI) && !defined(SAILFISH)
-@@ -34,6 +42,37 @@
+@@ -34,6 +42,39 @@
  #include "base/main.h"
  
  int main(int argc, char *argv[]) {
@@ -824,7 +824,9 @@
 +	printf("[scummvm-ps4] entered main\n");
 +	mkdir("/data/scummvm-2026-vulkan", 0777);
 +	mkdir("/data/scummvm-2026-vulkan/saves", 0777);
-+	mkdir("/data/scummvm-2026-vulkan/games", 0777);
++	// Shared HDD game root shown before removable storage in the browser.
++	mkdir("/data/scummvm", 0777);
++	mkdir("/data/scummvm/games", 0777);
 +	chdir("/app0");
 +	// Seed writable settings only on first launch; preserve user changes.
 +	FILE *config = fopen("/data/scummvm-2026-vulkan/scummvm.ini", "r");
@@ -853,7 +855,7 @@
  
  	// Create our OSystem instance
  	g_system = new OSystem_POSIX();
-@@ -57,6 +96,9 @@
+@@ -57,6 +98,9 @@
  
  	// Free OSystem
  	g_system->destroy();

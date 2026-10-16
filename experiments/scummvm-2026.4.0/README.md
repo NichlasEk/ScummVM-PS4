@@ -348,3 +348,110 @@ Temporary direct-start changes were reverted before producing the normal candida
 (`tlj-fallback-clean-build.log`). The running diagnostic still uses that direct
 start, but the staged eboot uses normal menus. Input, later scenes, save/load and
 physical PS4 behavior remain unverified. Intro playback was slow in this test.
+
+### Additional local-game visual checks (2026-10-15)
+
+Seven more titles were launched individually with the normal `7d933fb` candidate
+in shadPS4 0.18.0. Each used a separate emulator profile and empty save directory;
+existing saves and game data were not modified. The executable SHA-256 was
+`aa47efd6c619e40c29e5fda1da8c253f604efb8518a34c36c6099358cd8df8f0`.
+The package metadata still says 0.04: this is a staged executable test, not a new
+published package. All tests use the Vulkan presentation backend; 2D engines
+render their game image in software before GPU presentation.
+
+| Game | Observed result | Limit or blocker |
+| --- | --- | --- |
+| Day of the Tentacle | Animated LucasArts intro, correct palette | Gameplay not reached; observed progression was slow |
+| Thimbleweed Park | Game detected; error dialog before menu | New engine requires `OpenGLContext.framebufferObjectSupported`, which the bounded PS4 bridge does not advertise |
+| Broken Sword 2.5 | Loading screen, title menu, moving pointer, quit confirmation | Delayed input; gameplay scene not verified |
+| Buried in Time | Studio logos, animated title and credits | Gameplay not reached |
+| Prisoner of Ice | Infogrames logo and credits movie | Skip input and first room not confirmed |
+| Shadow of the Comet | Illustrated intro advances with readable dialogue | Gameplay not reached |
+| Penumbra: Overture | Intro text and gamma/settings screen | With `show_intro=false`, `show_pre_menu=false`, `show_menu=false`, scene startup crashes at `NewtonCreateBox` |
+
+Penumbra's crash reports guest PC `0x1dc02cd`; subtracting the guest load bias
+`0x400000` gives ELF address `0x19c02cd`, resolved against this build to
+`NewtonCreateBox`. This locates the fault, not its underlying cause.
+
+Local evidence is under `artifacts/upstream-2026.4.0/extra-smoke/`: `results.json`,
+per-game logs and PNGs, plus copied INI/bootstrap logs. Representative captures:
+`dott-scene.png`, `twp-start.png`, `sword25-menu.png`, `buried-progress.png`,
+`pice-progress.png`, `sotc-progress.png`, and `penumbra-menu.png`.
+`penumbra-scene.log` records the crash. Intro captures are not gameplay acceptance;
+audio, save/load, later areas, performance and physical PS4 remain unverified.
+No engine fixes or new package release were made during this test round.
+
+### FTP-ready hardware candidate 0.05 (2026-10-15)
+
+`dist/ps4-ftp-2026.4.0-005/ScummVM-2026.4.0-Vulkan-Test.pkg` uses
+SCVM00265 / APP_VER 0.05. Package SHA-256:
+`c57282afcdbdf0f49a1afc87c6dfc8a31c0ab661545f717cd890ee109ecc9ba2`.
+Eboot SHA-256: `418ea5ba0377fabb91ff1dd9e91e20feef154e7f7bcabf59a716b3f58e09bcfc`.
+Startup now creates the shared `/data/scummvm/games` directory actually exposed
+by the storage browser. Internal storage precedes USB 0–7 in the root list;
+registered game paths remain unchanged (no automatic path migration).
+Settings/saves remain in `/data/scummvm-2026-vulkan`.
+
+Build and host bridge regression tests passed. PkgTool validation passed,
+and extracted payload hashes match the staging manifest. Evidence:
+`artifacts/upstream-2026.4.0/ftp-005-{build,package,tests,validate,extract}.log`
+and `ftp-005-payload.json`. The distribution folder includes Swedish FTP
+instructions and a checksum file. No commercial games are bundled.
+FTP transfer, installation and physical-console acceptance remain pending.
+The Thimbleweed Park and Penumbra blockers above remain unresolved.
+
+### Gabriel Knight II / The Beast Within (2026-10-16)
+
+All six English DOS CD images extracted locally. Test game directory:
+`artifacts/Gabriel Knight II/game` (local symlinks into extracted discs).
+Each disc's RESOURCE.AUD/SFX is exposed as RESAUD.00N/RESSFX.00N for SCI's
+multi-disc audio handling; original disc files remain unchanged.
+
+Tested the 0.05 FTP candidate in a visible shadPS4 window with a separate
+`emulator-gk2` profile. Detection matches all six resource volumes.
+Sierra logo, title transition and Chapter One / Continue screen were observed;
+the user then confirmed that the game runs. Full playthrough, later disc
+content, save/load and physical PS4 remain unverified. Evidence and extraction
+helpers: `artifacts/upstream-2026.4.0/gk2/`; final run log `shad-complete.log`,
+Chapter One screenshot `after-skip.png`. The earlier incomplete-data run
+`shad.log` is superseded by this complete six-disc setup.
+
+### Release gate agreed 2026-10-16
+
+The user requires the Thimbleweed Park framebuffer-object (FBO) blocker to
+be resolved before release. Version 0.05 remains a hardware-test candidate,
+not a release-approved build. Advertising FBO support alone is insufficient:
+the required framebuffer behavior must work and Thimbleweed Park must be
+retested. The separate Penumbra startup crash remains tracked above.
+
+### Physical-console FTP delivery (2026-10-16)
+
+0.05 delivered to `/data/pkg/ScummVM-2026.4.0-0.05.pkg`. All 15 inventoried
+local games copied to `/data/scummvm/games`, with a new 15-game configuration
+in `/data/scummvm-2026-vulkan/scummvm.ini`. Existing older-port settings/saves
+were not replaced. 29231 files (16.56 GiB)
+were fully read back over FTP and SHA-256 matched. Evidence is local in
+`artifacts/ps4-ftp-2026-10-16/delivery.json` and `verified.jsonl`.
+Installation and physical-console gameplay are still pending. FBO support
+remains a required release gate; this delivery does not approve a release.
+
+### Thimbleweed Park color FBO fix / 0.06 (2026-10-16)
+
+The bridge now advertises `GL_PS4_color_framebuffer` for its existing RGBA
+2D texture attachment implementation. TWP accepts this capability on PS4
+because its render targets do not require depth/stencil renderbuffers.
+Full `GL_ARB_framebuffer_object` support remains deliberately unadvertised;
+other engines retain their existing capability checks. The host regression
+checks both extension exposure and the absence of the full ARB claim.
+
+The new build passes the previous startup gate and renders the animated
+tutorial with background, actors and UI in shadPS4. The user confirmed it
+works and authorized commit/push plus FTP delivery. Evidence:
+`artifacts/upstream-2026.4.0/twp-fbo-start.png`, `twp-fbo-run.log`,
+`twp-fbo-tests.log` and `twp-fbo-replay.log`. Longer gameplay, save/load
+and physical PS4 acceptance remain pending; the release gate is not yet
+fully closed by emulator evidence. Penumbra is unchanged.
+
+0.06 package: `dist/ps4-ftp-2026.4.0-006/ScummVM-2026.4.0-Vulkan-Test.pkg`.
+SHA-256: `d570a1c2efb799de9e53ad184ca31bbd1737f83b5f6e7dd50b0bd80286eac2a2`.
+PkgTool validation passed and all 239 extracted payloads match staging.

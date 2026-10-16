@@ -352,3 +352,22 @@
  		}
  	}
  
+--- a/engines/twp/twp.cpp
++++ b/engines/twp/twp.cpp
+@@ -1021,7 +1021,15 @@
+ 
+ 	initGraphics3d(SCREEN_WIDTH, SCREEN_HEIGHT);
+ 
+-	if (!OpenGLContext.framebufferObjectSupported) {
++	// TWP only attaches RGBA 2D textures, with no depth/stencil renderbuffers.
++	// The PS4 bridge exposes that subset separately from full ARB FBO support.
++	bool colorFramebufferSupported = OpenGLContext.framebufferObjectSupported;
++#ifdef __PS4__
++	const char *extensions = reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS));
++	if (extensions && Common::String(extensions).contains("GL_PS4_color_framebuffer"))
++		colorFramebufferSupported = true;
++#endif
++	if (!colorFramebufferSupported) {
+ 		return Common::Error(Common::kUnknownError, _s("This game requires OpenGL Framebuffer Objects, which are not supported on your system"));
+ 	}
+ 

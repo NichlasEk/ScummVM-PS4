@@ -455,3 +455,47 @@ fully closed by emulator evidence. Penumbra is unchanged.
 0.06 package: `dist/ps4-ftp-2026.4.0-006/ScummVM-2026.4.0-Vulkan-Test.pkg`.
 SHA-256: `d570a1c2efb799de9e53ad184ca31bbd1737f83b5f6e7dd50b0bd80286eac2a2`.
 PkgTool validation passed and all 239 extracted payloads match staging.
+
+### shadPS4 direct-mouse test (2026-10-16)
+
+The user reported incorrect mouse direction after leaving/re-entering the
+emulator window. Increasing mouse-to-stick sensitivity did not help and was
+reverted. In a separate profile with `Input.use_mice_as_mice=true` and the
+local test stage's `scummvm-controller-only.txt` marker removed, the user
+confirmed normal mouse behavior without F7 and broken movement with F7.
+F7 is shadPS4's mouse-to-joystick toggle, not a generic focus command.
+
+For this direct-mouse profile, remove the F7 mouse-to-joystick hotkey and the
+mouse-to-stick/leftbutton-to-cross/rightbutton-to-circle bindings. Restart
+the emulator to clear any previously enabled emulation mode. Local launcher:
+`bash artifacts/upstream-2026.4.0/run-twp-directmouse.sh`. Profile:
+`.tools/upstream-2026.4.0/emulator-twp-directmouse`. This is an emulator-only
+configuration test; the delivered 0.06 controller-only PKG is unchanged.
+Evidence: `artifacts/upstream-2026.4.0/twp-directmouse.log`,
+`twp-directmouse-start.png`, and `twp-directmouse-final.log`.
+
+### Native mouse package 0.07 (2026-10-16)
+
+The user confirmed the separate direct-mouse shadPS4 run works after removing
+the F7 mouse-to-stick toggle. Package 0.07 now enables the existing native
+`sceMouse` input path by omitting `scummvm-controller-only.txt`, while retaining
+controller input. `SCUMMVM_CONTROLLER_ONLY=1` remains an explicit opt-out.
+No new engine or graphics binary changes were needed after 0.06.
+
+For an existing isolated emulator profile, run:
+
+```sh
+python3 experiments/scummvm-2026.4.0/configure-shadps4-mouse.py /path/to/data/shadPS4
+```
+
+The helper backs up the original configuration, enables native mice, removes
+mouse-to-stick toggling and duplicate mouse-button mappings, and retains
+controller/keyboard bindings. Restart shadPS4 afterwards. These host settings
+are not embedded in the PS4 PKG. Native USB mouse behavior on physical PS4
+still requires verification; the user's acceptance was in shadPS4.
+
+0.07 package: `dist/ps4-ftp-2026.4.0-007/ScummVM-2026.4.0-Vulkan-Test.pkg`.
+SHA-256: `e8d0b2c1933763e213cb91a9db39cd787072906812faa43a7a0b1f27416f4121`.
+PkgTool validation passed; all 238 extracted payloads match staging and the
+controller-only marker is absent. Eboot matches delivered 0.06:
+`1fab07543608059d48ace41ce031c5ff4d0f71ba9465c2dda3c7d3883f1a2ae1`.

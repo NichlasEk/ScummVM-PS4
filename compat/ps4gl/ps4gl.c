@@ -206,7 +206,7 @@ void glGetIntegerv(GLenum pname, GLint *values) {
   else if(pname==GL_MAX_VERTEX_ATTRIBS) *values=PS4GL_MAX_ATTRIBS;
   else if(pname==GL_MAX_TEXTURE_IMAGE_UNITS || pname==GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS) *values=PS4GL_MAX_SAMPLERS;
   else if(pname==GL_RED_BITS || pname==GL_GREEN_BITS || pname==GL_BLUE_BITS || pname==GL_ALPHA_BITS) *values=8;
-  else if(pname==GL_DEPTH_BITS || pname==GL_STENCIL_BITS) *values=(!current->framebuffer && current->default_depth_stencil) ? (pname==GL_DEPTH_BITS ? 32 : 8) : 0;
+  else if(pname==GL_DEPTH_BITS || pname==GL_STENCIL_BITS) *values=ps4glHasDepthStencil(current) ? (pname==GL_DEPTH_BITS ? 32 : 8) : 0;
   else if(pname==GL_STEREO || pname==GL_SAMPLE_BUFFERS || pname==GL_SAMPLES) *values=0;
   else if(pname==GL_DOUBLEBUFFER) *values=!current->framebuffer;
   else if(pname==GL_DEPTH_TEST) *values=current->raster.depth_enabled;
@@ -242,9 +242,8 @@ void glClear(GLbitfield mask) {
   if (mask & ~(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT|GL_STENCIL_BUFFER_BIT)) {
     error(GL_INVALID_VALUE); return;
   }
-  /* Offscreen color targets have no depth/stencil attachment; GL ignores
-   * clear bits for absent buffers. The default display owns both planes. */
-  if(!current->framebuffer && current->default_depth_stencil) {
+  /* Only the display and explicitly opted-in 3D targets own depth/stencil. */
+  if(ps4glHasDepthStencil(current)) {
     if(!current->depth_write_mask) mask&=~GL_DEPTH_BUFFER_BIT;
     if(!current->raster.stencil_write_mask) mask&=~GL_STENCIL_BUFFER_BIT;
     else if((mask&GL_STENCIL_BUFFER_BIT) && current->raster.stencil_write_mask!=255) { error(GL_INVALID_OPERATION); return; }
@@ -973,6 +972,20 @@ GLuint ps4glFramebufferTexture(const PS4GLContext *ctx) {
   if(!ctx || !ctx->framebuffer) return 0;
   for(unsigned i=0;i<PS4GL_MAX_FRAMEBUFFERS;++i) if(ctx->framebuffers[i].name==ctx->framebuffer) return ctx->framebuffers[i].texture;
   return 0;
+}
+int ps4glHasDepthStencil(PS4GLContext *ctx) {
+  if(!ctx->framebuffer) return ctx->default_depth_stencil;
+  PS4GLTexture *t=ps4glFramebufferTextureObject(ctx);
+  return t && t->owned_depth_stencil;
+}
+void ps4glFramebufferDepthStencil(void) {
+  if(!current) return;
+  PS4GLTexture *t=ps4glFramebufferTextureObject(current);
+  if(!t) { error(GL_INVALID_OPERATION); return; }
+  if(t->owned_depth_stencil) return;
+  /* Opt in before storage is first used; never discard recorded color work. */
+  if(t->render_target) { error(GL_INVALID_OPERATION); return; }
+  t->owned_depth_stencil=GL_TRUE;
 }
 void glGenFramebuffers(GLsizei count, GLuint *names) {
   if(!current) return;

@@ -375,7 +375,18 @@
  	// Create the 3D renderer first to allow the platform specific code know we are in 3D
 --- a/backends/graphics/opengl/renderer3d.cpp
 +++ b/backends/graphics/opengl/renderer3d.cpp
-@@ -61,7 +61,9 @@
+@@ -29,6 +29,10 @@
+ #include "common/system.h"
+ #include "common/textconsole.h"
+ 
++#ifdef __PS4__
++extern "C" void ps4glFramebufferDepthStencil(void);
++#endif
++
+ namespace OpenGL {
+ 
+ static void setupRenderbufferStorage(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height) {
+@@ -61,7 +65,9 @@
  		// This avoids to call glDeleteFramebuffers and glDeleteRenderbuffers
  		// on platforms not supporting it
  		glDeleteFramebuffers(ARRAYSIZE(_frameBuffers), _frameBuffers);
@@ -385,7 +396,7 @@
  		memset(_renderBuffers, 0, sizeof(_renderBuffers));
  		memset(_frameBuffers, 0, sizeof(_frameBuffers));
  	}
-@@ -166,12 +168,15 @@
+@@ -166,12 +172,17 @@
  
  	if (!_frameBuffers[0]) {
  		glGenFramebuffers(multiSample ? 2 : 1, _frameBuffers);
@@ -397,20 +408,22 @@
  	glBindFramebuffer(GL_FRAMEBUFFER, _frameBuffers[multiSample ? 1 : 0]);
  	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _texture.getGLTexture(), 0);
  
-+#ifndef __PS4__
++#ifdef __PS4__
++	ps4glFramebufferDepthStencil();
++#else
  #if !USE_FORCED_GLES2 || defined(USE_GLAD)
  	if (multiSample) {
  		glBindFramebuffer(GL_FRAMEBUFFER, _frameBuffers[0]);
-@@ -204,6 +209,8 @@
+@@ -204,6 +215,8 @@
  #endif
  	glBindRenderbuffer(GL_RENDERBUFFER, 0);
  
-+#endif // PS4 bridge does not yet expose renderbuffer storage.
++#endif // PS4 uses private depth/stencil storage for this 3D target.
 +
  	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
  	if (status != GL_FRAMEBUFFER_COMPLETE) {
  		error("Framebuffer is not complete! status: %d", status);
-@@ -221,7 +228,7 @@
+@@ -221,7 +234,7 @@
  }
  
  void Renderer3D::leave3D() {
@@ -419,7 +432,7 @@
  	if (OpenGLContext.type == kContextGL) {
  		// Save current state (only available on OpenGL)
  		glPushAttrib(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_ENABLE_BIT |
-@@ -239,6 +246,15 @@
+@@ -239,6 +252,15 @@
  	} else
  #endif
  	{
@@ -435,7 +448,7 @@
  		// Save context by ourselves
  #define CTX_STATE(gl_param) _save ## gl_param = glIsEnabled(gl_param)
  #define CTX_BOOLEAN(gl_param) glGetBooleanv(gl_param, &_save ## gl_param)
-@@ -304,7 +320,7 @@
+@@ -304,7 +326,7 @@
  	Pipeline::disable();
  
  	if (_stackLevel) {
@@ -444,7 +457,7 @@
  		if (OpenGLContext.type == kContextGL) {
  			glMatrixMode(GL_TEXTURE);
  			glPopMatrix();
-@@ -327,6 +343,15 @@
+@@ -327,6 +349,15 @@
  			CTX_STATE(GL_SCISSOR_TEST);
  			CTX_STATE(GL_STENCIL_TEST);
  
@@ -460,7 +473,7 @@
  			glDepthMask(_saveGL_DEPTH_WRITEMASK);
  
  			glBlendFuncSeparate(_saveGL_BLEND_SRC_RGB[0], _saveGL_BLEND_DST_RGB[0],
-@@ -355,10 +380,17 @@
+@@ -355,10 +386,17 @@
  		glDisable(GL_DEPTH_TEST);
  		glDepthFunc(GL_LESS);
  
@@ -478,7 +491,7 @@
  
  		glDisable(GL_SCISSOR_TEST);
  		glScissor(0, 0, g_system->getWidth(), g_system->getHeight());
-@@ -369,11 +401,13 @@
+@@ -369,11 +407,13 @@
  		glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
  
  		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -725,7 +738,7 @@
  
  VirtualMouse::VirtualMouse(EventDispatcher *eventDispatcher) :
  		_eventDispatcher(eventDispatcher),
-@@ -60,6 +67,23 @@
+@@ -60,8 +67,30 @@
  	if (curTime < _lastUpdateMillis + kUpdateDelay) {
  		return false;
  	}
@@ -748,8 +761,15 @@
 +#endif
  	_lastUpdateMillis = curTime;
  
++#ifdef __PS4__
++	// Settings or the active game can change without a new axis report.
++	// Re-evaluate sensitivity/deadzone so Apply/OK takes effect immediately.
++	handleAxisMotion(_inputAxisPositionX, _inputAxisPositionY);
++#endif
  	// Adjust the speed of the cursor according to the virtual screen resolution
-@@ -73,8 +97,8 @@
+ 	Common::Rect screenSize;
+ 	if (g_system->isOverlayVisible()) {
+@@ -73,8 +102,8 @@
  	float screenSizeSpeedModifier = screenSize.width() / (float)kDefaultScreenWidth;
  
  	// Compute the movement delta when compared to the previous update
@@ -760,7 +780,7 @@
  
  	Common::Point delta;
  	delta.x = deltaX;
-@@ -186,12 +210,22 @@
+@@ -186,12 +215,22 @@
  	float analogX  = (float)_inputAxisPositionX;
  	float analogY  = (float)_inputAxisPositionY;
  	float deadZone = (float)ConfMan.getInt("joystick_deadzone") * 1000.0f;
@@ -784,6 +804,18 @@
  		_mouseVelocityX = analogX * scalingFactor * speedFactor;
  		_mouseVelocityY = analogY * scalingFactor * speedFactor;
  	} else {
+@@ -203,7 +242,11 @@
+ float VirtualMouse::computeJoystickMouseSpeedFactor() const {
+ 	switch (ConfMan.getInt("kbdmouse_speed")) {
+ 	case 0:
++#ifdef __PS4__
++		return 0.1f; // Displayed sensitivity 1, with 10 as normal.
++#else
+ 		return 0.25; // 0.25 keyboard pointer speed
++#endif
+ 	case 1:
+ 		return 0.5;  // 0.5 speed
+ 	case 2:
 --- a/backends/mixer/sdl/sdl-mixer.cpp
 +++ b/backends/mixer/sdl/sdl-mixer.cpp
 @@ -34,7 +34,11 @@
@@ -1344,14 +1376,26 @@
  	_url = url;
 --- a/gui/options.cpp
 +++ b/gui/options.cpp
-@@ -1444,11 +1444,18 @@
+@@ -171,7 +171,7 @@
+ 
+ // The keyboard mouse speed values range from 0 to 7 and correspond to speeds shown in the label
+ // "10" (value 3) is the default speed corresponding to the speed before introduction of this control
+-static const char *const kbdMouseSpeedLabels[] = { "3", "5", "8", "10", "13", "15", "18", "20", nullptr };
++static const char *const kbdMouseSpeedLabels[] = { "1", "5", "8", "10", "13", "15", "18", "20", nullptr };
+ 
+ OptionsDialog::OptionsDialog(const Common::String &domain, int x, int y, int w, int h)
+ 	: Dialog(x, y, w, h), _domain(domain), _graphicsTabId(-1), _midiTabId(-1), _pathsContainer(nullptr), _tabWidget(nullptr) {
+@@ -1444,11 +1444,21 @@
  
  	// Keyboard and joystick mouse speed
  	if (g_system->hasFeature(OSystem::kFeatureKbdMouseSpeed)) {
 +#ifdef __PS4__
-+		const char *stickHelp = "Analog stick pointer speed: 3 slowest, 10 normal, 20 fastest";
++		const bool gameControls = _domain != Common::ConfigManager::kApplicationDomain;
++		const char *stickHelp = gameControls
++			? "Pointer speed for this game. Saved with OK. 1 slowest, 10 normal, 20 fastest."
++			: "Launcher pointer speed and default for games without an override. Saved with Apply or OK.";
 +		_kbdMouseSpeedDesc = new StaticTextWidget(boss, prefix + "grKbdMouseSpeedDesc",
-+			g_gui.useLowResGUI() ? _("Stick speed:") : _("Stick sensitivity:"), _(stickHelp));
++			gameControls ? _("Game stick:") : _("Menu stick:"), _(stickHelp));
 +		_kbdMouseSpeedSlider = new SliderWidget(boss, prefix + "grKbdMouseSpeedSlider", _(stickHelp), kKbdMouseSpeedChanged);
 +#else
  		if (!g_gui.useLowResGUI())

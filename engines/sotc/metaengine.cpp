@@ -17,7 +17,11 @@ public:
   const Common::KeyCode codes[] = {Common::KEYCODE_RIGHT, Common::KEYCODE_LEFT, Common::KEYCODE_UP, Common::KEYCODE_DOWN, Common::KEYCODE_p, Common::KEYCODE_ESCAPE, Common::KEYCODE_a, Common::KEYCODE_F5, Common::KEYCODE_F7, Common::KEYCODE_F9, Common::KEYCODE_F10};
   for (int i = 0; i < 11; ++i) {
    Common::Action *action = new Common::Action(ids[i], Common::U32String(labels[i]));
-   action->setKeyEvent(Common::KeyState(codes[i])); action->addDefaultInputMapping(keys[i]); if(i!=7 && i!=8) action->addDefaultInputMapping(buttons[i]); if (i==5) action->addDefaultInputMapping("JOY_START"); map->addAction(action);
+   action->setKeyEvent(Common::KeyState(codes[i])); action->addDefaultInputMapping(keys[i]); if(i!=7 && i!=8) action->addDefaultInputMapping(buttons[i]);
+#ifndef __PS4__
+   if (i==5) action->addDefaultInputMapping("JOY_START");
+#endif
+   map->addAction(action);
   }
   Common::Action *next = new Common::Action("CLICKNEXT", Common::U32String("Next image"));
   Common::Action *startup = new Common::Action("STARTSCENE", Common::U32String("Toggle original start snapshot"));

@@ -57,6 +57,8 @@ typedef struct PS4GLRenderTarget {
   VkImage image; VkDeviceMemory memory; VkImageView view; VkFramebuffer framebuffer;
   GLsizei width,height;
   VkImageLayout layout;
+  VkImage depth_image; VkDeviceMemory depth_memory; VkImageView depth_view;
+  size_t depth_bytes;
 } PS4GLRenderTarget;
 #define GL_BLEND 0x0be2
 #define GL_ZERO 0
@@ -179,7 +181,7 @@ typedef struct PS4GLTexture {
   unsigned char *pixels;
   GLsizei width,height;
   GLenum min_filter,mag_filter,wrap_s,wrap_t,wrap_r;
-  GLboolean rgb_storage, cpu_contents_defined;
+  GLboolean rgb_storage, cpu_contents_defined, owned_depth_stencil;
   GLenum internal_format, target;
   unsigned cube_faces; /* Six base-level faces packed vertically for the 2D-only native sampler. */
   unsigned render_target;
@@ -440,7 +442,7 @@ typedef struct PS4GLContext {
   GLuint framebuffer, next_framebuffer;
   PS4GLRenderTarget targets[PS4GL_MAX_TARGETS];
   size_t target_bytes;
-  VkRenderPass offscreen_pass, active_pass, default_pass;
+  VkRenderPass offscreen_pass, offscreen_depth_pass, active_pass, default_pass;
   VkFramebuffer default_framebuffer;
   VkImage default_image;
   GLint default_width,default_height;
@@ -484,6 +486,9 @@ void ps4glEndPass(void);
  * Native backend must support signed viewport heights (OpenGNM does). */
 void ps4glBeginFrame(VkCommandBuffer, VkRenderPass, VkFramebuffer, GLint, GLint);
 void ps4glEndFrame(void);
+/* Private attachment storage for the backend 3D target, not general renderbuffers. */
+void ps4glFramebufferDepthStencil(void);
+int ps4glHasDepthStencil(PS4GLContext *);
 void glGenFramebuffers(GLsizei, GLuint *);
 void glBindFramebuffer(GLenum, GLuint);
 void glDeleteFramebuffers(GLsizei, const GLuint *);

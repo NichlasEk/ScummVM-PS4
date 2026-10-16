@@ -65,7 +65,19 @@
  namespace Director {
  
  DirectorEngine *g_director;
-@@ -282,7 +284,7 @@
+@@ -183,6 +185,11 @@
+ 
+ 	delete _surface;
+ 	delete _primitives;
++
++	// A subsequent stage emits window events before its new Lingo exists.
++	// Do not let those events see the previous engine's freed Lingo.
++	// g_director remains available to Archive member destructors.
++	g_lingo = nullptr;
+ }
+ 
+ Movie *DirectorEngine::getCurrentMovie() const { return _currentWindow->getCurrentMovie(); }
+@@ -282,7 +289,7 @@
  	if (!debugChannelSet(-1, kDebugDesktop))
  		_wmMode |= Graphics::kWMModeFullscreen | Graphics::kWMModeNoDesktop;
  
@@ -74,6 +86,20 @@
  		// Both 16bpp and 32bpp formats are supported, but 32bpp is always reported to the scripts.
  		_pixelformat = g_system->getSupportedFormats().front();
  		_colorDepth = _pixelformat.isCLUT8() ? 8 : 32;
+@@ -370,9 +377,12 @@
+ 
+ 	bool loop = true;
+ 
+-	while (loop) {
++	while (loop && !_system->getEventManager()->shouldReturnToLauncher()) {
+ 		if (_stage->getCurrentMovie())
+ 			processSysEvents();
++
++		if (_system->getEventManager()->shouldReturnToLauncher())
++			break;
+ 
+ 		setCurrentWindow(_stage);
+ 		g_lingo->switchStateFromWindow();
 --- a/engines/director/fonts.cpp
 +++ b/engines/director/fonts.cpp
 @@ -27,6 +27,8 @@
@@ -459,6 +485,15 @@
  namespace Director {
  
  Lingo *g_lingo;
+@@ -631,7 +633,7 @@
+ 	uint localCounter = 0;
+ 	uint lastUpdate = 0;
+ 
+-	while (!_abort && !_freezeState && !_playDone && _state->script && (*_state->script)[_state->pc] != STOP) {
++	while (!_abort && !_freezeState && !_playDone && !g_system->getEventManager()->shouldReturnToLauncher() && _state->script && (*_state->script)[_state->pc] != STOP) {
+ 		if (targetFrame != -1 && (int)_state->callstack.size() == targetFrame)
+ 			break;
+ 
 @@ -843,6 +845,7 @@
  void Lingo::resetLingo() {
  	debugC(3, kDebugLingoExec, "Resetting Lingo!");
@@ -467,6 +502,26 @@
  	resetLingoGo();
  }
  
+--- a/engines/director/metaengine.cpp
++++ b/engines/director/metaengine.cpp
+@@ -27,6 +27,7 @@
+ #include "common/translation.h"
+ 
+ #include "director/director.h"
++#include "director/ps4-jonsson.h"
+ 
+ namespace Director {
+ 
+@@ -63,8 +64,7 @@
+ }
+ 
+ bool DirectorEngine::hasFeature(EngineFeature f) const {
+-	return false;
+-		//(f == kSupportsReturnToLauncher);
++	return f == kSupportsReturnToLauncher && isPS4Jonsson();
+ }
+ 
+ static const ADExtraGuiOptionsMap optionsList[] = {
 --- /dev/null
 +++ b/engines/director/ps4-jonsson.h
 @@ -0,0 +1,16 @@
@@ -667,3 +722,15 @@
  					_width = dims.width();
  					_height = dims.height();
  				}
+--- a/engines/director/window.cpp
++++ b/engines/director/window.cpp
+@@ -690,6 +690,9 @@
+ }
+ 
+ bool Window::step() {
++	if (g_system->getEventManager()->shouldReturnToLauncher())
++		return false;
++
+ 	// finish last movie
+ 	if (_currentMovie && _currentMovie->getScore()->_playState == kPlayStopped) {
+ 		// attempt to thaw the lingo play state, if required

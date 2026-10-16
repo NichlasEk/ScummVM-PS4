@@ -7,6 +7,7 @@ class SotcEngine : public Engine {
 public:
  SotcEngine(OSystem *system) : Engine(system) {}
  Common::Error run() override;
+ bool hasFeature(EngineFeature f) const override { return f == kSupportsReturnToLauncher; }
 };
 }
 #endif

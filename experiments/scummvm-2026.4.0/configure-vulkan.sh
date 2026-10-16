@@ -21,8 +21,9 @@ target.write_text((root/'compat/ps4gl/ps4gl-main.c').read_text().replace('/data/
 PYMAIN
 sdk=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
 clang --target=x86_64-pc-freebsd12-elf -fPIC -O2 -D__PS4__ -D__ORBIS__ -isysroot "$sdk" -isystem "$sdk/include" -I"$root/compat/ps4gl" -I"$native/Vulkan-Headers/include" -I"$native/vulkan-ps4/include" -I"$root/.tools/glslang" -c "$root/artifacts/upstream-2026.4.0/ps4gl-main.c" -o "$bridge/ps4gl-main.o"
-# Compile the bridge sources changed by this experiment instead of reusing stale objects.
-for name in ps4gl ps4gl-glsl ps4gl-vulkan; do
+# Rebuild every consumer of PS4GLContext when its layout changes.
+bash "$root/scripts/build-ps4-sdlgl.sh"
+for name in ps4gl ps4gl-glsl ps4gl-vulkan ps4gl-frame ps4gl-display; do
  clang --target=x86_64-pc-freebsd12-elf -fPIC -O2 -D__PS4__ -D__ORBIS__ \
   -isysroot "$sdk" -isystem "$sdk/include" -I"$root/compat/ps4gl" \
   -I"$native/Vulkan-Headers/include" -I"$native/vulkan-ps4/include" -I"$root/.tools/glslang" \

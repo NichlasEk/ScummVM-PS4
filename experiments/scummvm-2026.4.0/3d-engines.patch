@@ -352,6 +352,23 @@
  		}
  	}
  
+--- a/engines/twp/metaengine.cpp
++++ b/engines/twp/metaengine.cpp
+@@ -191,7 +191,13 @@
+ 		act->setCustomEngineActionEvent(actions[i].action);
+ 		char *strToken = strtok(actions[i].inputs, "|");
+ 		while (strToken) {
+-			act->addDefaultInputMapping(strToken);
++#ifdef __PS4__
++			// Leave the analog stick to the backend virtual mouse, which applies
++			// the saved game sensitivity/deadzone and preserves analog precision.
++			// The engine arrow-key path moves a fixed 4 pixels per rendered frame.
++			if (strncmp(strToken, "JOY_LEFT_STICK_", 15) != 0)
++#endif
++				act->addDefaultInputMapping(strToken);
+ 			strToken = strtok(nullptr, "|");
+ 		}
+ 		if (actions[i].event != Common::EVENT_INVALID) {
 --- a/engines/twp/twp.cpp
 +++ b/engines/twp/twp.cpp
 @@ -1021,7 +1021,15 @@

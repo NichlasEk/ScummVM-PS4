@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 static unsigned calls;
+static int accept_test_target(PS4GLContext *ctx) { (void)ctx; return 1; }
 static VkClearRect last;
 static VkClearAttachment color;
 VKAPI_ATTR void VKAPI_CALL vkCmdClearAttachments(VkCommandBuffer cmd, uint32_t nc,
@@ -782,6 +783,29 @@ int main(void) {
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,8,6,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
   assert(glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE);
+
+  assert(!ps4glHasDepthStencil(&fboctx));
+  glGetIntegerv(GL_DEPTH_BITS,&value); assert(value==0);
+  ps4glFramebufferDepthStencil(); assert(!glGetError() && ps4glHasDepthStencil(&fboctx));
+  glGetIntegerv(GL_DEPTH_BITS,&value); assert(value==32);
+  glGetIntegerv(GL_STENCIL_BITS,&value); assert(value==8);
+  ps4glFramebufferDepthStencil(); assert(!glGetError()); /* idempotent setup */
+  fboctx.command=(VkCommandBuffer)(uintptr_t)1;
+  fboctx.prepare_target=accept_test_target;
+  unsigned depth_clears=calls;
+  glClearDepth(0.75); glClearStencil(3);
+  glClear(GL_DEPTH_BUFFER_BIT|GL_STENCIL_BUFFER_BIT);
+  assert(!glGetError() && calls==depth_clears+1);
+  assert(color.aspectMask==(VK_IMAGE_ASPECT_DEPTH_BIT|VK_IMAGE_ASPECT_STENCIL_BIT));
+  assert(color.clearValue.depthStencil.depth==0.75f && color.clearValue.depthStencil.stencil==3);
+  glDepthMask(GL_FALSE); glClear(GL_DEPTH_BUFFER_BIT);
+  assert(calls==depth_clears+1 && !glGetError());
+  glDepthMask(GL_TRUE); fboctx.command=VK_NULL_HANDLE; fboctx.prepare_target=NULL;
+
+  glBindFramebuffer(GL_FRAMEBUFFER,0);
+  assert(!ps4glHasDepthStencil(&fboctx));
+  ps4glFramebufferDepthStencil(); assert(glGetError()==GL_INVALID_OPERATION);
+  glBindFramebuffer(GL_FRAMEBUFFER,fbo);
 
   glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,ft,1);
   assert(glGetError()==GL_INVALID_VALUE && ps4glFramebufferTexture(&fboctx)==ft);

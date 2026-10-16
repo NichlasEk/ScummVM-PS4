@@ -231,7 +231,8 @@ void ps4glDestroyPrograms(VkDevice device, PS4GLContext *ctx) {
   retire_texture_cache(ctx,1);
   collect_targets(ctx,1);
   if(ctx->offscreen_pass) vkDestroyRenderPass(device,ctx->offscreen_pass,NULL);
-  ctx->offscreen_pass=VK_NULL_HANDLE; ctx->prepare_target=NULL; ctx->end_target=NULL;
+  if(ctx->offscreen_depth_pass) vkDestroyRenderPass(device,ctx->offscreen_depth_pass,NULL);
+  ctx->offscreen_depth_pass=VK_NULL_HANDLE; ctx->offscreen_pass=VK_NULL_HANDLE; ctx->prepare_target=NULL; ctx->end_target=NULL;
   ctx->physical=VK_NULL_HANDLE; ctx->copy_texture=NULL; ctx->read_pixels=NULL; ctx->upload_vertices=NULL; ctx->upload_uniforms=NULL; ctx->select_pipeline=NULL; ctx->import_program=NULL;
   ctx->program=0; ctx->program_device=VK_NULL_HANDLE; ctx->program_pass=VK_NULL_HANDLE;
 }
@@ -402,7 +403,7 @@ fail:
 static VkPipeline select_pipeline(PS4GLContext *ctx, PS4GLProgram *p) {
   VkRenderPass pass=ctx->active_pass ? ctx->active_pass : ctx->program_pass;
   PS4GLRaster raster=ctx->raster, defaults=PS4GL_RASTER_DEFAULT;
-  if(ctx->framebuffer || !ctx->default_depth_stencil) { raster.depth_enabled=0; raster.stencil_enabled=0; }
+  if(!ps4glHasDepthStencil(ctx)) { raster.depth_enabled=0; raster.stencil_enabled=0; }
   if(!ctx->blend.enabled && !memcmp(&raster,&defaults,sizeof(raster)) && pass==ctx->program_pass) return p->pipeline;
   for(unsigned i=0;i<p->variant_count;++i)
     if(p->variants[i].pass==pass && !memcmp(&p->variants[i].raster,&raster,sizeof(raster)) && !memcmp(&p->variants[i].state,&ctx->blend,sizeof(ctx->blend))) return p->variants[i].pipeline;

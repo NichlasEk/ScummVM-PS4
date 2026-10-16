@@ -19,6 +19,7 @@ class PiceEngine : public Engine, public ScriptSceneSink {
 public:
  explicit PiceEngine(OSystem *system) : Engine(system), _picture(0), _speech(0), _textColor(255) {}
  Common::Error run() override;
+ bool hasFeature(EngineFeature f) const override { return f == kSupportsReturnToLauncher; }
 private:
  bool _console=false, _ps1=false;
  bool playPS1Movie(const Common::String &name,bool skippable,bool audit=false);

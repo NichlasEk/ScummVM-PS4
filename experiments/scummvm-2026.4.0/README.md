@@ -499,3 +499,109 @@ SHA-256: `e8d0b2c1933763e213cb91a9db39cd787072906812faa43a7a0b1f27416f4121`.
 PkgTool validation passed; all 238 extracted payloads match staging and the
 controller-only marker is absent. Eboot matches delivered 0.06:
 `1fab07543608059d48ace41ce031c5ff4d0f71ba9465c2dda3c7d3883f1a2ae1`.
+
+### Separate launcher/game stick settings and TWP analog input (0.08 candidate)
+
+TWP's default left-stick bindings generated arrow-key events; its engine
+then moved the cursor a fixed four pixels per rendered frame, bypassing
+`kbdmouse_speed` and analog deadzone/precision. On PS4 those four default
+left-stick bindings are now left to the backend virtual mouse. Keyboard
+arrows, D-pad verb selection, mouse input and other controller actions remain.
+Custom user key mappings are preserved.
+
+The existing separate configuration domains are now labelled `Menu stick`
+(global launcher/default) and `Game stick` (current game's override).
+OK/Apply continues to flush these settings to the INI immediately. The
+virtual mouse recalculates velocity from current settings on each update,
+so a changed setting/domain also applies without another axis report.
+
+Validation: shadPS4 game setting changed via Control tab + OK from raw 0
+(display 3) to raw 7 (display 20); the global raw 7 remained unchanged and
+the game raw 7 was read back from the INI. A 0.5-second stick input at the
+low setting moved approximately 250 screenshot pixels; a 0.1-second input
+at high moved about 330 pixels. After restarting, the same high setting
+remained effective (about 160 pixels in the half-sized test window).
+Evidence: `artifacts/upstream-2026.4.0/twp-stick-*`. Clean patch replay
+matched all 106 modified files. Physical PS4 sensitivity acceptance pending.
+
+0.08 package: `dist/ps4-ftp-2026.4.0-008/ScummVM-2026.4.0-Vulkan-Test.pkg`.
+SHA-256: `e8008b453fafe67bb9a379203fb012b9ee2ea58f01ee9138826b4d2dcd91e921`.
+PkgTool validation and extracted payload verification passed. Delivered to
+`/data/pkg/ScummVM-2026.4.0-0.08.pkg` on the PS4 FTP server; full FTP readback
+matched the local SHA-256. Delivery does not establish installation or physical
+controller acceptance. Evidence: `artifacts/upstream-2026.4.0/ftp-008-delivery.json`.
+
+### Grim actor depth correction (0.09 candidate)
+
+The physical-PS4 report showed missing/overlapping surfaces on Manny's suit.
+The backend Renderer3D target previously had only color storage, and PS4GL
+explicitly disabled depth and stencil on all offscreen targets. This let
+actor surfaces overwrite each other in draw order.
+
+Renderer3D now opts into private D32F/S8 storage for its color target. PS4GL
+retains depth/stencil across pass switches, honors clear/write masks and
+uses depth-enabled pipeline variants for these targets. Storage is retired
+with the color target and charged to the target budget. Ordinary color-only
+FBOs (including TWP's effects) retain their existing behavior. This does not
+advertise general OpenGL renderbuffer or ARB framebuffer support.
+
+Rebuild every PS4GLContext consumer together, including SDL, frame/display
+and main: mixing old SDL object layouts with the new bridge caused the first
+local test's black screen. The configure wrapper now rebuilds these consumers.
+
+Host bridge ASan/UBSan regression passed, including opted-in depth/stencil
+queries, clears and write-mask checks. Patch replay matched 106 modified
+files. In shadPS4, the intro, office scene and walking/camera change worked;
+Manny's suit and arms appeared solid. The user accepted the visible test.
+Evidence: `grim-depth-run2.log`, `grim-depth-game2.png`, `grim-depth-walk.png`,
+`grim-depth-tests.log`, `grim-depth-replay.log` under
+`artifacts/upstream-2026.4.0`. Physical PS4 acceptance remains pending.
+
+0.09 package: `dist/ps4-ftp-2026.4.0-009/ScummVM-2026.4.0-Vulkan-Test.pkg`.
+SHA-256: `db9b4c0c20fac288d386da247ebe00f338ff7c99eb53501c0a4b9644c85f9c93`.
+Eboot SHA-256: `8ec3002ff113fd3cab91d06726318ef498cac59ac2a7713caba39e01029a94f2`.
+PkgTool validation passed and all 238 extracted payloads match staging.
+This includes the 0.08 menu/game stick sensitivity changes. The final build
+also moves the initial depth-image barrier after fallible allocation work.
+Delivered to PS4 FTP `/data/pkg/ScummVM-2026.4.0-0.09.pkg`; full readback
+matched the package SHA-256. Evidence: `ftp-009-delivery.json` in the same
+artifact directory. Installation and physical rendering acceptance pending.
+
+### Return to launcher and sensitivity minimum (0.10 candidate)
+
+The user confirmed 0.09 works on PS4, then requested launcher return for PICE,
+SOTC and Jonssonligan and a lower minimum stick sensitivity.
+
+PICE and SOTC now advertise return-to-launcher support; their existing
+`shouldQuit()` loops also cover the event manager's return flag. On PS4 SOTC
+leaves Options/JOY_START to ScummVM's global menu instead of binding it to
+its own Escape menu; touchpad/JOY_BACK still opens the game's menu.
+For the opt-in PS4 Jonssonligan 1 target, Director now enables the launcher button and
+honors the return flag in the engine, window and Lingo execution loops.
+Other Director titles keep the previous feature gate.
+
+PS4 sensitivity's lowest existing INI value (raw 0) now means displayed 1
+and speed factor 0.1, instead of displayed 3/factor 0.25. Other saved values,
+10 as normal, and separate global/game domains are unchanged.
+
+Build passed; clean replay matched 108 modified files. shadPS4 exercised
+Jonssonligan -> launcher -> PICE, PICE return during its intro and restart,
+and SOTC Options -> launcher -> Jonssonligan -> launcher -> Jonssonligan.
+Evidence is in `artifacts/upstream-2026.4.0/rtl-*`. This is startup/return
+coverage, not a full gameplay or physical-PS4 acceptance test.
+
+The repeated Director start initially exposed a stale `g_lingo` pointer:
+`Window::processSysEvent` used it during new stage initialization before the
+new current window existed. The destructor now clears `g_lingo` after its
+window cleanup, while retaining `g_director` for subsequent Archive member
+destruction. The corrected run (`rtl-run4.log`, `rtl4-launcher.png`,
+`rtl4-restarted2.png`) returned to the launcher and started the intro again
+in the same process. Replay after this correction still matched 108 files.
+
+0.10 package: `dist/ps4-ftp-2026.4.0-010/ScummVM-2026.4.0-Vulkan-Test.pkg`.
+SHA-256: `7a4cf55a997fcb5d0a1b6b7c509a1af448bf565e731886ac2b90562e7d654722`.
+Eboot SHA-256: `682b1a2511bf91aa4875e4c2f2a70b559a88ace2fbd85bd9f45d7302965036a4`.
+PkgTool validation passed and all 238 extracted payloads match staging.
+Delivered to `/data/pkg/ScummVM-2026.4.0-0.10.pkg` on the PS4 FTP server;
+full readback matched SHA-256 (`ftp-010-delivery.json`). Physical-PS4
+acceptance of these launcher/input changes remains pending.

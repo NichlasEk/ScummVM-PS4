@@ -605,3 +605,288 @@ PkgTool validation passed and all 238 extracted payloads match staging.
 Delivered to `/data/pkg/ScummVM-2026.4.0-0.10.pkg` on the PS4 FTP server;
 full readback matched SHA-256 (`ftp-010-delivery.json`). Physical-PS4
 acceptance of these launcher/input changes remains pending.
+
+### 2026-10-17: Jonssonligan 2 local shadPS4 investigation
+
+The opt-in `ps4_director7_experimental` compatibility path now covers both
+`jonssonligan1` and `jonssonligan2`. Preferences use each game's ID as their
+prefix; existing Jonssonligan 1 names remain compatible.
+
+The TMS Tools virtual drive list now includes its terminating CR. The sequel
+removes the final empty line before scanning drives; without that terminator
+it removed `D` and reported a missing CD. The game's `Data/inventory.cst`
+probe now resolves to the existing local data.
+
+Digital-video cast loading initializes both scale percentages to 100. Missing
+initialization produced a 320x24459 destination for a 320x240 AVI frame.
+Lingo blend 0 now retains the blending flag for full transparency; disabling
+that flag made the menu's black fade layer opaque. shadPS4 run 13 showed the
+menu after these corrections. Run 9 showed the corrected intro; a separate
+Jonssonligan 1 smoke run reached its intro with the same shared fixes.
+
+The subsequent RGB/shape candidate preserves raw D7 RGB components, updates
+the correct copyback flags for D7 fields, applies blending to drawn shapes,
+and copies shape foreground/background colors when duplicating cast members.
+The user confirmed that the pointer and nameplate/highlight now look correct.
+Run 14 was the graphics candidate; its build and clean replay matched 112
+modified files. Full gameplay coverage remains pending.
+
+Local evidence and launcher: `artifacts/upstream-2026.4.0/jonsson2-*`,
+`jonsson1-regression.*`, and `run-jonsson2-test.sh`. The local test stage is
+`build/scummvm-2026.4.0-jonsson2-test-pkg` (still labelled 0.10); it is not a
+new release PKG and has not been sent to the PS4. No physical-console or
+complete-game acceptance is implied. Director 7 film loops and some Lingo
+operations still produce unsupported-operation warnings.
+
+The new-game investigation adds bytecode `swap` (0x21) and `setContents`,
+including assignment to text-bearing Xtra cast members. The sequel uses
+these to clear its player-name field. Previously the authored test text
+remained in that field. Preferences are isolated by game ID.
+
+Run 20 started the new-game intro five times and returned with Escape four
+times in the same process. The reported persistent black lock was not
+reproduced in this controlled sequence. C maps to Escape in the emulator;
+the game's AVSLUTA_QT handler explicitly returns to the main menu on Escape,
+so this is cancellation rather than a skip directly into gameplay.
+Build 22 removes temporary flow diagnostics. Clean patch replay matched
+113 modified files (`jonsson2-flow22-replay.log`). The corrected empty-name entry was verified in run 23, including entering
+a new name with the touchpad virtual keyboard and starting the intro.
+
+Letting the intro finish in run 20 exposed a separate fatal parser error:
+`readSpriteDataD7(): Miscomputed field position: 48` while loading `game.dir`.
+The channel splitter used an 8-bit sprite index despite D7 supporting more
+than 256 channels. Run 23 widens that index to 16 bits. The regression probe
+`python3 tests/director7/check-channel-split.py <prepared-source>` compiles
+the actual splitter against bounded stream callbacks and checks 12,000 delta
+starts plus a header crossing. It passes with the fix and fails its boundary
+assertion against the original upstream splitter. Build 23 and clean replay
+passed; the latter matched 113 modified files (`jonsson2-flow23-replay.log`).
+
+Run 23 passed the channel-index failure and then exposed a delta beginning
+at offset 34 (the low half of a skew field). Build 24 preserves untouched
+bytes when applying partial 32-bit sprite-list/rotation/skew updates and
+accepts partial padding deltas. `check-partial-u32.py` exercises all 20
+byte-order/offset/length combinations against the actual helper. Both parser
+probes pass on clean replay (113 files, `jonsson2-flow24-replay.log`).
+A direct `Data/game.dir` load in run 24 passes parsing but shows a behavior
+error at frame 1; this probe bypasses normal menu initialization. The normal
+startup route is restored for run 25.
+
+
+The normal new-game route in run 25 reproduced the behavior failure seen in
+run 24. Behaviors now receive their owning `spriteNum` before `beginSprite`;
+a declared VOID property previously shadowed the dynamic fallback. Further
+local probes add D7 indexed property/chunk access, `environment.runMode`,
+chunk-variable references (0x6d/0xad), `keyPressed`, chunk `delete`, and the
+sprite behavior-list getter. Run 38 reached and drew the first game room;
+the user confirmed room graphics but reported slow updates and missing
+players. This is **not yet playable or accepted**. Run 39 is a normal-menu
+regression candidate; the quick Escape sequence left only the menu logo,
+so run 40 repeats startup without those early inputs.
+
+An initial KePath Xtra implementation provides grid A* for the game's flat
+walkable-cell lists. Its host probe (`tests/director7/check-kepath.cpp`)
+checks obstacle routing, unreachable/missing endpoints and diagonal steps.
+Original Path/Path2 corner rules and actual character movement remain
+unverified. Temporary local path diagnostics remain in this candidate.
+The channel splitter probe now covers 24,000 starts across 1,000 channels
+(the game uses channels above 800). Both parser probes and the pathfinding
+probe passed; clean patch replay for build 39 matched 123 modified files.
+The emulator configuration has been restored to normal projector startup.
+
+
+Run 40 completed the normal projector/menu/new-name/intro route and reached
+the room, reproducing missing players independently of the direct-load probe.
+Run 42 fixes property-list `.count` lookup: the missing count had skipped the
+three-player update loop. All three actors then appeared. The user reports
+that control works reasonably, albeit slowly, and confirms the colored marker
+follows the selected character. Treat it as selection feedback, not an alpha
+bug. Full-game and physical-PS4 validation remain pending.
+
+Build 43 removes temporary actor/channel dumps, complete KePath map/path dumps,
+and the expanded assignment diagnostic. Normal warnings are retained; repeated
+sound-channel-zero and string warnings remain visible and have not been
+explained away as harmless. This is a diagnostic-cleanup comparison, not a
+verified performance improvement. Run 43 uses the same direct `Data/game.dir`
+probe as run 42 so the user can compare the same room without replaying the
+intro. The normal projector path is `toInstall/Jönssonligan går på djupet.exe`.
+The candidate remains local and uncommitted; no release package/FTP delivery.
+
+
+Run 43 exposed disappearing player cards on repeated hover/selection. Its log
+contains `c_delete: bad chunk ref field type: STRING` followed by missing
+`*_crawl_1_r_r` graphic names. Generic method dispatch eagerly replaced a
+variable reference with its string value before `getPropRef` built the chunk
+reference, so mouseLeave could not remove the hover suffix. Build 44 preserves
+the argument reference for D7 getPropRef/setContents/delete while evaluating
+a separate value for method dispatch. The local test is restarted as run 44;
+repeated card hover/selection acceptance remains pending.
+
+
+Run 44 still lost cards. Run 45's targeted deletion diagnostics confirmed
+correct suffix removal on multiple mouseLeave calls, but duplicate `_r_r`
+names still appeared later; reference preservation alone is insufficient.
+Build/run 46 publishes the new hovered channel before dispatching mouseLeave,
+so nested event processing cannot observe the previous hover target and
+repeat the transition. This reentrancy fix is a candidate, not yet user
+accepted. Temporary deletion diagnostics are removed. The visible emulator
+has been restarted for repeated card-selection testing.
+
+
+The user reports run 46 improves card stability, but selection does not bring
+its card to the front. Inspection of the local card behavior shows its
+exitFrame assigns locZ 2,000,000 to the selected card and 1,000,000 to other
+cards; mouseEnter itself changes only the graphic suffix. Those sprite
+exitFrame handlers were not dispatched. Build 47 broadcasts enterFrame and
+exitFrame to attached behaviors for both opt-in PS4 Jonsson games, then sends
+each frame/movie notification once. This extends the existing prepareFrame
+broadcast. Visible run 47 is the validation candidate; first-game regression
+and physical hardware validation are still pending.
+
+
+Run 47's direct-scene probe hides the cards once their exitFrame runs. The
+projector's startup script explicitly initializes gPolaroid=1 and gBubblor=1;
+direct Data/game.dir loading bypasses both (and audio settings). This invalidates
+the direct probe for card visibility and speech-bubble acceptance. The profile
+is restored to normal projector startup and run 48 starts from the beginning.
+Do not bypass the projector when testing UI/audio settings. Card depth and
+speech-bubble rendering still require confirmation via the normal route.
+
+
+Runs 48/49 did not establish a startup-only explanation: the user still
+reported missing cards, speech bubbles and floor clicks after normal startup.
+Run 50 rolled back the enterFrame/exitFrame broadcast for comparison; a
+direct-scene diagnostic confirmed the three card behavior parameters are
+correct (997=sickan, 998=vanis, 999=harry). Build/run 51 restores only sprite
+exitFrame delivery and logs the card globals for the first twelve updates.
+It starts via the normal projector; enterFrame remains on its prior path.
+These bounded J2CARD/J2CARDUPDATE diagnostics are temporary and must be
+removed before preparing a release. The maintained patch still reflects
+build 47; export/replay is pending the investigation result.
+
+The user's original-game reference and the local card behavior agree: the
+selected card belongs in front, and clicking it again cycles crawl, Run,
+sneak, walk. The card exitFrame updates both movement artwork and depth.
+Hover alone changes the artwork suffix, not depth. Stale crawl artwork is
+therefore not evidence that every character is actually crawling. Run 51
+acceptance for card cycling, selection depth, floor clicks and speech bubbles
+is pending. No new commit, package or FTP delivery has been made.
+
+
+Runs 51-57: the normal startup log confirms gPolaroid=1 and gBubblor=1,
+so initialization does not explain the continuing missing UI. Card exitFrame
+changed sickan_crawl_1 to sickan_walk_ (losing the suffix), then repeatedly
+requested missing artwork. Probes 52-54 narrowed this to UTF-32 substring
+construction: the suffix _1 had length 1 despite the source retaining both
+characters. Disassembly of common/str-base.o showed Clang replacing the
+char32_t cStrLen loop with wcslen; the target runtime behaves as a 16-bit scan.
+The PS4-only scan now uses volatile element-width reads to prevent that
+transformation. This shared Common fix is carried by vulkan.patch and is
+not restricted to a particular game. No runtime library override is used.
+
+Run 55 preserves sickan_walk_1, vanis_walk_0 and harry_walk_0. Run 56 confirms
+valid card cast IDs, visible=1, on-screen rectangles and selected priority
+2,000,000 versus 1,000,000. The user saw cards appear after a delay but reports
+remaining interaction problems. The regression test
+`python3 tests/director7/check-ps4-string-length.py SOURCE` runs the actual
+scan against a simulated 16-bit wcslen: it fails on clean upstream and passes
+on the patched source. The PS4 object no longer references wcslen. Existing
+channel-split and partial-uint32 regression checks also pass.
+
+Build 57 removes all temporary card/string diagnostics and diagnostic-only
+direct-scene globals, restores enterFrame plus exitFrame behavior delivery,
+and starts via the normal projector. Build/link passed. Card interaction,
+floor clicks and speech bubbles remain pending user verification; this is
+not a claim of full gameplay acceptance. No commit/package/FTP was performed.
+
+
+Run 58 confirms the remaining interaction failure is the authored cutscene
+lock: mouse down/up handlers execute with pSparr=1 and gDialog=VOID. Cards
+reappear/highlight but neither selection nor walking is allowed. This must
+be fixed by completing the dialogue, not forcing the lock to zero.
+
+The first linked AIFF contains twelve MARK entries (11 dialogue positions
+and a final slut marker). Linked sound loading did not import these marks;
+existing cue dispatch also omitted the channel/number/name arguments and
+was not routed to the movie handler. Candidate 60 imports linked AIFF/AIFF-C
+MARK chunks, converts sample-frame positions to milliseconds using COMM,
+and dispatches cuePassed(channel, oneBasedNumber, name). It also preserves
+cupt metadata after embedded ediM audio and allows text chunk reads from
+text-bearing cast Xtras. The cue cursor resets with new playback and advances
+before callbacks, which may replace sounds. Candidate 61 additionally drains
+pending cues after natural completion; explicit stop clears lastPlayedSound
+and does not synthesize remaining dialogue cues. These candidates retain
+bounded J2INPUT/J2CUES diagnostics plus J2CUE dispatch logging for validation.
+
+The actual AIFF reader passes nine synthetic cases for marker order, Pascal
+string padding, sample timing, AIFF-C, and truncated/invalid chunks using
+`check-aiff-cues.py`. A read-only local audit found 620 AIFF files, 462 with
+markers, and 443 with a slut marker. This establishes broad data relevance,
+not gameplay acceptance. Run 60 is the visible normal-startup candidate;
+61 is built separately pending whether the terminal cue is missed.
+
+
+Run 60 still delivered no cues and remained locked. Disassembly identifies
+`sound playFile` as the actual dialogue playback route. Build 62 adds the
+same AIFF reader to playFile, keeping times/names on SoundChannel rather
+than requiring a cast member. Build 63 corrects cue lifetime: reset only on
+actual stream replacement or explicit stop, not on setLastPlayedSound, which
+is also used by a zero score-sound update while playFile continues.
+
+Visible run 63 uses normal projector startup. Build/link and the nine AIFF
+reader cases pass. Maintained patches now include this candidate, with
+J2INPUT/J2CUE diagnostic logging still present. User acceptance for dialogue
+text, final cue unlocking floor/card input, and later conversations is
+PENDING. No hard-coded release of pSparr or fabricated dialogue events was
+introduced. Earlier run 57's clean replay covered 124 files; the larger
+current cue changes require a new replay before commit/release.
+
+
+Run 67 isolates two further cue-delivery blockers: a playFile channel uses
+SoundID with cast member zero, and same-frame Lingo jumps skipped cue polling.
+File cues now remain selected for the zero-member case; opt-in Jönsson cue
+polling runs outside the no-jump branch, with movie-change/stopped/frozen
+guards. All twelve first-scene markers reach movie script 23/cast 3. The
+authored final `slut` handler changes pSparr and gDialog from 1 to 0.
+
+Normal projector run 68 confirms the same terminal unlock and visible speech
+bubbles (also confirmed by the user). Direct-scene startup bypassed bubble
+preferences and was not a valid visibility test. The remaining reported issue
+is text/bubble sizing: Text Xtra retained its authored 127x12 single-line
+rectangle when replacing a longer line. Candidate 69 measures wrapped text
+with the rendering font before returning member.height, allowing the game's
+own bubble script to size its graphics. This is restricted to the opt-in
+Jönsson games. Authored Paige font/style decoding is still incomplete.
+
+Build/link 69 passes; the AIFF parser's nine synthetic cases, file/cast cue
+lifecycle tests (including callback mutation), and PS4 string-length regression
+pass. Run 69 uses normal projector startup. Long-reply visual fit, later
+dialogues, and physical PS4 verification remain pending. Temporary J2 cue/input
+diagnostics are retained; no commit, package or FTP delivery was requested.
+
+
+The user accepted bubble sizing in run 69, then found another disappearing
+card before publication. The first missing-member diagnostic is
+`sickan_walk_0_r_r`: the hover suffix is applied twice, after which card
+name updates operate on an invalid member. Publication/delivery was held.
+Candidate 70 queues the complete mouseLeave/mouseEnter transition through
+the input queue for both opt-in Jönsson titles, deferring callbacks while a
+script or suspended input handler is active. This avoids direct reentrant
+Lingo execution from event polling/updateStage. A regression extracted from
+the actual branch passes busy/suspended script, nested transition, duplicate
+movement and 100 card-cycle cases. Build/link passes; visible run 70 is active
+for repeated figure/hover testing. No claim of visual acceptance yet.
+
+Candidate 71 is the same hover/layout implementation with temporary J2
+input/cue/call-stack logging removed. Build/link, all seven Director regression
+checks (including KePath), whitespace checking, and a fresh patch replay
+(129 matching modified files) pass. Visible run 70 is intentionally left
+running for the user's card test. FTP connectivity to the requested console
+is verified, but commit/push/package/upload remain pending that test.
+
+The user reports run 70 now works after repeated card testing. The hover fix
+is accepted for packaging. Context cursor changes remain a visual test point:
+script 41 renders an animated sprite (channel 248), with cursor_titta,
+cursor_ta, cursor_talk, cursor_exit and other interaction states. Static
+script inspection confirms intended behavior, not runtime acceptance of
+every hover target. Candidate 71 removes diagnostics only.

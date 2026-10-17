@@ -18,6 +18,86 @@
  
  	Common::String fixedStr;
  	if (encoding == Common::kWindows1252) {
+--- a/engines/director/castmember/digitalvideo.cpp
++++ b/engines/director/castmember/digitalvideo.cpp
+@@ -143,6 +143,7 @@
+ 	_enableSound = _vflags & 0x08;
+ 	_crop = !(_vflags & 0x02);
+ 	_center = _vflags & 0x01;
++	_scaleX = _scaleY = 100;
+ 	_dirty = false;
+ 	_emptyFile = false;
+ 
+--- a/engines/director/castmember/shape.cpp
++++ b/engines/director/castmember/shape.cpp
+@@ -90,6 +90,8 @@
+ 
+ 	_shapeType = source._shapeType;
+ 	_pattern = source._pattern;
++	_fgCol = source._fgCol;
++	_bgCol = source._bgCol;
+ 	_fillType = source._fillType;
+ 	_lineThickness = source._lineThickness;
+ 	_lineDirection = source._lineDirection;
+--- a/engines/director/castmember/sound.cpp
++++ b/engines/director/castmember/sound.cpp
+@@ -19,11 +19,14 @@
+  *
+  */
+ 
++#include "common/macresman.h"
+ #include "director/director.h"
+ #include "director/cast.h"
+ #include "director/sound.h"
+ #include "director/castmember/sound.h"
+ #include "director/lingo/lingo-the.h"
++#include "director/util.h"
++#include "director/ps4-jonsson.h"
+ 
+ namespace Director {
+ 
+@@ -67,6 +70,8 @@
+ 	if (_loaded)
+ 		return;
+ 
++	_cuePoints.clear();
++	_cuePointNames.clear();
+ 	uint32 tag = 0;
+ 	uint16 sndId = 0;
+ 
+@@ -112,8 +117,8 @@
+ 				if (!_audio) {
+ 					if (format.equalsIgnoreCase("kMoaCfFormat_AIFF")) {
+ 						_audio = new MoaStreamDecoder(format, sndData);
+-						_loaded = true;
+-						return;
++						// The decoder owns sndData; continue reading later cupt children.
++						continue;
+ 					} else {
+ 						warning("SoundCastMember::load(): Unsupported ediM format '%s' in sound cast member %d", format.c_str(), _castId);
+ 					}
+@@ -147,6 +152,12 @@
+ 	}
+ 
+ 
++	if (_audio) {
++		delete sndFormat;
++		_loaded = true;
++		return;
++	}
++
+ 	if (sndFormat) {
+ 		_audio = sndFormat;
+ 		_loaded = true;
+@@ -167,6 +178,8 @@
+ 			debugC(2, kDebugLoading, "****** Loading file '%s', cast id: %d", res.c_str(), sndId);
+ 			AudioFileDecoder *audio = new AudioFileDecoder(res);
+ 			_audio = audio;
++			if (isPS4Jonsson() && _cuePoints.empty())
++				loadLinkedAIFFCues(res, _cuePoints, _cuePointNames);
+ 
+ 			// Linked sound files always have the loop flag disabled
+ 			_looping = 0;
 --- a/engines/director/channel.cpp
 +++ b/engines/director/channel.cpp
 @@ -24,6 +24,7 @@
@@ -100,6 +180,83 @@
  
  		setCurrentWindow(_stage);
  		g_lingo->switchStateFromWindow();
+--- a/engines/director/director.h
++++ b/engines/director/director.h
+@@ -270,6 +270,7 @@
+ public:
+ 	int _colorDepth;
+ 	Common::HashMap<int, int> _KeyCodes;
++	Common::HashMap<int, uint16> _pressedKeys;
+ 	int _machineType;
+ 	bool _centerStage;
+ 	char _dirSeparator;
+--- a/engines/director/events.cpp
++++ b/engines/director/events.cpp
+@@ -31,6 +31,7 @@
+ #include "graphics/macgui/macwindowmanager.h"
+ 
+ #include "director/director.h"
++#include "director/ps4-jonsson.h"
+ #include "director/movie.h"
+ #include "director/score.h"
+ #include "director/channel.h"
+@@ -231,20 +232,28 @@
+ 				if (g_system->getEventManager()->getButtonState() == 0)
+ 					return true;
+ 
+-			if (spriteId > 0) {
+-				if (spriteId != _lastEnteredChannelId) {
+-					if (_lastEnteredChannelId) {
+-						processEvent(kEventMouseLeave, _lastEnteredChannelId);
+-					}
+-
++			if (spriteId != _lastEnteredChannelId) {
++				const uint16 previous = _lastEnteredChannelId;
++				if (isPS4Jonsson()) {
++					// Queue the whole transition before running any script. Direct
++					// callbacks can re-enter Lingo from updateStage, interrupting a
++					// card's name replacement or delivering enter before its leave.
+ 					_lastEnteredChannelId = spriteId;
++					if (previous)
++						queueInputEvent(kEventMouseLeave, previous, pos);
++					if (spriteId)
++						queueInputEvent(kEventMouseEnter, spriteId, pos);
++					if (_lingo->_state->callstack.empty() && _lingo->_currentInputEvent.type == VOIDSYM)
++						_lingo->processEvents(_inputEventQueue, true);
++					return result;
++				}
++				// Scripts may pump events while processing mouseLeave. Publish the
++				// new hover target first so nested input cannot enter it twice.
++				_lastEnteredChannelId = spriteId;
++				if (previous)
++					processEvent(kEventMouseLeave, previous);
++				if (spriteId && _lastEnteredChannelId == spriteId)
+ 					processEvent(kEventMouseEnter, spriteId);
+-				}
+-			} else {
+-				if (_lastEnteredChannelId) {
+-					processEvent(kEventMouseLeave, _lastEnteredChannelId);
+-					_lastEnteredChannelId = 0;
+-				}
+ 			}
+ 		}
+ 		return result;
+@@ -336,6 +345,7 @@
+ 		return result;
+ 
+ 	case Common::EVENT_KEYDOWN:
++		_vm->_pressedKeys[event.kbd.keycode] = event.kbd.ascii;
+ 		_vm->_keyCode = _vm->_KeyCodes.contains(event.kbd.keycode) ? _vm->_KeyCodes[event.kbd.keycode] : 0;
+ 		_vm->_key = event.kbd.ascii;
+ 		// While most non-letter keys don't affect "the keyPress", there
+@@ -378,6 +388,7 @@
+ 		return result;
+ 
+ 	case Common::EVENT_KEYUP:
++		_vm->_pressedKeys.erase(event.kbd.keycode);
+ 		result = processInputEvent(kEventKeyUp, sc->getSpriteIDOfActiveWidget());
+ 		_vm->_keyFlags = event.kbd.flags;
+ 		return result;
 --- a/engines/director/fonts.cpp
 +++ b/engines/director/fonts.cpp
 @@ -27,6 +27,8 @@
@@ -159,7 +316,17 @@
  	_vm = frame._vm;
  	_numChannels = frame._numChannels;
  	_mainChannels.actionId = frame._mainChannels.actionId;
-@@ -1589,6 +1593,19 @@
+@@ -1575,7 +1579,8 @@
+ 	}
+ 
+ 	if (offset >= kMainChannelSizeD7) {
+-		byte spritePosition = (offset - kMainChannelSizeD7) / kSprChannelSizeD7;
++		// D7 supports more than 256 sprite channels; do not truncate their index.
++		uint16 spritePosition = (offset - kMainChannelSizeD7) / kSprChannelSizeD7;
+ 		uint16 nextStart = (spritePosition + 1) * kSprChannelSizeD7 + kMainChannelSizeD7;
+ 
+ 		while (size > 0) {
+@@ -1589,6 +1594,19 @@
  }
  
  void Frame::readMainChannelsD7(Common::MemoryReadStreamEndian &stream, uint16 offset, uint16 size) {
@@ -179,6 +346,155 @@
  	if (debugChannelSet(8, kDebugLoading)) {
  		debugC(8, kDebugLoading, "Frame::readMainChannelsD7(): %d byte header", size);
  		stream.hexdump(size);
+@@ -1879,6 +1897,17 @@
+ 		sprite._width = sprite._height = 0;
+ }
+ 
++// Score deltas may update only part of a 32-bit field. Preserve its other bytes.
++static uint32 readSpriteD7Uint32(Common::SeekableReadStreamEndian &stream, uint32 value,
++                               int fieldOffset, int finishPosition) {
++ while (fieldOffset < 4 && stream.pos() < finishPosition) {
++  const int shift = (stream.isBE() ? 3 - fieldOffset : fieldOffset) * 8;
++  value = (value & ~(uint32(0xff) << shift)) | (uint32(stream.readByte()) << shift);
++  ++fieldOffset;
++ }
++ return value;
++}
++
+ void readSpriteDataD7(Common::SeekableReadStreamEndian &stream, Sprite &sprite, int startPosition, int finishPosition) {
+ 	byte unk[12];
+ 
+@@ -1897,11 +1926,11 @@
+ 			sprite._copyBackMask |= kSCBInk;
+ 			break;
+ 		case 2:
+-			sprite._foreColor = g_director->transformColor((uint8)stream.readByte());
++			sprite._fgColorR = stream.readByte();
+ 			sprite._copyBackMask |= kSCBForeColor;
+ 			break;
+ 		case 3:
+-			sprite._backColor = g_director->transformColor((uint8)stream.readByte());
++			sprite._bgColorR = stream.readByte();
+ 			sprite._copyBackMask |= kSCBBackColor;
+ 			break;
+ 		case 4:
+@@ -1919,11 +1948,10 @@
+ 			}
+ 			break;
+ 		case 8:
+-			sprite._spriteListIdx = stream.readUint32();
+-			sprite._copyBackMask |= kSCBSpriteListIdx;
+-			break;
+-		case 10: // This field could be optimized
+-			sprite._spriteListIdx = stream.readUint16();
++		case 9:
++		case 10:
++		case 11:
++			sprite._spriteListIdx = readSpriteD7Uint32(stream, sprite._spriteListIdx, stream.pos() - startPosition - 8, finishPosition);
+ 			sprite._copyBackMask |= kSCBSpriteListIdx;
+ 			break;
+ 		case 12:
+@@ -1949,6 +1977,7 @@
+ 			// 0x40 editable
+ 			// 0x80 moveable
+ 			sprite._colorcode = stream.readByte();
++			sprite._copyBackMask |= kSCBForeColor | kSCBBackColor;
+ 
+ 			sprite._editable = ((sprite._colorcode & 0x40) == 0x40);
+ 			sprite._moveable = ((sprite._colorcode & 0x80) == 0x80);
+@@ -1965,52 +1994,75 @@
+ 			break;
+ 		case 23:
+ 			sprite._flags = stream.readByte();
+-			sprite._flags |= kSCBFlags;
++			sprite._copyBackMask |= kSCBFlags;
+ 			break;
+ 		case 24:
+ 			sprite._fgColorG = (uint8)stream.readByte();
+-			sprite._flags |= kSCBForeColor;
++			sprite._copyBackMask |= kSCBForeColor;
+ 			break;
+ 		case 25:
+ 			sprite._bgColorG = (uint8)stream.readByte();
+-			sprite._flags |= kSCBBackColor;
++			sprite._copyBackMask |= kSCBBackColor;
+ 			break;
+ 		case 26:
+ 			sprite._fgColorB = (uint8)stream.readByte();
+-			sprite._flags |= kSCBForeColor;
++			sprite._copyBackMask |= kSCBForeColor;
+ 			break;
+ 		case 27:
+ 			sprite._bgColorB = (uint8)stream.readByte();
+-			sprite._flags |= kSCBBackColor;
++			sprite._copyBackMask |= kSCBBackColor;
+ 			break;
+ 		case 28:
+-			sprite._angleRot = stream.readUint32();
+-			sprite._flags |= kSCBAngle;
+-			break;
+-		case 30:	// half of the field
+-			sprite._angleRot = stream.readUint16();
+-			sprite._flags |= kSCBAngle;
++		case 29:
++		case 30:
++		case 31:
++			sprite._angleRot = readSpriteD7Uint32(stream, sprite._angleRot, stream.pos() - startPosition - 28, finishPosition);
++			sprite._copyBackMask |= kSCBAngle;
+ 			break;
+ 		case 32:
+-			sprite._angleSkew = stream.readUint32();
+-			sprite._flags |= kSCBAngle;
++		case 33:
++		case 34:
++		case 35:
++			sprite._angleSkew = readSpriteD7Uint32(stream, sprite._angleSkew, stream.pos() - startPosition - 32, finishPosition);
++			sprite._copyBackMask |= kSCBAngle;
+ 			break;
+ 		case 36:
+-			stream.read(unk, 12); // alignment bytes
+-			hexdumpIfNotZero(unk, 12, "Frame::readSpriteDataD7(): sprite.unk: ");
++		case 37:
++		case 38:
++		case 39:
++		case 40:
++		case 41:
++		case 42:
++		case 43:
++		case 44:
++		case 45:
++		case 46:
++		case 47:
++			{
++				const int bytes = MIN<int>(finishPosition - stream.pos(), 48 - (stream.pos() - startPosition));
++				stream.read(unk, bytes); // alignment bytes may also be partially updated
++				hexdumpIfNotZero(unk, bytes, "Frame::readSpriteDataD7(): sprite.unk: ");
++			}
+ 			break;
+ 		default:
+ 			// This means that a `case` label has to be split at this position
+ 			error("readSpriteDataD7(): Miscomputed field position: %" PRId64, stream.pos() - startPosition);
+ 		}
+ 	}
++	if (sprite._copyBackMask & kSCBForeColor)
++		sprite._foreColor = (sprite._colorcode & 0x10) ?
++			g_director->_wm->findBestColor(sprite._fgColorR, sprite._fgColorG, sprite._fgColorB) : g_director->transformColor(sprite._fgColorR);
++	if (sprite._copyBackMask & kSCBBackColor)
++		sprite._backColor = (sprite._colorcode & 0x20) ?
++			g_director->_wm->findBestColor(sprite._bgColorR, sprite._bgColorG, sprite._bgColorB) : g_director->transformColor(sprite._bgColorR);
++
+ }
+ 
+ void writeSpriteDataD7(Common::SeekableWriteStream *writeStream, Sprite &sprite) {
+ 	writeStream->writeByte(sprite._spriteType);				// 0
+ 	writeStream->writeByte(sprite._inkData);				// 1
+-	writeStream->writeByte(sprite._foreColor);				// 2
+-	writeStream->writeByte(sprite._backColor);				// 3
++	writeStream->writeByte(sprite._fgColorR);				// 2
++	writeStream->writeByte(sprite._bgColorR);				// 3
+ 	writeStream->writeSint16BE(sprite._castId.castLib);		// 4, 5
+ 	writeStream->writeUint16BE(sprite._castId.member);		// 6, 7
+ 	writeStream->writeUint32BE(sprite._spriteListIdx);		// 8, 9, 10, 11
 --- a/engines/director/frame.h
 +++ b/engines/director/frame.h
 @@ -195,6 +195,8 @@
@@ -190,6 +506,18 @@
  
  	void readChannelD2(Common::MemoryReadStreamEndian &stream, uint16 offset, uint16 size);
  	void readSpriteD2(Common::MemoryReadStreamEndian &stream, uint16 offset, uint16 size);
+--- a/engines/director/graphics.cpp
++++ b/engines/director/graphics.cpp
+@@ -357,7 +357,8 @@
+ 
+ 			*dst = tmpDst;
+ 		}
+-	} else if (p->alpha) {
++	}
++	if (p->alpha) {
+ 		// Sprite blend does not respect colourization; defaults to matte ink
+ 		byte rSrc, gSrc, bSrc;
+ 		byte rDst, gDst, bDst;
 --- a/engines/director/lingo/lingo-builtins.cpp
 +++ b/engines/director/lingo/lingo-builtins.cpp
 @@ -20,6 +20,8 @@
@@ -201,16 +529,71 @@
  #include "common/translation.h"
  
  #include "director/types.h"
-@@ -51,6 +53,8 @@
- #include "director/lingo/lingo-utils.h"
+@@ -52,9 +54,13 @@
  
  #include "image/pict.h"
-+
-+#include "director/ps4-jonsson.h"
  
++#include "director/ps4-jonsson.h"
++
  namespace Director {
  
-@@ -1134,8 +1138,14 @@
+ static const BuiltinProto builtins[] = {
++	{ "delete", LB::b_deleteChunk, 1, 1, 700, HBLTIN },
++	{ "keyPressed", LB::b_keyPressed, 1, 1, 700, FBLTIN },
+ 	// Math
+ 	{ "abs",			LB::b_abs,			1, 1, 200, FBLTIN },	// D2 function
+ 	{ "atan",			LB::b_atan,			1, 1, 400, FBLTIN },	//			D4 f
+@@ -83,7 +89,7 @@
+ 	{ "addAt",			LB::b_addAt,		3, 3, 400, HBLTIN_LIST },	//			D4 h
+ 	{ "addProp",		LB::b_addProp,		3, 3, 400, HBLTIN_LIST },	//			D4 h
+ 	{ "append",			LB::b_append,		2, 2, 400, HBLTIN_LIST },	//			D4 h
+-	{ "count",			LB::b_count,		1, 1, 400, FBLTIN_LIST },	//			D4 f
++	{ "count",			LB::b_count,		1, 2, 400, FBLTIN_LIST },	//			D4 f
+ 	{ "deleteAt",		LB::b_deleteAt,		2, 2, 400, HBLTIN_LIST },	//			D4 h
+ 	{ "deleteOne",		LB::b_deleteOne,	2, 2, 400, HBLTIN_LIST },	//			D4 h, documented in D5
+ 	{ "deleteProp",		LB::b_deleteProp,	2, 2, 400, HBLTIN_LIST },	//			D4 h
+@@ -95,7 +101,8 @@
+ 	{ "getLast",		LB::b_getLast,		1, 1, 400, FBLTIN_LIST },	//			D4 f
+ 	{ "getOne",			LB::b_getOne,		2, 2, 400, FBLTIN_LIST },	//			D4 f
+ 	{ "getPos",			LB::b_getPos,		2, 2, 400, FBLTIN_LIST },	//			D4 f
+-	{ "getProp",		LB::b_getProp,		2, 2, 400, FBLTIN_LIST },	//			D4 f
++	{ "getPropRef", LB::b_getPropRef, 2, 3, 700, FBLTIN_LIST },
++	{ "getProp",		LB::b_getProp,		2, 3, 400, FBLTIN_LIST },	//			D4 f
+ 	{ "getPropAt",		LB::b_getPropAt,	2, 2, 400, FBLTIN_LIST },	//			D4 f
+ 	{ "list",			LB::b_list,			-1,0, 400, FBLTIN_LIST },	//			D4 f
+ 	{ "listP",			LB::b_listP,		1, 1, 400, FBLTIN_LIST },	//			D4 f
+@@ -103,7 +110,7 @@
+ 	{ "min",			LB::b_min,			-1,0, 400, FBLTIN_LIST },	//			D4 f
+ 	{ "setaProp",		LB::b_setaProp,		3, 3, 400, HBLTIN_LIST },	//			D4 h
+ 	{ "setAt",			LB::b_setAt,		3, 3, 400, HBLTIN_LIST },	//			D4 h
+-	{ "setProp",		LB::b_setProp,		3, 3, 400, HBLTIN_LIST },	//			D4 h
++	{ "setProp",		LB::b_setProp,		3, 4, 400, HBLTIN_LIST },	//			D4 h
+ 	{ "sort",			LB::b_sort,			1, 1, 400, HBLTIN_LIST },	//			D4 h
+ 	// Files
+ 	{ "closeDA",	 	LB::b_closeDA, 		0, 0, 200, CBLTIN },	// D2 c
+@@ -937,6 +944,21 @@
+ }
+ 
+ void LB::b_count(int nargs) {
++	if (nargs == 2) {
++		Datum prop = g_lingo->peek(0);
++		Datum source = g_lingo->peek(1).eval();
++		if (source.type == STRING) {
++			g_lingo->pop(); g_lingo->pop(); g_lingo->push(source);
++			Common::String kind = prop.asString();
++			if (kind.equalsIgnoreCase("lines")) b_numberoflines(1);
++			else if (kind.equalsIgnoreCase("items")) b_numberofitems(1);
++			else if (kind.equalsIgnoreCase("words")) b_numberofwords(1);
++			else if (kind.equalsIgnoreCase("chars")) b_numberofchars(1);
++			else { g_lingo->pop(); g_lingo->lingoError("count: unsupported text property %s", kind.c_str()); g_lingo->push(0); }
++			return;
++		}
++		b_getProp(2);
++	}
+ 	Datum list = g_lingo->pop();
+ 	Datum result;
+ 	result.type = INT;
+@@ -1134,8 +1156,14 @@
  
  void LB::b_getAt(int nargs) {
  	Datum indexD = g_lingo->pop();
@@ -226,7 +609,7 @@
  	int index = indexD.asInt();
  
  	switch (list.type) {
-@@ -1208,7 +1218,9 @@
+@@ -1208,7 +1236,9 @@
  	switch (list.type) {
  	case ARRAY: {
  		Datum d(0);
@@ -237,7 +620,98 @@
  		if (index > 0) {
  			d.u.i = index;
  		}
-@@ -1854,6 +1866,87 @@
+@@ -1229,7 +1259,58 @@
+ 	}
+ }
+ 
++void LB::b_deleteChunk(int nargs) {
++	LC::c_delete();
++}
++
++void LB::b_keyPressed(int nargs) {
++	Datum key = g_lingo->pop();
++	bool down = false;
++	for (auto it = g_director->_pressedKeys.begin(); it != g_director->_pressedKeys.end(); ++it) {
++		if (key.type == INT) {
++			if (g_director->_KeyCodes.contains(it->_key) && g_director->_KeyCodes[it->_key] == key.u.i)
++				down = true;
++		} else if (key.type == STRING && key.u.s->size() == 1) {
++			down |= Common::String::format("%c", it->_value).equalsIgnoreCase(*key.u.s);
++		}
++	}
++	g_lingo->push(Datum(down ? 1 : 0));
++}
++
++void LB::b_getPropRef(int nargs) {
++	if (nargs == 3) {
++		Datum source = g_lingo->peek(2);
++		Common::String chunkKind = g_lingo->peek(1).asString();
++		if (chunkKind.equalsIgnoreCase("line") || chunkKind.equalsIgnoreCase("item") ||
++		    chunkKind.equalsIgnoreCase("word") || chunkKind.equalsIgnoreCase("char")) {
++			Datum index = g_lingo->pop();
++			Common::String kind = g_lingo->pop().asString();
++			g_lingo->pop();
++			ChunkType type;
++			if (kind.equalsIgnoreCase("line")) type = kChunkLine;
++			else if (kind.equalsIgnoreCase("item")) type = kChunkItem;
++			else if (kind.equalsIgnoreCase("word")) type = kChunkWord;
++			else if (kind.equalsIgnoreCase("char")) type = kChunkChar;
++			else { g_lingo->lingoError("getPropRef: unsupported text property %s", kind.c_str()); g_lingo->pushVoid(); return; }
++			g_lingo->push(LC::chunkRef(type, index.asInt(), index.asInt(), source));
++			return;
++		}
++		Datum index = g_lingo->pop();
++		b_getProp(2);
++		g_lingo->push(index);
++		b_getAt(2);
++		return;
++	}
++	b_getProp(2);
++}
++
+ void LB::b_getProp(int nargs) {
++	if (nargs == 3) {
++		b_getPropRef(nargs);
++		Datum value = g_lingo->pop();
++		g_lingo->push(value.eval());
++		return;
++	}
+ 	Datum prop = g_lingo->pop();
+ 	Datum list = g_lingo->pop();
+ 
+@@ -1251,6 +1332,12 @@
+ 		} else {
+ 			g_lingo->lingoError("BUILDBOT: b_getProp: Property %s not found", prop.asString().c_str());
+ 		}
++		break;
++	}
++	case CASTREF:
++	case FIELDREF: {
++		Common::String name = prop.asString();
++		g_lingo->getObjectProp(list, name);
+ 		break;
+ 	}
+ 	case OBJECT:
+@@ -1515,6 +1602,18 @@
+ }
+ 
+ void LB::b_setProp(int nargs) {
++	if (nargs == 4) {
++		Datum value = g_lingo->pop();
++		Datum index = g_lingo->pop();
++		b_getProp(2);
++		g_lingo->push(index);
++		g_lingo->push(value);
++		if (index.type == SYMBOL || index.type == STRING)
++			b_setProp(3);
++		else
++			b_setAt(3);
++		return;
++	}
+ 	Datum value = g_lingo->pop();
+ 	Datum prop = g_lingo->pop();
+ 	Datum list = g_lingo->pop();
+@@ -1854,6 +1953,95 @@
  	g_lingo->push(d);
  }
  
@@ -262,7 +736,7 @@
 +}
 +static void directorQuickTimeVersion(int nargs) { g_lingo->push(Datum(4)); }
 +static Common::String preferenceFile(const Common::String &key) {
-+ Common::String name("jonssonligan1-pref-");
++ Common::String name = Common::String(g_director->getGameId()) + "-pref-";
 + for (uint i = 0; i < key.size(); ++i) name += Common::String::format("%02x", (byte)key[i]);
 + return name;
 +}
@@ -281,7 +755,9 @@
 + if (in) { while (!in->eos()) { char c = in->readByte(); if (!in->eos()) value += c; } delete in; }
 + g_lingo->push(Datum(value));
 +}
-+static void toolsDriveList(int nargs) { g_lingo->push(Datum("D")); }
++// TMS Tools returns one drive letter per CR-terminated line.
++// Jonssonligan 2 removes the trailing empty line before scanning the drives.
++static void toolsDriveList(int nargs) { g_lingo->push(Datum("D\r")); }
 +static void toolsDriveType(int nargs) {
 + Common::String drive = g_lingo->pop().asString();
 + g_lingo->push(Datum(drive.equalsIgnoreCase("D:\\") ? 4 : 0));
@@ -292,8 +768,14 @@
 + Common::Path path = findPath(file, false);
 + g_lingo->push(Datum(SearchMan.hasFile(path) ? 1 : 0));
 +}
++static void directorSetContents(int nargs) {
++ Datum value = g_lingo->pop();
++ Datum target = g_lingo->pop();
++ g_lingo->varAssign(target, value);
++}
 +void openJonssonTools() {
 + static const BuiltinProto functions[] = {
++  { "setContents", directorSetContents, 2, 2, 700, CBLTIN },
 +  { "QuickTimeVersion", directorQuickTimeVersion, 0, 0, 700, FBLTIN },
 +  { "SetPref", directorSetPref, 2, 2, 700, CBLTIN },
 +  { "GetPref", directorGetPref, 1, 1, 700, FBLTIN },
@@ -325,7 +807,7 @@
  void LB::b_xtra(int nargs) {
  	Datum d = g_lingo->pop();
  	if (d.type == INT) {
-@@ -1865,6 +1958,11 @@
+@@ -1865,6 +2053,11 @@
  		}
  	} else {
  		Common::String name = d.asString();
@@ -337,9 +819,188 @@
  		for (uint i = 0; i < g_lingo->_openXtras.size(); i++) {
  			if (name.equalsIgnoreCase(g_lingo->_openXtras[i])) {
  				Datum var = g_lingo->_openXtraObjects[i];
+--- a/engines/director/lingo/lingo-builtins.h
++++ b/engines/director/lingo/lingo-builtins.h
+@@ -66,6 +66,9 @@
+ void b_getOne(int nargs);
+ void b_getPos(int nargs);
+ void b_getProp(int nargs);
++void b_deleteChunk(int nargs);
++void b_keyPressed(int nargs);
++void b_getPropRef(int nargs);
+ void b_getPropAt(int nargs);
+ void b_list(int nargs);
+ void b_listP(int nargs);
+--- a/engines/director/lingo/lingo-bytecode.cpp
++++ b/engines/director/lingo/lingo-bytecode.cpp
+@@ -35,6 +35,8 @@
+ #include "director/lingo/lingo-builtins.h"
+ #include "director/lingo/lingo-bytecode.h"
+ #include "director/lingo/lingo-the.h"
++
++#include "director/ps4-jonsson.h"
+ 
+ namespace Director {
+ 
+@@ -70,6 +72,7 @@
+ 	{ 0x1d, LC::c_telldone,		"" },
+ 	{ 0x1e, LC::cb_list,		"" },
+ 	{ 0x1f, LC::cb_proplist,	"" },
++	{ 0x21, LC::c_swap,		"" },
+ 
+ 	{ 0x41, LC::c_intpush,		"B" },
+ 	{ 0x42, LC::c_argcnoretpush,"b" },
+@@ -107,6 +110,9 @@
+ 	{ 0x65, LC::c_stackdrop, 	"b" },
+ 	{ 0x66, LC::cb_v4theentitynamepush, "bN" },
+ 	{ 0x67, LC::cb_call,		"bN" }, // D5+ objcall
++
++	{ 0x6d, LC::cb_chunkvarrefpush, "b" },
++	{ 0xad, LC::cb_chunkvarrefpush, "w" },
+ 
+ 	{ 0x81, LC::c_intpush,		"W" },
+ 	{ 0x82, LC::c_argcnoretpush,"w" },
+@@ -421,6 +427,12 @@
+ 	uint arg1 = g_lingo->readInt();
+ 	uint arg2 = g_lingo->readInt();
+ 	warning("STUB: opcode 0x%02x (%d, %d)", opcode, arg1, arg2);
++}
++
++void LC::cb_chunkvarrefpush() {
++	int varType = g_lingo->readInt();
++	Datum id = g_lingo->pop();
++	g_lingo->push(g_lingo->findVarV4(varType, id));
+ }
+ 
+ void LC::cb_delete() {
+--- a/engines/director/lingo/lingo-code.cpp
++++ b/engines/director/lingo/lingo-code.cpp
+@@ -141,6 +141,7 @@
+ 	{ LC::c_wordToOfRef,	"c_wordToOfRef",	"" },	// D3
+ 	{ LC::c_xpop,			"c_xpop",			""  },
+ 	{ LC::cb_call,			"cb_call",			"s" },
++	{ LC::cb_chunkvarrefpush, "cb_chunkvarrefpush", "i" },
+ 	{ LC::cb_delete,		"cb_delete",		"i" },
+ 	{ LC::cb_hilite,		"cb_hilite",		"" },
+ 	{ LC::cb_globalassign,	"cb_globalassign",	"s" },
+@@ -1673,7 +1674,13 @@
+ 				}
+ 				return;
+ 			}
+-			firstArg = g_lingo->_state->stack[g_lingo->_state->stack.size() - nargs] = firstArg.eval();
++			// These D7 operations need the original assignment target, not its value.
++			// Evaluate only the method-dispatch probe; retain the reference on the stack.
++			firstArg = firstArg.eval();
++			if (!(g_director->getVersion() >= 700 &&
++			      (name.equalsIgnoreCase("getPropRef") || name.equalsIgnoreCase("setContents") ||
++			       name.equalsIgnoreCase("delete"))))
++				g_lingo->_state->stack[g_lingo->_state->stack.size() - nargs] = firstArg;
+ 		}
+ 
+ 		// Script/Xtra method call
+--- a/engines/director/lingo/lingo-code.h
++++ b/engines/director/lingo/lingo-code.h
+@@ -149,6 +149,7 @@
+ 
+ // bytecode-related instructions
+ void cb_call();
++void cb_chunkvarrefpush();
+ void cb_delete();
+ void cb_hilite();
+ void cb_globalassign();
+--- a/engines/director/lingo/lingo-events.cpp
++++ b/engines/director/lingo/lingo-events.cpp
+@@ -450,6 +450,19 @@
+ 	_nextEventId++;
+ 	int eventId = _nextEventId;
+ 
++	// D6+ frame notifications also reach each attached sprite behavior.
++	// A broadcast queues frame/movie scripts separately with targetId zero.
++	if (_vm->getVersion() >= 600 && targetId > 0 &&
++	    (event == kEventEnterFrame || event == kEventExitFrame)) {
++		Channel *channel = _score->getChannelById(targetId);
++		if (channel) {
++			for (uint i = 0; i < channel->_scriptInstanceList.size(); ++i)
++				queue.push(LingoEvent(event, eventId, kSpriteHandler,
++					i + 1 < channel->_scriptInstanceList.size(), pos, targetId, i));
++		}
++		return;
++	}
++
+ 	int oldQueueSize = queue.size();
+ 
+ 	uint16 channelId = 0;
+@@ -708,6 +721,18 @@
+ 	_lingo->processEvents(queue, false);
+ }
+ 
++void Movie::processSoundCue(int channel, int number, const Common::String &name) {
++	Common::Queue<LingoEvent> queue;
++	LingoEvent cue(kEventCuePassed, ++_nextEventId, kMovieHandler, false);
++	cue.arguments.push_back(Datum(channel));
++	cue.arguments.push_back(Datum(number));
++	cue.arguments.push_back(Datum(name));
++	queue.push(cue);
++	_vm->setCurrentWindow(getWindow());
++	_lingo->processEvents(queue, false);
++
++}
++
+ void Movie::broadcastEvent(LEvent event) {
+ 	Common::Queue<LingoEvent> queue;
+ 
+@@ -770,7 +795,7 @@
+ 		debugC(5, kDebugEvents, "Lingo::processEvents: starting event script (%s, %s, %s, %d)",
+ 			_eventHandlerTypes[el.event], scriptType2str(el.scriptType), el.scriptId.asString().c_str(), el.channelId
+ 		);
+-		bool completed = processEvent(el.event, el.scriptType, el.scriptId, el.channelId, el.scriptInstance);
++		bool completed = processEvent(el.event, el.scriptType, el.scriptId, el.channelId, el.scriptInstance, &el.arguments);
+ 		movie->_lastEventId[el.event] = el.eventId;
+ 
+ 		if (_vm->getVersion() >= 600) {
+@@ -799,7 +824,7 @@
+ 	}
+ }
+ 
+-bool Lingo::processEvent(LEvent event, ScriptType st, CastMemberID scriptId, int channelId, AbstractObject *obj) {
++bool Lingo::processEvent(LEvent event, ScriptType st, CastMemberID scriptId, int channelId, AbstractObject *obj, const Common::Array<Datum> *arguments) {
+ 	_state->currentChannelId = channelId;
+ 
+ 	if (!_eventHandlerTypes.contains(event))
+@@ -832,6 +857,12 @@
+ 			nargs = 1;
+ 		}
+ 
++		if (arguments) {
++			for (const Datum &argument : *arguments) {
++				push(argument);
++				++nargs;
++			}
++		}
+ 		LC::call(script->_eventHandlers[event], nargs, false);
+ 		return execute();
+ 	} else {
+@@ -989,6 +1020,9 @@
+ 				continue;
+ 			}
+ 
++			// Declared spriteNum properties otherwise shadow the dynamic fallback with VOID.
++			// Bind the behavior to its owning channel before beginSprite runs.
++			instance.u.obj->setProp("spriteNum", Datum(i), true);
+ 			channel->_scriptInstanceList.push_back(instance);
+ 		}
+ 
 --- a/engines/director/lingo/lingo-object.cpp
 +++ b/engines/director/lingo/lingo-object.cpp
-@@ -192,6 +192,8 @@
+@@ -171,6 +171,7 @@
+ #include "director/lingo/xtras/g/getdir.h"
+ #include "director/lingo/xtras/g/glu32.h"
+ #include "director/lingo/xtras/k/keypoll.h"
++#include "director/lingo/xtras/k/kepath.h"
+ #include "director/lingo/xtras/m/masterapp.h"
+ #include "director/lingo/xtras/m/mbox.h"
+ #include "director/lingo/xtras/m/mui.h"
+@@ -192,6 +193,8 @@
  #include "director/lingo/xtras/s/setmouse.h"
  #include "director/lingo/xtras/t/timextra.h"
  #include "director/lingo/xtras/x/xsound.h"
@@ -348,7 +1009,15 @@
  
  namespace Director {
  
-@@ -495,6 +497,8 @@
+@@ -337,6 +340,7 @@
+ 	XLIBDEF(IsPippin,			kXObj,			400),	// D4
+ 	XLIBDEF(JITDraw3XObj,		kXObj,			400),	// D4
+ 	XLIBDEF(JourneyWareXINIXObj,kXObj,			400),	// D4
++	XLIBDEF(KePathXtra, kXtraObj, 700),
+ 	XLIBDEF(KeypollXtra,		kXtraObj,		500),	// D5
+ 	XLIBDEF(LabelDrvXObj,		kXObj,			400),	// D4
+ 	XLIBDEF(ListDevXObj,		kXObj,			500),	// D5
+@@ -495,6 +499,8 @@
  	return name;
  }
  
@@ -357,7 +1026,7 @@
  void Lingo::openXLib(Common::String name, ObjectType type, const Common::Path &path) {
  	name = normalizeXLibName(name);
  
-@@ -516,7 +520,9 @@
+@@ -516,7 +522,9 @@
  
  	_openXLibs[name] = type;
  
@@ -379,7 +1048,15 @@
  
  namespace Director {
  
-@@ -119,6 +121,7 @@
+@@ -75,6 +77,7 @@
+ 	{ kTheDigitalVideoTimeScale,"digitalVideoTimeScale",false, 500, false },//		D5 p
+ 	{ kTheDoubleClick,		"doubleClick",		false, 200, true },	// D2 f
+ 	{ kTheEmulateMultiButtonMouse,"emulateMultiButtonMouse",false, 500, false },//	D5 p
++	{ kTheEnvironment, "environment", false, 700, false },
+ 	{ kTheExitLock,			"exitLock",			false, 200, false },// D2 p
+ 	{ kTheField,			"field",			true,  300, false },//		D3
+ 	{ kTheFixStageSize,		"fixStageSize",		false, 200, false },// D2 p
+@@ -119,6 +122,7 @@
  	{ kTheMouseChar,		"mouseChar",		false, 300, true },	//		D3 f
  	{ kTheMouseDown,		"mouseDown",		false, 200, true },	// D2 f
  	{ kTheMouseDownScript,  "mouseDownScript",	false, 200, false },// D2 p
@@ -387,7 +1064,7 @@
  	{ kTheMouseH,			"mouseH",			false, 200, true },	// D2 f
  	{ kTheMouseItem,		"mouseItem",		false, 300, true },	//		D3 f
  	{ kTheMouseLine,		"mouseLine",		false, 300, true },	//		D3 f
-@@ -223,6 +226,7 @@
+@@ -223,6 +227,7 @@
  	{ kTheSprite,	"left",			kTheLeft,		200 },// D2 p
  	{ kTheSprite,	"lineSize",		kTheLineSize,	200 },// D2 p
  	{ kTheSprite,	"loc",			kTheLoc,		400 },//				D4 p ???
@@ -395,7 +1072,7 @@
  	{ kTheSprite,	"locH",			kTheLocH,		200 },// D2 p
  	{ kTheSprite,	"locV",			kTheLocV,		200 },// D2 p
  	{ kTheSprite,	"member",		kTheMember,		500 },//					D5 p
-@@ -516,6 +520,10 @@
+@@ -516,6 +521,10 @@
  	Score *score = movie->getScore();
  
  	switch (entity) {
@@ -406,7 +1083,7 @@
  	case kTheActiveWindow:
  		{
  			Window *win = (Window *)g_director->_wm->getWindow(g_director->_wm->getActiveWindow());
-@@ -533,7 +541,13 @@
+@@ -533,7 +542,13 @@
  		warning("STUB: the alertHook");
  		break;
  	case kTheApplicationPath:
@@ -421,7 +1098,23 @@
  		break;
  	case kTheBeepOn:
  		d = (int)movie->_isBeepOn;
-@@ -874,6 +888,9 @@
+@@ -621,6 +636,15 @@
+ 	case kTheEmulateMultiButtonMouse:
+ 		d = g_director->_emulateMultiButtonMouse ? 1 : 0;
+ 		break;
++	case kTheEnvironment: {
++		d.type = PARRAY;
++		d.u.parr = new PArray;
++		PCell cell;
++		cell.p = Datum("runMode"); cell.p.type = SYMBOL;
++		cell.v = Datum("Projector");
++		d.u.parr->arr.push_back(cell);
++		break;
++	}
+ 	case kTheExitLock:
+ 		d = g_lingo->_exitLock;
+ 		break;
+@@ -874,6 +898,9 @@
  		else
  			d.u.s = new Common::String();
  		break;
@@ -431,21 +1124,45 @@
  	case kTheMouseH:
  		d = g_director->getCurrentWindow()->getMousePos().x;
  		break;
-@@ -1708,6 +1725,9 @@
- 			d.u.farr->arr.push_back(position.x);
+@@ -1709,6 +1736,9 @@
  			d.u.farr->arr.push_back(position.y);
  		}
-+		break;
+ 		break;
 +	case kTheLocZ:
 +		d = channel->_priority;
- 		break;
++		break;
  	case kTheLocH:
  		d = channel->getPosition().x;
-@@ -2019,6 +2039,14 @@
- 			channel->setNeedsDraw();
+ 		break;
+@@ -1764,9 +1794,10 @@
+ 		d = (int)(sprite->_colorcode & 0x7);
+ 		break;
+ 	case kTheScriptInstanceList:
+-		warning("STUB: Getting the scriptInstanceList");
+-		d.type = PARRAY;
+-		d.u.parr = new PArray;
++		d.type = ARRAY;
++		d.u.farr = new FArray;
++		for (const auto &instance : channel->_scriptInstanceList)
++			d.u.farr->arr.push_back(instance);
+ 		break;
+ 	case kTheScriptNum:
+ 		if (g_director->getVersion() >= 600) {
+@@ -1871,7 +1902,9 @@
+ 				channel->setDirty();
+ 			}
+ 
+-			if (d.asInt() == 0)
++			// The stored amount is transparency: 255 (Lingo blend 0) must
++			// keep blending enabled, otherwise a hidden sprite becomes opaque.
++			if (blend == 0)
+ 				sprite->_thickness &= ~kTHasBlend;
+ 			else
+ 				sprite->_thickness |= kTHasBlend;
+@@ -2020,6 +2053,14 @@
  		}
  		channel->setPosition(d.asPoint().x, d.asPoint().y);
-+		break;
+ 		break;
 +	case kTheLocZ:
 +		if (isPS4Jonsson() && channel->_priority != d.asInt()) {
 +			channel->_priority = d.asInt();
@@ -453,12 +1170,30 @@
 +			channel->setNeedsDraw();
 +			movie->getWindow()->setDirty(true);
 +		}
- 		break;
++		break;
  	case kTheLocH:
  		if (d.asInt() != channel->getPosition().x) {
+ 			channel->setPosition(d.asInt(), channel->getPosition().y);
+@@ -2505,6 +2546,8 @@
+ 		int index = LC::compareArrays(LC::eqData, obj, propName, true).u.i;
+ 		if (index > 0) {
+ 			d = obj.u.parr->arr[index - 1].v;
++		} else if (propName.equalsIgnoreCase("count")) {
++			d = Datum((int)obj.u.parr->arr.size());
+ 		}
+ 		g_lingo->push(d);
+ 		g_debugger->propReadHook(propName);
 --- a/engines/director/lingo/lingo-the.h
 +++ b/engines/director/lingo/lingo-the.h
-@@ -185,6 +185,7 @@
+@@ -55,6 +55,7 @@
+ 	kTheDigitalVideoTimeScale,
+ 	kTheDoubleClick,
+ 	kTheEmulateMultiButtonMouse,
++	kTheEnvironment,
+ 	kTheExitLock,
+ 	kTheField,
+ 	kTheFixStageSize,
+@@ -185,6 +186,7 @@
  	kTheWindowList,
  	kTheWords,
  	kTheXtras,
@@ -466,7 +1201,7 @@
  	kTheMaxTheEntityType		// This must be always last
  };
  
-@@ -320,6 +321,7 @@
+@@ -320,6 +322,7 @@
  	kTheWindowType,
  	kTheWordWrap,
  	kTheScrollTop,
@@ -502,6 +1237,296 @@
  	resetLingoGo();
  }
  
+@@ -1812,7 +1815,10 @@
+ 				((TextCastMember *)member)->setRawText(value.asString());
+ 				break;
+ 			default:
+-				warning("varAssign: Unhandled cast type %d", member->_type);
++				if (member->hasField(kTheText))
++					member->setField(kTheText, value);
++				else
++					warning("varAssign: Unhandled cast type %d", member->_type);
+ 				break;
+ 			}
+ 		}
+@@ -1962,7 +1968,10 @@
+ 				result = ((TextCastMember *)member)->getText();
+ 				break;
+ 			default:
+-				warning("evalChunkRef: Unhandled cast type %d", member->_type);
++				if (member->hasField(kTheText))
++					result = member->getField(kTheText).asString().decode(Common::kUtf8);
++				else
++					warning("evalChunkRef: Unhandled cast type %d", member->_type);
+ 				break;
+ 			}
+ 		}
+--- a/engines/director/lingo/lingo.h
++++ b/engines/director/lingo/lingo.h
+@@ -267,6 +267,7 @@
+ };
+ 
+ struct LingoEvent {
++	Common::Array<Datum> arguments;
+ 	LEvent event;
+ 	int eventId;
+ 	EventHandlerSourceType eventHandlerSourceType;
+@@ -416,7 +417,7 @@
+ 	// lingo-events.cpp
+ private:
+ 	void initEventHandlerTypes();
+-	bool processEvent(LEvent event, ScriptType st, CastMemberID scriptId, int channelId = -1, AbstractObject *obj = nullptr);
++	bool processEvent(LEvent event, ScriptType st, CastMemberID scriptId, int channelId = -1, AbstractObject *obj = nullptr, const Common::Array<Datum> *arguments = nullptr);
+ 
+ public:
+ 	ScriptType event2script(LEvent ev);
+--- /dev/null
++++ b/engines/director/lingo/xtras/k/kepath-grid.h
+@@ -0,0 +1,81 @@
++/* ScummVM - Graphic Adventure Engine
++ *
++ * ScummVM is the legal property of its developers, whose names
++ * are too numerous to list here. Please refer to the COPYRIGHT
++ * file distributed with this source distribution.
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#ifndef DIRECTOR_KEPATH_GRID_H
++#define DIRECTOR_KEPATH_GRID_H
++#include <algorithm>
++#include <cstdlib>
++#include <map>
++#include <queue>
++#include <utility>
++#include <vector>
++namespace Director {
++namespace KePathGrid {
++using Cell = std::pair<int, int>;
++// Path2 consumes a set of walkable grid cells. Paths omit the start cell.
++inline std::vector<Cell> find(const std::vector<Cell> &cells, Cell from, Cell to) {
++ std::vector<Cell> result;
++ if (from == to) return result;
++ std::map<Cell, int> ids;
++ for (unsigned i = 0; i < cells.size(); ++i) ids.emplace(cells[i], i);
++ auto a = ids.find(from), b = ids.find(to);
++ if (a == ids.end() || b == ids.end()) return result;
++ struct Node { int g = 0x3fffffff; int parent = -1; bool closed = false; };
++ struct Entry { int f, g, id; bool operator<(const Entry &o) const {
++  if (f != o.f) return f > o.f;
++  if (g != o.g) return g < o.g;
++  return id > o.id;
++ }};
++ auto heuristic = [&](Cell p) {
++  int x = std::abs(p.first - to.first), y = std::abs(p.second - to.second);
++  return 10 * std::max(x, y) + 4 * std::min(x, y);
++ };
++ std::vector<Node> nodes(cells.size());
++ std::priority_queue<Entry> open;
++ nodes[a->second].g = 0;
++ open.push({heuristic(from), 0, a->second});
++ while (!open.empty()) {
++  Entry e = open.top(); open.pop();
++  Node &n = nodes[e.id];
++  if (n.closed || n.g != e.g) continue;
++  if (e.id == b->second) {
++   for (int i = e.id; i != a->second; i = nodes[i].parent) result.push_back(cells[i]);
++   std::reverse(result.begin(), result.end());
++   return result;
++  }
++  n.closed = true;
++  for (int dy = -1; dy <= 1; ++dy) for (int dx = -1; dx <= 1; ++dx) {
++   if (!dx && !dy) continue;
++   Cell next(cells[e.id].first + dx, cells[e.id].second + dy);
++   auto found = ids.find(next);
++   if (found == ids.end()) continue;
++   Node &other = nodes[found->second];
++   int cost = n.g + ((dx && dy) ? 14 : 10);
++   if (other.closed || cost >= other.g) continue;
++   other.g = cost; other.parent = e.id;
++   open.push({cost + heuristic(next), cost, found->second});
++  }
++ }
++ return result;
++}
++}
++}
++#endif
+--- /dev/null
++++ b/engines/director/lingo/xtras/k/kepath.cpp
+@@ -0,0 +1,88 @@
++/* ScummVM - Graphic Adventure Engine
++ *
++ * ScummVM is the legal property of its developers, whose names
++ * are too numerous to list here. Please refer to the COPYRIGHT
++ * file distributed with this source distribution.
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#include "director/lingo/xtras/k/kepath-grid.h"
++#include "director/director.h"
++#include "director/lingo/lingo.h"
++#include "director/lingo/lingo-object.h"
++#include "director/lingo/xtras/k/kepath.h"
++namespace Director {
++const char *const KePathXtra::xlibName = "KePath";
++const XlibFileDesc KePathXtra::fileNames[] = {{"kepath", nullptr}, {nullptr, nullptr}};
++static const MethodProto methods[] = {
++ {"new", KePathXtra::m_new, 0, 0, 700},
++ {"Path", KePathXtra::m_path, 3, 3, 700},
++ {"Path2", KePathXtra::m_path, 3, 3, 700},
++ {"SetMap", KePathXtra::m_setMap, 1, 1, 700},
++ {"FindPath", KePathXtra::m_findPath, 2, 2, 700},
++ {nullptr, nullptr, 0, 0, 0}
++};
++void KePathXtra::open(ObjectType type, const Common::Path &) {
++ KePathXtraObject::initMethods(methods);
++ auto *obj = new KePathXtraObject(type);
++ g_lingo->_openXtras.push_back(xlibName);
++ g_lingo->_openXtraObjects.push_back(obj);
++ g_lingo->exposeXObject(xlibName, obj);
++}
++void KePathXtra::close(ObjectType) {
++ KePathXtraObject::cleanupMethods();
++ g_lingo->_globalvars[xlibName] = Datum();
++}
++void KePathXtra::m_new(int) { g_lingo->push(g_lingo->_state->me); }
++void KePathXtra::m_setMap(int) {
++ auto *obj = static_cast<KePathXtraObject *>(g_lingo->_state->me.u.obj);
++ obj->map = g_lingo->pop();
++ g_lingo->push(Datum(0));
++}
++static bool gridCell(const Datum &d, KePathGrid::Cell &cell) {
++ if ((d.type != ARRAY && d.type != POINT) || d.u.farr->arr.size() != 2) return false;
++ const Datum &x = d.u.farr->arr[0], &y = d.u.farr->arr[1];
++ if (x.type != INT || y.type != INT || x.u.i < -32768 || x.u.i > 32767 || y.u.i < -32768 || y.u.i > 32767) return false;
++ cell = KePathGrid::Cell(x.u.i, y.u.i);
++ return true;
++}
++void KePathXtra::m_findPath(int) {
++ Datum to = g_lingo->pop(), from = g_lingo->pop();
++ auto *obj = static_cast<KePathXtraObject *>(g_lingo->_state->me.u.obj);
++ Datum result; result.type = ARRAY; result.u.farr = new FArray;
++ KePathGrid::Cell start, goal;
++ if (obj->map.type != ARRAY || obj->map.u.farr->arr.size() > 65536 || !gridCell(from, start) || !gridCell(to, goal)) {
++  warning("KePath: invalid map or endpoints"); g_lingo->push(result); return;
++ }
++ std::vector<KePathGrid::Cell> cells;
++ for (const auto &d : obj->map.u.farr->arr) {
++  KePathGrid::Cell cell;
++  if (!gridCell(d, cell)) { warning("KePath: invalid grid cell"); g_lingo->push(result); return; }
++  cells.push_back(cell);
++ }
++ for (auto cell : KePathGrid::find(cells, start, goal)) {
++  Datum d; d.type = ARRAY; d.u.farr = new FArray;
++  d.u.farr->arr.push_back(Datum(cell.first)); d.u.farr->arr.push_back(Datum(cell.second));
++  result.u.farr->arr.push_back(d);
++ }
++ g_lingo->push(result);
++}
++void KePathXtra::m_path(int) {
++ Datum to = g_lingo->pop(), from = g_lingo->pop(), map = g_lingo->pop();
++ g_lingo->push(map); m_setMap(1); g_lingo->pop();
++ g_lingo->push(from); g_lingo->push(to); m_findPath(2);
++}
++}
+--- /dev/null
++++ b/engines/director/lingo/xtras/k/kepath.h
+@@ -0,0 +1,41 @@
++/* ScummVM - Graphic Adventure Engine
++ *
++ * ScummVM is the legal property of its developers, whose names
++ * are too numerous to list here. Please refer to the COPYRIGHT
++ * file distributed with this source distribution.
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#ifndef DIRECTOR_LINGO_XTRAS_KEPATH_H
++#define DIRECTOR_LINGO_XTRAS_KEPATH_H
++namespace Director {
++class KePathXtraObject : public Object<KePathXtraObject> {
++public:
++ KePathXtraObject(ObjectType type) : Object<KePathXtraObject>("KePath") { _objType = type; }
++ Datum map;
++};
++namespace KePathXtra {
++extern const char *const xlibName;
++extern const XlibFileDesc fileNames[];
++void open(ObjectType type, const Common::Path &path);
++void close(ObjectType type);
++void m_new(int nargs);
++void m_path(int nargs);
++void m_setMap(int nargs);
++void m_findPath(int nargs);
++}
++}
++#endif
+--- a/engines/director/lingo/xtras-cast/textxtra.cpp
++++ b/engines/director/lingo/xtras-cast/textxtra.cpp
+@@ -26,6 +26,7 @@
+ #include "graphics/macgui/macwindowmanager.h"
+ 
+ #include "director/director.h"
++#include "director/ps4-jonsson.h"
+ #include "director/cast.h"
+ #include "director/castmember/xtra.h"
+ #include "director/lingo/lingo-the.h"
+@@ -213,6 +214,17 @@
+ 	case kTheText:
+ 		_text = Common::U32String(d.asString(), Common::kUtf8);
+ 		_loaded = true;
++		// Jönsson's dialogue scripts query member.height immediately after
++		// replacing its text, before assigning the member to a sprite. Measure
++		// with the same wrapping/font as createWidget rather than retaining the
++		// authored single-line rectangle (which clips longer dialogue).
++		if (isPS4Jonsson() && _initialRect.width() > 0) {
++			Graphics::MacFont macFont(1, 12);
++			Graphics::MacText layout(_text, g_director->_wm, &macFont,
++					g_director->_wm->_colorWhite, g_director->_wm->_colorBlack,
++					_initialRect.width(), Graphics::kTextAlignLeft);
++			_initialRect.setHeight(MAX(1, layout.getTextHeight()));
++		}
+ 		setModified(true);
+ 		return;
+ 	default:
 --- a/engines/director/metaengine.cpp
 +++ b/engines/director/metaengine.cpp
 @@ -27,6 +27,7 @@
@@ -522,9 +1547,29 @@
  }
  
  static const ADExtraGuiOptionsMap optionsList[] = {
+--- a/engines/director/module.mk
++++ b/engines/director/module.mk
+@@ -205,6 +205,7 @@
+ 	lingo/xtras/g/getdir.o \
+ 	lingo/xtras/g/glu32.o \
+ 	lingo/xtras/k/keypoll.o \
++	lingo/xtras/k/kepath.o \
+ 	lingo/xtras/m/masterapp.o \
+ 	lingo/xtras/m/mbox.o \
+ 	lingo/xtras/m/mui.o \
+--- a/engines/director/movie.h
++++ b/engines/director/movie.h
+@@ -143,6 +143,7 @@
+ 	void setPrimaryEventHandler(LEvent event, const Common::String &code);
+ 	void resolveScriptEvent(LingoEvent &event);
+ 	void processEvent(LEvent event, int targetId = 0);
++	void processSoundCue(int channel, int number, const Common::String &name);
+ 	void queueInputEvent(LEvent event, int targetId = 0, Common::Point pos = Common::Point(-1, -1));
+ 	bool processInputEvent(LEvent event, int targetId = 0, Common::Point pos = Common::Point(-1, -1));
+ 
 --- /dev/null
 +++ b/engines/director/ps4-jonsson.h
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,17 @@
 +// Local compatibility rules for the opt-in PS4 Jonssonligan experiment.
 +#ifndef DIRECTOR_PS4_JONSSON_H
 +#define DIRECTOR_PS4_JONSSON_H
@@ -533,7 +1578,8 @@
 +namespace Director {
 +inline bool isPS4Jonsson() {
 +#ifdef __PS4__
-+ return Common::String(g_director->getGameId()) == "jonssonligan1" &&
++ const Common::String gameId(g_director->getGameId());
++ return (gameId == "jonssonligan1" || gameId == "jonssonligan2") &&
 +  ConfMan.hasKey("ps4_director7_experimental") && ConfMan.getBool("ps4_director7_experimental");
 +#else
 + return false;
@@ -543,16 +1589,72 @@
 +#endif
 --- a/engines/director/score.cpp
 +++ b/engines/director/score.cpp
-@@ -51,6 +51,8 @@
- #include "director/castmember/movie.h"
+@@ -52,6 +52,8 @@
  #include "director/castmember/transition.h"
  #include "director/debugger/debugtools.h"
-+
-+#include "director/ps4-jonsson.h"
  
++#include "director/ps4-jonsson.h"
++
  namespace Director {
  
-@@ -1668,7 +1670,15 @@
+ #include "director/palette-fade.h"
+@@ -342,7 +344,8 @@
+ 					_movie->processEvent(kEventMouseWithin, _movie->_currentHoveredSpriteId);
+ 				}
+ 
+-				_soundManager->processCuePoints();
++				if (!isPS4Jonsson())
++					_soundManager->processCuePoints();
+ 			} else 	if (_version >= kFileVer500) {
+ 				// In D5, these events are only generated if a mouse button is pressed
+ 				bool isButtonDown = !Director::DT::isMouseInputIgnored() && (g_system->getEventManager()->getButtonState() != 0);
+@@ -352,6 +355,13 @@
+ 			}
+ 		}
+ 	}
++
++	// A "go the frame" loop schedules a jump every iteration. Audio cues
++	// still need polling while that score frame is held (e.g. dialogue).
++	if (isPS4Jonsson() && _haveInteractivity && _version >= kFileVer600 &&
++	    !_window->_newMovieStarted && _playState != kPlayStopped &&
++	    _window->_nextMovie.movie.empty() && !_window->frozenLingoStateCount())
++		_soundManager->processCuePoints();
+ 
+ 	update();
+ 
+@@ -671,7 +681,10 @@
+ 		// exitFrame is not called in this case.
+ 		if (_haveInteractivity && !_window->_skipFrameAdvance && !_exitFrameCalled) {
+ 			// Exit the current frame. This can include scopeless ScoreScripts.
+-			_movie->processEvent(kEventExitFrame);
++			if (isPS4Jonsson() && _vm->getVersion() >= 600)
++				_movie->broadcastEvent(kEventExitFrame);
++			else
++				_movie->processEvent(kEventExitFrame);
+ 			_exitFrameCalled = true;
+ 			_skipIdle = false;
+ 		}
+@@ -827,7 +840,10 @@
+ 	if (!_window->_playbackPaused) {
+ 		_exitFrameCalled = false;
+ 		if (_version >= kFileVer400) {
+-			_movie->processEvent(kEventEnterFrame);
++			if (isPS4Jonsson() && _vm->getVersion() >= 600)
++				_movie->broadcastEvent(kEventEnterFrame);
++			else
++				_movie->processEvent(kEventEnterFrame);
+ 		}
+ 	}
+ 	if (_window->frozenLingoStateCount() > count)
+@@ -854,6 +870,7 @@
+ }
+ 
+ void Score::renderFrame(uint16 frameId, RenderMode mode, bool sound1Changed, bool sound2Changed) {
++
+ 	// An embedded movie only refreshes its own channels for the host to
+ 	// composite via getSubChannels(); it must never touch the shared window.
+ 	if (_movie->_isEmbedded) {
+@@ -1668,7 +1685,15 @@
  }
  
  uint16 Score::getSpriteIDFromPos(Common::Point pos) {
@@ -569,7 +1671,7 @@
  		CollisionTest test = _channels[i]->isMouseIn(pos);
  		if (test == kCollisionYes)
  			return i;
-@@ -1680,7 +1690,15 @@
+@@ -1680,7 +1705,15 @@
  }
  
  uint16 Score::getMouseSpriteIDFromPos(Common::Point pos) {
@@ -586,7 +1688,7 @@
  		CollisionTest test = _channels[i]->isMouseIn(pos);
  		if (test == kCollisionYes && _channels[i]->_sprite->respondsToMouse())
  			return i;
-@@ -1692,7 +1710,15 @@
+@@ -1692,7 +1725,15 @@
  }
  
  uint16 Score::getActiveSpriteIDFromPos(Common::Point pos) {
@@ -603,7 +1705,7 @@
  		CollisionTest test = _channels[i]->isMouseIn(pos);
  		if (test == kCollisionYes && _channels[i]->_sprite->isActive())
  			return i;
-@@ -1730,7 +1756,13 @@
+@@ -1730,7 +1771,13 @@
  			if (_channels[i]->getEditable()) {
  				appendix.push_back(_channels[i]);
  			} else {
@@ -618,7 +1720,7 @@
  			}
  		}
  	}
-@@ -1972,6 +2004,7 @@
+@@ -1972,6 +2019,7 @@
  	}
  
  	if (version >= kFileVer400) {
@@ -626,7 +1728,7 @@
  		_framesStreamSize = _framesStream->readUint32();
  		_frame1Offset = _framesStream->readUint32();
  		_numOfFrames = _framesStream->readUint32();
-@@ -1990,6 +2023,14 @@
+@@ -1990,6 +2038,14 @@
  			_framesStream->readUint16(); // Skip
  		}
  
@@ -641,7 +1743,7 @@
  		_firstFramePosition = _framesStream->pos();
  
  		debugC(1, kDebugLoading, "Score::loadFrames(): size: %d, frame1Offset: %d, numOfFrames: %d, version: %d, spriteRecordSize: %d, numChannels: %d, numChannelsDisplayed: %d",
-@@ -2030,7 +2071,11 @@
+@@ -2030,7 +2086,11 @@
  	// Calculate number of frames and their positions
  	// numOfFrames in the header is often incorrect
  	for (_numFrames = 1; loadFrame(_numFrames, loadSprites); _numFrames++) {
@@ -656,16 +1758,88 @@
  			if (_currentFrame->_sprites[i]->_castId.member && i > _maxChannelsUsed)
 --- a/engines/director/sound.cpp
 +++ b/engines/director/sound.cpp
-@@ -39,6 +39,8 @@
+@@ -39,7 +39,60 @@
  #include "director/window.h"
  #include "director/castmember/sound.h"
  
 +#include "director/ps4-jonsson.h"
 +
  namespace Director {
++
++// AIFF MARK positions are sample frames; Director cue times are milliseconds.
++void loadLinkedAIFFCues(const Common::String &path, Common::Array<int32> &times, Common::StringArray &names) {
++	Common::SeekableReadStream *stream = Common::MacResManager::openFileOrDataFork(findAudioPath(path));
++	if (!stream) return;
++	Common::Array<uint32> positions;
++	Common::StringArray labels;
++	uint32 rate = 0;
++	bool valid = stream->size() >= 12 && stream->readUint32BE() == MKTAG('F','O','R','M');
++	uint64 end = valid ? (uint64)stream->readUint32BE() + 8 : 0;
++	uint32 kind = valid ? stream->readUint32BE() : 0;
++	valid = valid && end >= 12 && end <= (uint64)stream->size() &&
++		(kind == MKTAG('A','I','F','F') || kind == MKTAG('A','I','F','C'));
++	while (valid && (uint64)stream->pos() + 8 <= end) {
++		uint32 tag = stream->readUint32BE();
++		uint32 size = stream->readUint32BE();
++		uint64 next = (uint64)stream->pos() + size;
++		if (next + (size & 1) > end) { valid = false; break; }
++		if (tag == MKTAG('C','O','M','M') && size >= 18) {
++			stream->skip(8);
++			uint16 exponent = stream->readUint16BE();
++			uint64 mantissa = stream->readUint64BE();
++			int shift = 63 - ((int)exponent - 16383);
++			if (shift >= 32 && shift <= 63) rate = (uint32)(mantissa >> shift);
++		} else if (tag == MKTAG('M','A','R','K') && size >= 2) {
++			uint16 count = stream->readUint16BE();
++			for (uint i = 0; valid && i < count; ++i) {
++				if ((uint64)stream->pos() + 7 > next) { valid = false; break; }
++				stream->readUint16BE(); // Authored ID; event numbers follow marker order.
++				uint32 position = stream->readUint32BE();
++				uint length = stream->readByte();
++				if ((uint64)stream->pos() + length + ((length + 1) & 1) > next) { valid = false; break; }
++				Common::String label;
++				for (uint j = 0; j < length; ++j) label += (char)stream->readByte();
++				if ((length + 1) & 1) stream->skip(1);
++				positions.push_back(position);
++				labels.push_back(label);
++			}
++		}
++		stream->seek(next + (size & 1));
++	}
++	if (valid && rate) {
++		for (uint i = 0; i < positions.size(); ++i) {
++			uint64 ms = (uint64)positions[i] * 1000 / rate;
++			if (ms > 0x7fffffff) continue;
++			times.push_back((int32)ms);
++			names.push_back(labels[i]);
++		}
++	}
++	delete stream;
++}
  
  DirectorSound::DirectorSound(Window *window) : _window(window) {
-@@ -311,6 +313,16 @@
+ 	uint numChannels = 2;
+@@ -95,6 +148,8 @@
+ 
+ 	// Set the last played sound so that cast member 0 in the sound channel doesn't stop this file.
+ 	setLastPlayedSound(soundChannel, SoundID(), false);
++	if (isPS4Jonsson() && sound)
++		loadLinkedAIFFCues(filename, _channels[soundChannel]->fileCuePoints, _channels[soundChannel]->fileCueNames);
+ 	_channels[soundChannel]->fromLastMovie = false;
+ }
+ 
+@@ -135,6 +190,10 @@
+ 	cancelFade(soundChannel);
+ 
+ 	_mixer->stopHandle(_channels[soundChannel]->handle);
++	_channels[soundChannel]->lastCuePointIndex = -1;
++	_channels[soundChannel]->fileCuePoints.clear();
++	_channels[soundChannel]->fileCueNames.clear();
++
+ 
+ 	setChannelDefaultVolume(soundChannel);
+ 
+@@ -311,6 +370,16 @@
  			continue;
  
  		fade->lapsedTicks = _window->getVM()->getMacTicks() - fade->startTicks;
@@ -682,6 +1856,109 @@
  		if (fade->lapsedTicks > fade->totalTicks) {
  			if (fade->autoStop)
  				stopSound(it._key);
+@@ -534,6 +603,10 @@
+ 		_channels[soundChannel]->loopPtr = nullptr;
+ 	cancelFade(soundChannel);
+ 	_mixer->stopHandle(_channels[soundChannel]->handle);
++	_channels[soundChannel]->lastCuePointIndex = -1;
++	_channels[soundChannel]->fileCuePoints.clear();
++	_channels[soundChannel]->fileCueNames.clear();
++
+ 	setLastPlayedSound(soundChannel, SoundID());
+ 	_channels[soundChannel]->fromLastMovie = false;
+ 	return;
+@@ -550,6 +623,9 @@
+ 		cancelFade(it._key);
+ 
+ 		_mixer->stopHandle(it._value->handle);
++		it._value->lastCuePointIndex = -1;
++		it._value->fileCuePoints.clear();
++		it._value->fileCueNames.clear();
+ 		setLastPlayedSound(it._key, SoundID());
+ 		it._value->fromLastMovie = false;
+ 	}
+@@ -757,35 +833,36 @@
+ void DirectorSound::processCuePoints() {
+ 	for (auto &it : _channels) {
+ 		SoundChannel *channel = it._value;
+-
++		const Common::Array<int32> *times = &channel->fileCuePoints;
++		const Common::StringArray *names = &channel->fileCueNames;
+ 		const SoundID &lastPlayedSound = channel->lastPlayedSound;
+-		if (lastPlayedSound.type == kSoundCast) {
++		if (lastPlayedSound.type == kSoundCast && lastPlayedSound.u.cast.member != 0) {
+ 			CastMemberID memberID(lastPlayedSound.u.cast.member, lastPlayedSound.u.cast.castLib);
+-			SoundCastMember *soundCast = (SoundCastMember *)_window->getCurrentMovie()->getCastMember(memberID);
+-
+-			if (!soundCast)
+-				continue;
+-
+-			if (soundCast->_cuePoints.empty())
+-				continue;
+-
+-			uint32 elapsedTime = _mixer->getSoundElapsedTime(channel->handle);
+-
+-			if (!elapsedTime)
+-				continue;
+-
+-			for (uint i = channel->lastCuePointIndex + 1; i < soundCast->_cuePoints.size(); i++) {
+-				int32 cuePoint = soundCast->_cuePoints[i];
+-
+-				if (cuePoint > (int32)elapsedTime)
+-					break;
+-
+-				debugC(5, kDebugSound, "DirectorSound::processCuePoints(): cue point %d reached on channel %d", cuePoint, it._key);
+-
+-				_window->getCurrentMovie()->processEvent(kEventCuePassed, i);
+-
++			CastMember *member = _window->getCurrentMovie()->getCastMember(memberID);
++			if (!member || member->_type != kCastSound) continue;
++			SoundCastMember *soundCast = (SoundCastMember *)member;
++			times = &soundCast->_cuePoints;
++			names = &soundCast->_cuePointNames;
++		}
++		if (times->empty()) continue;
++		uint32 elapsedTime = _mixer->getSoundElapsedTime(channel->handle);
++		// Explicit stop clears the sound and file cues; natural completion
++		// removes the mixer handle, so finish any remaining terminal cues.
++		if (isPS4Jonsson() && !_mixer->isSoundHandleActive(channel->handle))
++			elapsedTime = 0x7fffffff;
++		if (!elapsedTime) continue;
++		for (uint i = channel->lastCuePointIndex + 1; i < times->size(); ++i) {
++			if ((*times)[i] > (int32)elapsedTime) break;
++			if (isPS4Jonsson()) {
++				Common::String name = i < names->size() ? (*names)[i] : Common::String();
++				// A callback can replace channels/casts/movies. Advance before
++				// dispatch and do not use their pointers afterward.
+ 				channel->lastCuePointIndex = i;
++				_window->getCurrentMovie()->processSoundCue(it._key, i + 1, name);
++				return;
+ 			}
++			_window->getCurrentMovie()->processEvent(kEventCuePassed, i);
++			channel->lastCuePointIndex = i;
+ 		}
+ 	}
+ }
+--- a/engines/director/sound.h
++++ b/engines/director/sound.h
+@@ -37,6 +37,8 @@
+ }
+ 
+ namespace Director {
++
++void loadLinkedAIFFCues(const Common::String &path, Common::Array<int32> &times, Common::StringArray &names);
+ 
+ class AudioDecoder;
+ 
+@@ -147,6 +149,8 @@
+ 	int originalRate;
+ 	FadeParams *fade;
+ 	int lastCuePointIndex;
++	Common::Array<int32> fileCuePoints;
++	Common::StringArray fileCueNames;
+ 
+ 	// a non-zero sound ID if the channel is a puppet. i.e. it's controlled by lingo
+ 	SoundID puppet;
 --- a/engines/director/sprite.cpp
 +++ b/engines/director/sprite.cpp
 @@ -26,6 +26,7 @@
@@ -692,7 +1969,29 @@
  #include "director/castmember/castmember.h"
  #include "director/castmember/digitalvideo.h"
  #include "director/castmember/movie.h"
-@@ -362,8 +363,18 @@
+@@ -86,8 +87,8 @@
+ 
+ 	// D7+
+ 	_flags = 0;
+-	_fgColorG = _fgColorB = 0;
+-	_bgColorG = _bgColorB = 0;
++	_fgColorR = _fgColorG = _fgColorB = 0;
++	_bgColorR = _bgColorG = _bgColorB = 0;
+ 	_angleRot = 0;
+ 	_angleSkew = 0;
+ }
+@@ -143,8 +144,10 @@
+ 	_spriteListIdx = sprite._spriteListIdx;
+ 
+ 	_flags = sprite._flags;
++	_fgColorR = sprite._fgColorR;
+ 	_fgColorG = sprite._fgColorG;
+ 	_fgColorB = sprite._fgColorB;
++	_bgColorR = sprite._bgColorR;
+ 	_bgColorG = sprite._bgColorG;
+ 	_bgColorB = sprite._bgColorB;
+ 	_angleRot = sprite._angleRot;
+@@ -362,8 +365,18 @@
  
  	// TODO: Check if we need to check against individual events like below
  	if (g_director->getVersion() >= 600) {
@@ -712,7 +2011,7 @@
  	}
  
  	ScriptContext *spriteScript = _movie->getScriptContext(kScoreScript, _scriptId);
-@@ -633,7 +644,8 @@
+@@ -633,7 +646,8 @@
  			case kCastDigitalVideo:
  				// A video the score sizes to 0x0 is intentionally invisible (a
  				// hidden timing/audio clock); keep it, don't force native size.
@@ -722,6 +2021,33 @@
  					_width = dims.width();
  					_height = dims.height();
  				}
+@@ -706,11 +720,13 @@
+ 	if (!getAutoPuppet(kAPForeColor) && (nextSprite->_copyBackMask & kSCBForeColor)) {
+ 		_foreColor = nextSprite->_foreColor;
+ 		_fgColorB = nextSprite->_fgColorB;
++		_fgColorR = nextSprite->_fgColorR;
+ 		_fgColorG = nextSprite->_fgColorG;
+ 	}
+ 	if (!getAutoPuppet(kAPBackColor) && (nextSprite->_copyBackMask & kSCBBackColor)) {
+ 		_backColor = nextSprite->_backColor;
+ 		_bgColorB = nextSprite->_bgColorB;
++		_bgColorR = nextSprite->_bgColorR;
+ 		_bgColorG = nextSprite->_bgColorG;
+ 	}
+ 	if (!getAutoPuppet(kAPCast)) {
+--- a/engines/director/sprite.h
++++ b/engines/director/sprite.h
+@@ -194,8 +194,8 @@
+ 
+ 	// D7+
+ 	byte _flags;
+-	byte _fgColorG, _fgColorB;		// R component sits in _foreColor
+-	byte _bgColorG, _bgColorB;		// R component sits in _backColor
++	byte _fgColorR, _fgColorG, _fgColorB;		// Raw D7 RGB components; _foreColor is the display color
++	byte _bgColorR, _bgColorG, _bgColorB;		// Raw D7 RGB components; _backColor is the display color
+ 	int32 _angleRot;
+ 	int32 _angleSkew;
+ 
 --- a/engines/director/window.cpp
 +++ b/engines/director/window.cpp
 @@ -690,6 +690,9 @@

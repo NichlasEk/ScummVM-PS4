@@ -1024,6 +1024,23 @@
  
  	/** Parse helper functions */
  	byte parseFlags(const String &flags);
+--- a/common/str-base.cpp
++++ b/common/str-base.cpp
+@@ -1092,7 +1092,14 @@
+ 
+ TEMPLATE size_t BASESTRING::cStrLen(const value_type *str) {
+ 	size_t len = 0;
++#ifdef __PS4__
++	// Clang folds the UTF-32 scan into wcslen, but the PS4 runtime scans
++	// 16-bit wchar_t. Keep element-width reads for Common's string types.
++	const volatile value_type *scan = str;
++	while (scan[len])
++#else
+ 	while (str[len])
++#endif
+ 		len++;
+ 
+ 	return len;
 --- a/engines/dialogs.cpp
 +++ b/engines/dialogs.cpp
 @@ -345,6 +345,15 @@

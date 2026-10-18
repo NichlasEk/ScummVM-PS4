@@ -11,7 +11,7 @@ mkdir -p "$bridge"
 # Reuse the installed dependency archives without rebuilding the existing port.
 cp "$root/build/scummvm-vulkan/bridge/"*.o "$bridge/"
 cp --reflink=auto "$root/build/scummvm-vulkan/bridge/libpsbc-scummvm.a" "$bridge/"
-export SCUMMVM_VULKAN_LIBS="$bridge/ps4gl.o $bridge/ps4gl-vulkan.o $bridge/ps4gl-glsl.o $bridge/ps4gl-frame.o $bridge/ps4gl-display.o -Wl,--whole-archive $native/vulkan-ps4/libvulkan_ps4.a $native/opengnm/libopengnm.a -Wl,--no-whole-archive $bridge/libpsbc-scummvm.a $root/build/glslang-orbis/libglslang-ps4.a -lunwind -lSceGnmDriver"
+export SCUMMVM_VULKAN_LIBS="$bridge/ps4gl.o $bridge/ps4gl-vulkan.o $bridge/ps4gl-glsl.o $bridge/ps4gl-frame.o $bridge/ps4gl-display.o -Wl,--whole-archive $native/vulkan-ps4/libvulkan_ps4.a $native/opengnm/libopengnm.a -Wl,--no-whole-archive $bridge/libpsbc-scummvm.a $root/build/glslang-orbis/libglslang-ps4.a -lunwind -lSceGnmDriver -lSceSystemService"
 python3 - "$root" <<'PYMAIN'
 from pathlib import Path
 import sys
@@ -34,6 +34,6 @@ for name in ps4gl ps4gl-glsl ps4gl-vulkan ps4gl-frame ps4gl-display; do
   -c "$root/compat/ps4gl/$name.c" -o "$bridge/$name.o"
 done
 bash "$root/experiments/scummvm-2026.4.0/configure.sh"
-printf '\nLDFLAGS += -Wl,--wrap=main -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -Wl,-z,max-page-size=0x4000\nLIBS += %s\n' "$bridge/ps4gl-main.o" >> "$SCUMMVM_BUILD_DIR/config.mk"
+printf '\nLDFLAGS += -Wl,--wrap=main -Wl,--wrap=_exit -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -Wl,-z,max-page-size=0x4000\nLIBS += %s\n' "$bridge/ps4gl-main.o" >> "$SCUMMVM_BUILD_DIR/config.mk"
 # These objects are passed through LIBS, which upstream does not track as prerequisites.
 printf '\n.DEFAULT_GOAL := all\nbase/version.o: %s %s %s\n' "$bridge/ps4gl.o" "$bridge/ps4gl-glsl.o" "$bridge/ps4gl-vulkan.o" >> "$SCUMMVM_BUILD_DIR/config.mk"

@@ -41,6 +41,7 @@ allowed = {'libkernel.so', 'libSceUserService.so', 'libSceVideoOut.so',
            'libSceAudioOut.so', 'libScePad.so', 'libSceSysmodule.so'}
 if sys.argv[2] == '1':
     allowed.add('libSceGnmDriver.so')
+    allowed.add('libSceSystemService.so')
     allowed.add('libSceMouse.so')
 unexpected = set(needed) - allowed
 if unexpected:

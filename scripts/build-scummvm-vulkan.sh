@@ -147,8 +147,8 @@ export SCUMMVM_EXPERIMENTAL_VULKAN=1
 # Default to the full engine set; use SCUMMVM_ENGINES=twp for a focused rebuild.
 export SCUMMVM_ENGINES=${SCUMMVM_ENGINES:-}
 export SCUMMVM_SDL_CONFIG=scummvm-vulkan-sdl2-config
-bridge_ldflags="-Wl,--wrap=main -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -Wl,-z,max-page-size=0x4000"
-export SCUMMVM_VULKAN_LIBS="${objects[*]} -Wl,--whole-archive $native/vulkan-ps4/libvulkan_ps4.a $native/opengnm/libopengnm.a -Wl,--no-whole-archive $SCUMMVM_BUILD_DIR/bridge/libpsbc-scummvm.a $root/build/glslang-orbis/libglslang-ps4.a -lunwind -lSceGnmDriver"
+bridge_ldflags="-Wl,--wrap=main -Wl,--wrap=_exit -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -Wl,-z,max-page-size=0x4000"
+export SCUMMVM_VULKAN_LIBS="${objects[*]} -Wl,--whole-archive $native/vulkan-ps4/libvulkan_ps4.a $native/opengnm/libopengnm.a -Wl,--no-whole-archive $SCUMMVM_BUILD_DIR/bridge/libpsbc-scummvm.a $root/build/glslang-orbis/libglslang-ps4.a -lunwind -lSceGnmDriver -lSceSystemService"
 "$root/scripts/configure-scummvm.sh" > "$root/artifacts/scummvm-vulkan/configure.log" 2>&1
 for feature in USE_OPENGL USE_GLAD USE_OPENGL_SHADERS; do
  rg -q "^#define $feature" "$SCUMMVM_BUILD_DIR/config.h" || { echo "Missing $feature" >&2; exit 1; }

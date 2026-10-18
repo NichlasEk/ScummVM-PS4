@@ -7,11 +7,29 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <orbis/Sysmodule.h>
+#include <orbis/SystemService.h>
 #include "vk_ps4_log.h"
 static PS4GLDisplayOwner display;
 static PS4GLFrameOwner frames;
 static FILE *log_file;
 static int installed;
+/* Called only after libc's exit handlers, destructors and stdio cleanup.
+ * Return to the shell using the application lifecycle API, rather than the
+ * raw process exit used by the toolchain. Keep raw exit as an error fallback. */
+extern void __real__exit(int status) __attribute__((noreturn));
+void __wrap__exit(int status) {
+  int fd=open("/data/scummvm-vulkan/shutdown.log",O_WRONLY|O_CREAT|O_TRUNC,0666);
+  if(fd>=0) {
+    const char message[]="Reached final process exit; requesting shell return\n";
+    write(fd,message,sizeof(message)-1);
+    close(fd);
+  }
+  sceSystemServiceLoadExec("exit",NULL);
+  __real__exit(status);
+}
 static void cleanup(void) {
   /* ScummVM must release SDL before the borrowed native objects. Never destroy
    * parents under a retained context/window after failed SDL cleanup. */
@@ -50,6 +68,7 @@ static int application_quiesce(void *data) {
 extern int __real_main(int, char **);
 int __wrap_main(int argc, char **argv) {
   ps4EnableLibcLocks();
+  sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SYSTEM_SERVICE);
   (void)argc; (void)argv;
   mkdir("/data/scummvm-vulkan",0777);
   log_file=fopen("/data/scummvm-vulkan/bootstrap.log","w");

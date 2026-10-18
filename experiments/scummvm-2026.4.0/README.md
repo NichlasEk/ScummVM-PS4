@@ -996,3 +996,20 @@ passed, PKG validation passed and all 238 extracted payloads match.
 Package: `dist/ps4-ftp-2026.4.0-016/ScummVM-2026.4.0-Vulkan-Test.pkg`.
 SHA-256: `e7e132fcd58238647f02df4ac77c7cd96b37857ea515c21f893865bd85688c7a`.
 Physical-console installation and gameplay verification remain pending.
+
+### 0.17: embedded Jönsson dialogue font
+
+The user confirmed 0.16 on physical PS4 and accepted the new dialogue rendering
+in shadPS4. Sand is now decoded directly from the game's embedded PFR1 XMED
+resource, without external font files or player-side conversion. Speech uses
+black antialiased text on white, ordinary word spacing and measured wrapping.
+Physical-console verification of this font change remains pending.
+
+The LibreShockwave PFR1 subset is AGPL-3.0; its license and notice are included
+in the package. Corresponding changes and provenance are in director7.patch.
+No proprietary font or game data is distributed. See font-tools/README.md.
+
+Validation: all 15 existing Director Python regressions and the new PFR1
+ASan/UBSan conversion/glyph test pass. Patch replay matches 143 modified files.
+PKG validation and extracted-payload comparison pass.
+Package SHA-256: `d09e993e0f71bcda8a18f63e90c812783c1401e4f5b3e39e90706ec1d680ddc7`.

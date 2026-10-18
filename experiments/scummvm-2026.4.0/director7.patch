@@ -382,6 +382,3440 @@
  		result = processInputEvent(kEventKeyUp, sc->getSpriteIDOfActiveWidget());
  		_vm->_keyFlags = event.kbd.flags;
  		return result;
+--- /dev/null
++++ b/engines/director/fonts/pfr1/COPYING.AGPL-3.0
+@@ -0,0 +1,661 @@
++                    GNU AFFERO GENERAL PUBLIC LICENSE
++                       Version 3, 19 November 2007
++
++ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
++ Everyone is permitted to copy and distribute verbatim copies
++ of this license document, but changing it is not allowed.
++
++                            Preamble
++
++  The GNU Affero General Public License is a free, copyleft license for
++software and other kinds of works, specifically designed to ensure
++cooperation with the community in the case of network server software.
++
++  The licenses for most software and other practical works are designed
++to take away your freedom to share and change the works.  By contrast,
++our General Public Licenses are intended to guarantee your freedom to
++share and change all versions of a program--to make sure it remains free
++software for all its users.
++
++  When we speak of free software, we are referring to freedom, not
++price.  Our General Public Licenses are designed to make sure that you
++have the freedom to distribute copies of free software (and charge for
++them if you wish), that you receive source code or can get it if you
++want it, that you can change the software or use pieces of it in new
++free programs, and that you know you can do these things.
++
++  Developers that use our General Public Licenses protect your rights
++with two steps: (1) assert copyright on the software, and (2) offer
++you this License which gives you legal permission to copy, distribute
++and/or modify the software.
++
++  A secondary benefit of defending all users' freedom is that
++improvements made in alternate versions of the program, if they
++receive widespread use, become available for other developers to
++incorporate.  Many developers of free software are heartened and
++encouraged by the resulting cooperation.  However, in the case of
++software used on network servers, this result may fail to come about.
++The GNU General Public License permits making a modified version and
++letting the public access it on a server without ever releasing its
++source code to the public.
++
++  The GNU Affero General Public License is designed specifically to
++ensure that, in such cases, the modified source code becomes available
++to the community.  It requires the operator of a network server to
++provide the source code of the modified version running there to the
++users of that server.  Therefore, public use of a modified version, on
++a publicly accessible server, gives the public access to the source
++code of the modified version.
++
++  An older license, called the Affero General Public License and
++published by Affero, was designed to accomplish similar goals.  This is
++a different license, not a version of the Affero GPL, but Affero has
++released a new version of the Affero GPL which permits relicensing under
++this license.
++
++  The precise terms and conditions for copying, distribution and
++modification follow.
++
++                       TERMS AND CONDITIONS
++
++  0. Definitions.
++
++  "This License" refers to version 3 of the GNU Affero General Public License.
++
++  "Copyright" also means copyright-like laws that apply to other kinds of
++works, such as semiconductor masks.
++
++  "The Program" refers to any copyrightable work licensed under this
++License.  Each licensee is addressed as "you".  "Licensees" and
++"recipients" may be individuals or organizations.
++
++  To "modify" a work means to copy from or adapt all or part of the work
++in a fashion requiring copyright permission, other than the making of an
++exact copy.  The resulting work is called a "modified version" of the
++earlier work or a work "based on" the earlier work.
++
++  A "covered work" means either the unmodified Program or a work based
++on the Program.
++
++  To "propagate" a work means to do anything with it that, without
++permission, would make you directly or secondarily liable for
++infringement under applicable copyright law, except executing it on a
++computer or modifying a private copy.  Propagation includes copying,
++distribution (with or without modification), making available to the
++public, and in some countries other activities as well.
++
++  To "convey" a work means any kind of propagation that enables other
++parties to make or receive copies.  Mere interaction with a user through
++a computer network, with no transfer of a copy, is not conveying.
++
++  An interactive user interface displays "Appropriate Legal Notices"
++to the extent that it includes a convenient and prominently visible
++feature that (1) displays an appropriate copyright notice, and (2)
++tells the user that there is no warranty for the work (except to the
++extent that warranties are provided), that licensees may convey the
++work under this License, and how to view a copy of this License.  If
++the interface presents a list of user commands or options, such as a
++menu, a prominent item in the list meets this criterion.
++
++  1. Source Code.
++
++  The "source code" for a work means the preferred form of the work
++for making modifications to it.  "Object code" means any non-source
++form of a work.
++
++  A "Standard Interface" means an interface that either is an official
++standard defined by a recognized standards body, or, in the case of
++interfaces specified for a particular programming language, one that
++is widely used among developers working in that language.
++
++  The "System Libraries" of an executable work include anything, other
++than the work as a whole, that (a) is included in the normal form of
++packaging a Major Component, but which is not part of that Major
++Component, and (b) serves only to enable use of the work with that
++Major Component, or to implement a Standard Interface for which an
++implementation is available to the public in source code form.  A
++"Major Component", in this context, means a major essential component
++(kernel, window system, and so on) of the specific operating system
++(if any) on which the executable work runs, or a compiler used to
++produce the work, or an object code interpreter used to run it.
++
++  The "Corresponding Source" for a work in object code form means all
++the source code needed to generate, install, and (for an executable
++work) run the object code and to modify the work, including scripts to
++control those activities.  However, it does not include the work's
++System Libraries, or general-purpose tools or generally available free
++programs which are used unmodified in performing those activities but
++which are not part of the work.  For example, Corresponding Source
++includes interface definition files associated with source files for
++the work, and the source code for shared libraries and dynamically
++linked subprograms that the work is specifically designed to require,
++such as by intimate data communication or control flow between those
++subprograms and other parts of the work.
++
++  The Corresponding Source need not include anything that users
++can regenerate automatically from other parts of the Corresponding
++Source.
++
++  The Corresponding Source for a work in source code form is that
++same work.
++
++  2. Basic Permissions.
++
++  All rights granted under this License are granted for the term of
++copyright on the Program, and are irrevocable provided the stated
++conditions are met.  This License explicitly affirms your unlimited
++permission to run the unmodified Program.  The output from running a
++covered work is covered by this License only if the output, given its
++content, constitutes a covered work.  This License acknowledges your
++rights of fair use or other equivalent, as provided by copyright law.
++
++  You may make, run and propagate covered works that you do not
++convey, without conditions so long as your license otherwise remains
++in force.  You may convey covered works to others for the sole purpose
++of having them make modifications exclusively for you, or provide you
++with facilities for running those works, provided that you comply with
++the terms of this License in conveying all material for which you do
++not control copyright.  Those thus making or running the covered works
++for you must do so exclusively on your behalf, under your direction
++and control, on terms that prohibit them from making any copies of
++your copyrighted material outside their relationship with you.
++
++  Conveying under any other circumstances is permitted solely under
++the conditions stated below.  Sublicensing is not allowed; section 10
++makes it unnecessary.
++
++  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
++
++  No covered work shall be deemed part of an effective technological
++measure under any applicable law fulfilling obligations under article
++11 of the WIPO copyright treaty adopted on 20 December 1996, or
++similar laws prohibiting or restricting circumvention of such
++measures.
++
++  When you convey a covered work, you waive any legal power to forbid
++circumvention of technological measures to the extent such circumvention
++is effected by exercising rights under this License with respect to
++the covered work, and you disclaim any intention to limit operation or
++modification of the work as a means of enforcing, against the work's
++users, your or third parties' legal rights to forbid circumvention of
++technological measures.
++
++  4. Conveying Verbatim Copies.
++
++  You may convey verbatim copies of the Program's source code as you
++receive it, in any medium, provided that you conspicuously and
++appropriately publish on each copy an appropriate copyright notice;
++keep intact all notices stating that this License and any
++non-permissive terms added in accord with section 7 apply to the code;
++keep intact all notices of the absence of any warranty; and give all
++recipients a copy of this License along with the Program.
++
++  You may charge any price or no price for each copy that you convey,
++and you may offer support or warranty protection for a fee.
++
++  5. Conveying Modified Source Versions.
++
++  You may convey a work based on the Program, or the modifications to
++produce it from the Program, in the form of source code under the
++terms of section 4, provided that you also meet all of these conditions:
++
++    a) The work must carry prominent notices stating that you modified
++    it, and giving a relevant date.
++
++    b) The work must carry prominent notices stating that it is
++    released under this License and any conditions added under section
++    7.  This requirement modifies the requirement in section 4 to
++    "keep intact all notices".
++
++    c) You must license the entire work, as a whole, under this
++    License to anyone who comes into possession of a copy.  This
++    License will therefore apply, along with any applicable section 7
++    additional terms, to the whole of the work, and all its parts,
++    regardless of how they are packaged.  This License gives no
++    permission to license the work in any other way, but it does not
++    invalidate such permission if you have separately received it.
++
++    d) If the work has interactive user interfaces, each must display
++    Appropriate Legal Notices; however, if the Program has interactive
++    interfaces that do not display Appropriate Legal Notices, your
++    work need not make them do so.
++
++  A compilation of a covered work with other separate and independent
++works, which are not by their nature extensions of the covered work,
++and which are not combined with it such as to form a larger program,
++in or on a volume of a storage or distribution medium, is called an
++"aggregate" if the compilation and its resulting copyright are not
++used to limit the access or legal rights of the compilation's users
++beyond what the individual works permit.  Inclusion of a covered work
++in an aggregate does not cause this License to apply to the other
++parts of the aggregate.
++
++  6. Conveying Non-Source Forms.
++
++  You may convey a covered work in object code form under the terms
++of sections 4 and 5, provided that you also convey the
++machine-readable Corresponding Source under the terms of this License,
++in one of these ways:
++
++    a) Convey the object code in, or embodied in, a physical product
++    (including a physical distribution medium), accompanied by the
++    Corresponding Source fixed on a durable physical medium
++    customarily used for software interchange.
++
++    b) Convey the object code in, or embodied in, a physical product
++    (including a physical distribution medium), accompanied by a
++    written offer, valid for at least three years and valid for as
++    long as you offer spare parts or customer support for that product
++    model, to give anyone who possesses the object code either (1) a
++    copy of the Corresponding Source for all the software in the
++    product that is covered by this License, on a durable physical
++    medium customarily used for software interchange, for a price no
++    more than your reasonable cost of physically performing this
++    conveying of source, or (2) access to copy the
++    Corresponding Source from a network server at no charge.
++
++    c) Convey individual copies of the object code with a copy of the
++    written offer to provide the Corresponding Source.  This
++    alternative is allowed only occasionally and noncommercially, and
++    only if you received the object code with such an offer, in accord
++    with subsection 6b.
++
++    d) Convey the object code by offering access from a designated
++    place (gratis or for a charge), and offer equivalent access to the
++    Corresponding Source in the same way through the same place at no
++    further charge.  You need not require recipients to copy the
++    Corresponding Source along with the object code.  If the place to
++    copy the object code is a network server, the Corresponding Source
++    may be on a different server (operated by you or a third party)
++    that supports equivalent copying facilities, provided you maintain
++    clear directions next to the object code saying where to find the
++    Corresponding Source.  Regardless of what server hosts the
++    Corresponding Source, you remain obligated to ensure that it is
++    available for as long as needed to satisfy these requirements.
++
++    e) Convey the object code using peer-to-peer transmission, provided
++    you inform other peers where the object code and Corresponding
++    Source of the work are being offered to the general public at no
++    charge under subsection 6d.
++
++  A separable portion of the object code, whose source code is excluded
++from the Corresponding Source as a System Library, need not be
++included in conveying the object code work.
++
++  A "User Product" is either (1) a "consumer product", which means any
++tangible personal property which is normally used for personal, family,
++or household purposes, or (2) anything designed or sold for incorporation
++into a dwelling.  In determining whether a product is a consumer product,
++doubtful cases shall be resolved in favor of coverage.  For a particular
++product received by a particular user, "normally used" refers to a
++typical or common use of that class of product, regardless of the status
++of the particular user or of the way in which the particular user
++actually uses, or expects or is expected to use, the product.  A product
++is a consumer product regardless of whether the product has substantial
++commercial, industrial or non-consumer uses, unless such uses represent
++the only significant mode of use of the product.
++
++  "Installation Information" for a User Product means any methods,
++procedures, authorization keys, or other information required to install
++and execute modified versions of a covered work in that User Product from
++a modified version of its Corresponding Source.  The information must
++suffice to ensure that the continued functioning of the modified object
++code is in no case prevented or interfered with solely because
++modification has been made.
++
++  If you convey an object code work under this section in, or with, or
++specifically for use in, a User Product, and the conveying occurs as
++part of a transaction in which the right of possession and use of the
++User Product is transferred to the recipient in perpetuity or for a
++fixed term (regardless of how the transaction is characterized), the
++Corresponding Source conveyed under this section must be accompanied
++by the Installation Information.  But this requirement does not apply
++if neither you nor any third party retains the ability to install
++modified object code on the User Product (for example, the work has
++been installed in ROM).
++
++  The requirement to provide Installation Information does not include a
++requirement to continue to provide support service, warranty, or updates
++for a work that has been modified or installed by the recipient, or for
++the User Product in which it has been modified or installed.  Access to a
++network may be denied when the modification itself materially and
++adversely affects the operation of the network or violates the rules and
++protocols for communication across the network.
++
++  Corresponding Source conveyed, and Installation Information provided,
++in accord with this section must be in a format that is publicly
++documented (and with an implementation available to the public in
++source code form), and must require no special password or key for
++unpacking, reading or copying.
++
++  7. Additional Terms.
++
++  "Additional permissions" are terms that supplement the terms of this
++License by making exceptions from one or more of its conditions.
++Additional permissions that are applicable to the entire Program shall
++be treated as though they were included in this License, to the extent
++that they are valid under applicable law.  If additional permissions
++apply only to part of the Program, that part may be used separately
++under those permissions, but the entire Program remains governed by
++this License without regard to the additional permissions.
++
++  When you convey a copy of a covered work, you may at your option
++remove any additional permissions from that copy, or from any part of
++it.  (Additional permissions may be written to require their own
++removal in certain cases when you modify the work.)  You may place
++additional permissions on material, added by you to a covered work,
++for which you have or can give appropriate copyright permission.
++
++  Notwithstanding any other provision of this License, for material you
++add to a covered work, you may (if authorized by the copyright holders of
++that material) supplement the terms of this License with terms:
++
++    a) Disclaiming warranty or limiting liability differently from the
++    terms of sections 15 and 16 of this License; or
++
++    b) Requiring preservation of specified reasonable legal notices or
++    author attributions in that material or in the Appropriate Legal
++    Notices displayed by works containing it; or
++
++    c) Prohibiting misrepresentation of the origin of that material, or
++    requiring that modified versions of such material be marked in
++    reasonable ways as different from the original version; or
++
++    d) Limiting the use for publicity purposes of names of licensors or
++    authors of the material; or
++
++    e) Declining to grant rights under trademark law for use of some
++    trade names, trademarks, or service marks; or
++
++    f) Requiring indemnification of licensors and authors of that
++    material by anyone who conveys the material (or modified versions of
++    it) with contractual assumptions of liability to the recipient, for
++    any liability that these contractual assumptions directly impose on
++    those licensors and authors.
++
++  All other non-permissive additional terms are considered "further
++restrictions" within the meaning of section 10.  If the Program as you
++received it, or any part of it, contains a notice stating that it is
++governed by this License along with a term that is a further
++restriction, you may remove that term.  If a license document contains
++a further restriction but permits relicensing or conveying under this
++License, you may add to a covered work material governed by the terms
++of that license document, provided that the further restriction does
++not survive such relicensing or conveying.
++
++  If you add terms to a covered work in accord with this section, you
++must place, in the relevant source files, a statement of the
++additional terms that apply to those files, or a notice indicating
++where to find the applicable terms.
++
++  Additional terms, permissive or non-permissive, may be stated in the
++form of a separately written license, or stated as exceptions;
++the above requirements apply either way.
++
++  8. Termination.
++
++  You may not propagate or modify a covered work except as expressly
++provided under this License.  Any attempt otherwise to propagate or
++modify it is void, and will automatically terminate your rights under
++this License (including any patent licenses granted under the third
++paragraph of section 11).
++
++  However, if you cease all violation of this License, then your
++license from a particular copyright holder is reinstated (a)
++provisionally, unless and until the copyright holder explicitly and
++finally terminates your license, and (b) permanently, if the copyright
++holder fails to notify you of the violation by some reasonable means
++prior to 60 days after the cessation.
++
++  Moreover, your license from a particular copyright holder is
++reinstated permanently if the copyright holder notifies you of the
++violation by some reasonable means, this is the first time you have
++received notice of violation of this License (for any work) from that
++copyright holder, and you cure the violation prior to 30 days after
++your receipt of the notice.
++
++  Termination of your rights under this section does not terminate the
++licenses of parties who have received copies or rights from you under
++this License.  If your rights have been terminated and not permanently
++reinstated, you do not qualify to receive new licenses for the same
++material under section 10.
++
++  9. Acceptance Not Required for Having Copies.
++
++  You are not required to accept this License in order to receive or
++run a copy of the Program.  Ancillary propagation of a covered work
++occurring solely as a consequence of using peer-to-peer transmission
++to receive a copy likewise does not require acceptance.  However,
++nothing other than this License grants you permission to propagate or
++modify any covered work.  These actions infringe copyright if you do
++not accept this License.  Therefore, by modifying or propagating a
++covered work, you indicate your acceptance of this License to do so.
++
++  10. Automatic Licensing of Downstream Recipients.
++
++  Each time you convey a covered work, the recipient automatically
++receives a license from the original licensors, to run, modify and
++propagate that work, subject to this License.  You are not responsible
++for enforcing compliance by third parties with this License.
++
++  An "entity transaction" is a transaction transferring control of an
++organization, or substantially all assets of one, or subdividing an
++organization, or merging organizations.  If propagation of a covered
++work results from an entity transaction, each party to that
++transaction who receives a copy of the work also receives whatever
++licenses to the work the party's predecessor in interest had or could
++give under the previous paragraph, plus a right to possession of the
++Corresponding Source of the work from the predecessor in interest, if
++the predecessor has it or can get it with reasonable efforts.
++
++  You may not impose any further restrictions on the exercise of the
++rights granted or affirmed under this License.  For example, you may
++not impose a license fee, royalty, or other charge for exercise of
++rights granted under this License, and you may not initiate litigation
++(including a cross-claim or counterclaim in a lawsuit) alleging that
++any patent claim is infringed by making, using, selling, offering for
++sale, or importing the Program or any portion of it.
++
++  11. Patents.
++
++  A "contributor" is a copyright holder who authorizes use under this
++License of the Program or a work on which the Program is based.  The
++work thus licensed is called the contributor's "contributor version".
++
++  A contributor's "essential patent claims" are all patent claims
++owned or controlled by the contributor, whether already acquired or
++hereafter acquired, that would be infringed by some manner, permitted
++by this License, of making, using, or selling its contributor version,
++but do not include claims that would be infringed only as a
++consequence of further modification of the contributor version.  For
++purposes of this definition, "control" includes the right to grant
++patent sublicenses in a manner consistent with the requirements of
++this License.
++
++  Each contributor grants you a non-exclusive, worldwide, royalty-free
++patent license under the contributor's essential patent claims, to
++make, use, sell, offer for sale, import and otherwise run, modify and
++propagate the contents of its contributor version.
++
++  In the following three paragraphs, a "patent license" is any express
++agreement or commitment, however denominated, not to enforce a patent
++(such as an express permission to practice a patent or covenant not to
++sue for patent infringement).  To "grant" such a patent license to a
++party means to make such an agreement or commitment not to enforce a
++patent against the party.
++
++  If you convey a covered work, knowingly relying on a patent license,
++and the Corresponding Source of the work is not available for anyone
++to copy, free of charge and under the terms of this License, through a
++publicly available network server or other readily accessible means,
++then you must either (1) cause the Corresponding Source to be so
++available, or (2) arrange to deprive yourself of the benefit of the
++patent license for this particular work, or (3) arrange, in a manner
++consistent with the requirements of this License, to extend the patent
++license to downstream recipients.  "Knowingly relying" means you have
++actual knowledge that, but for the patent license, your conveying the
++covered work in a country, or your recipient's use of the covered work
++in a country, would infringe one or more identifiable patents in that
++country that you have reason to believe are valid.
++
++  If, pursuant to or in connection with a single transaction or
++arrangement, you convey, or propagate by procuring conveyance of, a
++covered work, and grant a patent license to some of the parties
++receiving the covered work authorizing them to use, propagate, modify
++or convey a specific copy of the covered work, then the patent license
++you grant is automatically extended to all recipients of the covered
++work and works based on it.
++
++  A patent license is "discriminatory" if it does not include within
++the scope of its coverage, prohibits the exercise of, or is
++conditioned on the non-exercise of one or more of the rights that are
++specifically granted under this License.  You may not convey a covered
++work if you are a party to an arrangement with a third party that is
++in the business of distributing software, under which you make payment
++to the third party based on the extent of your activity of conveying
++the work, and under which the third party grants, to any of the
++parties who would receive the covered work from you, a discriminatory
++patent license (a) in connection with copies of the covered work
++conveyed by you (or copies made from those copies), or (b) primarily
++for and in connection with specific products or compilations that
++contain the covered work, unless you entered into that arrangement,
++or that patent license was granted, prior to 28 March 2007.
++
++  Nothing in this License shall be construed as excluding or limiting
++any implied license or other defenses to infringement that may
++otherwise be available to you under applicable patent law.
++
++  12. No Surrender of Others' Freedom.
++
++  If conditions are imposed on you (whether by court order, agreement or
++otherwise) that contradict the conditions of this License, they do not
++excuse you from the conditions of this License.  If you cannot convey a
++covered work so as to satisfy simultaneously your obligations under this
++License and any other pertinent obligations, then as a consequence you may
++not convey it at all.  For example, if you agree to terms that obligate you
++to collect a royalty for further conveying from those to whom you convey
++the Program, the only way you could satisfy both those terms and this
++License would be to refrain entirely from conveying the Program.
++
++  13. Remote Network Interaction; Use with the GNU General Public License.
++
++  Notwithstanding any other provision of this License, if you modify the
++Program, your modified version must prominently offer all users
++interacting with it remotely through a computer network (if your version
++supports such interaction) an opportunity to receive the Corresponding
++Source of your version by providing access to the Corresponding Source
++from a network server at no charge, through some standard or customary
++means of facilitating copying of software.  This Corresponding Source
++shall include the Corresponding Source for any work covered by version 3
++of the GNU General Public License that is incorporated pursuant to the
++following paragraph.
++
++  Notwithstanding any other provision of this License, you have
++permission to link or combine any covered work with a work licensed
++under version 3 of the GNU General Public License into a single
++combined work, and to convey the resulting work.  The terms of this
++License will continue to apply to the part which is the covered work,
++but the work with which it is combined will remain governed by version
++3 of the GNU General Public License.
++
++  14. Revised Versions of this License.
++
++  The Free Software Foundation may publish revised and/or new versions of
++the GNU Affero General Public License from time to time.  Such new versions
++will be similar in spirit to the present version, but may differ in detail to
++address new problems or concerns.
++
++  Each version is given a distinguishing version number.  If the
++Program specifies that a certain numbered version of the GNU Affero General
++Public License "or any later version" applies to it, you have the
++option of following the terms and conditions either of that numbered
++version or of any later version published by the Free Software
++Foundation.  If the Program does not specify a version number of the
++GNU Affero General Public License, you may choose any version ever published
++by the Free Software Foundation.
++
++  If the Program specifies that a proxy can decide which future
++versions of the GNU Affero General Public License can be used, that proxy's
++public statement of acceptance of a version permanently authorizes you
++to choose that version for the Program.
++
++  Later license versions may give you additional or different
++permissions.  However, no additional obligations are imposed on any
++author or copyright holder as a result of your choosing to follow a
++later version.
++
++  15. Disclaimer of Warranty.
++
++  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
++APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
++HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
++OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
++THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
++PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
++IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
++ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
++
++  16. Limitation of Liability.
++
++  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
++WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
++THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
++GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
++USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
++DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
++PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
++EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
++SUCH DAMAGES.
++
++  17. Interpretation of Sections 15 and 16.
++
++  If the disclaimer of warranty and limitation of liability provided
++above cannot be given local legal effect according to their terms,
++reviewing courts shall apply local law that most closely approximates
++an absolute waiver of all civil liability in connection with the
++Program, unless a warranty or assumption of liability accompanies a
++copy of the Program in return for a fee.
++
++                     END OF TERMS AND CONDITIONS
++
++            How to Apply These Terms to Your New Programs
++
++  If you develop a new program, and you want it to be of the greatest
++possible use to the public, the best way to achieve this is to make it
++free software which everyone can redistribute and change under these terms.
++
++  To do so, attach the following notices to the program.  It is safest
++to attach them to the start of each source file to most effectively
++state the exclusion of warranty; and each file should have at least
++the "copyright" line and a pointer to where the full notice is found.
++
++    <one line to give the program's name and a brief idea of what it does.>
++    Copyright (C) <year>  <name of author>
++
++    This program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU Affero General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU Affero General Public License for more details.
++
++    You should have received a copy of the GNU Affero General Public License
++    along with this program.  If not, see <https://www.gnu.org/licenses/>.
++
++Also add information on how to contact you by electronic and paper mail.
++
++  If your software can interact with users remotely through a computer
++network, you should also make sure that it provides a way for users to
++get its source.  For example, if your program is a web application, its
++interface could display a "Source" link that leads users to an archive
++of the code.  There are many ways you could offer source, and different
++solutions will be better for different programs; see section 13 for the
++specific requirements.
++
++  You should also get your employer (if you work as a programmer) or school,
++if any, to sign a "copyright disclaimer" for the program, if necessary.
++For more information on this, and how to apply and follow the GNU AGPL, see
++<https://www.gnu.org/licenses/>.
+--- /dev/null
++++ b/engines/director/fonts/pfr1/Pfr1Font.cpp
+@@ -0,0 +1,1765 @@
++// Derived from LibreShockwave, revision fca530f9ef388d7ff38fa6c7117feae5bb5411c6.
++// SPDX-License-Identifier: AGPL-3.0-only; see COPYING.AGPL-3.0 and README.
++#include "Pfr1Font.hpp"
++
++#include <algorithm>
++#include <cstdint>
++#include <cstdlib>
++#include <exception>
++#include <limits>
++#include <stdexcept>
++#include <string>
++#include <utility>
++
++#include "PfrBitReader.hpp"
++
++namespace libreshockwave::font {
++namespace {
++
++int sign16(int value) {
++    return (value & 0x8000) != 0 ? value | ~0xFFFF : value;
++}
++
++int readUnsignedN(const std::vector<std::uint8_t>& data, int pos, int n) {
++    int value = 0;
++    for (int i = 0; i < n; ++i) {
++        if (pos + i >= static_cast<int>(data.size())) {
++            break;
++        }
++        value = (value << 8) | (data[static_cast<std::size_t>(pos + i)] & 0xFF);
++    }
++    return value;
++}
++
++int readSignedN(const std::vector<std::uint8_t>& data, int pos, int n) {
++    const int value = readUnsignedN(data, pos, n);
++    if (n == 0) {
++        return 0;
++    }
++    const int signBit = 1 << (n * 8 - 1);
++    if ((value & signBit) != 0) {
++        const int mask = n >= 4 ? 0 : static_cast<int>(~0U << (n * 8));
++        return value | mask;
++    }
++    return value;
++}
++
++std::vector<std::uint8_t> decodeRleBitmap(const std::vector<std::uint8_t>& data,
++                                          int offset,
++                                          int dataLen,
++                                          int width,
++                                          int height) {
++    const int totalBits = width * height;
++    if (totalBits <= 0 || totalBits > 1'000'000) {
++        return {};
++    }
++    const int totalBytes = (totalBits + 7) / 8;
++    std::vector<std::uint8_t> result(static_cast<std::size_t>(totalBytes), 0);
++    int outPos = 0;
++    int pos = offset;
++    const int end = offset + dataLen;
++
++    while (pos < end && pos < static_cast<int>(data.size()) && outPos < totalBits) {
++        const int byte = data[static_cast<std::size_t>(pos++)] & 0xFF;
++        const int count = (byte >> 4) & 0x0F;
++        const int value = byte & 0x0F;
++        for (int i = 0; i < count && outPos < totalBits; ++i) {
++            if (value != 0) {
++                result[static_cast<std::size_t>(outPos / 8)] |=
++                    static_cast<std::uint8_t>(1U << (7 - (outPos % 8)));
++            }
++            ++outPos;
++        }
++    }
++
++    return result;
++}
++
++void skipU8(PfrBitReader& reader) {
++    (void)reader.readU8();
++}
++
++void skipU16(PfrBitReader& reader) {
++    (void)reader.readU16();
++}
++
++void skipU24(PfrBitReader& reader) {
++    (void)reader.readU24();
++}
++
++void skipBit(PfrBitReader& reader) {
++    (void)reader.readBit();
++}
++
++int sign8(int value) {
++    value &= 0xFF;
++    return (value & 0x80) != 0 ? value | ~0xFF : value;
++}
++
++constexpr std::uint32_t CURVE_TABLE_9[16] = {
++    0x0451, 0x0452, 0x0461, 0x0462, 0x0491, 0x0492, 0x04A1, 0x04A2,
++    0x0851, 0x0852, 0x0861, 0x0862, 0x0891, 0x0892, 0x08A1, 0x08A2,
++};
++
++constexpr std::uint32_t CURVE_TABLE_10[16] = {
++    0x0154, 0x0158, 0x0164, 0x0168, 0x0194, 0x0198, 0x01A4, 0x01A8,
++    0x0254, 0x0258, 0x0264, 0x0268, 0x0294, 0x0298, 0x02A4, 0x02A8,
++};
++
++constexpr std::uint32_t CURVE_TABLE_13[16] = {
++    0x0FFF, 0x03AA, 0x0CAA, 0x0AA3, 0x0AAC, 0x0AAA, 0x02AA, 0x08AA,
++    0x0AA2, 0x0AA8, 0x00AA, 0x0555, 0x0155, 0x0455, 0x0551, 0x0554,
++};
++
++constexpr std::uint32_t CURVE_TABLE_14A[8] = {1, 2, 4, 5, 6, 8, 9, 10};
++constexpr std::uint32_t CURVE_TABLE_14B[4] = {5, 6, 9, 10};
++
++struct ByteRead {
++    int value = 0;
++    int pos = 0;
++};
++
++struct NibbleRead {
++    int value = 0;
++    int pos = 0;
++    bool nibbleHigh = false;
++};
++
++struct CoordRead {
++    int value = 0;
++    int pos = 0;
++    bool nibbleHigh = false;
++};
++
++struct CoordPairRead {
++    int x = 0;
++    int y = 0;
++    int pos = 0;
++    bool nibbleHigh = false;
++};
++
++struct TransformRead {
++    int scale = 4096;
++    int offset = 0;
++    int pos = 0;
++};
++
++struct GlyphOffsetRead {
++    int offset = 0;
++    int size = 0;
++    int pos = 0;
++    int accumulator = 0;
++};
++
++ByteRead readByteAligned(const std::vector<std::uint8_t>& data, int pos, bool nibbleHigh) {
++    if (pos >= static_cast<int>(data.size())) {
++        return {0, pos};
++    }
++    if (nibbleHigh) {
++        const int lo = data[static_cast<std::size_t>(pos)] & 0x0F;
++        ++pos;
++        const int hi = pos < static_cast<int>(data.size())
++                           ? (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F
++                           : 0;
++        return {(lo << 4) | hi, pos};
++    }
++    return {data[static_cast<std::size_t>(pos)] & 0xFF, pos + 1};
++}
++
++NibbleRead readNibble(const std::vector<std::uint8_t>& data, int pos, bool nibbleHigh) {
++    if (pos >= static_cast<int>(data.size())) {
++        return {-1, pos, nibbleHigh};
++    }
++
++    nibbleHigh = !nibbleHigh;
++    if (nibbleHigh) {
++        return {(data[static_cast<std::size_t>(pos)] >> 4) & 0x0F, pos, nibbleHigh};
++    }
++
++    const int value = data[static_cast<std::size_t>(pos)] & 0x0F;
++    return {value, pos + 1, nibbleHigh};
++}
++
++int orusLookup(const std::vector<int>& controlValues, int current, int direction) {
++    if (controlValues.empty() || direction == 0) {
++        return current;
++    }
++
++    if (direction > 0) {
++        std::size_t pos = 0;
++        while (pos < controlValues.size() && controlValues[pos] <= current) {
++            ++pos;
++        }
++        if (pos >= controlValues.size()) {
++            return current;
++        }
++        const auto target = std::min<std::size_t>(pos + static_cast<std::size_t>(direction - 1),
++                                                  controlValues.size() - 1);
++        return controlValues[target];
++    }
++
++    for (int i = static_cast<int>(controlValues.size()) - 1; i >= 0; --i) {
++        if (controlValues[static_cast<std::size_t>(i)] < current) {
++            return controlValues[static_cast<std::size_t>(std::max(i + direction + 1, 0))];
++        }
++    }
++    return current;
++}
++
++CoordRead readCe9dCoordValue(const std::vector<std::uint8_t>& data,
++                             int pos,
++                             int v8,
++                             bool threeByteMode,
++                             bool nibbleAligned) {
++    if (pos >= static_cast<int>(data.size())) {
++        return {0, pos, nibbleAligned};
++    }
++
++    if ((v8 & 1) == 0) {
++        int result = 0;
++        if (nibbleAligned) {
++            const int lo = data[static_cast<std::size_t>(pos)] & 0x0F;
++            ++pos;
++            const int hi = pos < static_cast<int>(data.size())
++                               ? (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F
++                               : 0;
++            result = sign16((lo << 4) | hi);
++        } else {
++            result = sign16(data[static_cast<std::size_t>(pos)] & 0xFF);
++            ++pos;
++        }
++        return {result, pos, nibbleAligned};
++    }
++
++    if (threeByteMode) {
++        int result = 0;
++        if (nibbleAligned) {
++            const int b0Low = pos > 0 ? data[static_cast<std::size_t>(pos - 1)] & 0x0F : 0;
++            const int b1 = pos < static_cast<int>(data.size())
++                               ? data[static_cast<std::size_t>(pos)] & 0xFF
++                               : 0;
++            ++pos;
++            const int b2High = pos < static_cast<int>(data.size())
++                                   ? (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F
++                                   : 0;
++            result = sign16((b0Low << 12) | (b1 << 4) | b2High);
++        } else {
++            const int b0 = pos < static_cast<int>(data.size())
++                               ? data[static_cast<std::size_t>(pos)] & 0xFF
++                               : 0;
++            ++pos;
++            const int b1 = pos < static_cast<int>(data.size())
++                               ? data[static_cast<std::size_t>(pos)] & 0xFF
++                               : 0;
++            ++pos;
++            result = sign16((b0 << 8) | b1);
++        }
++        return {result, pos, nibbleAligned};
++    }
++
++    int result = 0;
++    if (nibbleAligned) {
++        const int lo = data[static_cast<std::size_t>(pos)] & 0x0F;
++        ++pos;
++        const int nextByte = pos < static_cast<int>(data.size())
++                                 ? data[static_cast<std::size_t>(pos)] & 0xFF
++                                 : 0;
++        ++pos;
++        result = sign16(nextByte + 16 * sign8(lo << 4));
++        nibbleAligned = false;
++    } else {
++        const int signedByte = sign8(data[static_cast<std::size_t>(pos)]);
++        ++pos;
++        const int nextHigh = pos < static_cast<int>(data.size())
++                                 ? (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F
++                                 : 0;
++        result = sign16(nextHigh + 16 * signedByte);
++        nibbleAligned = true;
++    }
++    return {result, pos, nibbleAligned};
++}
++
++int parseControlValues(const std::vector<std::uint8_t>& data,
++                       int pos,
++                       int flags,
++                       std::vector<int>& controlX,
++                       std::vector<int>& controlY) {
++    if (controlX.empty() && controlY.empty()) {
++        return pos;
++    }
++
++    const bool threeByteMode = (flags & 3) == 3;
++    const bool flagPerCoordinate = (flags & 0x40) != 0;
++    bool nibbleAligned = false;
++    int flagCache = 0;
++    int flagCacheCount = 0;
++
++    int accumulatedX = 0;
++    for (std::size_t i = 0; i < controlX.size(); ++i) {
++        if (pos >= static_cast<int>(data.size())) {
++            break;
++        }
++
++        int v8 = 0;
++        if (i == 0) {
++            v8 = (flags >> 4) & 1;
++        } else if (flagPerCoordinate) {
++            if (flagCacheCount > 0) {
++                v8 = (flagCache >> 1) & 1;
++                flagCache >>= 1;
++                --flagCacheCount;
++            } else if (pos < static_cast<int>(data.size())) {
++                if (nibbleAligned) {
++                    const int nibbleValue = data[static_cast<std::size_t>(pos)] & 0x0F;
++                    ++pos;
++                    nibbleAligned = false;
++                    v8 = nibbleValue & 1;
++                    flagCache = nibbleValue;
++                    flagCacheCount = 3;
++                } else {
++                    const int nibbleValue = (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F;
++                    nibbleAligned = true;
++                    v8 = nibbleValue & 1;
++                    flagCache = nibbleValue;
++                    flagCacheCount = 3;
++                }
++            }
++        }
++
++        const auto read = readCe9dCoordValue(data, pos, v8, threeByteMode, nibbleAligned);
++        pos = read.pos;
++        nibbleAligned = read.nibbleHigh;
++        accumulatedX += read.value;
++        controlX[i] = accumulatedX;
++    }
++
++    int accumulatedY = 0;
++    for (std::size_t i = 0; i < controlY.size(); ++i) {
++        if (pos >= static_cast<int>(data.size())) {
++            break;
++        }
++
++        int v8 = 0;
++        if (i == 0) {
++            v8 = (flags >> 5) & 1;
++        } else if (flagPerCoordinate) {
++            if (flagCacheCount > 0) {
++                v8 = (flagCache >> 1) & 1;
++                flagCache >>= 1;
++                --flagCacheCount;
++            } else if (pos < static_cast<int>(data.size())) {
++                if (nibbleAligned) {
++                    const int nibbleValue = data[static_cast<std::size_t>(pos)] & 0x0F;
++                    ++pos;
++                    nibbleAligned = false;
++                    v8 = nibbleValue & 1;
++                    flagCache = nibbleValue;
++                    flagCacheCount = 3;
++                } else {
++                    const int nibbleValue = (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F;
++                    nibbleAligned = true;
++                    v8 = nibbleValue & 1;
++                    flagCache = nibbleValue;
++                    flagCacheCount = 3;
++                }
++            }
++        }
++
++        const auto read = readCe9dCoordValue(data, pos, v8, threeByteMode, nibbleAligned);
++        pos = read.pos;
++        nibbleAligned = read.nibbleHigh;
++        accumulatedY += read.value;
++        controlY[i] = accumulatedY;
++    }
++
++    if (nibbleAligned) {
++        ++pos;
++    }
++    return pos;
++}
++
++CoordRead readEncodedCoordValue(const std::vector<std::uint8_t>& data,
++                                int pos,
++                                int encoding,
++                                bool nibbleHigh,
++                                int current,
++                                const std::vector<int>& controlValues) {
++    switch (encoding) {
++        case 1: {
++            nibbleHigh = !nibbleHigh;
++            if (pos >= static_cast<int>(data.size())) {
++                return {current, pos, nibbleHigh};
++            }
++            int nibble = 0;
++            if (nibbleHigh) {
++                nibble = (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F;
++            } else {
++                nibble = data[static_cast<std::size_t>(pos)] & 0x0F;
++                ++pos;
++            }
++            return {sign16(current + nibble - 8), pos, nibbleHigh};
++        }
++        case 2: {
++            const auto read = readByteAligned(data, pos, nibbleHigh);
++            const int signedByte = sign8(read.value);
++            if (signedByte >= -8 && signedByte < 8) {
++                const int direction = (signedByte & 0x80) == 0 ? signedByte + 1 : signedByte;
++                return {orusLookup(controlValues, current, direction), read.pos, nibbleHigh};
++            }
++            return {sign16(current + signedByte), read.pos, nibbleHigh};
++        }
++        case 3: {
++            const auto highRead = readByteAligned(data, pos, nibbleHigh);
++            pos = highRead.pos;
++            nibbleHigh = !nibbleHigh;
++            int low = 0;
++            if (pos >= static_cast<int>(data.size())) {
++                low = 0;
++            } else if (nibbleHigh) {
++                low = (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F;
++            } else {
++                low = data[static_cast<std::size_t>(pos)] & 0x0F;
++                ++pos;
++            }
++
++            const int delta12 = (sign8(highRead.value) * 16) | low;
++            if (delta12 >= -128 && delta12 < 128) {
++                const auto extraRead = readByteAligned(data, pos, nibbleHigh);
++                const int delta16 = (delta12 * 256) | (extraRead.value & 0xFF);
++                return {sign16(current + delta16), extraRead.pos, nibbleHigh};
++            }
++            return {sign16(current + delta12), pos, nibbleHigh};
++        }
++        default:
++            return {current, pos, nibbleHigh};
++    }
++}
++
++CoordPairRead readEncodedCoordsInto(const std::vector<std::uint8_t>& data,
++                                    int pos,
++                                    int encoding,
++                                    int& currentX,
++                                    int& currentY,
++                                    int& previousX,
++                                    int& previousY,
++                                    int outX,
++                                    int outY,
++                                    bool nibbleHigh,
++                                    const std::vector<int>& controlX,
++                                    const std::vector<int>& controlY) {
++    const int xEncoding = encoding & 3;
++    const int yEncoding = (encoding >> 2) & 3;
++
++    if (xEncoding != 0) {
++        const auto read = readEncodedCoordValue(data, pos, xEncoding, nibbleHigh, currentX, controlX);
++        outX = read.value;
++        pos = read.pos;
++        nibbleHigh = read.nibbleHigh;
++    }
++    previousX = currentX;
++    currentX = outX;
++
++    if (yEncoding != 0) {
++        const auto read = readEncodedCoordValue(data, pos, yEncoding, nibbleHigh, currentY, controlY);
++        outY = read.value;
++        pos = read.pos;
++        nibbleHigh = read.nibbleHigh;
++    }
++    previousY = currentY;
++    currentY = outY;
++
++    return {outX, outY, pos, nibbleHigh};
++}
++
++std::uint32_t calculateCurveEncoding14(std::uint32_t byte) {
++    const std::uint32_t value =
++        CURVE_TABLE_14B[(byte >> 3U) & 0x03U] + 16U * CURVE_TABLE_14A[(byte >> 5U) & 0x07U];
++    return CURVE_TABLE_14A[byte & 0x07U] + value * 16U;
++}
++
++void parseNibbleCommands(const std::vector<std::uint8_t>& data,
++                         int startPos,
++                         int endLimit,
++                         Pfr1Font::OutlineGlyph& glyph,
++                         const std::vector<int>& controlX,
++                         const std::vector<int>& controlY) {
++    int pos = startPos;
++    const int endPos = endLimit > 0 ? endLimit - 1 : 0;
++    bool nibbleHigh = false;
++    int currentX = 0;
++    int currentY = 0;
++    int previousX = 0;
++    int previousY = 0;
++    Pfr1Font::Contour currentContour;
++    bool firstIteration = true;
++
++    for (int iterations = 0; iterations < 500; ++iterations) {
++        if (pos >= endPos && (pos != endPos || nibbleHigh)) {
++            break;
++        }
++        if (pos >= static_cast<int>(data.size())) {
++            break;
++        }
++
++        int command = 0;
++        if (firstIteration) {
++            command = 6;
++            firstIteration = false;
++        } else {
++            nibbleHigh = !nibbleHigh;
++            if (nibbleHigh) {
++                command = (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F;
++            } else {
++                command = data[static_cast<std::size_t>(pos)] & 0x0F;
++                ++pos;
++            }
++        }
++
++        const int beforeX = currentX;
++        const int beforeY = currentY;
++
++        switch (command) {
++            case 0: {
++                const auto nibbleRead = readNibble(data, pos, nibbleHigh);
++                if (nibbleRead.value < 0) {
++                    break;
++                }
++                const int nibble = nibbleRead.value;
++                pos = nibbleRead.pos;
++                nibbleHigh = nibbleRead.nibbleHigh;
++                const int direction = (nibble & 4) != 0 ? (nibble & 7) - 8 : (nibble & 7) + 1;
++                previousX = beforeX;
++                previousY = beforeY;
++                if ((nibble & 8) != 0) {
++                    currentY = orusLookup(controlY, currentY, direction);
++                } else {
++                    currentX = orusLookup(controlX, currentX, direction);
++                }
++                currentContour.lineTo(static_cast<float>(currentX), static_cast<float>(currentY));
++                break;
++            }
++            case 1: {
++                const auto read = readByteAligned(data, pos, nibbleHigh);
++                pos = read.pos;
++                previousX = beforeX;
++                previousY = beforeY;
++                currentX = sign16(currentX + sign8(read.value));
++                currentContour.lineTo(static_cast<float>(currentX), static_cast<float>(currentY));
++                break;
++            }
++            case 2: {
++                const auto read = readByteAligned(data, pos, nibbleHigh);
++                pos = read.pos;
++                previousX = beforeX;
++                previousY = beforeY;
++                currentY = sign16(currentY + sign8(read.value));
++                currentContour.lineTo(static_cast<float>(currentX), static_cast<float>(currentY));
++                break;
++            }
++            case 3:
++            case 4: {
++                const auto highRead = readByteAligned(data, pos, nibbleHigh);
++                pos = highRead.pos;
++                nibbleHigh = !nibbleHigh;
++                int low = 0;
++                if (pos >= static_cast<int>(data.size())) {
++                    low = 0;
++                } else if (nibbleHigh) {
++                    low = (data[static_cast<std::size_t>(pos)] >> 4) & 0x0F;
++                } else {
++                    low = data[static_cast<std::size_t>(pos)] & 0x0F;
++                    ++pos;
++                }
++
++                const int delta12 = (sign8(highRead.value) * 16) | low;
++                int delta = delta12;
++                if (delta12 >= -128 && delta12 < 128) {
++                    const auto extraRead = readByteAligned(data, pos, nibbleHigh);
++                    pos = extraRead.pos;
++                    delta = (delta12 * 256) | (extraRead.value & 0xFF);
++                }
++                if (command == 3) {
++                    currentX += sign16(delta);
++                } else {
++                    currentY += sign16(delta);
++                }
++                previousX = beforeX;
++                previousY = beforeY;
++                currentContour.lineTo(static_cast<float>(currentX), static_cast<float>(currentY));
++                break;
++            }
++            case 5:
++            case 6: {
++                const auto encodingRead = readNibble(data, pos, nibbleHigh);
++                if (encodingRead.value < 0) {
++                    break;
++                }
++                pos = encodingRead.pos;
++                nibbleHigh = encodingRead.nibbleHigh;
++                const auto read = readEncodedCoordsInto(data,
++                                                        pos,
++                                                        encodingRead.value,
++                                                        currentX,
++                                                        currentY,
++                                                        previousX,
++                                                        previousY,
++                                                        currentX,
++                                                        currentY,
++                                                        nibbleHigh,
++                                                        controlX,
++                                                        controlY);
++                pos = read.pos;
++                nibbleHigh = read.nibbleHigh;
++
++                if (command == 6) {
++                    if (!currentContour.commands.empty()) {
++                        glyph.contours.push_back(std::move(currentContour));
++                        currentContour = Pfr1Font::Contour();
++                    }
++                    currentContour.moveTo(static_cast<float>(currentX), static_cast<float>(currentY));
++                } else {
++                    currentContour.lineTo(static_cast<float>(currentX), static_cast<float>(currentY));
++                }
++                break;
++            }
++            default: {
++                if (command >= 7) {
++                    std::uint32_t encoding = 0;
++                    int path = 0;
++                    switch (command) {
++                        case 7:
++                            encoding = 2210U;
++                            path = 49;
++                            break;
++                        case 8:
++                            encoding = 680U;
++                            path = 54;
++                            break;
++                        case 9: {
++                            const auto nibbleRead = readNibble(data, pos, nibbleHigh);
++                            if (nibbleRead.value < 0) {
++                                break;
++                            }
++                            pos = nibbleRead.pos;
++                            nibbleHigh = nibbleRead.nibbleHigh;
++                            encoding = CURVE_TABLE_9[static_cast<std::size_t>(nibbleRead.value & 0x0F)];
++                            path = 49;
++                            break;
++                        }
++                        case 10: {
++                            const auto nibbleRead = readNibble(data, pos, nibbleHigh);
++                            if (nibbleRead.value < 0) {
++                                break;
++                            }
++                            pos = nibbleRead.pos;
++                            nibbleHigh = nibbleRead.nibbleHigh;
++                            encoding = CURVE_TABLE_10[static_cast<std::size_t>(nibbleRead.value & 0x0F)];
++                            path = 54;
++                            break;
++                        }
++                        case 11: {
++                            const auto byteRead = readByteAligned(data, pos, nibbleHigh);
++                            pos = byteRead.pos;
++                            const auto byte = static_cast<std::uint32_t>(byteRead.value);
++                            encoding = (byte & 3U) + 4U * ((byte & 0x3CU) + 4U * (byte & 0xC0U));
++                            path = 49;
++                            break;
++                        }
++                        case 12: {
++                            const auto byteRead = readByteAligned(data, pos, nibbleHigh);
++                            pos = byteRead.pos;
++                            encoding = static_cast<std::uint32_t>(byteRead.value) * 4U;
++                            path = 54;
++                            break;
++                        }
++                        case 13: {
++                            const auto nibbleRead = readNibble(data, pos, nibbleHigh);
++                            if (nibbleRead.value < 0) {
++                                break;
++                            }
++                            pos = nibbleRead.pos;
++                            nibbleHigh = nibbleRead.nibbleHigh;
++                            encoding = CURVE_TABLE_13[static_cast<std::size_t>(nibbleRead.value & 0x0F)];
++                            path = 70;
++                            break;
++                        }
++                        case 14: {
++                            const auto byteRead = readByteAligned(data, pos, nibbleHigh);
++                            pos = byteRead.pos;
++                            encoding = calculateCurveEncoding14(static_cast<std::uint32_t>(byteRead.value));
++                            path = 70;
++                            break;
++                        }
++                        case 15: {
++                            const auto nibbleRead = readNibble(data, pos, nibbleHigh);
++                            if (nibbleRead.value < 0) {
++                                break;
++                            }
++                            pos = nibbleRead.pos;
++                            nibbleHigh = nibbleRead.nibbleHigh;
++                            const auto byteRead = readByteAligned(data, pos, nibbleHigh);
++                            pos = byteRead.pos;
++                            encoding = static_cast<std::uint32_t>(byteRead.value) |
++                                       (static_cast<std::uint32_t>(nibbleRead.value) << 8U);
++                            path = 70;
++                            break;
++                        }
++                        default:
++                            break;
++                    }
++
++                    if (path == 0) {
++                        break;
++                    }
++
++                    const int startX = beforeX;
++                    const int startY = beforeY;
++                    int control1X = currentX;
++                    int control1Y = currentY;
++                    int control2X = 0;
++                    int control2Y = 0;
++                    int endX = 0;
++                    int endY = 0;
++
++                    if (path == 49) {
++                        auto read = readEncodedCoordsInto(data,
++                                                          pos,
++                                                          static_cast<int>(encoding & 0x0FU),
++                                                          currentX,
++                                                          currentY,
++                                                          previousX,
++                                                          previousY,
++                                                          control1X,
++                                                          control1Y,
++                                                          nibbleHigh,
++                                                          controlX,
++                                                          controlY);
++                        control1X = read.x;
++                        control1Y = read.y;
++                        pos = read.pos;
++                        nibbleHigh = read.nibbleHigh;
++
++                        control2X = orusLookup(controlX, currentX, 0);
++                        control2Y = control1Y;
++                        read = readEncodedCoordsInto(data,
++                                                     pos,
++                                                     static_cast<int>((encoding >> 4U) & 0x0FU),
++                                                     currentX,
++                                                     currentY,
++                                                     previousX,
++                                                     previousY,
++                                                     control2X,
++                                                     control2Y,
++                                                     nibbleHigh,
++                                                     controlX,
++                                                     controlY);
++                        control2X = read.x;
++                        control2Y = read.y;
++                        pos = read.pos;
++                        nibbleHigh = read.nibbleHigh;
++
++                        endX = control2X;
++                        endY = orusLookup(controlY, currentY, 0);
++                        read = readEncodedCoordsInto(data,
++                                                     pos,
++                                                     static_cast<int>((encoding >> 8U) & 0x0FU),
++                                                     currentX,
++                                                     currentY,
++                                                     previousX,
++                                                     previousY,
++                                                     endX,
++                                                     endY,
++                                                     nibbleHigh,
++                                                     controlX,
++                                                     controlY);
++                        endX = read.x;
++                        endY = read.y;
++                        pos = read.pos;
++                        nibbleHigh = read.nibbleHigh;
++                    } else if (path == 54) {
++                        auto read = readEncodedCoordsInto(data,
++                                                          pos,
++                                                          static_cast<int>(encoding & 0x0FU),
++                                                          currentX,
++                                                          currentY,
++                                                          previousX,
++                                                          previousY,
++                                                          control1X,
++                                                          control1Y,
++                                                          nibbleHigh,
++                                                          controlX,
++                                                          controlY);
++                        control1X = read.x;
++                        control1Y = read.y;
++                        pos = read.pos;
++                        nibbleHigh = read.nibbleHigh;
++
++                        control2X = control1X;
++                        control2Y = orusLookup(controlY, currentY, 0);
++                        read = readEncodedCoordsInto(data,
++                                                     pos,
++                                                     static_cast<int>((encoding >> 4U) & 0x0FU),
++                                                     currentX,
++                                                     currentY,
++                                                     previousX,
++                                                     previousY,
++                                                     control2X,
++                                                     control2Y,
++                                                     nibbleHigh,
++                                                     controlX,
++                                                     controlY);
++                        control2X = read.x;
++                        control2Y = read.y;
++                        pos = read.pos;
++                        nibbleHigh = read.nibbleHigh;
++
++                        endX = orusLookup(controlX, currentX, 0);
++                        endY = control2Y;
++                        read = readEncodedCoordsInto(data,
++                                                     pos,
++                                                     static_cast<int>((encoding >> 8U) & 0x0FU),
++                                                     currentX,
++                                                     currentY,
++                                                     previousX,
++                                                     previousY,
++                                                     endX,
++                                                     endY,
++                                                     nibbleHigh,
++                                                     controlX,
++                                                     controlY);
++                        endX = read.x;
++                        endY = read.y;
++                        pos = read.pos;
++                        nibbleHigh = read.nibbleHigh;
++                    } else {
++                        control1X = sign16(currentX + (currentX - previousX));
++                        control1Y = sign16(currentY + (currentY - previousY));
++                        auto read = readEncodedCoordsInto(data,
++                                                          pos,
++                                                          static_cast<int>(encoding & 0x0FU),
++                                                          currentX,
++                                                          currentY,
++                                                          previousX,
++                                                          previousY,
++                                                          control1X,
++                                                          control1Y,
++                                                          nibbleHigh,
++                                                          controlX,
++                                                          controlY);
++                        control1X = read.x;
++                        control1Y = read.y;
++                        pos = read.pos;
++                        nibbleHigh = read.nibbleHigh;
++
++                        control2X = control1X;
++                        control2Y = control1Y;
++                        read = readEncodedCoordsInto(data,
++                                                     pos,
++                                                     static_cast<int>((encoding >> 4U) & 0x0FU),
++                                                     currentX,
++                                                     currentY,
++                                                     previousX,
++                                                     previousY,
++                                                     control2X,
++                                                     control2Y,
++                                                     nibbleHigh,
++                                                     controlX,
++                                                     controlY);
++                        control2X = read.x;
++                        control2Y = read.y;
++                        pos = read.pos;
++                        nibbleHigh = read.nibbleHigh;
++
++                        endX = control2X;
++                        endY = control2Y;
++                        read = readEncodedCoordsInto(data,
++                                                     pos,
++                                                     static_cast<int>((encoding >> 8U) & 0x0FU),
++                                                     currentX,
++                                                     currentY,
++                                                     previousX,
++                                                     previousY,
++                                                     endX,
++                                                     endY,
++                                                     nibbleHigh,
++                                                     controlX,
++                                                     controlY);
++                        endX = read.x;
++                        endY = read.y;
++                        pos = read.pos;
++                        nibbleHigh = read.nibbleHigh;
++                    }
++
++                    if (currentContour.commands.empty()) {
++                        currentContour.moveTo(static_cast<float>(startX), static_cast<float>(startY));
++                    }
++                    currentContour.curveTo(static_cast<float>(control1X),
++                                           static_cast<float>(control1Y),
++                                           static_cast<float>(control2X),
++                                           static_cast<float>(control2Y),
++                                           static_cast<float>(endX),
++                                           static_cast<float>(endY));
++                    previousX = control2X;
++                    previousY = control2Y;
++                    currentX = endX;
++                    currentY = endY;
++                }
++                break;
++            }
++        }
++
++        if (std::abs(currentX - beforeX) > 8192 || std::abs(currentY - beforeY) > 8192) {
++            currentX = beforeX;
++            currentY = beforeY;
++        }
++        if (currentContour.commands.size() > 300) {
++            break;
++        }
++    }
++
++    if (!currentContour.commands.empty()) {
++        glyph.contours.push_back(std::move(currentContour));
++    }
++}
++
++Pfr1Font::OutlineGlyph parseSimpleOutlineGlyph(const std::vector<std::uint8_t>& data,
++                                               int start,
++                                               int size,
++                                               const Pfr1Font::CharacterRecord& record);
++
++Pfr1Font::OutlineGlyph parseOutlineGlyph(const Pfr1Font& font,
++                                         const std::vector<std::uint8_t>& data,
++                                         int start,
++                                         int size,
++                                         const Pfr1Font::CharacterRecord& record,
++                                         const std::vector<int>& knownOffsets,
++                                         int depth);
++
++TransformRead parseTransformModulo6(const std::vector<std::uint8_t>& data, int pos, int format) {
++    TransformRead result{4096, 0, pos};
++
++    if (format <= 2) {
++        result.scale = 4096;
++    } else if (format == 5) {
++        result.scale = 0;
++    } else if (pos + 2 <= static_cast<int>(data.size())) {
++        result.scale = ((data[static_cast<std::size_t>(pos)] & 0xFF) << 8) |
++                       (data[static_cast<std::size_t>(pos + 1)] & 0xFF);
++        pos += 2;
++    }
++
++    if (format == 0 || format == 5) {
++        result.offset = 0;
++    } else if (format == 1 || format == 3) {
++        if (pos < static_cast<int>(data.size())) {
++            result.offset = sign8(data[static_cast<std::size_t>(pos)]);
++            ++pos;
++        }
++    } else if (pos + 2 <= static_cast<int>(data.size())) {
++        result.offset = sign16(((data[static_cast<std::size_t>(pos)] & 0xFF) << 8) |
++                               (data[static_cast<std::size_t>(pos + 1)] & 0xFF));
++        pos += 2;
++    }
++
++    result.pos = pos;
++    return result;
++}
++
++GlyphOffsetRead parseGlyphOffsetModulo6(const std::vector<std::uint8_t>& data,
++                                        int pos,
++                                        int format,
++                                        int accumulator) {
++    GlyphOffsetRead result{0, 0, pos, accumulator};
++
++    switch (format) {
++        case 0:
++            if (pos < static_cast<int>(data.size())) {
++                const int delta = data[static_cast<std::size_t>(pos++)] & 0xFF;
++                result.size = delta;
++                accumulator -= delta;
++                result.offset = accumulator;
++            }
++            break;
++        case 1:
++            if (pos < static_cast<int>(data.size())) {
++                const int delta = (data[static_cast<std::size_t>(pos++)] & 0xFF) + 256;
++                result.size = delta;
++                accumulator -= delta;
++                result.offset = accumulator;
++            }
++            break;
++        case 2:
++            if (pos + 2 <= static_cast<int>(data.size())) {
++                const int delta = ((data[static_cast<std::size_t>(pos)] & 0xFF) << 8) |
++                                  (data[static_cast<std::size_t>(pos + 1)] & 0xFF);
++                pos += 2;
++                result.size = delta;
++                accumulator -= delta;
++                result.offset = accumulator;
++            }
++            break;
++        case 3:
++            if (pos + 3 <= static_cast<int>(data.size())) {
++                const int combined = ((data[static_cast<std::size_t>(pos)] & 0xFF) << 16) |
++                                     ((data[static_cast<std::size_t>(pos + 1)] & 0xFF) << 8) |
++                                     (data[static_cast<std::size_t>(pos + 2)] & 0xFF);
++                pos += 3;
++                result.size = combined >> 15;
++                const int delta = combined & 0x7FFF;
++                result.offset = accumulator - delta;
++            }
++            break;
++        case 4:
++            if (pos + 3 <= static_cast<int>(data.size())) {
++                const int combined = ((data[static_cast<std::size_t>(pos)] & 0xFF) << 16) |
++                                     ((data[static_cast<std::size_t>(pos + 1)] & 0xFF) << 8) |
++                                     (data[static_cast<std::size_t>(pos + 2)] & 0xFF);
++                pos += 3;
++                result.size = combined >> 15;
++                result.offset = combined & 0x7FFF;
++            }
++            break;
++        case 5:
++            if (pos + 4 <= static_cast<int>(data.size())) {
++                const auto combined =
++                    (static_cast<std::uint32_t>(data[static_cast<std::size_t>(pos)] & 0xFF) << 24U) |
++                    (static_cast<std::uint32_t>(data[static_cast<std::size_t>(pos + 1)] & 0xFF) << 16U) |
++                    (static_cast<std::uint32_t>(data[static_cast<std::size_t>(pos + 2)] & 0xFF) << 8U) |
++                    static_cast<std::uint32_t>(data[static_cast<std::size_t>(pos + 3)] & 0xFF);
++                pos += 4;
++                result.size = static_cast<int>((combined >> 23U) & 0x1FFU);
++                result.offset = static_cast<int>(combined & 0x7FFFFFU);
++            }
++            break;
++        default:
++            if (pos + 5 <= static_cast<int>(data.size())) {
++                result.size = ((data[static_cast<std::size_t>(pos)] & 0xFF) << 8) |
++                              (data[static_cast<std::size_t>(pos + 1)] & 0xFF);
++                pos += 2;
++                result.offset = ((data[static_cast<std::size_t>(pos)] & 0xFF) << 16) |
++                                ((data[static_cast<std::size_t>(pos + 1)] & 0xFF) << 8) |
++                                (data[static_cast<std::size_t>(pos + 2)] & 0xFF);
++                pos += 3;
++            }
++            break;
++    }
++
++    result.pos = pos;
++    result.accumulator = accumulator;
++    return result;
++}
++
++int findNextOffset(const std::vector<int>& sortedOffsets, int currentOffset) {
++    const auto it = std::upper_bound(sortedOffsets.begin(), sortedOffsets.end(), currentOffset);
++    if (it == sortedOffsets.end()) {
++        return std::numeric_limits<int>::max();
++    }
++    return *it;
++}
++
++void appendTransformedContours(Pfr1Font::OutlineGlyph& glyph,
++                               const Pfr1Font::OutlineGlyph& subGlyph,
++                               int xScale,
++                               int yScale,
++                               int xOffset,
++                               int yOffset) {
++    const float xScaleF = static_cast<float>(xScale) / 4096.0F;
++    const float yScaleF = static_cast<float>(yScale) / 4096.0F;
++    const float xOffsetF = static_cast<float>(xOffset);
++    const float yOffsetF = static_cast<float>(yOffset);
++
++    for (const auto& sourceContour : subGlyph.contours) {
++        Pfr1Font::Contour transformed;
++        for (const auto& command : sourceContour.commands) {
++            const float x = command.x * xScaleF + xOffsetF;
++            const float y = command.y * yScaleF + yOffsetF;
++            if (command.type == 0) {
++                transformed.moveTo(x, y);
++            } else if (command.type == 1) {
++                transformed.lineTo(x, y);
++            } else if (command.type == 2) {
++                transformed.curveTo(command.x1 * xScaleF + xOffsetF,
++                                    command.y1 * yScaleF + yOffsetF,
++                                    command.x2 * xScaleF + xOffsetF,
++                                    command.y2 * yScaleF + yOffsetF,
++                                    x,
++                                    y);
++            }
++        }
++        if (!transformed.commands.empty()) {
++            glyph.contours.push_back(std::move(transformed));
++        }
++    }
++}
++
++void parseCompoundGlyph(const Pfr1Font& font,
++                        const std::vector<std::uint8_t>& data,
++                        int start,
++                        int size,
++                        Pfr1Font::OutlineGlyph& glyph,
++                        const std::vector<int>& knownOffsets,
++                        int depth) {
++    if (depth >= 8) {
++        return;
++    }
++
++    const int componentCount = data[static_cast<std::size_t>(start)] & 0x3F;
++    int pos = start + 1;
++
++    if ((data[static_cast<std::size_t>(start)] & 0x40) != 0 && pos + 2 <= start + size) {
++        const int extraCount = (data[static_cast<std::size_t>(pos)] & 0xFF) |
++                               ((data[static_cast<std::size_t>(pos + 1)] & 0xFF) << 8);
++        pos += 2;
++        for (int i = 0; i < extraCount; ++i) {
++            if (pos >= start + size) {
++                break;
++            }
++            const int length = data[static_cast<std::size_t>(pos)] & 0xFF;
++            pos += length + 2;
++        }
++    }
++
++    const int glyphGpsOffset = start - font.gpsOffset;
++    int offsetAccumulator = glyphGpsOffset;
++
++    for (int component = 0; component < componentCount; ++component) {
++        if (pos >= start + size) {
++            break;
++        }
++
++        const int formatByte = data[static_cast<std::size_t>(pos++)] & 0xFF;
++        const int xFormat = formatByte % 6;
++        const int yFormat = (formatByte / 6) % 6;
++        const int offsetFormat = formatByte / 36;
++
++        const auto xTransform = parseTransformModulo6(data, pos, xFormat);
++        pos = xTransform.pos;
++        const auto yTransform = parseTransformModulo6(data, pos, yFormat);
++        pos = yTransform.pos;
++
++        const auto glyphOffset = parseGlyphOffsetModulo6(data, pos, offsetFormat, offsetAccumulator);
++        pos = glyphOffset.pos;
++        offsetAccumulator = glyphOffset.accumulator;
++
++        const int absolutePosition = font.gpsOffset + glyphOffset.offset;
++        if (absolutePosition < 0 || absolutePosition >= static_cast<int>(data.size())) {
++            continue;
++        }
++
++        int maxSize = static_cast<int>(data.size()) - absolutePosition;
++        if (font.gpsSize > 0 && glyphOffset.offset < font.gpsSize) {
++            maxSize = std::min(maxSize, font.gpsSize - glyphOffset.offset);
++        }
++        const int nextOffset = findNextOffset(knownOffsets, glyphOffset.offset);
++        if (nextOffset > glyphOffset.offset) {
++            maxSize = std::min(maxSize, nextOffset - glyphOffset.offset);
++        }
++
++        const int effectiveSize = glyphOffset.size > 0 ? std::min(glyphOffset.size, maxSize) : std::min(64, maxSize);
++        if (effectiveSize <= 0) {
++            continue;
++        }
++
++        Pfr1Font::CharacterRecord subRecord;
++        subRecord.charCode = glyph.charCode;
++        subRecord.setWidth = static_cast<int>(glyph.setWidth);
++        const auto subGlyph = parseOutlineGlyph(font,
++                                                data,
++                                                absolutePosition,
++                                                effectiveSize,
++                                                subRecord,
++                                                knownOffsets,
++                                                depth + 1);
++        if (!subGlyph.contours.empty()) {
++            appendTransformedContours(glyph,
++                                      subGlyph,
++                                      xTransform.scale,
++                                      yTransform.scale,
++                                      xTransform.offset,
++                                      yTransform.offset);
++        }
++    }
++}
++
++Pfr1Font::OutlineGlyph parseOutlineGlyph(const Pfr1Font& font,
++                                         const std::vector<std::uint8_t>& data,
++                                         int start,
++                                         int size,
++                                         const Pfr1Font::CharacterRecord& record,
++                                         const std::vector<int>& knownOffsets,
++                                         int depth) {
++    Pfr1Font::OutlineGlyph glyph{record.charCode, static_cast<float>(record.setWidth), {}};
++    if (size <= 0 || start < 0 || start + size > static_cast<int>(data.size())) {
++        return glyph;
++    }
++
++    const int flags = data[static_cast<std::size_t>(start)] & 0xFF;
++    const int outlineFormat = (flags >> 6) & 0x03;
++    const bool compoundGlyph = outlineFormat >= 2 && (flags & 0x3F) > 0;
++    if (compoundGlyph) {
++        parseCompoundGlyph(font, data, start, size, glyph, knownOffsets, depth);
++        return glyph;
++    }
++
++    return parseSimpleOutlineGlyph(data, start, size, record);
++}
++
++Pfr1Font::OutlineGlyph parseSimpleOutlineGlyph(const std::vector<std::uint8_t>& data,
++                                               int start,
++                                               int size,
++                                               const Pfr1Font::CharacterRecord& record) {
++    Pfr1Font::OutlineGlyph glyph{record.charCode, static_cast<float>(record.setWidth), {}};
++    if (size <= 0 || start < 0 || start + size > static_cast<int>(data.size())) {
++        return glyph;
++    }
++
++    const int flags = data[static_cast<std::size_t>(start)] & 0xFF;
++    int pos = start + 1;
++    const int countEncoding = flags & 3;
++
++    int xOrusCount = 0;
++    int yOrusCount = 0;
++    switch (countEncoding) {
++        case 1:
++            if (pos < start + size) {
++                const int countByte = data[static_cast<std::size_t>(pos++)] & 0xFF;
++                xOrusCount = countByte & 0x0F;
++                yOrusCount = (countByte >> 4) & 0x0F;
++            }
++            break;
++        case 2:
++        case 3:
++            if (pos + 1 < start + size) {
++                xOrusCount = data[static_cast<std::size_t>(pos++)] & 0xFF;
++                yOrusCount = data[static_cast<std::size_t>(pos++)] & 0xFF;
++            }
++            break;
++        default:
++            break;
++    }
++
++    std::vector<int> controlX(static_cast<std::size_t>(xOrusCount), 0);
++    std::vector<int> controlY(static_cast<std::size_t>(yOrusCount), 0);
++    pos = parseControlValues(data, pos, flags, controlX, controlY);
++
++    if ((flags & 0x08) != 0 && pos < start + size) {
++        const int extraCount = data[static_cast<std::size_t>(pos++)] & 0xFF;
++        for (int i = 0; i < extraCount; ++i) {
++            if (pos + 1 >= start + size) {
++                break;
++            }
++            const int itemLength = data[static_cast<std::size_t>(pos)] & 0xFF;
++            pos += itemLength + 2;
++        }
++    }
++
++    parseNibbleCommands(data, pos, start + size, glyph, controlX, controlY);
++    return glyph;
++}
++
++} // namespace
++
++void Pfr1Font::Contour::moveTo(float xValue, float yValue) {
++    commands.push_back(Command{0, xValue, yValue});
++}
++
++void Pfr1Font::Contour::lineTo(float xValue, float yValue) {
++    commands.push_back(Command{1, xValue, yValue});
++}
++
++void Pfr1Font::Contour::curveTo(float x1Value,
++                                float y1Value,
++                                float x2Value,
++                                float y2Value,
++                                float xValue,
++                                float yValue) {
++    commands.push_back(Command{2, xValue, yValue, x1Value, y1Value, x2Value, y2Value});
++}
++
++std::shared_ptr<Pfr1Font> Pfr1Font::parse(const std::vector<std::uint8_t>& data) {
++    if (data.size() < 58 || data[0] != 'P' || data[1] != 'F' || data[2] != 'R' || data[3] != '1') {
++        return nullptr;
++    }
++
++    auto font = std::shared_ptr<Pfr1Font>(new Pfr1Font());
++    try {
++        font->parseHeader(data);
++        font->parsePhysicalFont(data);
++        font->parseGlyphStubsAndBitmaps(data);
++    } catch (const std::exception&) {
++        // Match the Java parser's lenient behavior: keep whatever was parsed.
++    }
++    return font;
++}
++
++void Pfr1Font::parseHeader(const std::vector<std::uint8_t>& data) {
++    PfrBitReader reader(data, 4);
++
++    skipU16(reader);
++    skipU16(reader);
++    skipU16(reader);
++    const int logFontDirSize = reader.readU16();
++    const int logFontDirOffset = reader.readU16();
++    skipU16(reader);
++    const int logFontSectionSize = reader.readU24();
++    const int logFontSectionOffset = reader.readU24();
++    skipU16(reader);
++    skipU24(reader);
++    skipU24(reader);
++    skipU16(reader);
++    gpsSize = reader.readU24();
++    gpsOffset = reader.readU24();
++    skipU8(reader);
++    skipU8(reader);
++    skipU8(reader);
++    skipU8(reader);
++
++    const int flagsByte = reader.readU8();
++    pfrBlackPixel = (flagsByte & 0x01) != 0;
++
++    skipU24(reader);
++    skipU24(reader);
++    skipU24(reader);
++    skipU16(reader);
++    skipU8(reader);
++    skipU8(reader);
++    storedMaxChars_ = reader.readU16();
++
++    parseLogicalFontDirectory(data, logFontDirSize, logFontDirOffset, logFontSectionSize, logFontSectionOffset);
++}
++
++void Pfr1Font::parseLogicalFontDirectory(const std::vector<std::uint8_t>& data,
++                                         int dirSize,
++                                         int dirOffset,
++                                         int sectionSize,
++                                         int sectionOffset) {
++    if (dirOffset == 0 || dirSize == 0) {
++        return;
++    }
++
++    if (dirSize < 14) {
++        if (sectionSize >= 18 && sectionOffset > 0 && sectionOffset < static_cast<int>(data.size())) {
++            PfrBitReader reader(data, sectionOffset);
++            for (int i = 0; i < 4; ++i) {
++                fontMatrix[static_cast<std::size_t>(i)] = reader.readI24();
++            }
++        }
++        return;
++    }
++
++    if (dirOffset >= static_cast<int>(data.size())) {
++        return;
++    }
++    PfrBitReader reader(data, dirOffset);
++    const int nLogFonts = reader.readU16();
++    if (nLogFonts > 0) {
++        for (int i = 0; i < 4; ++i) {
++            fontMatrix[static_cast<std::size_t>(i)] = reader.readI24();
++        }
++    }
++}
++
++void Pfr1Font::parsePhysicalFont(const std::vector<std::uint8_t>& data) {
++    PfrBitReader header(data, 4);
++    skipU16(header);
++    skipU16(header);
++    skipU16(header);
++    skipU16(header);
++    skipU16(header);
++    skipU16(header);
++    skipU24(header);
++    skipU24(header);
++    skipU16(header);
++    const int physFontSectionSize = header.readU24();
++    const int physOffset = header.readU24();
++
++    if (physOffset >= static_cast<int>(data.size())) {
++        return;
++    }
++    int physEnd = std::min(static_cast<int>(data.size()), physOffset + physFontSectionSize);
++    if (gpsOffset > physOffset && gpsOffset <= static_cast<int>(data.size())) {
++        physEnd = std::min(physEnd, gpsOffset);
++    }
++
++    PfrBitReader reader(data, physOffset);
++    skipU16(reader);
++    metrics.outlineResolution = reader.readU16();
++    if (metrics.outlineResolution == 0) {
++        metrics.outlineResolution = 2048;
++    }
++    metrics.metricsResolution = reader.readU16();
++    if (metrics.metricsResolution == 0) {
++        metrics.metricsResolution = metrics.outlineResolution;
++    }
++
++    metrics.xMin = sign16(reader.readU16());
++    metrics.yMin = sign16(reader.readU16());
++    metrics.xMax = sign16(reader.readU16());
++    metrics.yMax = sign16(reader.readU16());
++    metrics.ascender = metrics.yMax;
++    metrics.descender = metrics.yMin;
++
++    const bool extraItemsPresent = reader.readBit();
++    skipBit(reader);
++    skipBit(reader);
++    skipBit(reader);
++    skipBit(reader);
++    const bool proportionalEscapement = reader.readBit();
++    skipBit(reader);
++    skipBit(reader);
++
++    int standardSetWidth = 0;
++    if (!proportionalEscapement) {
++        standardSetWidth = sign16(reader.readU16());
++    }
++
++    if (extraItemsPresent) {
++        const int nExtraItems = reader.readU8();
++        for (int i = 0; i < nExtraItems; ++i) {
++            if (reader.remaining() < 2) {
++                break;
++            }
++            const int itemSize = reader.readU8();
++            const int itemType = reader.readU8();
++            const int itemStart = reader.position();
++
++            if (itemType == 1) {
++                metrics.hasBitmapSection = true;
++                reader.skip(itemSize);
++            } else if (itemType == 2) {
++                std::string id;
++                for (int j = 0; j < itemSize; ++j) {
++                    const int ch = reader.readU8();
++                    if (ch == 0) {
++                        break;
++                    }
++                    id.push_back(static_cast<char>(ch));
++                }
++                metrics.fontId = id;
++                fontName = id;
++                const int consumed = reader.position() - itemStart;
++                if (consumed < itemSize) {
++                    reader.skip(itemSize - consumed);
++                }
++            } else {
++                reader.skip(itemSize);
++            }
++        }
++    }
++
++    const int nAuxBytes = reader.readU24();
++    if (nAuxBytes > 0 && nAuxBytes < 10000) {
++        reader.skip(nAuxBytes);
++    } else if (nAuxBytes >= 10000) {
++        while (reader.position() < physEnd) {
++            const int probePos = reader.position();
++            const int nBlueValues = reader.readU8();
++            const int byteCounter = nBlueValues * 2 + 6;
++            const int nCharsPos = reader.position() + byteCounter;
++            if (nCharsPos + 2 > physEnd) {
++                reader.setPosition(probePos + 1);
++                continue;
++            }
++            reader.setPosition(nCharsPos);
++            const int nCharacters = reader.readU16();
++            if (nCharacters == storedMaxChars_) {
++                reader.setPosition(probePos);
++                break;
++            }
++            reader.setPosition(probePos + 1);
++        }
++    }
++
++    const int nBlueValues = reader.readU8();
++    for (int i = 0; i < nBlueValues; ++i) {
++        skipU16(reader);
++    }
++    skipU8(reader);
++    skipU8(reader);
++
++    metrics.stdVW = sign16(reader.readU16());
++    metrics.stdHW = sign16(reader.readU16());
++    const int nCharacters = reader.readU16();
++    parseDeltaEncodedCharRecords(reader, nCharacters, standardSetWidth);
++}
++
++void Pfr1Font::parseDeltaEncodedCharRecords(PfrBitReader& reader,
++                                            int nCharacters,
++                                            int standardSetWidth) {
++    int charCode = -1;
++    int setWidth = standardSetWidth;
++    int glyphSize = 0;
++    int glyphOffset = 0;
++
++    for (int i = 0; i < nCharacters; ++i) {
++        if (reader.remaining() < 1) {
++            break;
++        }
++
++        const int flags = reader.readU8();
++        const int nextGpsOffset = glyphOffset + glyphSize;
++
++        const int charCodeMode = flags & 0x03;
++        ++charCode;
++        switch (charCodeMode) {
++            case 1:
++                charCode += reader.readU8();
++                break;
++            case 2:
++                charCode += reader.readU16();
++                break;
++            default:
++                break;
++        }
++
++        const int setWidthMode = (flags >> 2) & 0x03;
++        switch (setWidthMode) {
++            case 1:
++                setWidth += reader.readU8();
++                break;
++            case 2:
++                setWidth -= reader.readU8();
++                break;
++            case 3:
++                setWidth = sign16(reader.readU16());
++                break;
++            default:
++                break;
++        }
++
++        const int gpsSizeMode = (flags >> 4) & 0x03;
++        switch (gpsSizeMode) {
++            case 0:
++                glyphSize = reader.readU8();
++                break;
++            case 1:
++                glyphSize = reader.readU8() + 256;
++                break;
++            case 2:
++                glyphSize = reader.readU8() + 512;
++                break;
++            case 3:
++                glyphSize = reader.readU16();
++                break;
++            default:
++                break;
++        }
++
++        const int gpsOffsetMode = (flags >> 6) & 0x03;
++        switch (gpsOffsetMode) {
++            case 0:
++                glyphOffset = nextGpsOffset;
++                break;
++            case 1:
++                glyphOffset = nextGpsOffset + reader.readU8();
++                break;
++            case 2:
++                glyphOffset = reader.readU16();
++                break;
++            case 3:
++                glyphOffset = reader.readU24();
++                break;
++            default:
++                break;
++        }
++
++        charRecords.push_back(CharacterRecord{charCode, setWidth, glyphSize, glyphOffset});
++    }
++}
++
++void Pfr1Font::parseGlyphStubsAndBitmaps(const std::vector<std::uint8_t>& data) {
++    if (gpsOffset + gpsSize > static_cast<int>(data.size())) {
++        return;
++    }
++
++    std::vector<int> knownOffsets;
++    knownOffsets.reserve(charRecords.size());
++    for (const auto& record : charRecords) {
++        knownOffsets.push_back(record.gpsOffset);
++    }
++    std::sort(knownOffsets.begin(), knownOffsets.end());
++
++    for (const auto& record : charRecords) {
++        if (record.gpsSize <= 1) {
++            glyphs[record.charCode] = OutlineGlyph{record.charCode, static_cast<float>(record.setWidth), {}};
++            continue;
++        }
++
++        const int start = gpsOffset + record.gpsOffset;
++        const int size = record.gpsSize;
++        if (start < 0 || size <= 0 || start + size > static_cast<int>(data.size())) {
++            continue;
++        }
++
++        if (metrics.hasBitmapSection) {
++            const int zerosField = (data[static_cast<std::size_t>(start)] >> 4) & 0x07;
++            if (zerosField != 0) {
++                try {
++                    auto glyph = parseBitmapGlyph(data, start, size, record.charCode);
++                    if (record.setWidth > 0) {
++                        glyph.setWidth = record.setWidth;
++                    }
++                    bitmapGlyphs[record.charCode] = std::move(glyph);
++                } catch (const std::exception&) {
++                }
++            }
++        }
++
++        try {
++            glyphs[record.charCode] = parseOutlineGlyph(*this, data, start, size, record, knownOffsets, 0);
++        } catch (const std::exception&) {
++        }
++    }
++
++    for (int lower = 'a'; lower <= 'z'; ++lower) {
++        const int upper = lower - 32;
++        const auto lowerIt = glyphs.find(lower);
++        if (lowerIt != glyphs.end() && !lowerIt->second.contours.empty()) {
++            continue;
++        }
++        const auto upperIt = glyphs.find(upper);
++        if (upperIt != glyphs.end() && !upperIt->second.contours.empty()) {
++            auto copy = upperIt->second;
++            copy.charCode = lower;
++            glyphs[lower] = std::move(copy);
++        }
++    }
++}
++
++Pfr1Font::BitmapGlyph Pfr1Font::parseBitmapGlyph(const std::vector<std::uint8_t>& data,
++                                                 int start,
++                                                 int size,
++                                                 int charCode) const {
++    if (size < 2) {
++        throw std::runtime_error("bitmap glyph too small");
++    }
++
++    const int end = start + size;
++    int pos = start;
++    const int formatByte = data[static_cast<std::size_t>(pos++)] & 0xFF;
++
++    const int imageFormat = (formatByte >> 6) & 0x03;
++    const int escapementFormat = (formatByte >> 4) & 0x03;
++    const int sizeFormat = (formatByte >> 2) & 0x03;
++    const int positionFormat = formatByte & 0x03;
++
++    const int posBytes = positionFormat == 0 ? 0 : positionFormat == 1 ? 2 : positionFormat == 2 ? 4 : 8;
++    const int sizeBytes = sizeFormat == 0 ? 2 : sizeFormat == 1 ? 4 : sizeFormat == 2 ? 6 : 8;
++    const int escBytes = escapementFormat == 0 ? 0 : escapementFormat == 1 ? 1 : escapementFormat == 2 ? 2 : 4;
++    if (pos + posBytes + sizeBytes + escBytes > end ||
++        pos + posBytes + sizeBytes + escBytes > static_cast<int>(data.size())) {
++        throw std::runtime_error("bitmap glyph bounds exceeded");
++    }
++
++    int xPos = 0;
++    int yPos = 0;
++    switch (positionFormat) {
++        case 1:
++            xPos = readSignedN(data, pos, 1);
++            ++pos;
++            yPos = readSignedN(data, pos, 1);
++            ++pos;
++            break;
++        case 2:
++            xPos = readSignedN(data, pos, 2);
++            pos += 2;
++            yPos = readSignedN(data, pos, 2);
++            pos += 2;
++            break;
++        case 3:
++            xPos = readSignedN(data, pos, 4);
++            pos += 4;
++            yPos = readSignedN(data, pos, 4);
++            pos += 4;
++            break;
++        default:
++            break;
++    }
++
++    int xSize = 0;
++    int ySize = 0;
++    switch (sizeFormat) {
++        case 0:
++            xSize = readUnsignedN(data, pos, 1);
++            ++pos;
++            ySize = readUnsignedN(data, pos, 1);
++            ++pos;
++            break;
++        case 1:
++            xSize = readUnsignedN(data, pos, 2);
++            pos += 2;
++            ySize = readUnsignedN(data, pos, 2);
++            pos += 2;
++            break;
++        case 2:
++            xSize = readUnsignedN(data, pos, 3);
++            pos += 3;
++            ySize = readUnsignedN(data, pos, 3);
++            pos += 3;
++            break;
++        default:
++            xSize = readUnsignedN(data, pos, 4);
++            pos += 4;
++            ySize = readUnsignedN(data, pos, 4);
++            pos += 4;
++            break;
++    }
++
++    int setWidth = xSize;
++    switch (escapementFormat) {
++        case 1:
++            setWidth = readUnsignedN(data, pos, 1);
++            ++pos;
++            break;
++        case 2:
++            setWidth = readUnsignedN(data, pos, 2);
++            pos += 2;
++            break;
++        case 3:
++            setWidth = readUnsignedN(data, pos, 4);
++            pos += 4;
++            break;
++        default:
++            break;
++    }
++
++    if (xSize <= 0 || ySize <= 0 || xSize > 4096 || ySize > 4096) {
++        throw std::runtime_error("bitmap glyph size invalid");
++    }
++
++    const int totalBits = xSize * ySize;
++    if (totalBits <= 0 || totalBits > 1'000'000) {
++        throw std::runtime_error("bitmap glyph bit count invalid");
++    }
++
++    const int remaining = end - pos;
++    if (remaining <= 0 || pos > static_cast<int>(data.size())) {
++        throw std::runtime_error("bitmap glyph data missing");
++    }
++
++    std::vector<std::uint8_t> imageData;
++    if (imageFormat == 0) {
++        const int expected = (totalBits + 7) / 8;
++        if (expected > remaining || expected <= 0) {
++            throw std::runtime_error("bitmap glyph packed data invalid");
++        }
++        imageData.assign(data.begin() + pos, data.begin() + pos + expected);
++    } else if (imageFormat == 1) {
++        imageData = decodeRleBitmap(data, pos, remaining, xSize, ySize);
++    } else {
++        imageData.assign(data.begin() + pos, data.begin() + end);
++    }
++
++    return BitmapGlyph{
++        charCode,
++        imageFormat,
++        sign16(xPos & 0xFFFF),
++        sign16(yPos & 0xFFFF),
++        xSize,
++        ySize,
++        setWidth,
++        std::move(imageData)
++    };
++}
++
++} // namespace libreshockwave::font
+--- /dev/null
++++ b/engines/director/fonts/pfr1/Pfr1Font.hpp
+@@ -0,0 +1,104 @@
++// Derived from LibreShockwave, revision fca530f9ef388d7ff38fa6c7117feae5bb5411c6.
++// SPDX-License-Identifier: AGPL-3.0-only; see COPYING.AGPL-3.0 and README.
++#pragma once
++
++#include <array>
++#include <cstdint>
++#include <memory>
++#include <string>
++#include <unordered_map>
++#include <vector>
++
++namespace libreshockwave::font {
++
++class Pfr1Font {
++public:
++    struct CharacterRecord {
++        int charCode = 0;
++        int setWidth = 0;
++        int gpsSize = 0;
++        int gpsOffset = 0;
++    };
++
++    struct FontMetrics {
++        int outlineResolution = 2048;
++        int metricsResolution = 2048;
++        int xMin = 0;
++        int yMin = 0;
++        int xMax = 0;
++        int yMax = 0;
++        int ascender = 0;
++        int descender = 0;
++        int stdVW = 0;
++        int stdHW = 0;
++        bool hasBitmapSection = false;
++        std::string fontId;
++    };
++
++    struct Contour {
++        struct Command {
++            int type = 0;
++            float x = 0.0F;
++            float y = 0.0F;
++            float x1 = 0.0F;
++            float y1 = 0.0F;
++            float x2 = 0.0F;
++            float y2 = 0.0F;
++        };
++
++        std::vector<Command> commands;
++        void moveTo(float x, float y);
++        void lineTo(float x, float y);
++        void curveTo(float x1, float y1, float x2, float y2, float x, float y);
++    };
++
++    struct OutlineGlyph {
++        int charCode = 0;
++        float setWidth = 0.0F;
++        std::vector<Contour> contours;
++    };
++
++    struct BitmapGlyph {
++        int charCode = 0;
++        int imageFormat = 0;
++        int xPos = 0;
++        int yPos = 0;
++        int xSize = 0;
++        int ySize = 0;
++        int setWidth = 0;
++        std::vector<std::uint8_t> imageData;
++    };
++
++    [[nodiscard]] static std::shared_ptr<Pfr1Font> parse(const std::vector<std::uint8_t>& data);
++
++    std::string fontName;
++    FontMetrics metrics;
++    std::vector<CharacterRecord> charRecords;
++    std::unordered_map<int, OutlineGlyph> glyphs;
++    std::unordered_map<int, BitmapGlyph> bitmapGlyphs;
++    std::array<int, 4> fontMatrix{256, 0, 0, 256};
++    bool pfrBlackPixel = false;
++    int gpsOffset = 0;
++    int gpsSize = 0;
++
++private:
++    void parseHeader(const std::vector<std::uint8_t>& data);
++    void parseLogicalFontDirectory(const std::vector<std::uint8_t>& data,
++                                   int dirSize,
++                                   int dirOffset,
++                                   int sectionSize,
++                                   int sectionOffset);
++    void parsePhysicalFont(const std::vector<std::uint8_t>& data);
++    void parseDeltaEncodedCharRecords(class PfrBitReader& reader,
++                                      int nCharacters,
++                                      int standardSetWidth);
++    void parseGlyphStubsAndBitmaps(const std::vector<std::uint8_t>& data);
++    [[nodiscard]] BitmapGlyph parseBitmapGlyph(const std::vector<std::uint8_t>& data,
++                                               int start,
++                                               int size,
++                                               int charCode) const;
++
++    int storedMaxChars_ = 0;
++};
++
++} // namespace libreshockwave::font
+--- /dev/null
++++ b/engines/director/fonts/pfr1/Pfr1TtfConverter.cpp
+@@ -0,0 +1,668 @@
++// Derived from LibreShockwave, revision fca530f9ef388d7ff38fa6c7117feae5bb5411c6.
++// SPDX-License-Identifier: AGPL-3.0-only; see COPYING.AGPL-3.0 and README.
++#include "Pfr1TtfConverter.hpp"
++
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <limits>
++#include <iterator>
++#include <map>
++#include <string>
++#include <string_view>
++#include <utility>
++#include <vector>
++
++namespace libreshockwave::font {
++namespace {
++
++struct ByteWriter {
++    std::vector<std::uint8_t> bytes;
++
++    void writeU8(int value) {
++        bytes.push_back(static_cast<std::uint8_t>(value & 0xFF));
++    }
++
++    void writeU16(int value) {
++        const auto raw = static_cast<std::uint16_t>(value);
++        bytes.push_back(static_cast<std::uint8_t>((raw >> 8U) & 0xFFU));
++        bytes.push_back(static_cast<std::uint8_t>(raw & 0xFFU));
++    }
++
++    void writeU32(std::uint32_t value) {
++        bytes.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
++        bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
++        bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
++        bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
++    }
++
++    void writeI64Zero() {
++        for (int i = 0; i < 8; ++i) {
++            writeU8(0);
++        }
++    }
++
++    void writeBytes(const std::vector<std::uint8_t>& value) {
++        bytes.insert(bytes.end(), value.begin(), value.end());
++    }
++
++    void writeAsciiTag(std::string_view tag) {
++        for (std::size_t i = 0; i < 4; ++i) {
++            writeU8(i < tag.size() ? static_cast<unsigned char>(tag[i]) : 0);
++        }
++    }
++};
++
++struct TtPoint {
++    int x = 0;
++    int y = 0;
++    bool onCurve = true;
++};
++
++struct GlyphEntry {
++    int charCode = 0;
++    int advanceWidth = 0;
++    int lsb = 0;
++    Pfr1Font::OutlineGlyph glyph;
++};
++
++int highestOneBit(int value) {
++    int result = 1;
++    while (result <= value / 2) {
++        result <<= 1;
++    }
++    return result;
++}
++
++int trailingZeroCount(int value) {
++    int result = 0;
++    while (value > 1 && (value & 1) == 0) {
++        ++result;
++        value >>= 1;
++    }
++    return result;
++}
++
++std::uint32_t checksum(const std::vector<std::uint8_t>& data) {
++    std::uint32_t sum = 0;
++    const std::size_t len = (data.size() + 3U) & ~std::size_t{3U};
++    for (std::size_t i = 0; i < len; i += 4) {
++        const auto b0 = i < data.size() ? static_cast<std::uint32_t>(data[i]) : 0U;
++        const auto b1 = i + 1 < data.size() ? static_cast<std::uint32_t>(data[i + 1]) : 0U;
++        const auto b2 = i + 2 < data.size() ? static_cast<std::uint32_t>(data[i + 2]) : 0U;
++        const auto b3 = i + 3 < data.size() ? static_cast<std::uint32_t>(data[i + 3]) : 0U;
++        sum += (b0 << 24U) | (b1 << 16U) | (b2 << 8U) | b3;
++    }
++    return sum;
++}
++
++std::vector<std::uint8_t> buildHead(int unitsPerEm, const Pfr1Font::FontMetrics& metrics) {
++    ByteWriter writer;
++    writer.writeU32(0x00010000U);
++    writer.writeU32(0x00005000U);
++    writer.writeU32(0);
++    writer.writeU32(0x5F0F3CF5U);
++    writer.writeU16(0x000B);
++    writer.writeU16(unitsPerEm);
++    writer.writeI64Zero();
++    writer.writeI64Zero();
++    writer.writeU16(metrics.xMin);
++    writer.writeU16(metrics.yMin);
++    writer.writeU16(metrics.xMax);
++    writer.writeU16(metrics.yMax);
++    writer.writeU16(0);
++    writer.writeU16(8);
++    writer.writeU16(2);
++    writer.writeU16(0); // loca contains 16-bit offsets divided by two
++    writer.writeU16(0);
++    return std::move(writer.bytes);
++}
++
++std::vector<std::uint8_t> buildHhea(const Pfr1Font::FontMetrics& metrics,
++                                    const std::vector<GlyphEntry>& entries) {
++    int maxAdvanceWidth = 0;
++    for (const auto& entry : entries) {
++        maxAdvanceWidth = std::max(maxAdvanceWidth, entry.advanceWidth);
++    }
++
++    ByteWriter writer;
++    writer.writeU32(0x00010000U);
++    writer.writeU16(metrics.ascender);
++    writer.writeU16(metrics.descender);
++    writer.writeU16(0);
++    writer.writeU16(maxAdvanceWidth);
++    writer.writeU16(metrics.xMin);
++    writer.writeU16(metrics.xMin);
++    writer.writeU16(metrics.xMax);
++    writer.writeU16(1);
++    writer.writeU16(0);
++    writer.writeU16(0);
++    writer.writeI64Zero();
++    writer.writeU16(0);
++    writer.writeU16(static_cast<int>(entries.size()));
++    return std::move(writer.bytes);
++}
++
++std::vector<std::uint8_t> buildMaxp(int numGlyphs) {
++    ByteWriter writer;
++    writer.writeU32(0x00010000U);
++    writer.writeU16(numGlyphs);
++    writer.writeU16(256);
++    writer.writeU16(32);
++    writer.writeU16(0);
++    writer.writeU16(0);
++    writer.writeU16(1);
++    writer.writeU16(0);
++    writer.writeU16(0);
++    writer.writeU16(0);
++    writer.writeU16(0);
++    writer.writeU16(0);
++    writer.writeU16(0);
++    writer.writeU16(0);
++    writer.writeU16(0);
++    return std::move(writer.bytes);
++}
++
++std::vector<std::uint8_t> buildOs2(const Pfr1Font::FontMetrics& metrics,
++                                   int unitsPerEm,
++                                   const std::map<int, int>& cmapEntries) {
++    int firstChar = 0x0020;
++    int lastChar = 0x00FF;
++    if (!cmapEntries.empty()) {
++        firstChar = cmapEntries.begin()->first;
++        lastChar = cmapEntries.rbegin()->first;
++    }
++
++    ByteWriter writer;
++    writer.writeU16(4);
++    writer.writeU16(unitsPerEm / 2);
++    writer.writeU16(400);
++    writer.writeU16(5);
++    writer.writeU16(0);
++    writer.writeU16(unitsPerEm / 10);
++    writer.writeU16(unitsPerEm / 10);
++    writer.writeU16(0);
++    writer.writeU16(unitsPerEm / 5);
++    writer.writeU16(unitsPerEm / 10);
++    writer.writeU16(unitsPerEm / 10);
++    writer.writeU16(0);
++    writer.writeU16(unitsPerEm / 3);
++    writer.writeU16(metrics.stdVW > 0 ? metrics.stdVW : unitsPerEm / 20);
++    writer.writeU16(metrics.ascender / 2);
++    writer.writeU16(0);
++    for (int i = 0; i < 10; ++i) {
++        writer.writeU8(0);
++    }
++    writer.writeU32(0);
++    writer.writeU32(0);
++    writer.writeU32(0);
++    writer.writeU32(0);
++    writer.writeAsciiTag("    ");
++    writer.writeU16(0x0040);
++    writer.writeU16(firstChar);
++    writer.writeU16(std::min(lastChar, 0xFFFF));
++    writer.writeU16(metrics.ascender);
++    writer.writeU16(metrics.descender);
++    writer.writeU16(0);
++    writer.writeU16(std::max(metrics.ascender, 0));
++    writer.writeU16(std::abs(std::min(metrics.descender, 0)));
++    writer.writeU32(1);
++    writer.writeU32(0);
++    writer.writeU16(metrics.ascender * 8 / 10);
++    writer.writeU16(metrics.ascender);
++    writer.writeU16(0);
++    writer.writeU16(0x0020);
++    writer.writeU16(1);
++    return std::move(writer.bytes);
++}
++
++std::vector<std::uint8_t> utf16beAscii(std::string_view value) {
++    std::vector<std::uint8_t> result;
++    result.reserve(value.size() * 2);
++    for (unsigned char ch : value) {
++        result.push_back(0);
++        result.push_back(ch);
++    }
++    return result;
++}
++
++std::string removeSpaces(std::string value) {
++    value.erase(std::remove(value.begin(), value.end(), ' '), value.end());
++    return value;
++}
++
++std::vector<std::uint8_t> buildName(const std::string& familyName) {
++    const std::vector<std::string> names{
++        "",
++        familyName,
++        "Regular",
++        familyName + "-Regular",
++        familyName,
++        "Version 1.0",
++        removeSpaces(familyName),
++    };
++
++    std::vector<std::vector<std::uint8_t>> encoded;
++    encoded.reserve(names.size());
++    for (const auto& name : names) {
++        encoded.push_back(utf16beAscii(name));
++    }
++
++    const int count = static_cast<int>(encoded.size());
++    const int storageOffset = 6 + count * 12;
++    ByteWriter writer;
++    writer.writeU16(0);
++    writer.writeU16(count);
++    writer.writeU16(storageOffset);
++
++    int stringOffset = 0;
++    for (int i = 0; i < count; ++i) {
++        writer.writeU16(3);
++        writer.writeU16(1);
++        writer.writeU16(0x0409);
++        writer.writeU16(i);
++        writer.writeU16(static_cast<int>(encoded[static_cast<std::size_t>(i)].size()));
++        writer.writeU16(stringOffset);
++        stringOffset += static_cast<int>(encoded[static_cast<std::size_t>(i)].size());
++    }
++
++    for (const auto& text : encoded) {
++        writer.writeBytes(text);
++    }
++    return std::move(writer.bytes);
++}
++
++std::vector<std::uint8_t> buildCmap(const std::map<int, int>& charToGlyph) {
++    std::vector<std::pair<int, int>> segments;
++    if (!charToGlyph.empty()) {
++        int start = charToGlyph.begin()->first;
++        int end = start;
++        for (auto it = std::next(charToGlyph.begin()); it != charToGlyph.end(); ++it) {
++            if (it->first == end + 1) {
++                end = it->first;
++            } else {
++                segments.emplace_back(start, end);
++                start = it->first;
++                end = it->first;
++            }
++        }
++        segments.emplace_back(start, end);
++    }
++    segments.emplace_back(0xFFFF, 0xFFFF);
++
++    const int segCount = static_cast<int>(segments.size());
++    const int searchRange = highestOneBit(segCount) * 2;
++    const int entrySelector = trailingZeroCount(highestOneBit(segCount));
++    const int rangeShift = segCount * 2 - searchRange;
++
++    ByteWriter subtable;
++    for (const auto& segment : segments) {
++        subtable.writeU16(segment.second);
++    }
++    subtable.writeU16(0);
++    for (const auto& segment : segments) {
++        subtable.writeU16(segment.first);
++    }
++
++    std::vector<int> glyphIdArrayEntries;
++    std::vector<int> idRangeOffsets(static_cast<std::size_t>(segCount), 0);
++    for (int i = 0; i < segCount; ++i) {
++        const auto& segment = segments[static_cast<std::size_t>(i)];
++        if (segment.first == 0xFFFF) {
++            idRangeOffsets[static_cast<std::size_t>(i)] = 0;
++        } else {
++            const int arrayStartIndex = static_cast<int>(glyphIdArrayEntries.size());
++            const int remainingOffsets = segCount - i;
++            idRangeOffsets[static_cast<std::size_t>(i)] = (remainingOffsets + arrayStartIndex) * 2;
++            for (int code = segment.first; code <= segment.second; ++code) {
++                const auto mapped = charToGlyph.find(code);
++                glyphIdArrayEntries.push_back(mapped != charToGlyph.end() ? mapped->second : 0);
++            }
++        }
++    }
++
++    for (int i = 0; i < segCount; ++i) {
++        subtable.writeU16(segments[static_cast<std::size_t>(i)].first == 0xFFFF ? 1 : 0);
++    }
++    for (const int offset : idRangeOffsets) {
++        subtable.writeU16(offset);
++    }
++    for (const int glyphId : glyphIdArrayEntries) {
++        subtable.writeU16(glyphId);
++    }
++
++    const auto subtableData = std::move(subtable.bytes);
++    const int subtableLength = 14 + static_cast<int>(subtableData.size());
++
++    ByteWriter writer;
++    writer.writeU16(0);
++    writer.writeU16(1);
++    writer.writeU16(3);
++    writer.writeU16(1);
++    writer.writeU32(12);
++    writer.writeU16(4);
++    writer.writeU16(subtableLength);
++    writer.writeU16(0);
++    writer.writeU16(segCount * 2);
++    writer.writeU16(searchRange);
++    writer.writeU16(entrySelector);
++    writer.writeU16(rangeShift);
++    writer.writeBytes(subtableData);
++    return std::move(writer.bytes);
++}
++
++std::vector<std::uint8_t> buildPost() {
++    ByteWriter writer;
++    writer.writeU32(0x00030000U);
++    writer.writeU32(0);
++    writer.writeU16(-100);
++    writer.writeU16(50);
++    writer.writeU32(0);
++    writer.writeU32(0);
++    writer.writeU32(0);
++    writer.writeU32(0);
++    writer.writeU32(0);
++    return std::move(writer.bytes);
++}
++
++std::vector<std::uint8_t> buildHmtx(const std::vector<GlyphEntry>& entries) {
++    ByteWriter writer;
++    for (const auto& entry : entries) {
++        writer.writeU16(entry.advanceWidth);
++        writer.writeU16(entry.lsb);
++    }
++    return std::move(writer.bytes);
++}
++
++std::vector<std::uint8_t> buildLoca(const std::vector<int>& offsets) {
++    ByteWriter writer;
++    for (const int offset : offsets) {
++        writer.writeU16(offset);
++    }
++    return std::move(writer.bytes);
++}
++
++int roundToInt(float value) {
++    return static_cast<int>(std::lround(value));
++}
++
++void cubicToQuadratic(std::vector<TtPoint>& points,
++                      float x0,
++                      float y0,
++                      float c1x,
++                      float c1y,
++                      float c2x,
++                      float c2y,
++                      float ex,
++                      float ey) {
++    const float m01x = (x0 + c1x) / 2.0F;
++    const float m01y = (y0 + c1y) / 2.0F;
++    const float m12x = (c1x + c2x) / 2.0F;
++    const float m12y = (c1y + c2y) / 2.0F;
++    const float m23x = (c2x + ex) / 2.0F;
++    const float m23y = (c2y + ey) / 2.0F;
++    const float m012x = (m01x + m12x) / 2.0F;
++    const float m012y = (m01y + m12y) / 2.0F;
++    const float m123x = (m12x + m23x) / 2.0F;
++    const float m123y = (m12y + m23y) / 2.0F;
++    const float midX = (m012x + m123x) / 2.0F;
++    const float midY = (m012y + m123y) / 2.0F;
++
++    const float q1x = (m01x + m012x) / 2.0F;
++    const float q1y = (m01y + m012y) / 2.0F;
++    points.push_back(TtPoint{roundToInt(q1x), roundToInt(q1y), false});
++    points.push_back(TtPoint{roundToInt(midX), roundToInt(midY), true});
++
++    const float q2x = (m123x + m23x) / 2.0F;
++    const float q2y = (m123y + m23y) / 2.0F;
++    points.push_back(TtPoint{roundToInt(q2x), roundToInt(q2y), false});
++    points.push_back(TtPoint{roundToInt(ex), roundToInt(ey), true});
++}
++
++std::vector<std::uint8_t> buildGlyf(const GlyphEntry& entry) {
++    if (entry.glyph.contours.empty()) {
++        return {};
++    }
++
++    std::vector<std::vector<TtPoint>> ttContours;
++    for (const auto& contour : entry.glyph.contours) {
++        std::vector<TtPoint> points;
++        float currentX = 0.0F;
++        float currentY = 0.0F;
++
++        for (const auto& command : contour.commands) {
++            if (command.type == 0) {
++                if (!points.empty()) {
++                    ttContours.push_back(std::move(points));
++                    points = {};
++                }
++                currentX = command.x;
++                currentY = command.y;
++                points.push_back(TtPoint{roundToInt(currentX), roundToInt(currentY), true});
++            } else if (command.type == 1) {
++                currentX = command.x;
++                currentY = command.y;
++                points.push_back(TtPoint{roundToInt(currentX), roundToInt(currentY), true});
++            } else if (command.type == 2) {
++                cubicToQuadratic(points,
++                                 currentX,
++                                 currentY,
++                                 command.x1,
++                                 command.y1,
++                                 command.x2,
++                                 command.y2,
++                                 command.x,
++                                 command.y);
++                currentX = command.x;
++                currentY = command.y;
++            }
++        }
++        if (!points.empty()) {
++            ttContours.push_back(std::move(points));
++        }
++    }
++
++    if (ttContours.empty()) {
++        return {};
++    }
++
++    int xMin = std::numeric_limits<int>::max();
++    int yMin = std::numeric_limits<int>::max();
++    int xMax = std::numeric_limits<int>::min();
++    int yMax = std::numeric_limits<int>::min();
++    for (const auto& contour : ttContours) {
++        for (const auto& point : contour) {
++            xMin = std::min(xMin, point.x);
++            yMin = std::min(yMin, point.y);
++            xMax = std::max(xMax, point.x);
++            yMax = std::max(yMax, point.y);
++        }
++    }
++
++    ByteWriter writer;
++    writer.writeU16(static_cast<int>(ttContours.size()));
++    writer.writeU16(xMin);
++    writer.writeU16(yMin);
++    writer.writeU16(xMax);
++    writer.writeU16(yMax);
++
++    int index = -1;
++    for (const auto& contour : ttContours) {
++        index += static_cast<int>(contour.size());
++        writer.writeU16(index);
++    }
++    writer.writeU16(0);
++
++    std::vector<int> flags;
++    std::vector<int> xCoords;
++    std::vector<int> yCoords;
++    int previousX = 0;
++    int previousY = 0;
++    for (const auto& contour : ttContours) {
++        for (const auto& point : contour) {
++            const int dx = point.x - previousX;
++            const int dy = point.y - previousY;
++            int flag = point.onCurve ? 1 : 0;
++
++            if (dx == 0) {
++                flag |= 0x10;
++            } else if (dx >= -255 && dx <= 255) {
++                flag |= 0x02;
++                if (dx > 0) {
++                    flag |= 0x10;
++                }
++            }
++
++            if (dy == 0) {
++                flag |= 0x20;
++            } else if (dy >= -255 && dy <= 255) {
++                flag |= 0x04;
++                if (dy > 0) {
++                    flag |= 0x20;
++                }
++            }
++
++            flags.push_back(flag);
++            xCoords.push_back(dx);
++            yCoords.push_back(dy);
++            previousX = point.x;
++            previousY = point.y;
++        }
++    }
++
++    for (const int flag : flags) {
++        writer.writeU8(flag);
++    }
++
++    for (std::size_t i = 0; i < xCoords.size(); ++i) {
++        const int dx = xCoords[i];
++        const int flag = flags[i];
++        if ((flag & 0x02) != 0) {
++            writer.writeU8(std::abs(dx));
++        } else if ((flag & 0x10) == 0) {
++            writer.writeU16(dx);
++        }
++    }
++
++    for (std::size_t i = 0; i < yCoords.size(); ++i) {
++        const int dy = yCoords[i];
++        const int flag = flags[i];
++        if ((flag & 0x04) != 0) {
++            writer.writeU8(std::abs(dy));
++        } else if ((flag & 0x20) == 0) {
++            writer.writeU16(dy);
++        }
++    }
++
++    return std::move(writer.bytes);
++}
++
++int glyphLsb(const Pfr1Font::OutlineGlyph& glyph) {
++    int minX = std::numeric_limits<int>::max();
++    for (const auto& contour : glyph.contours) {
++        for (const auto& command : contour.commands) {
++            minX = std::min(minX, roundToInt(command.x));
++        }
++    }
++    return minX == std::numeric_limits<int>::max() ? 0 : minX;
++}
++
++std::vector<std::uint8_t> assembleTtf(const std::vector<std::string>& tags,
++                                      const std::vector<std::vector<std::uint8_t>>& tables) {
++    const int numTables = static_cast<int>(tags.size());
++    const int searchRange = highestOneBit(numTables) * 16;
++    const int entrySelector = trailingZeroCount(highestOneBit(numTables));
++    const int rangeShift = numTables * 16 - searchRange;
++
++    const int headerSize = 12 + numTables * 16;
++    std::vector<int> offsets(static_cast<std::size_t>(numTables), 0);
++    int currentOffset = headerSize;
++    for (int i = 0; i < numTables; ++i) {
++        offsets[static_cast<std::size_t>(i)] = currentOffset;
++        currentOffset += (static_cast<int>(tables[static_cast<std::size_t>(i)].size()) + 3) & ~3;
++    }
++
++    ByteWriter writer;
++    writer.writeU32(0x00010000U);
++    writer.writeU16(numTables);
++    writer.writeU16(searchRange);
++    writer.writeU16(entrySelector);
++    writer.writeU16(rangeShift);
++
++    for (int i = 0; i < numTables; ++i) {
++        const auto& table = tables[static_cast<std::size_t>(i)];
++        writer.writeAsciiTag(tags[static_cast<std::size_t>(i)]);
++        writer.writeU32(checksum(table));
++        writer.writeU32(static_cast<std::uint32_t>(offsets[static_cast<std::size_t>(i)]));
++        writer.writeU32(static_cast<std::uint32_t>(table.size()));
++    }
++
++    for (const auto& table : tables) {
++        writer.writeBytes(table);
++        const int pad = (4 - (static_cast<int>(table.size()) % 4)) % 4;
++        for (int i = 0; i < pad; ++i) {
++            writer.writeU8(0);
++        }
++    }
++
++    return std::move(writer.bytes);
++}
++
++} // namespace
++
++std::vector<std::uint8_t> Pfr1TtfConverter::convert(const Pfr1Font& font,
++                                                    const std::string& familyName) {
++    std::vector<GlyphEntry> entries;
++    entries.push_back(GlyphEntry{0, 0, 0, Pfr1Font::OutlineGlyph{}});
++
++    const int unitsPerEm = font.metrics.outlineResolution > 0 ? font.metrics.outlineResolution : 2048;
++    for (const auto& record : font.charRecords) {
++        const auto glyph = font.glyphs.find(record.charCode);
++        if (glyph == font.glyphs.end()) {
++            continue;
++        }
++        entries.push_back(GlyphEntry{
++            record.charCode,
++            record.setWidth,
++            glyphLsb(glyph->second),
++            glyph->second,
++        });
++    }
++
++    std::map<int, int> cmapEntries;
++    for (std::size_t i = 1; i < entries.size(); ++i) {
++        cmapEntries[entries[i].charCode] = static_cast<int>(i);
++    }
++
++    const auto headTable = buildHead(unitsPerEm, font.metrics);
++    const auto hheaTable = buildHhea(font.metrics, entries);
++    const auto maxpTable = buildMaxp(static_cast<int>(entries.size()));
++    const auto os2Table = buildOs2(font.metrics, unitsPerEm, cmapEntries);
++    const auto nameTable = buildName(familyName);
++    const auto cmapTable = buildCmap(cmapEntries);
++    const auto postTable = buildPost();
++
++    ByteWriter glyfWriter;
++    std::vector<int> locaOffsets;
++    for (const auto& entry : entries) {
++        while (glyfWriter.bytes.size() % 2 != 0) {
++            glyfWriter.writeU8(0);
++        }
++        locaOffsets.push_back(static_cast<int>(glyfWriter.bytes.size() / 2));
++        glyfWriter.writeBytes(buildGlyf(entry));
++    }
++    while (glyfWriter.bytes.size() % 2 != 0) {
++        glyfWriter.writeU8(0);
++    }
++    locaOffsets.push_back(static_cast<int>(glyfWriter.bytes.size() / 2));
++
++    const auto glyfTable = std::move(glyfWriter.bytes);
++    const auto locaTable = buildLoca(locaOffsets);
++    const auto hmtxTable = buildHmtx(entries);
++
++    return assembleTtf(
++        {"cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "name", "OS/2", "post"},
++        {cmapTable, glyfTable, headTable, hheaTable, hmtxTable, locaTable, maxpTable, nameTable, os2Table, postTable});
++}
++
++} // namespace libreshockwave::font
+--- /dev/null
++++ b/engines/director/fonts/pfr1/Pfr1TtfConverter.hpp
+@@ -0,0 +1,19 @@
++// Derived from LibreShockwave, revision fca530f9ef388d7ff38fa6c7117feae5bb5411c6.
++// SPDX-License-Identifier: AGPL-3.0-only; see COPYING.AGPL-3.0 and README.
++#pragma once
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++#include "Pfr1Font.hpp"
++
++namespace libreshockwave::font {
++
++class Pfr1TtfConverter {
++public:
++    [[nodiscard]] static std::vector<std::uint8_t> convert(const Pfr1Font& font,
++                                                           const std::string& familyName);
++};
++
++} // namespace libreshockwave::font
+--- /dev/null
++++ b/engines/director/fonts/pfr1/PfrBitReader.cpp
+@@ -0,0 +1,111 @@
++// Derived from LibreShockwave, revision fca530f9ef388d7ff38fa6c7117feae5bb5411c6.
++// SPDX-License-Identifier: AGPL-3.0-only; see COPYING.AGPL-3.0 and README.
++#include "PfrBitReader.hpp"
++
++#include <algorithm>
++#include <utility>
++
++namespace libreshockwave::font {
++
++PfrBitReader::PfrBitReader(std::vector<std::uint8_t> data)
++    : PfrBitReader(std::move(data), 0) {}
++
++PfrBitReader::PfrBitReader(std::vector<std::uint8_t> data, int offset)
++    : data_(std::move(data)), position_(offset) {}
++
++int PfrBitReader::position() const {
++    return position_;
++}
++
++void PfrBitReader::setPosition(int position) {
++    position_ = position;
++    bitBuffer_ = 0;
++    bitsLeft_ = 0;
++}
++
++int PfrBitReader::remaining() const {
++    return position_ >= static_cast<int>(data_.size()) ? 0 : static_cast<int>(data_.size()) - position_;
++}
++
++void PfrBitReader::alignToByte() {
++    bitBuffer_ = 0;
++    bitsLeft_ = 0;
++}
++
++int PfrBitReader::readU8() {
++    alignToByte();
++    if (position_ < 0 || position_ >= static_cast<int>(data_.size())) {
++        return 0;
++    }
++    return data_[static_cast<std::size_t>(position_++)] & 0xFF;
++}
++
++int PfrBitReader::readI8() {
++    const int value = readU8();
++    return (value & 0x80) != 0 ? value | ~0xFF : value;
++}
++
++int PfrBitReader::readU16() {
++    const int hi = readU8();
++    const int lo = readU8();
++    return (hi << 8) | lo;
++}
++
++int PfrBitReader::readI16() {
++    const int value = readU16();
++    return (value & 0x8000) != 0 ? value | ~0xFFFF : value;
++}
++
++int PfrBitReader::readU24() {
++    const int b0 = readU8();
++    const int b1 = readU8();
++    const int b2 = readU8();
++    return (b0 << 16) | (b1 << 8) | b2;
++}
++
++int PfrBitReader::readI24() {
++    const int value = readU24();
++    return (value & 0x800000) != 0 ? value | ~0xFFFFFF : value;
++}
++
++void PfrBitReader::skip(int count) {
++    alignToByte();
++    position_ += count;
++    if (position_ > static_cast<int>(data_.size())) {
++        position_ = static_cast<int>(data_.size());
++    }
++}
++
++int PfrBitReader::readBits(int count) {
++    if (count == 0) {
++        return 0;
++    }
++
++    int result = 0;
++    int remaining = count;
++    while (remaining > 0) {
++        if (bitsLeft_ == 0) {
++            if (position_ < 0 || position_ >= static_cast<int>(data_.size())) {
++                return result;
++            }
++            bitBuffer_ = data_[static_cast<std::size_t>(position_++)] & 0xFF;
++            bitsLeft_ = 8;
++        }
++
++        const int take = std::min(remaining, bitsLeft_);
++        const int shift = bitsLeft_ - take;
++        const int mask = ((1 << take) - 1) << shift;
++        const int bits = (bitBuffer_ & mask) >> shift;
++        result = (result << take) | bits;
++        bitsLeft_ -= take;
++        remaining -= take;
++    }
++
++    return result;
++}
++
++bool PfrBitReader::readBit() {
++    return readBits(1) != 0;
++}
++
++} // namespace libreshockwave::font
+--- /dev/null
++++ b/engines/director/fonts/pfr1/PfrBitReader.hpp
+@@ -0,0 +1,39 @@
++// Derived from LibreShockwave, revision fca530f9ef388d7ff38fa6c7117feae5bb5411c6.
++// SPDX-License-Identifier: AGPL-3.0-only; see COPYING.AGPL-3.0 and README.
++#pragma once
++
++#include <cstdint>
++#include <vector>
++
++namespace libreshockwave::font {
++
++class PfrBitReader {
++public:
++    explicit PfrBitReader(std::vector<std::uint8_t> data);
++    PfrBitReader(std::vector<std::uint8_t> data, int offset);
++
++    [[nodiscard]] int position() const;
++    void setPosition(int position);
++    [[nodiscard]] int remaining() const;
++
++    [[nodiscard]] int readU8();
++    [[nodiscard]] int readI8();
++    [[nodiscard]] int readU16();
++    [[nodiscard]] int readI16();
++    [[nodiscard]] int readU24();
++    [[nodiscard]] int readI24();
++    void skip(int count);
++
++    [[nodiscard]] int readBits(int count);
++    [[nodiscard]] bool readBit();
++
++private:
++    void alignToByte();
++
++    std::vector<std::uint8_t> data_;
++    int position_ = 0;
++    int bitBuffer_ = 0;
++    int bitsLeft_ = 0;
++};
++
++} // namespace libreshockwave::font
+--- /dev/null
++++ b/engines/director/fonts/pfr1/README
+@@ -0,0 +1,9 @@
++LibreShockwave PFR1 decoder/converter subset
++https://github.com/LibreShockwave/LibreShockwave
++Revision: fca530f9ef388d7ff38fa6c7117feae5bb5411c6
++License: GNU AGPL version 3 (COPYING.AGPL-3.0).
++Local changes: include paths, provenance comments, short-loca header fix,
++well-defined signed coordinate arithmetic, bounded C ABI bridge.
++No game or font data is included. Runtime conversion stays in memory.
++This experimental linked component has AGPL obligations; retain its license
++and provide corresponding source with any distribution of this build.
+--- /dev/null
++++ b/engines/director/fonts/pfr1/bridge.cpp
+@@ -0,0 +1,22 @@
++// PFR1 conversion boundary: no STL objects or exceptions cross into Director.
++#include "bridge.h"
++#include "Pfr1Font.hpp"
++#include "Pfr1TtfConverter.hpp"
++#include <cstdlib>
++#include <cstring>
++extern "C" bool director_pfr1_to_ttf(const unsigned char *data, size_t size, unsigned char **output, size_t *outputSize) {
++ *output = nullptr; *outputSize = 0;
++ if (!data || size < 58 || size > 4 * 1024 * 1024 || memcmp(data, "PFR1", 4)) return false;
++ try {
++  auto font = libreshockwave::font::Pfr1Font::parse(std::vector<uint8_t>(data, data + size));
++  if (!font || font->glyphs.empty() || font->glyphs.size() > 65534) return false;
++  auto ttf = libreshockwave::font::Pfr1TtfConverter::convert(*font, "Sand");
++  if (ttf.empty() || ttf.size() > 16 * 1024 * 1024) return false;
++  auto *buffer = static_cast<unsigned char *>(malloc(ttf.size()));
++  if (!buffer) return false;
++  memcpy(buffer, ttf.data(), ttf.size());
++  *output = buffer; *outputSize = ttf.size();
++  return true;
++ } catch (...) { return false; }
++}
++extern "C" void director_pfr1_free(unsigned char *data) { free(data); }
+--- /dev/null
++++ b/engines/director/fonts/pfr1/bridge.h
+@@ -0,0 +1,6 @@
++#ifndef DIRECTOR_PFR1_BRIDGE_H
++#define DIRECTOR_PFR1_BRIDGE_H
++#include <stddef.h>
++extern "C" bool director_pfr1_to_ttf(const unsigned char *data, size_t size, unsigned char **output, size_t *outputSize);
++extern "C" void director_pfr1_free(unsigned char *data);
++#endif
 --- a/engines/director/fonts.cpp
 +++ b/engines/director/fonts.cpp
 @@ -27,6 +27,8 @@
@@ -2110,7 +5544,16 @@
 +#endif
 --- a/engines/director/lingo/xtras-cast/textxtra.cpp
 +++ b/engines/director/lingo/xtras-cast/textxtra.cpp
-@@ -26,6 +26,7 @@
+@@ -20,12 +20,16 @@
+  */
+ 
+ #include "common/endian.h"
++#include "common/memstream.h"
++#include "director/fonts/pfr1/bridge.h"
++#include "graphics/fonts/ttf.h"
+ 
+ #include "graphics/macgui/macfontmanager.h"
+ #include "graphics/macgui/mactext.h"
  #include "graphics/macgui/macwindowmanager.h"
  
  #include "director/director.h"
@@ -2118,7 +5561,109 @@
  #include "director/cast.h"
  #include "director/castmember/xtra.h"
  #include "director/lingo/lingo-the.h"
-@@ -213,6 +214,17 @@
+@@ -128,6 +132,8 @@
+ 	_initialRect = source._initialRect;
+ 	_boundingRect = source._boundingRect;
+ 	_text = source._text;
++	_dialogueFont = source._dialogueFont;
++	_dialogueFontChecked = source._dialogueFontChecked;
+ 	_loaded = source._loaded;
+ 	if (cast == source._cast)
+ 		_children = source._children;
+@@ -163,15 +169,90 @@
+ 	_loaded = true;
+ }
+ 
++bool TextXtraCastMember::isDialogueText() const {
++	const CastMemberInfo *info = _cast->getCastMemberInfo(_castId);
++	return isPS4Jonsson() && info && info->name.equalsIgnoreCase("showText");
++}
++
++const Graphics::Font *TextXtraCastMember::dialogueFont() {
++	if (!isDialogueText())
++		return nullptr;
++	if (!_dialogueFontChecked) {
++		_dialogueFontChecked = true;
++#ifdef USE_FREETYPE2
++		// Decode the original embedded font once, entirely in memory. No
++		// external TTF, extracted game asset or user conversion is required.
++		Archive *archive = _cast->getArchive().get();
++		const uint32 tag = MKTAG('X', 'M', 'E', 'D');
++		for (uint16 id : archive->getResourceIDList(tag)) {
++			const uint32 size = archive->getResourceSize(tag, id);
++			if (size < 58 || size > 4 * 1024 * 1024) continue;
++			Common::SeekableReadStreamEndian *resource = archive->getResource(tag, id);
++			if (resource->readUint32BE() != MKTAG('P', 'F', 'R', '1')) {
++				delete resource;
++				continue;
++			}
++			resource->seek(0);
++			Common::Array<byte> data(size);
++			const bool readOK = resource->read(data.data(), size) == size;
++			delete resource;
++			unsigned char *ttf = nullptr;
++			size_t ttfSize = 0;
++			if (!readOK || !director_pfr1_to_ttf(data.data(), size, &ttf, &ttfSize)) continue;
++			Common::MemoryReadStream stream(ttf, ttfSize, DisposeAfterUse::NO);
++			// loadTTFFont retains its stream for late glyph loading. Copy into
++			// a stream owned by the font before releasing the converter buffer.
++			Common::SeekableReadStream *owned = stream.readStream(ttfSize);
++			director_pfr1_free(ttf);
++			_dialogueFont.reset(Graphics::loadTTFFont(owned, DisposeAfterUse::YES,
++					9, Graphics::kTTFSizeModeCharacter, 0, 0, Graphics::kTTFRenderModeLight));
++			if (_dialogueFont) {
++				warning("Embedded dialogue font loaded from XMED %u", id);
++				break;
++			}
++		}
++#endif
++	}
++	return _dialogueFont.get();
++}
++
+ Graphics::MacWidget *TextXtraCastMember::createWidget(Common::Rect &bbox, Channel *channel, SpriteType spriteType) {
+ 	if (!bbox.width() || !bbox.height())
+ 		return nullptr;
+ 
+-	// TODO: Parse the authored Paige style runs (font, size, colours)
++	if (const Graphics::Font *font = dialogueFont()) {
++		// A standalone MacText starts with a zero-sized composition surface.
++		// Render this display-only field into a correctly sized widget instead.
++		Graphics::MacWidget *widget = new Graphics::MacWidget(
++				g_director->getCurrentWindow()->getMacWindow(), bbox.left, bbox.top,
++				bbox.width(), bbox.height(), g_director->_wm, false);
++		Graphics::ManagedSurface rgb(bbox.width(), bbox.height(), Graphics::PixelFormat::createFormatARGB32());
++		Graphics::ManagedSurface *surface = &rgb;
++		surface->clear(rgb.format.RGBToColor(255, 255, 255));
++		Common::Array<Common::U32String> lines;
++		font->wordWrapText(_text, _initialRect.width(), lines);
++		int y = 0;
++		for (uint lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
++			if (y >= bbox.height())
++				break;
++			const Common::U32String &line = lines[lineIndex];
++			font->drawString(surface, line, 0, y, bbox.width(), rgb.format.RGBToColor(0, 0, 0));
++			y += font->getFontHeight();
++		}
++		Graphics::Surface *converted = rgb.rawSurface().convertTo(g_director->_wm->_pixelformat,
++				nullptr, 0, g_director->_wm->getPalette(), g_director->_wm->getPaletteSize());
++		widget->getSurface()->copyFrom(*converted);
++		converted->free();
++		delete converted;
++		return widget;
++	}
++	const bool dialogue = isDialogueText();
++	// Other Text Xtra members retain the existing style until Paige is decoded.
+ 	Graphics::MacFont macFont(1, 12);
+ 	Graphics::MacText *widget = new Graphics::MacText(g_director->getCurrentWindow()->getMacWindow(),
+ 			bbox.left, bbox.top, bbox.width(), bbox.height(), g_director->_wm, _text, &macFont,
+-			g_director->_wm->_colorWhite, g_director->_wm->_colorBlack, _initialRect.width(),
++			dialogue ? g_director->_wm->_colorBlack : g_director->_wm->_colorWhite,
++			dialogue ? g_director->_wm->_colorWhite : g_director->_wm->_colorBlack, _initialRect.width(),
+ 			Graphics::kTextAlignLeft);
+ 	widget->draw();
+ 	return widget;
+@@ -213,6 +294,23 @@
  	case kTheText:
  		_text = Common::U32String(d.asString(), Common::kUtf8);
  		_loaded = true;
@@ -2127,15 +5672,44 @@
 +		// with the same wrapping/font as createWidget rather than retaining the
 +		// authored single-line rectangle (which clips longer dialogue).
 +		if (isPS4Jonsson() && _initialRect.width() > 0) {
++			if (const Graphics::Font *font = dialogueFont()) {
++				Common::Array<Common::U32String> lines;
++				font->wordWrapText(_text, _initialRect.width(), lines);
++				_initialRect.setHeight(MAX(1, (int)lines.size() * font->getFontHeight()));
++			} else {
 +			Graphics::MacFont macFont(1, 12);
 +			Graphics::MacText layout(_text, g_director->_wm, &macFont,
 +					g_director->_wm->_colorWhite, g_director->_wm->_colorBlack,
 +					_initialRect.width(), Graphics::kTextAlignLeft);
 +			_initialRect.setHeight(MAX(1, layout.getTextHeight()));
++			}
 +		}
  		setModified(true);
  		return;
  	default:
+--- a/engines/director/lingo/xtras-cast/textxtra.h
++++ b/engines/director/lingo/xtras-cast/textxtra.h
+@@ -23,6 +23,8 @@
+ #define DIRECTOR_LINGO_XTRAS_CAST_TEXTXTRA_H
+ 
+ #include "common/array.h"
++#include "common/ptr.h"
++#include "graphics/font.h"
+ #include "common/rect.h"
+ #include "common/str.h"
+ #include "common/ustr.h"
+@@ -63,6 +65,11 @@
+ 	Common::String formatInfo() override;
+ 
+ 	Common::U32String _text;
++private:
++	bool isDialogueText() const;
++	const Graphics::Font *dialogueFont();
++	Common::SharedPtr<Graphics::Font> _dialogueFont;
++	bool _dialogueFontChecked = false;
+ };
+ 
+ } // End of namespace Director
 --- a/engines/director/metaengine.cpp
 +++ b/engines/director/metaengine.cpp
 @@ -27,6 +27,7 @@
@@ -2166,6 +5740,17 @@
  	lingo/xtras/m/masterapp.o \
  	lingo/xtras/m/mbox.o \
  	lingo/xtras/m/mui.o \
+@@ -258,6 +259,10 @@
+ PLUGIN := 1
+ endif
+ 
++# Embedded PFR1 font reader uses an isolated STL translation boundary.
++MODULE_OBJS += fonts/pfr1/Pfr1Font.o fonts/pfr1/Pfr1TtfConverter.o fonts/pfr1/PfrBitReader.o fonts/pfr1/bridge.o
++$(MODULE)/fonts/pfr1/Pfr1Font.o $(MODULE)/fonts/pfr1/Pfr1TtfConverter.o $(MODULE)/fonts/pfr1/PfrBitReader.o $(MODULE)/fonts/pfr1/bridge.o: CXXFLAGS += -std=c++17 -fexceptions
++
+ # Include common rules
+ include $(srcdir)/rules.mk
+ 
 --- a/engines/director/movie.h
 +++ b/engines/director/movie.h
 @@ -143,6 +143,7 @@

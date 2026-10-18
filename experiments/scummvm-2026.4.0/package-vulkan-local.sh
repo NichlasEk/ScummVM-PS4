@@ -102,6 +102,11 @@ package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right
     data/flac-COPYING.Xiph data/libvpx-LICENSE data/libvpx-PATENTS data/liba52-COPYING data/mt32emu-COPYING.LGPL
     data/lua-COPYRIGHT data/vkeybd_default.zip data/scummremastered.zip data/gui-icons.dat games/README.txt)
 if [[ ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} == 1 ]]; then
+ if [[ -f "$source_dir/engines/director/fonts/pfr1/COPYING.AGPL-3.0" ]]; then
+  cp "$source_dir/engines/director/fonts/pfr1/COPYING.AGPL-3.0" "$stage/data/LibreShockwave-COPYING.AGPL-3.0"
+  cp "$source_dir/engines/director/fonts/pfr1/README" "$stage/data/LibreShockwave-NOTICE"
+  package_files+=(data/LibreShockwave-COPYING.AGPL-3.0 data/LibreShockwave-NOTICE)
+ fi
  if [[ ${SCUMMVM_OPERATION_SUBMIT:-0} == 1 ]]; then
   printf '1\n' > "$stage/scummvm-operation-submit.txt"
   package_files+=(scummvm-operation-submit.txt)

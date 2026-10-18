@@ -890,3 +890,109 @@ script 41 renders an animated sprite (channel 248), with cursor_titta,
 cursor_ta, cursor_talk, cursor_exit and other interaction states. Static
 script inspection confirms intended behavior, not runtime acceptance of
 every hover target. Candidate 71 removes diagnostics only.
+
+
+### Post-release Jönsson pointer investigation (candidates 73–75)
+
+The user reports jerky left-stick movement in both Jönsson games on physical
+PS4, while the launcher and many other games are smooth. Script 41 in Jönsson 2
+hides the system cursor and positions sprite 248 only during its Update method.
+The candidate follows visible max-priority cursor_* bitmaps between score frames,
+using the authored eight-pixel stage margins. This sprite convention is applied
+only to Jönsson 2; Jönsson 1 does not use those member names.
+
+Both opt-in Jönsson games also receive a shared Lingo input/presentation timer.
+The original execute-local timestamp started at zero for every call, allowing
+repeated presentation across short behavior calls. The candidate services input
+on script entry and every 100 instructions, with one shared 16ms time threshold.
+No script tempo or simulation speed is changed. These are candidate fixes, not
+confirmed physical-console improvements.
+
+The user still found keyboard/full-stick movement too sensitive in run 73. The
+emulator profile had kbdmouse_speed=3. Temporary run 74 timing over successive
+120 service calls measured input 1–6ms total, widgets 4–6ms total, and draw
+302–909ms total; this does not establish the cause of all long update gaps.
+Candidate 75 removes that timing log. Build/link, hover/cue regressions, new
+actual-code input-clock and sprite-cursor tests, and patch replay (130 matching
+modified files) pass. Source changes remain uncommitted. Everslop and FTP 0.11
+remain untouched. No claim that sensitivity alone fixes the stutter.
+
+Visible run 75 is a DIRECT-SCENE pointer probe with kbdmouse_speed=0 only in
+the local [jonssonligan2] domain, to separate speed from stutter. This bypasses
+normal startup and is not a dialogue/card acceptance run. The previous complete
+normal-startup config is retained locally at
+artifacts/upstream-2026.4.0/jonsson2-before-cursor73.ini. Restore it after stopping
+the owned probe, before any ordinary gameplay test. Run log:
+artifacts/upstream-2026.4.0/jonsson2-run75-low-speed.log. Physical PS4 confirmation
+of the input candidate and testing Jönsson 1 remain outstanding.
+
+On user request, clean candidate 75 was packaged as APP_VER 0.12 and delivered
+to /data/pkg/ScummVM-2026.4.0-0.12.pkg. Validation and all 238 extracted payload
+comparisons passed; full FTP readback matched SHA-256
+3de5d9b3bd1bfaec6d0c778da7c3c59dc2c086398bb6b88c43c0f354c56c7f68.
+The local low-speed INI and direct-scene override are NOT packaged. Existing
+console settings remain in effect. Physical left-stick testing in both titles
+via normal startup is pending; no commit/push or Everslop release replacement
+was performed. Build identity is recorded locally in ftp-012-build-identity.json.
+
+### PS4 Jonsson pointer candidate 0.13
+
+Both Jonsson game IDs now apply a 0.2 multiplier to analog pointer speed outside ScummVM dialogs, retaining the saved sensitivity setting and cubic response. Other games and ScummVM dialogs retain their current speed. Physical PS4 confirmation is pending. Press the touchpad to open the virtual keyboard (SDL button 17 maps to JOY_BACK); Share is not exposed by this driver.
+
+### Jonsson performance pass / candidate 0.14
+
+Physical feedback supersedes the sensitivity hypothesis: both games remain slow, and the 0.13 pointer multiplier makes control too slow. The 0.2 multiplier has been removed; existing saved user settings are retained.
+
+Hit testing previously rebuilt a quadratic insertion-sorted channel list for every query. The PS4 Jonsson path now caches an ascending (locZ, channel index) order, verifies a priority snapshot on each use, and sorts only when priorities or channel count change. Hit queries traverse it backwards; rendering uses ascending order, with editable sprites still appended in original channel order. Direct priority writers, scene replacement and overlapping-card ties remain covered. Non-Jonsson queries use their original channel order without allocating a temporary list. Lingo's Jonsson compatibility decision is evaluated once per execute call rather than once per opcode.
+
+Instrumented shadPS4 direct-scene comparison (not physical PS4 or full-game acceptance): median hit-test time fell from 2710.8 to 43.3 microseconds/call across 21 baseline and 15 optimized sampling windows. Median main-loop steps rose from 1.30 to 11.79/s; this is not a rendered-FPS counter. The direct-scene test skips required startup state and later exited on a missing Lingo value; it is useful only for the performance comparison. A normal-start test was subsequently launched separately.
+
+Validation: extracted production query methods matched the original ordering in 800 randomized scenes with three mutation passes each, including ties, locZ changes, growing/shrinking channel lists, transparent holes, editable layers, and non-Jonsson behavior; ASan/UBSan enabled. Eight existing Director regressions passed. Temporary aggregate timers were removed from the package build. See `artifacts/upstream-2026.4.0/perf-pass1/` for local measurements and logs. Physical PS4 confirmation of 0.14 remains pending.
+
+### Candidate 0.15: script cursor origin
+
+The J2 script-cursor follower incorrectly clamped window-local mouse coordinates against the movie rectangle including its saved origin. The local game.dir DRCF rectangle has left=192, top=144 and size 640x480. This left logical hover/click input operational beyond an artificial visual cursor boundary. Clamp to local width/height instead, retaining the existing eight-pixel margin. Regression cases now include positive and negative movie origins. The performance improvements and original pointer speed are retained.
+
+### Interaction candidate: invisible quadrilateral hotspots
+
+J2 assigns `sprite.quad` to transparent `Ruta` bitmap sprites for interactive objects. This property was previously ignored, leaving the original one-pixel sprite dimensions for hit testing. The PS4 Jonsson path now stores four-point hit geometry separately from rendering, translates it with sprite position, and uses polygon containment for pointer hits. Releasing a puppet clears its geometry. This is limited hotspot support, not general textured-quad rendering.
+
+The clean Vulkan build and extracted-production ASan/UBSan geometry regression pass (bounds, translation, winding, visibility, member restriction, reset and degenerate input). Normal-start emulator tracing confirms that the game assigns the hotspot polygons and reaches the room. Cursor feedback and actual object interaction still require runtime confirmation; no new package has been delivered for this candidate.
+
+### Interaction follow-up (2026-10-17)
+
+User emulator testing confirms Harry's glowing interaction cursor and opening the safe after adding custom sprite behavior property access, setProp expression return handling, and named property indexing. Leaving the room then stopped in Lingo: `b_setAt` rejected a SYMBOL index, followed by `getAt` on VOID. The next test candidate adds named PARRAY writes to match existing named reads. This candidate builds; room transition remains unverified. Local logs: `perf-pass1/property-index-run.log` and `named-setat-run.log`. Temporary PROPTRACE diagnostics remain in the test binary/source and must be removed before packaging. No hardware package or release acceptance is implied.
+
+### Jönsson save/load, room transitions and NPC dialogue (0.16 candidate)
+
+This supersedes the pending-test notes above. User testing in shadPS4 confirms
+save loading with restored doors, complete courtyard and street backgrounds,
+object interaction, and conversation with Doris. Physical PS4 acceptance of
+these changes is still pending; other NPC conversations are not all verified.
+
+The Director compatibility delta includes D7 bytecode variable addressing,
+chunk-property and named-list access, CP1252 FileIO decoding, save overwrite
+handling and save-folder enumeration. Released Escape no longer redirects a
+loaded game to the menu. Singular text-count properties let scene construction
+finish. CuePassed can probe the three-player list for an NPC without aborting
+before the original room-NPC fallback; this exception is limited to that handler
+and list shape.
+
+Large-text UTF-8 decoding and line/item offsets use bounded, content-keyed
+caches. Both contents and delimiter changes invalidate offset reuse. In separate
+emulator runs the slot-6 menu parse fell from 1256 ms to 244 ms after indexing;
+these are individual observations, not physical-console benchmarks or total
+load times. Existing channel-order and shared input-clock improvements remain.
+The additional archive-buffer experiment is excluded from this package.
+
+Temporary save, player, background and event traces and forced script dumps
+have been removed. No game scripts, save files or private game assets are
+included. The patch replay matches 132 modified files against a separately
+prepared upstream tree. Local build/test/package evidence is under
+`artifacts/upstream-2026.4.0/perf-pass1/pkg016-*`.
+
+0.16 validation: all 15 Director Python regressions passed, Vulkan build/link
+passed, PKG validation passed and all 238 extracted payloads match.
+Package: `dist/ps4-ftp-2026.4.0-016/ScummVM-2026.4.0-Vulkan-Test.pkg`.
+SHA-256: `e7e132fcd58238647f02df4ac77c7cd96b37857ea515c21f893865bd85688c7a`.
+Physical-console installation and gameplay verification remain pending.

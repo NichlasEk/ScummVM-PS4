@@ -49,7 +49,7 @@ print('PS4 imports:', ', '.join(needed))
 CHECK
 mkdir -p "$stage/sce_sys/about" "$stage/sce_module" "$stage/data" "$stage/games" "$dist"
 "$sdk/bin/linux/create-fself" -in="$build_dir/scummvm" \
- -out="$build_dir/scummvm.oelf" --eboot "$stage/eboot.bin" --paid 0x3800000000000011
+ -out="$stage.oelf" --eboot "$stage/eboot.bin" --paid 0x3800000000000011
 cp "$sdk/samples/SDL2/sce_module/"{libc.prx,libSceFios2.prx} "$stage/sce_module/"
 cp "$sdk/samples/piglet/sce_sys/about/right.sprx" "$stage/sce_sys/about/"
 cp "$root/assets/icon0.png" "$stage/sce_sys/"

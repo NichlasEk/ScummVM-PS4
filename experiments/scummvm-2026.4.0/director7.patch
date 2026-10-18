@@ -108,7 +108,109 @@
  #include "director/picture.h"
  #include "director/sprite.h"
  #include "director/types.h"
-@@ -525,6 +526,14 @@
+@@ -81,6 +82,7 @@
+ 
+ Channel& Channel::operator=(const Channel &channel) {
+ 	_score = channel._score;
++	_ps4HitQuad = channel._ps4HitQuad;
+ 	_sprite = channel._sprite ? new Sprite(*channel._sprite) : nullptr;
+ 
+ 	_widget = nullptr;
+@@ -319,7 +321,75 @@
+ 	return isDirtyFlag;
+ }
+ 
++// Jönsson uses the transparent "Ruta" bitmap as a quadrilateral hotspot.
++// Keep this hit geometry separate from rendering: this is not textured-quad
++// rasterization. Store offsets so camera/loc changes translate the same quad.
++void Channel::setPS4HitQuad(const Common::Array<Common::Point> &points) {
++	if (points.size() != 4)
++		return;
++	_ps4HitQuad = points;
++	const Common::Point origin = getPosition();
++	for (Common::Point &point : _ps4HitQuad)
++		point -= origin;
++}
++
++Common::Array<Common::Point> Channel::getPS4HitQuad() {
++	Common::Array<Common::Point> result = _ps4HitQuad;
++	const Common::Point origin = getPosition();
++	for (Common::Point &point : result)
++		point += origin;
++	return result;
++}
++
++bool Channel::hasPS4HitQuad() {
++	if (_ps4HitQuad.size() != 4 || !_sprite || !_sprite->_cast ||
++	    _sprite->_cast->_type != kCastBitmap)
++		return false;
++	CastMemberInfo *info = _sprite->_cast->getInfo();
++	return info && info->name.equalsIgnoreCase("Ruta");
++}
++
++Common::Rect Channel::getPS4HitQuadBounds() {
++	Common::Array<Common::Point> points = getPS4HitQuad();
++	if (points.size() != 4)
++		return Common::Rect();
++	Common::Rect bounds(points[0].x, points[0].y, points[0].x, points[0].y);
++	for (const Common::Point &point : points) {
++		bounds.left = MIN(bounds.left, point.x);
++		bounds.top = MIN(bounds.top, point.y);
++		bounds.right = MAX(bounds.right, point.x);
++		bounds.bottom = MAX(bounds.bottom, point.y);
++	}
++	return bounds;
++}
++
++bool Channel::isInPS4HitQuad(const Common::Point &pos) {
++	if (_ps4HitQuad.size() != 4)
++		return false;
++	const Common::Point p = pos - getPosition();
++	bool inside = false;
++	int64 area = 0;
++	for (uint i = 0, j = 3; i < 4; j = i++)
++		area += int64(_ps4HitQuad[j].x) * _ps4HitQuad[i].y - int64(_ps4HitQuad[i].x) * _ps4HitQuad[j].y;
++	if (!area)
++		return false;
++	for (uint i = 0, j = 3; i < 4; j = i++) {
++		const Common::Point &a = _ps4HitQuad[j], &b = _ps4HitQuad[i];
++		const int64 cross = int64(b.x - a.x) * (p.y - a.y) - int64(b.y - a.y) * (p.x - a.x);
++		if (!cross && p.x >= MIN(a.x, b.x) && p.x <= MAX(a.x, b.x) &&
++		    p.y >= MIN(a.y, b.y) && p.y <= MAX(a.y, b.y))
++			return true;
++		if ((a.y > p.y) != (b.y > p.y)) {
++			if ((b.y > a.y && cross > 0) || (b.y < a.y && cross < 0))
++				inside = !inside;
++		}
++	}
++	return inside;
++}
++
+ Common::Rect Channel::getRollOverBbox() {
++	if (hasPS4HitQuad())
++		return getPS4HitQuadBounds();
+ 	// In D4 and below, the rollOver command will check against whatever the last
+ 	// contents of the sprite were, regardless of whether the score has zeroed it out.
+ 	if (g_director->getVersion() < 500 && _sprite->_castId.member == 0) {
+@@ -349,6 +419,8 @@
+ CollisionTest Channel::isMouseIn(const Common::Point &pos) {
+ 	if (!_visible)
+ 		return kCollisionNo;
++	if (hasPS4HitQuad())
++		return isInPS4HitQuad(pos) ? kCollisionYes : kCollisionNo;
+ 
+ 	const Common::Rect bbox = getBbox();
+ 
+@@ -509,6 +581,8 @@
+ void Channel::setClean(Sprite *nextSprite, bool partial) {
+ 	if (!nextSprite)
+ 		return;
++	if (!_sprite->_puppet)
++		clearPS4HitQuad();
+ 
+ 	CastMemberID previousCastId(0, 0);
+ 	bool replace = isDirty(nextSprite);
+@@ -525,6 +599,14 @@
  	if (nextSprite) {
  		// for the non-puppet QDShape, since we won't use isDirty to check whether the QDShape is changed.
  		// so we may always keep the sprite info because we need it to draw QDShape.
@@ -123,6 +225,29 @@
  		if (_sprite->_puppet || _sprite->_autoPuppet || (!nextSprite->isQDShape() && partial)) {
  			// Updating scripts, etc. does not require a full re-render
  			_sprite->_scriptId = nextSprite->_scriptId;
+--- a/engines/director/channel.h
++++ b/engines/director/channel.h
+@@ -53,6 +53,12 @@
+ 	// Return the area of screen to be used for drawing content.
+ 	inline Common::Rect getBbox(bool unstretched = false) { return _sprite->getBbox(unstretched); };
+ 	Common::Rect getRollOverBbox();
++	void setPS4HitQuad(const Common::Array<Common::Point> &points);
++	Common::Array<Common::Point> getPS4HitQuad();
++	bool hasPS4HitQuad();
++	bool isInPS4HitQuad(const Common::Point &pos);
++	Common::Rect getPS4HitQuadBounds();
++	void clearPS4HitQuad() { _ps4HitQuad.clear(); }
+ 
+ 	bool isStretched();
+ 	bool isDirty(Sprite *nextSprite = nullptr);
+@@ -137,6 +143,7 @@
+ private:
+ 	Graphics::ManagedSurface *getSurface();
+ 	Score *_score;
++	Common::Array<Common::Point> _ps4HitQuad;
+ };
+ 
+ } // End of namespace Director
 --- a/engines/director/debugger.cpp
 +++ b/engines/director/debugger.cpp
 @@ -350,7 +350,7 @@
@@ -508,7 +633,26 @@
  	void readSpriteD2(Common::MemoryReadStreamEndian &stream, uint16 offset, uint16 size);
 --- a/engines/director/graphics.cpp
 +++ b/engines/director/graphics.cpp
-@@ -357,7 +357,8 @@
+@@ -28,6 +28,7 @@
+ #include "director/director.h"
+ #include "director/cast.h"
+ #include "director/movie.h"
++#include "director/score.h"
+ #include "director/images.h"
+ #include "director/picture.h"
+ #include "director/window.h"
+@@ -285,6 +286,10 @@
+ }
+ 
+ void DirectorEngine::draw() {
++	Window *cursorWindow = getCursorWindow();
++	if (cursorWindow && cursorWindow->getCurrentMovie() &&
++	    cursorWindow->getCurrentMovie()->getScore()->updatePS4ScriptCursor(cursorWindow->getMousePos()))
++		cursorWindow->render();
+ 	_wm->renderZoomBox(true);
+ 	_wm->draw();
+ 	g_system->updateScreen();
+@@ -357,7 +362,8 @@
  
  			*dst = tmpDst;
  		}
@@ -557,7 +701,7 @@
  	{ "getOne",			LB::b_getOne,		2, 2, 400, FBLTIN_LIST },	//			D4 f
  	{ "getPos",			LB::b_getPos,		2, 2, 400, FBLTIN_LIST },	//			D4 f
 -	{ "getProp",		LB::b_getProp,		2, 2, 400, FBLTIN_LIST },	//			D4 f
-+	{ "getPropRef", LB::b_getPropRef, 2, 3, 700, FBLTIN_LIST },
++	{ "getPropRef", LB::b_getPropRef, 2, 4, 700, FBLTIN_LIST },
 +	{ "getProp",		LB::b_getProp,		2, 3, 400, FBLTIN_LIST },	//			D4 f
  	{ "getPropAt",		LB::b_getPropAt,	2, 2, 400, FBLTIN_LIST },	//			D4 f
  	{ "list",			LB::b_list,			-1,0, 400, FBLTIN_LIST },	//			D4 f
@@ -581,10 +725,10 @@
 +		if (source.type == STRING) {
 +			g_lingo->pop(); g_lingo->pop(); g_lingo->push(source);
 +			Common::String kind = prop.asString();
-+			if (kind.equalsIgnoreCase("lines")) b_numberoflines(1);
-+			else if (kind.equalsIgnoreCase("items")) b_numberofitems(1);
-+			else if (kind.equalsIgnoreCase("words")) b_numberofwords(1);
-+			else if (kind.equalsIgnoreCase("chars")) b_numberofchars(1);
++			if ((kind.equalsIgnoreCase("lines") || kind.equalsIgnoreCase("line"))) b_numberoflines(1);
++			else if ((kind.equalsIgnoreCase("items") || kind.equalsIgnoreCase("item"))) b_numberofitems(1);
++			else if ((kind.equalsIgnoreCase("words") || kind.equalsIgnoreCase("word"))) b_numberofwords(1);
++			else if ((kind.equalsIgnoreCase("chars") || kind.equalsIgnoreCase("char"))) b_numberofchars(1);
 +			else { g_lingo->pop(); g_lingo->lingoError("count: unsupported text property %s", kind.c_str()); g_lingo->push(0); }
 +			return;
 +		}
@@ -620,7 +764,7 @@
  		if (index > 0) {
  			d.u.i = index;
  		}
-@@ -1229,7 +1259,58 @@
+@@ -1229,7 +1259,78 @@
  	}
  }
  
@@ -642,13 +786,23 @@
 +	g_lingo->push(Datum(down ? 1 : 0));
 +}
 +
++// A repeated property selector on a D7 chunk reference replaces that selector;
++// it does not select another item inside the previously selected item. Keep
++// different chunk kinds nested (for example an item within a line).
++static Datum ps4JonssonChunkPropertySource(const Datum &source, ChunkType type) {
++	if (source.type == CHUNKREF && source.u.cref->type == type)
++		return source.u.cref->source;
++	return source;
++}
++
 +void LB::b_getPropRef(int nargs) {
-+	if (nargs == 3) {
-+		Datum source = g_lingo->peek(2);
-+		Common::String chunkKind = g_lingo->peek(1).asString();
++	if (nargs == 3 || nargs == 4) {
++		Datum source = g_lingo->peek(nargs - 1);
++		Common::String chunkKind = g_lingo->peek(nargs - 2).asString();
 +		if (chunkKind.equalsIgnoreCase("line") || chunkKind.equalsIgnoreCase("item") ||
 +		    chunkKind.equalsIgnoreCase("word") || chunkKind.equalsIgnoreCase("char")) {
-+			Datum index = g_lingo->pop();
++			Datum endIndex = g_lingo->pop();
++			Datum index = nargs == 4 ? g_lingo->pop() : endIndex;
 +			Common::String kind = g_lingo->pop().asString();
 +			g_lingo->pop();
 +			ChunkType type;
@@ -657,13 +811,23 @@
 +			else if (kind.equalsIgnoreCase("word")) type = kChunkWord;
 +			else if (kind.equalsIgnoreCase("char")) type = kChunkChar;
 +			else { g_lingo->lingoError("getPropRef: unsupported text property %s", kind.c_str()); g_lingo->pushVoid(); return; }
-+			g_lingo->push(LC::chunkRef(type, index.asInt(), index.asInt(), source));
++			Datum base = isPS4Jonsson() ? ps4JonssonChunkPropertySource(source, type) : source;
++			g_lingo->push(LC::chunkRef(type, index.asInt(), endIndex.asInt(), base));
++			return;
++		}
++		if (nargs == 4) {
++			g_lingo->dropStack(nargs);
++			g_lingo->lingoError("getPropRef: ranges require a text chunk property");
++			g_lingo->pushVoid();
 +			return;
 +		}
 +		Datum index = g_lingo->pop();
 +		b_getProp(2);
 +		g_lingo->push(index);
-+		b_getAt(2);
++		if (isPS4Jonsson() && (index.type == SYMBOL || index.type == STRING))
++			b_getProp(2);
++		else
++			b_getAt(2);
 +		return;
 +	}
 +	b_getProp(2);
@@ -679,10 +843,27 @@
  	Datum prop = g_lingo->pop();
  	Datum list = g_lingo->pop();
  
-@@ -1251,6 +1332,12 @@
+@@ -1249,8 +1350,27 @@
+ 		if (index > 0) {
+ 			g_lingo->push(list.u.parr->arr[index - 1].v);
  		} else {
- 			g_lingo->lingoError("BUILDBOT: b_getProp: Property %s not found", prop.asString().c_str());
- 		}
+-			g_lingo->lingoError("BUILDBOT: b_getProp: Property %s not found", prop.asString().c_str());
+-		}
++			// Jonsson's CuePassed probes the player list before looking for an
++			// NPC in the room. A missing speaker must not abort that fallback.
++			// Keep strict getProp behavior outside this specific dialogue probe.
++			const Common::Array<CFrame *> &frames = g_lingo->_state->callstack;
++			if (isPS4Jonsson() && !frames.empty() && frames.back()->sp.name
++					&& frames.back()->sp.name->equalsIgnoreCase("CuePassed")
++					&& list.u.parr->arr.size() == 3
++					&& LC::compareArrays(LC::eqData, list, Datum("sickan"), true).u.i > 0
++					&& LC::compareArrays(LC::eqData, list, Datum("vanis"), true).u.i > 0
++					&& LC::compareArrays(LC::eqData, list, Datum("harry"), true).u.i > 0) {
++				g_lingo->push(Datum());
++			} else {
++				g_lingo->lingoError("BUILDBOT: b_getProp: Property %s not found", prop.asString().c_str());
++			}
++		}
 +		break;
 +	}
 +	case CASTREF:
@@ -692,7 +873,22 @@
  		break;
  	}
  	case OBJECT:
-@@ -1515,6 +1602,18 @@
+@@ -1485,6 +1605,14 @@
+ 	Datum indexD = g_lingo->pop();
+ 	Datum list = g_lingo->pop();
+ 
++	// Match getAt's D7 property-list lookup for named subscripts.
++	if (isPS4Jonsson() && list.type == PARRAY && (indexD.type == SYMBOL || indexD.type == STRING)) {
++		g_lingo->push(list);
++		g_lingo->push(indexD);
++		g_lingo->push(value);
++		b_setaProp(3);
++		return;
++	}
+ 	TYPECHECK2(indexD, INT, FLOAT);
+ 	TYPECHECK4(list, ARRAY, PARRAY, POINT, RECT);
+ 	int index = indexD.asInt();
+@@ -1515,6 +1643,18 @@
  }
  
  void LB::b_setProp(int nargs) {
@@ -711,7 +907,37 @@
  	Datum value = g_lingo->pop();
  	Datum prop = g_lingo->pop();
  	Datum list = g_lingo->pop();
-@@ -1854,6 +1953,95 @@
+@@ -1661,6 +1801,29 @@
+ 		return;
+ 	}
+ 
++	// FileIO virtualizes saves into SaveFileManager. Expose the same files
++	// under J2's original Windows save directory, without backend decoration.
++	Common::String saveDirectory = pathRaw;
++	for (uint i = 0; i < saveDirectory.size(); ++i)
++		if (saveDirectory[i] == '\\') saveDirectory.setChar('/', i);
++	while (saveDirectory.hasSuffix("/"))
++		saveDirectory.deleteLastChar();
++	saveDirectory.toLowercase();
++	if (isPS4Jonsson() && (saveDirectory == "c:/savejon" ||
++	                      saveDirectory == "sparade spel" ||
++	                      saveDirectory.hasSuffix("/sparade spel"))) {
++		const Common::String prefix = savePrefix();
++		Common::StringArray files = g_system->getSavefileManager()->listSavefiles(prefix + "save_*.sav.txt");
++		Common::sort(files.begin(), files.end());
++		Common::String name;
++		if (fileNum >= 0 && (uint)fileNum < files.size()) {
++			name = files[fileNum].substr(prefix.size());
++			name = name.substr(0, name.size() - 4); // FileIO's .txt suffix
++		}
++		g_lingo->push(Datum(name));
++		return;
++	}
++
+ 	// getNthFileNameInFolder requires an absolute path as an input.
+ 	// relative paths will not match anything.
+ 	Common::Path path = findAbsolutePath(pathRaw, true);
+@@ -1854,6 +2017,95 @@
  	g_lingo->push(d);
  }
  
@@ -807,7 +1033,7 @@
  void LB::b_xtra(int nargs) {
  	Datum d = g_lingo->pop();
  	if (d.type == INT) {
-@@ -1865,6 +2053,11 @@
+@@ -1865,6 +2117,11 @@
  		}
  	} else {
  		Common::String name = d.asString();
@@ -819,6 +1045,23 @@
  		for (uint i = 0; i < g_lingo->_openXtras.size(); i++) {
  			if (name.equalsIgnoreCase(g_lingo->_openXtras[i])) {
  				Datum var = g_lingo->_openXtraObjects[i];
+@@ -2000,6 +2257,7 @@
+ }
+ 
+ void LB::b_go(int nargs) {
++
+ 	// Builtin function for go as used by the Director bytecode engine.
+ 	//
+ 	// Accepted arguments:
+@@ -3303,6 +3561,8 @@
+ 			Sprite *target = sc->getSpriteById(spriteId);
+ 			bool val = (bool)state.asInt();
+ 			target->_puppet = val;
++			if (!val)
++				sc->_channels[spriteId]->clearPS4HitQuad();
+ 		} else {
+ 			warning("b_puppetSprite: sprite index out of bounds");
+ 		}
 --- a/engines/director/lingo/lingo-builtins.h
 +++ b/engines/director/lingo/lingo-builtins.h
 @@ -66,6 +66,9 @@
@@ -860,7 +1103,27 @@
  
  	{ 0x81, LC::c_intpush,		"W" },
  	{ 0x82, LC::c_argcnoretpush,"w" },
-@@ -421,6 +427,12 @@
+@@ -372,6 +378,10 @@
+ 			if (g_director->getVersion() >= 500) {
+ 				stride = 8;
+ 			}
++			// D7 stack-supplied argument/local IDs are slot indices. In
++			// particular put-after must not divide local 1 into local 0.
++			if (isPS4Jonsson() && g_director->getVersion() >= 700)
++				stride = 1;
+ 			if (id.asInt() % stride != 0) {
+ 				warning("BUILDBOT: findVarV4: invalid var ID %d for var type %d (not divisible by %d)", id.asInt(), varType, stride);
+ 				return res;
+@@ -381,7 +391,7 @@
+ 				? callstack.back()->sp.argNames
+ 				: callstack.back()->sp.varNames;
+ 
+-			if (varIndex < (int)varNames->size()) {
++			if (varNames && varIndex >= 0 && varIndex < (int)varNames->size()) {
+ 				res = (*varNames)[varIndex];
+ 				res.type = LOCALREF;
+ 			} else {
+@@ -421,6 +431,12 @@
  	uint arg1 = g_lingo->readInt();
  	uint arg2 = g_lingo->readInt();
  	warning("STUB: opcode 0x%02x (%d, %d)", opcode, arg1, arg2);
@@ -875,7 +1138,15 @@
  void LC::cb_delete() {
 --- a/engines/director/lingo/lingo-code.cpp
 +++ b/engines/director/lingo/lingo-code.cpp
-@@ -141,6 +141,7 @@
+@@ -42,6 +42,7 @@
+ // ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+ // THIS SOFTWARE.
+ 
++#include "director/ps4-jonsson.h"
+ #include "graphics/macgui/macwindowmanager.h"
+ #include "graphics/macgui/mactext.h"
+ 
+@@ -141,6 +142,7 @@
  	{ LC::c_wordToOfRef,	"c_wordToOfRef",	"" },	// D3
  	{ LC::c_xpop,			"c_xpop",			""  },
  	{ LC::cb_call,			"cb_call",			"s" },
@@ -883,7 +1154,77 @@
  	{ LC::cb_delete,		"cb_delete",		"i" },
  	{ LC::cb_hilite,		"cb_hilite",		"" },
  	{ LC::cb_globalassign,	"cb_globalassign",	"s" },
-@@ -1673,7 +1674,13 @@
+@@ -1087,6 +1089,51 @@
+ 	}
+ }
+ 
++// Index large immutable text values used by the Jonsson save/scene scripts.
++// Include the delimiter and compare contents, so field edits and changes to
++// itemDelimiter cannot reuse stale offsets. Small text keeps the original path.
++static bool indexedPS4ChunkBounds(const Common::U32String &text, Common::u32char_type_t delimiter,
++		int first, int last, int &count, int &chunkStart, int &chunkEnd, int &exprStart, int &exprEnd) {
++	if (!isPS4Jonsson() || text.size() < 1024 || text.size() > 1024 * 1024)
++		return false;
++	struct Entry {
++		Common::U32String text;
++		Common::u32char_type_t delimiter = 0;
++		Common::Array<int> starts;
++	};
++	static Entry cache[4];
++	static uint next = 0;
++	Entry *entry = nullptr;
++	for (uint i = 0; i < 4; ++i) {
++		if (cache[i].delimiter == delimiter && cache[i].text == text) {
++			entry = &cache[i];
++			break;
++		}
++	}
++	if (!entry) {
++		entry = &cache[next];
++		next = (next + 1) % 4;
++		entry->text = text;
++		entry->delimiter = delimiter;
++		entry->starts.clear();
++		entry->starts.push_back(0);
++		for (uint i = 0; i < text.size(); ++i)
++			if (text[i] == delimiter)
++				entry->starts.push_back(i + 1);
++	}
++	const Common::Array<int> &starts = entry->starts;
++	// Match the original scan, including an empty final chunk, out-of-range
++	// requests, reversed ranges and the special last-chunk sentinel.
++	count = last > 0 ? MIN(last, (int)starts.size()) : (int)starts.size();
++	chunkStart = starts[count - 1];
++	chunkEnd = count < (int)starts.size() ? starts[count] - 1 : text.size();
++	if (first > 0 && first <= count)
++		exprStart = starts[first - 1];
++	if (last == count)
++		exprEnd = chunkEnd;
++	return true;
++}
++
+ Datum LC::chunkRef(ChunkType type, int startChunk, int endChunk, const Datum &src) {
+ 	// A chunk expression is made up of 0 or more chunks within a source text.
+ 	// This function returns a reference to the source text, the start index of the first chunk,
+@@ -1160,6 +1207,9 @@
+ 	case kChunkLine:
+ 		{
+ 			Common::u32char_type_t delimiter = (type == kChunkItem) ? g_lingo->_itemDelimiter : '\r';
++			if (indexedPS4ChunkBounds(str, delimiter, startChunk, endChunk,
++					chunkNum, chunkStartIdx, chunkEndIdx, exprStartIdx, exprEndIdx))
++				break;
+ 
+ 			int idx = 0;
+ 			while (true) {
+@@ -1645,6 +1695,7 @@
+ }
+ 
+ void LC::call(const Common::String &name, int nargs, bool allowRetVal) {
++
+ 	if (debugChannelSet(3, kDebugLingoExec))
+ 		g_lingo->printArgs(name.c_str(), nargs, "call:");
+ 
+@@ -1673,7 +1724,37 @@
  				}
  				return;
  			}
@@ -895,9 +1236,48 @@
 +			      (name.equalsIgnoreCase("getPropRef") || name.equalsIgnoreCase("setContents") ||
 +			       name.equalsIgnoreCase("delete"))))
 +				g_lingo->_state->stack[g_lingo->_state->stack.size() - nargs] = firstArg;
++		}
++
++		// D7 sprite.method() must use the sprite's behavior instance as me.
++		// A global handler lookup finds the code but loses its properties.
++		if (isPS4Jonsson() && firstArg.type == SPRITEREF) {
++			Movie *movie = g_director->getCurrentMovie();
++			Channel *channel = movie ? movie->getScore()->getChannelById(firstArg.u.i) : nullptr;
++			if (channel) {
++				for (const Datum &instance : channel->_scriptInstanceList) {
++					if (instance.type != OBJECT || instance.u.obj->getMethod(name).type == VOIDSYM)
++						continue;
++					Common::Array<Datum> args;
++					for (int i = 1; i < nargs; ++i)
++						args.push_back(g_lingo->pop());
++					g_lingo->pop();
++					g_lingo->push(Datum(firstArg.u.i));
++					g_lingo->push(Datum(name));
++					for (int i = (int)args.size() - 1; i >= 0; --i)
++						g_lingo->push(args[i]);
++					g_lingo->push(Datum(allowRetVal));
++					LB::b_sendSprite(nargs + 1);
++					return;
++				}
++			}
  		}
  
  		// Script/Xtra method call
+@@ -1855,8 +1936,13 @@
+ 					warning("Builtin '%s' dropping return value: %s", funcSym.name->c_str(), extra.asString(true).c_str());
+ 				}
+ 			} else if (stackSize == stackSizeBefore) {
+-				if (allowRetVal)
++				if (allowRetVal && isPS4Jonsson() && funcSym.name->equalsIgnoreCase("setProp")) {
++					// D7 bytecode may invoke this setter in expression form. The
++					// mutation has already run; supply VOID for the unused result.
++					g_lingo->push(Datum());
++				} else if (allowRetVal) {
+ 					error("Builtin '%s' did not return value", funcSym.name->c_str());
++				}
+ 			} else if (stackSize > stackSizeBefore) {
+ 				error("Builtin '%s' returned extra %d values", funcSym.name->c_str(), stackSize - stackSizeBefore);
+ 			} else {
 --- a/engines/director/lingo/lingo-code.h
 +++ b/engines/director/lingo/lingo-code.h
 @@ -149,6 +149,7 @@
@@ -1072,7 +1452,15 @@
  	{ kTheSprite,	"locH",			kTheLocH,		200 },// D2 p
  	{ kTheSprite,	"locV",			kTheLocV,		200 },// D2 p
  	{ kTheSprite,	"member",		kTheMember,		500 },//					D5 p
-@@ -516,6 +521,10 @@
+@@ -232,6 +237,7 @@
+ 	{ kTheSprite,	"name",			kTheName,		600 },//						D6 p
+ 	{ kTheSprite,	"pattern",		kThePattern,	200 },// D2 p
+ 	{ kTheSprite,	"puppet",		kThePuppet,		200 },// D2 p
++	{ kTheSprite, "quad", kTheQuad, 700 },
+ 	{ kTheSprite,	"rect",			kTheRect,		400 },//				D4 p ???
+ 	{ kTheSprite,	"right",		kTheRight,		200 },// D2 p
+ 	{ kTheSprite,	"scoreColor",	kTheScoreColor,	400 },//				D4 p
+@@ -516,6 +522,10 @@
  	Score *score = movie->getScore();
  
  	switch (entity) {
@@ -1083,7 +1471,7 @@
  	case kTheActiveWindow:
  		{
  			Window *win = (Window *)g_director->_wm->getWindow(g_director->_wm->getActiveWindow());
-@@ -533,7 +542,13 @@
+@@ -533,7 +543,13 @@
  		warning("STUB: the alertHook");
  		break;
  	case kTheApplicationPath:
@@ -1098,7 +1486,7 @@
  		break;
  	case kTheBeepOn:
  		d = (int)movie->_isBeepOn;
-@@ -621,6 +636,15 @@
+@@ -621,6 +637,15 @@
  	case kTheEmulateMultiButtonMouse:
  		d = g_director->_emulateMultiButtonMouse ? 1 : 0;
  		break;
@@ -1114,7 +1502,21 @@
  	case kTheExitLock:
  		d = g_lingo->_exitLock;
  		break;
-@@ -874,6 +898,9 @@
+@@ -684,6 +709,13 @@
+ 		break;
+ 	case kTheKeyCode:
+ 		d = _vm->_keyCode;
++		// Jönsson polls Escape from enterFrame. Do not keep triggering its
++		// menu command after the intro-skip key has been released. Retain
++		// the historical code inside actual keyboard event handlers.
++		if (isPS4Jonsson() && _vm->_keyCode == 53 &&
++		    !_vm->_pressedKeys.contains(Common::KEYCODE_ESCAPE) &&
++		    _currentInputEvent.type == VOIDSYM)
++			d = 0;
+ 		break;
+ 	case kTheKeyDownScript:
+ 		d.type = STRING;
+@@ -874,6 +906,9 @@
  		else
  			d.u.s = new Common::String();
  		break;
@@ -1124,7 +1526,7 @@
  	case kTheMouseH:
  		d = g_director->getCurrentWindow()->getMousePos().x;
  		break;
-@@ -1709,6 +1736,9 @@
+@@ -1709,6 +1744,9 @@
  			d.u.farr->arr.push_back(position.y);
  		}
  		break;
@@ -1134,7 +1536,22 @@
  	case kTheLocH:
  		d = channel->getPosition().x;
  		break;
-@@ -1764,9 +1794,10 @@
+@@ -1743,6 +1781,14 @@
+ 		break;
+ 	case kThePuppet:
+ 		d = sprite->_puppet;
++		break;
++	case kTheQuad:
++		if (isPS4Jonsson()) {
++			d.type = ARRAY;
++			d.u.farr = new FArray;
++			for (const Common::Point &point : channel->getPS4HitQuad())
++				d.u.farr->arr.push_back(Datum(point));
++		}
+ 		break;
+ 	case kTheRect:
+ 		// let compiler to optimize this
+@@ -1764,9 +1810,10 @@
  		d = (int)(sprite->_colorcode & 0x7);
  		break;
  	case kTheScriptInstanceList:
@@ -1148,7 +1565,7 @@
  		break;
  	case kTheScriptNum:
  		if (g_director->getVersion() >= 600) {
-@@ -1871,7 +1902,9 @@
+@@ -1871,7 +1918,9 @@
  				channel->setDirty();
  			}
  
@@ -1159,7 +1576,15 @@
  				sprite->_thickness &= ~kTHasBlend;
  			else
  				sprite->_thickness |= kTHasBlend;
-@@ -2020,6 +2053,14 @@
+@@ -1884,6 +1933,7 @@
+ 	case kTheMember:
+ 		{
+ 			CastMemberID targetMember = d.asMemberID();
++
+ 
+ 			if (targetMember != sprite->_castId) {
+ 				channel->setCast(targetMember);
+@@ -2020,6 +2070,14 @@
  		}
  		channel->setPosition(d.asPoint().x, d.asPoint().y);
  		break;
@@ -1174,7 +1599,30 @@
  	case kTheLocH:
  		if (d.asInt() != channel->getPosition().x) {
  			channel->setPosition(d.asInt(), channel->getPosition().y);
-@@ -2505,6 +2546,8 @@
+@@ -2072,8 +2130,22 @@
+ 	case kThePuppet:
+ 		sprite->_puppet = (bool)d.asInt();
+ 		if (!d.asInt()) {
++			channel->clearPS4HitQuad();
+ 			// TODO: Properly reset sprite properties after puppet disabled.
+ 			sprite->_moveable = false;
++		}
++		break;
++	case kTheQuad:
++		if (isPS4Jonsson() && d.type == ARRAY && d.u.farr->arr.size() == 4) {
++			Common::Array<Common::Point> points;
++			for (const Datum &point : d.u.farr->arr) {
++				if ((point.type != POINT && point.type != ARRAY) || point.u.farr->arr.size() != 2) {
++					warning("Invalid sprite.quad point");
++					return;
++				}
++				points.push_back(Common::Point(point.u.farr->arr[0].asInt(), point.u.farr->arr[1].asInt()));
++			}
++			channel->setPS4HitQuad(points);
+ 		}
+ 		break;
+ 	case kTheRect:
+@@ -2505,6 +2577,8 @@
  		int index = LC::compareArrays(LC::eqData, obj, propName, true).u.i;
  		if (index > 0) {
  			d = obj.u.parr->arr[index - 1].v;
@@ -1183,6 +1631,42 @@
  		}
  		g_lingo->push(d);
  		g_debugger->propReadHook(propName);
+@@ -2643,6 +2717,18 @@
+ 		Common::String key = Common::String::format("%d%s", kTheSprite, propName.c_str());
+ 		if (_theEntityFields.contains(key)) {
+ 			d = getTheSprite(obj, _theEntityFields[key]->field);
++		} else if (isPS4Jonsson() && _vm->getCurrentMovie()) {
++			// D6+ custom sprite properties belong to attached behavior instances.
++			// Keep built-in properties above authoritative.
++			Channel *channel = _vm->getCurrentMovie()->getScore()->getChannelById(obj.u.i);
++			if (channel) {
++				for (const Datum &instance : channel->_scriptInstanceList) {
++					if (instance.type == OBJECT && instance.u.obj->hasProp(propName)) {
++						d = instance.u.obj->getProp(propName);
++						break;
++					}
++				}
++			}
+ 		}
+ 		g_lingo->push(d);
+ 		return;
+@@ -2768,6 +2854,16 @@
+ 		Common::String key = Common::String::format("%d%s", kTheSprite, propName.c_str());
+ 		if (_theEntityFields.contains(key)) {
+ 			setTheSprite(obj, _theEntityFields[key]->field, val);
++		} else if (isPS4Jonsson() && _vm->getCurrentMovie()) {
++			Channel *channel = _vm->getCurrentMovie()->getScore()->getChannelById(obj.u.i);
++			if (channel) {
++				for (const Datum &instance : channel->_scriptInstanceList) {
++					if (instance.type == OBJECT && instance.u.obj->hasProp(propName)) {
++						instance.u.obj->setProp(propName, val);
++						break;
++					}
++				}
++			}
+ 		}
+ 	} else {
+ 		g_lingo->lingoError("Lingo::setObjectProp: Invalid object: %s", obj.asString(true).c_str());
 --- a/engines/director/lingo/lingo-the.h
 +++ b/engines/director/lingo/lingo-the.h
 @@ -55,6 +55,7 @@
@@ -1201,11 +1685,12 @@
  	kTheMaxTheEntityType		// This must be always last
  };
  
-@@ -320,6 +322,7 @@
+@@ -320,6 +322,8 @@
  	kTheWindowType,
  	kTheWordWrap,
  	kTheScrollTop,
 +	kTheLocZ,
++	kTheQuad,
  	kTheMaxTheFieldType		// This must be always last
  };
  
@@ -1220,7 +1705,19 @@
  namespace Director {
  
  Lingo *g_lingo;
-@@ -631,7 +633,7 @@
+@@ -182,6 +184,7 @@
+ 
+ 	_state = nullptr;
+ 	_globalCounter = 0;
++	_lastPS4InputService = 0;
+ 	_freezeState = false;
+ 	_freezePlay = false;
+ 	_playDone = false;
+@@ -628,10 +631,11 @@
+ }
+ 
+ bool Lingo::execute(int targetFrame) {
++	const bool ps4Jonsson = isPS4Jonsson();
  	uint localCounter = 0;
  	uint lastUpdate = 0;
  
@@ -1229,7 +1726,32 @@
  		if (targetFrame != -1 && (int)_state->callstack.size() == targetFrame)
  			break;
  
-@@ -843,6 +845,7 @@
+@@ -654,8 +658,22 @@
+ 			break;
+ 		}
+ 
+-		// process events every so often
+-		if (localCounter > 0 && localCounter % 100 == 0) {
++		// Share the input/present clock across Jönsson behavior calls. A local
++		// timer starting at zero presents once for each short script and can
++		// spend many vblanks on a single logical game frame. Include entry to
++		// short scripts so a long sequence of them cannot starve stick input.
++		if (ps4Jonsson) {
++			if (localCounter % 100 == 0 &&
++			    uint32(g_system->getMillis() - _lastPS4InputService) >= 16) {
++				_lastPS4InputService = g_system->getMillis();
++				_vm->processSysEvents();
++				Movie *movie = _vm->getCurrentMovie();
++				if (movie)
++					movie->getScore()->updateWidgets(true);
++				_vm->draw();
++				g_system->delayMillis(0);
++			}
++		} else if (localCounter > 0 && localCounter % 100 == 0) {
+ 			_vm->processSysEvents();
+ 			// Also process update widgets!
+ 			Movie *movie = g_director->getCurrentMovie();
+@@ -843,6 +861,7 @@
  void Lingo::resetLingo() {
  	debugC(3, kDebugLingoExec, "Resetting Lingo!");
  	cleanupLingo();
@@ -1237,7 +1759,7 @@
  	resetLingoGo();
  }
  
-@@ -1812,7 +1815,10 @@
+@@ -1812,7 +1831,10 @@
  				((TextCastMember *)member)->setRawText(value.asString());
  				break;
  			default:
@@ -1249,18 +1771,62 @@
  				break;
  			}
  		}
-@@ -1962,7 +1968,10 @@
+@@ -1934,6 +1956,25 @@
+ 	return result;
+ }
+ 
++// Cache immutable text values, not variable addresses: Lingo can reassign or
++// edit a field between reads. Content comparison also covers in-place edits.
++// Large unchanged save/scene strings otherwise get decoded for every chunk.
++static Common::U32String decodePS4ChunkText(const Common::String &text) {
++	if (!isPS4Jonsson() || text.size() < 1024 || text.size() > 1024 * 1024)
++		return text.decode(Common::kUtf8);
++	struct Entry { Common::String source; Common::U32String decoded; };
++	static Entry cache[4];
++	static uint next = 0;
++	for (uint i = 0; i < 4; ++i)
++		if (cache[i].source == text)
++			return cache[i].decoded;
++	Entry &entry = cache[next];
++	next = (next + 1) % 4;
++	entry.source = text;
++	entry.decoded = text.decode(Common::kUtf8);
++	return entry.decoded;
++}
++
+ Common::U32String Lingo::evalChunkRef(const Datum &var) {
+ 	Common::U32String result;
+ 
+@@ -1942,7 +1983,7 @@
+ 	case GLOBALREF:
+ 	case LOCALREF:
+ 	case PROPREF:
+-		result = varFetch(var).asString().decode(Common::kUtf8);
++		result = decodePS4ChunkText(varFetch(var).asString());
+ 		break;
+ 	case FIELDREF:
+ 	case CASTREF:
+@@ -1962,7 +2003,10 @@
  				result = ((TextCastMember *)member)->getText();
  				break;
  			default:
 -				warning("evalChunkRef: Unhandled cast type %d", member->_type);
 +				if (member->hasField(kTheText))
-+					result = member->getField(kTheText).asString().decode(Common::kUtf8);
++					result = decodePS4ChunkText(member->getField(kTheText).asString());
 +				else
 +					warning("evalChunkRef: Unhandled cast type %d", member->_type);
  				break;
  			}
  		}
+@@ -1976,7 +2020,7 @@
+ 		}
+ 		break;
+ 	default:
+-		result = var.asString().decode(Common::kUtf8);
++		result = decodePS4ChunkText(var.asString());
+ 		break;
+ 	}
+ 
 --- a/engines/director/lingo/lingo.h
 +++ b/engines/director/lingo/lingo.h
 @@ -267,6 +267,7 @@
@@ -1280,6 +1846,49 @@
  
  public:
  	ScriptType event2script(LEvent ev);
+@@ -571,6 +572,7 @@
+ 	Common::HashMap<int, const LingoV4TheEntity *> _lingoV4TheEntity;
+ 
+ 	uint _globalCounter;
++	uint32 _lastPS4InputService;
+ 
+ 	DirectorEngine *_vm;
+ 
+--- a/engines/director/lingo/xlibs/f/fileio.cpp
++++ b/engines/director/lingo/xlibs/f/fileio.cpp
+@@ -121,6 +121,7 @@
+ 
+  */
+ 
++#include "director/ps4-jonsson.h"
+ #include "common/file.h"
+ #include "common/macresman.h"
+ #include "common/memstream.h"
+@@ -555,6 +556,11 @@
+ 		ch = me->_inStream->readByte();
+ 	}
+ 
++	// Match writeString's platform encoding. Jönsson uses the pound sign
++	// as an escaped line separator in saved scene/animation data; treating
++	// its Windows byte as UTF-8 destroys that separator before checkString.
++	if (isPS4Jonsson())
++		res = Common::U32String(res, g_director->getPlatformEncoding()).encode(Common::kUtf8);
+ 	g_lingo->push(res);
+ }
+ 
+@@ -740,6 +746,12 @@
+ 
+ 	if (me->_filename) {
+ 		Common::String filename = *me->_filename;
++		// Do not resurrect a deleted Jönsson save when closeFile later flushes
++		// the append buffer opened by its replace-file sequence.
++		if (isPS4Jonsson() && me->getObjType() != kXObj) {
++			delete me->_outStream;
++			me->_outStream = nullptr;
++		}
+ 		// Xtra version does not dispose handle on file delete
+ 		if (me->getObjType() == kXObj) {
+ 			me->dispose();
 --- /dev/null
 +++ b/engines/director/lingo/xtras/k/kepath-grid.h
 @@ -0,0 +1,81 @@
@@ -1589,16 +2198,24 @@
 +#endif
 --- a/engines/director/score.cpp
 +++ b/engines/director/score.cpp
-@@ -52,6 +52,8 @@
+@@ -22,6 +22,7 @@
+ #define FORBIDDEN_SYMBOL_EXCEPTION_getenv
+ 
+ #include "common/config-manager.h"
++#include "common/algorithm.h"
+ #include "common/file.h"
+ #include "common/rational.h"
+ #include "common/memstream.h"
+@@ -51,6 +52,8 @@
+ #include "director/castmember/movie.h"
  #include "director/castmember/transition.h"
  #include "director/debugger/debugtools.h"
- 
-+#include "director/ps4-jonsson.h"
 +
++#include "director/ps4-jonsson.h"
+ 
  namespace Director {
  
- #include "director/palette-fade.h"
-@@ -342,7 +344,8 @@
+@@ -342,7 +345,8 @@
  					_movie->processEvent(kEventMouseWithin, _movie->_currentHoveredSpriteId);
  				}
  
@@ -1608,7 +2225,7 @@
  			} else 	if (_version >= kFileVer500) {
  				// In D5, these events are only generated if a mouse button is pressed
  				bool isButtonDown = !Director::DT::isMouseInputIgnored() && (g_system->getEventManager()->getButtonState() != 0);
-@@ -352,6 +355,13 @@
+@@ -352,6 +356,13 @@
  			}
  		}
  	}
@@ -1622,7 +2239,7 @@
  
  	update();
  
-@@ -671,7 +681,10 @@
+@@ -671,7 +682,10 @@
  		// exitFrame is not called in this case.
  		if (_haveInteractivity && !_window->_skipFrameAdvance && !_exitFrameCalled) {
  			// Exit the current frame. This can include scopeless ScoreScripts.
@@ -1634,7 +2251,7 @@
  			_exitFrameCalled = true;
  			_skipIdle = false;
  		}
-@@ -827,7 +840,10 @@
+@@ -827,7 +841,10 @@
  	if (!_window->_playbackPaused) {
  		_exitFrameCalled = false;
  		if (_version >= kFileVer400) {
@@ -1646,7 +2263,7 @@
  		}
  	}
  	if (_window->frozenLingoStateCount() > count)
-@@ -854,6 +870,7 @@
+@@ -854,6 +871,7 @@
  }
  
  void Score::renderFrame(uint16 frameId, RenderMode mode, bool sound1Changed, bool sound2Changed) {
@@ -1654,73 +2271,137 @@
  	// An embedded movie only refreshes its own channels for the host to
  	// composite via getSubChannels(); it must never touch the shared window.
  	if (_movie->_isEmbedded) {
-@@ -1668,7 +1685,15 @@
+@@ -1445,6 +1463,40 @@
+ 	}
  }
  
++bool Score::updatePS4ScriptCursor(Common::Point pos) {
++	// Går på djupet hides the system cursor and moves a bitmap in script 41.
++	// Follow input between score frames; leave animation and interaction state
++	// to the original script. Do not apply this convention to other games.
++	if (!isPS4Jonsson() || Common::String(_vm->getGameId()) != "jonssonligan2" ||
++	    _playState != kPlayStarted || _window->_playbackPaused ||
++	    _movie->_videoPlayback || _movie->_isEmbedded)
++		return false;
++
++	const Common::Rect &stage = _movie->_movieRect;
++	if (stage.width() < 16 || stage.height() < 16)
++		return false;
++	// Window::getMousePos() is already relative to the stage's inner origin.
++	// The movie rect may contain an authoring/desktop offset; adding that
++	// offset here separates the visible cursor from hover/click coordinates.
++	pos.x = CLIP<int>(pos.x, 8, stage.width() - 8);
++	pos.y = CLIP<int>(pos.y, 8, stage.height() - 8);
++	for (Channel *channel : _channels) {
++		if (!channel || !channel->_visible || channel->_priority != 0x7fffffff ||
++		    !channel->_sprite || !channel->_sprite->_cast ||
++		    channel->_sprite->_cast->_type != kCastBitmap)
++			continue;
++		CastMemberInfo *info = channel->_sprite->_cast->getInfo();
++		if (!info || !info->name.hasPrefix("cursor_"))
++			continue;
++		if (channel->getPosition() == pos)
++			return false;
++		channel->setPosition(pos.x, pos.y);
++		channel->setNeedsDraw();
++		return true;
++	}
++	return false;
++}
++
+ void Score::renderCursor(Common::Point pos, bool forceUpdate) {
+ 	if (Director::DT::isMouseInputIgnored()) {
+ 		pos = _movie->_lastMousePos;
+@@ -1667,8 +1719,34 @@
+ 	return 0;
+ }
+ 
++const Common::Array<int> &Score::getPS4ChannelOrder() {
++	bool changed = _ps4ChannelPriorities.size() != _channels.size();
++	if (changed) {
++		_ps4ChannelPriorities.resize(_channels.size());
++		_ps4ChannelOrder.resize(_channels.size());
++	}
++	for (uint i = 0; i < _channels.size(); ++i) {
++		const int priority = _channels[i]->_priority;
++		if (_ps4ChannelPriorities[i] != priority)
++			changed = true;
++		_ps4ChannelPriorities[i] = priority;
++	}
++	if (changed) {
++		for (uint i = 0; i < _channels.size(); ++i)
++			_ps4ChannelOrder[i] = i;
++		Common::sort(_ps4ChannelOrder.begin(), _ps4ChannelOrder.end(), [this](int a, int b) {
++			if (_ps4ChannelPriorities[a] != _ps4ChannelPriorities[b])
++				return _ps4ChannelPriorities[a] < _ps4ChannelPriorities[b];
++			return a < b;
++		});
++	}
++	return _ps4ChannelOrder;
++}
++
  uint16 Score::getSpriteIDFromPos(Common::Point pos) {
 -	for (int i = _channels.size() - 1; i >= 0; i--) {
-+	Common::Array<int> order;
-+	for (int i = _channels.size() - 1; i >= 0; --i) {
-+		auto before = order.begin();
-+		if (isPS4Jonsson())
-+			while (before != order.end() && _channels[*before]->_priority >= _channels[i]->_priority) ++before;
-+		else before = order.end();
-+		order.insert(before, i);
-+	}
-+	for (int i : order) {
++	const Common::Array<int> *order = isPS4Jonsson() ? &getPS4ChannelOrder() : nullptr;
++	for (int slot = _channels.size() - 1; slot >= 0; --slot) {
++		const int i = order ? (*order)[slot] : slot;
  		CollisionTest test = _channels[i]->isMouseIn(pos);
  		if (test == kCollisionYes)
  			return i;
-@@ -1680,7 +1705,15 @@
+@@ -1680,7 +1758,9 @@
  }
  
  uint16 Score::getMouseSpriteIDFromPos(Common::Point pos) {
 -	for (int i = _channels.size() - 1; i >= 0; i--) {
-+	Common::Array<int> order;
-+	for (int i = _channels.size() - 1; i >= 0; --i) {
-+		auto before = order.begin();
-+		if (isPS4Jonsson())
-+			while (before != order.end() && _channels[*before]->_priority >= _channels[i]->_priority) ++before;
-+		else before = order.end();
-+		order.insert(before, i);
-+	}
-+	for (int i : order) {
++	const Common::Array<int> *order = isPS4Jonsson() ? &getPS4ChannelOrder() : nullptr;
++	for (int slot = _channels.size() - 1; slot >= 0; --slot) {
++		const int i = order ? (*order)[slot] : slot;
  		CollisionTest test = _channels[i]->isMouseIn(pos);
  		if (test == kCollisionYes && _channels[i]->_sprite->respondsToMouse())
  			return i;
-@@ -1692,7 +1725,15 @@
+@@ -1692,7 +1772,9 @@
  }
  
  uint16 Score::getActiveSpriteIDFromPos(Common::Point pos) {
 -	for (int i = _channels.size() - 1; i >= 0; i--) {
-+	Common::Array<int> order;
-+	for (int i = _channels.size() - 1; i >= 0; --i) {
-+		auto before = order.begin();
-+		if (isPS4Jonsson())
-+			while (before != order.end() && _channels[*before]->_priority >= _channels[i]->_priority) ++before;
-+		else before = order.end();
-+		order.insert(before, i);
-+	}
-+	for (int i : order) {
++	const Common::Array<int> *order = isPS4Jonsson() ? &getPS4ChannelOrder() : nullptr;
++	for (int slot = _channels.size() - 1; slot >= 0; --slot) {
++		const int i = order ? (*order)[slot] : slot;
  		CollisionTest test = _channels[i]->isMouseIn(pos);
  		if (test == kCollisionYes && _channels[i]->_sprite->isActive())
  			return i;
-@@ -1730,7 +1771,13 @@
+@@ -1721,21 +1803,25 @@
+ 
+ Common::Array<Channel *> Score::getSpriteIntersections(const Common::Rect &r) {
+ 	Common::Array<Channel *> intersections;
+-	Common::Array<Channel *> appendix;
+-
+-	for (uint i = 0; i < _channels.size(); i++) {
++	Common::Array<int> appendix;
++
++	const Common::Array<int> *order = isPS4Jonsson() ? &getPS4ChannelOrder() : nullptr;
++	for (uint slot = 0; slot < _channels.size(); ++slot) {
++		const uint i = order ? (*order)[slot] : slot;
+ 		if (!_channels[i]->isEmpty() && !r.findIntersectingRect(_channels[i]->getBbox()).isEmpty()) {
+ 			// Editable text sprites will (more or less) always be rendered in front of other sprites,
+ 			// regardless of their order in the channel list.
  			if (_channels[i]->getEditable()) {
- 				appendix.push_back(_channels[i]);
+-				appendix.push_back(_channels[i]);
++				appendix.push_back(i);
  			} else {
--				intersections.push_back(_channels[i]);
-+				if (isPS4Jonsson()) {
-+					auto before = intersections.begin();
-+					while (before != intersections.end() && (*before)->_priority <= _channels[i]->_priority) ++before;
-+					intersections.insert(before, _channels[i]);
-+				} else {
-+					intersections.push_back(_channels[i]);
-+				}
+ 				intersections.push_back(_channels[i]);
  			}
  		}
  	}
-@@ -1972,6 +2019,7 @@
++	if (order)
++		Common::sort(appendix.begin(), appendix.end());
+ 	for (auto &ch : appendix) {
+-		intersections.push_back(ch);
++		intersections.push_back(_channels[ch]);
+ 	}
+ 
+ 	return intersections;
+@@ -1972,6 +2058,7 @@
  	}
  
  	if (version >= kFileVer400) {
@@ -1728,7 +2409,7 @@
  		_framesStreamSize = _framesStream->readUint32();
  		_frame1Offset = _framesStream->readUint32();
  		_numOfFrames = _framesStream->readUint32();
-@@ -1990,6 +2038,14 @@
+@@ -1990,6 +2077,14 @@
  			_framesStream->readUint16(); // Skip
  		}
  
@@ -1743,7 +2424,7 @@
  		_firstFramePosition = _framesStream->pos();
  
  		debugC(1, kDebugLoading, "Score::loadFrames(): size: %d, frame1Offset: %d, numOfFrames: %d, version: %d, spriteRecordSize: %d, numChannels: %d, numChannelsDisplayed: %d",
-@@ -2030,7 +2086,11 @@
+@@ -2030,7 +2125,11 @@
  	// Calculate number of frames and their positions
  	// numOfFrames in the header is often incorrect
  	for (_numFrames = 1; loadFrame(_numFrames, loadSprites); _numFrames++) {
@@ -1756,6 +2437,29 @@
  
  		for (int i = 0; i < (int)_currentFrame->_sprites.size(); i++) {
  			if (_currentFrame->_sprites[i]->_castId.member && i > _maxChannelsUsed)
+--- a/engines/director/score.h
++++ b/engines/director/score.h
+@@ -136,6 +136,7 @@
+ 	bool isPaletteColorCycling();
+ 	void renderPaletteCycle(RenderMode mode = kRenderModeNormal);
+ 	void renderCursor(Common::Point pos, bool forceUpdate = false);
++	bool updatePS4ScriptCursor(Common::Point pos);
+ 	void updateWidgets(bool hasVideoPlayback);
+ 
+ 	void invalidateRectsForMember(CastMember *member);
+@@ -175,6 +176,12 @@
+ 
+ public:
+ 	Common::Array<Channel *> _channels;
++
++	// Index order survives channel replacement; priority snapshots detect all
++	// writers, including script locZ changes and score frame replacement.
++	const Common::Array<int> &getPS4ChannelOrder();
++	Common::Array<int> _ps4ChannelOrder;
++	Common::Array<int> _ps4ChannelPriorities;
+ 	Common::SortedArray<Label *> *_labels;
+ 	Common::HashMap<uint16, Common::String> _actions;
+ 	Common::HashMap<uint16, bool> _immediateActions;
 --- a/engines/director/sound.cpp
 +++ b/engines/director/sound.cpp
 @@ -39,7 +39,60 @@

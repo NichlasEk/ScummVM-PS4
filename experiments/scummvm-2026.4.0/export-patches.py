@@ -7,6 +7,7 @@ clean=root/'.tools/upstream-2026.4.0/scummvm-2026.4.0'
 paths=set(re.findall(r'^\+\+\+ b/(.+)$',(root/'patches/scummvm/ps4.patch').read_text(),re.M))
 paths.update(n for n in re.findall(r'^\+\+\+ b/(.+)$',(out/'vulkan.patch').read_text(),re.M))
 paths.add('common/str-base.cpp')
+paths.add('engines/hpl1/engine/impl/low_level_graphics_tgl.cpp')
 paths.add('backends/keymapper/virtual-mouse.h')
 paths.update(('engines/hpl1/engine/libraries/newton/Newton.cpp', 'engines/hpl1/metaengine.cpp', 'engines/hpl1/engine/input/Mouse.cpp'))
 paths.update(('backends/graphics/opengl/renderer3d.cpp', 'backends/graphics/opengl/renderer3d.h', 'graphics/opengl/shader.cpp'))

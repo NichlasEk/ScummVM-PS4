@@ -1070,3 +1070,14 @@ actions now. Temporary input/message traces were removed from source.
 Known rendering issue: the user observes the bunk bed turning black at some
 view angles, also visible in local testing. Startup/control acceptance does
 not establish rendering correctness or physical-console compatibility.
+
+### Penumbra TinyGL black surfaces
+
+The user accepted the depth-comparison candidate in shadPS4. HPL's TinyGL
+backend now maps Equal to LessOrEqual for the color pass after depth prepass.
+This avoids rejecting visible surface fragments when the software depth-only
+and textured paths differ in quantization; the black bunk-bed symptom was
+view-dependent. Other backends retain their original depth comparison.
+This is a TinyGL compatibility workaround, not full hardware HPL rendering.
+Physical PS4 and later-scene regression testing remain pending.
+Local evidence: bed-depth-build.log and bed-depth-run.log.

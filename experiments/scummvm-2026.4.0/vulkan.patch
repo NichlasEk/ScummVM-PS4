@@ -1102,6 +1102,19 @@
  	//
  	// The Keymap tab
  	//
+--- a/engines/hpl1/engine/impl/low_level_graphics_tgl.cpp
++++ b/engines/hpl1/engine/impl/low_level_graphics_tgl.cpp
+@@ -875,7 +875,9 @@
+ //-----------------------------------------------------------------------
+ 
+ void LowLevelGraphicsTGL::SetDepthTestFunc(eDepthTestFunc aFunc) {
+-	tglDepthFunc(GetGLDepthTestFuncEnum(aFunc));
++	// TinyGL depth-only and textured rasterization can quantize depth differently.
++	// Permit the visible surface in the color pass instead of leaving black holes.
++	tglDepthFunc(GetGLDepthTestFuncEnum(aFunc == eDepthTestFunc_Equal ? eDepthTestFunc_LessOrEqual : aFunc));
+ }
+ 
+ //-----------------------------------------------------------------------
 --- a/engines/hpl1/engine/input/Mouse.cpp
 +++ b/engines/hpl1/engine/input/Mouse.cpp
 @@ -93,10 +93,10 @@

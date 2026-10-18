@@ -780,6 +780,38 @@
  
  	Common::Point delta;
  	delta.x = deltaX;
+@@ -150,26 +179,26 @@
+ 	return false;
+ }
+ 
+-void VirtualMouse::addActionsToKeymap(Keymap *keymap) {
++void VirtualMouse::addActionsToKeymap(Keymap *keymap, bool rightStick) {
+ 	Action *act;
+ 
+ 	act = new Action("VMOUSEUP", _("Virtual mouse up"));
+-	act->addDefaultInputMapping("JOY_LEFT_STICK_Y-");
++	act->addDefaultInputMapping(rightStick ? "JOY_RIGHT_STICK_Y-" : "JOY_LEFT_STICK_Y-");
+ 	act->setCustomBackendActionAxisEvent(VirtualMouse::kCustomActionVirtualAxisUp);
+ 	keymap->addAction(act);
+ 
+ 	act = new Action("VMOUSEDOWN", _("Virtual mouse down"));
+-	act->addDefaultInputMapping("JOY_LEFT_STICK_Y+");
++	act->addDefaultInputMapping(rightStick ? "JOY_RIGHT_STICK_Y+" : "JOY_LEFT_STICK_Y+");
+ 	act->setCustomBackendActionAxisEvent(VirtualMouse::kCustomActionVirtualAxisDown);
+ 	keymap->addAction(act);
+ 
+ 	act = new Action("VMOUSELEFT", _("Virtual mouse left"));
+-	act->addDefaultInputMapping("JOY_LEFT_STICK_X-");
++	act->addDefaultInputMapping(rightStick ? "JOY_RIGHT_STICK_X-" : "JOY_LEFT_STICK_X-");
+ 	act->setCustomBackendActionAxisEvent(VirtualMouse::kCustomActionVirtualAxisLeft);
+ 	keymap->addAction(act);
+ 
+ 	act = new Action("VMOUSERIGHT", _("Virtual mouse right"));
+-	act->addDefaultInputMapping("JOY_LEFT_STICK_X+");
++	act->addDefaultInputMapping(rightStick ? "JOY_RIGHT_STICK_X+" : "JOY_LEFT_STICK_X+");
+ 	act->setCustomBackendActionAxisEvent(VirtualMouse::kCustomActionVirtualAxisRight);
+ 	keymap->addAction(act);
+ 
 @@ -186,12 +215,22 @@
  	float analogX  = (float)_inputAxisPositionX;
  	float analogY  = (float)_inputAxisPositionY;
@@ -816,6 +848,17 @@
  	case 1:
  		return 0.5;  // 0.5 speed
  	case 2:
+--- a/backends/keymapper/virtual-mouse.h
++++ b/backends/keymapper/virtual-mouse.h
+@@ -53,7 +53,7 @@
+ 	bool notifyEvent(const Event &event) override;
+ 
+ 	/** Add the virtual mouse keymapper actions to a keymap */
+-	void addActionsToKeymap(Keymap *keymap);
++	static void addActionsToKeymap(Keymap *keymap, bool rightStick = false);
+ 
+ private:
+ 	static const int32 kUpdateDelay = 12;
 --- a/backends/mixer/sdl/sdl-mixer.cpp
 +++ b/backends/mixer/sdl/sdl-mixer.cpp
 @@ -34,7 +34,11 @@
@@ -1059,6 +1102,317 @@
  	//
  	// The Keymap tab
  	//
+--- a/engines/hpl1/engine/input/Mouse.cpp
++++ b/engines/hpl1/engine/input/Mouse.cpp
+@@ -93,10 +93,10 @@
+ 		return;
+ 	if (ev.type == Common::EVENT_MOUSEMOVE) {
+ 		_absMousePos = cVector2f(ev.mouse.x, ev.mouse.y);
++		_relMousePos += cVector2f(ev.relMouse.x, ev.relMouse.y);
+ 	} else {
+ 		setMouseState(ev.type, _buttonState);
+ 	}
+-	_relMousePos = cVector2f(ev.relMouse.x, ev.relMouse.y);
+ }
+ 
+ void Mouse::Update() {
+--- a/engines/hpl1/engine/libraries/newton/Newton.cpp
++++ b/engines/hpl1/engine/libraries/newton/Newton.cpp
+@@ -24,6 +24,15 @@
+ #include "NewtonClass.h"
+ #include "NewtonStdAfx.h"
+ #include "hpl1/debug.h"
++
++// Public float arrays need only float alignment; dgMatrix has SIMD alignment.
++static dgMatrix readApiMatrix(const dFloat *values) {
++	dgMatrix result;
++	for (int row = 0; row < 4; ++row)
++		for (int col = 0; col < 4; ++col)
++			result[row][col] = values[row * 4 + col];
++	return result;
++}
+ 
+ void NewtonInitGlobals() {
+ 	dgInitMemoryGlobals();
+@@ -1258,7 +1267,7 @@
+ 	TRACE_FUNTION(__FUNCTION__);
+ 	dgVector destination(target[0], target[1], target[2], dgFloat32(0.0f));
+ 	Newton *const world = (Newton *)newtonWorld;
+-	return world->ConvexCast((dgCollision *)shape, *((const dgMatrix *)matrix),
++	return world->ConvexCast((dgCollision *)shape, readApiMatrix(matrix),
+ 	                         destination, *(dgFloat32 *)hitParam, (OnRayPrecastAction)prefilter,
+ 	                         userData, (dgConvexCastReturnInfo *)info, maxContactsCount, threadIndex);
+ }
+@@ -2385,7 +2394,10 @@
+ 	world = (Newton *)newtonWorld;
+ 	dgMatrix matrix(dgGetIdentityMatrix());
+ 	if (offsetMatrix) {
+-		matrix = *((const dgMatrix *)offsetMatrix);
++		// The public API accepts float-aligned arrays, not aligned dgMatrix objects.
++		for (int row = 0; row < 4; ++row)
++			for (int col = 0; col < 4; ++col)
++				matrix[row][col] = offsetMatrix[row * 4 + col];
+ 	}
+ 	return (NewtonCollision *)world->CreateBox(dx, dy, dz, shapeID, matrix);
+ }
+@@ -2422,7 +2434,10 @@
+ 	world = (Newton *)newtonWorld;
+ 	dgMatrix matrix(dgGetIdentityMatrix());
+ 	if (offsetMatrix) {
+-		matrix = *((const dgMatrix *)offsetMatrix);
++		// The public API accepts float-aligned arrays, not aligned dgMatrix objects.
++		for (int row = 0; row < 4; ++row)
++			for (int col = 0; col < 4; ++col)
++				matrix[row][col] = offsetMatrix[row * 4 + col];
+ 	}
+ 
+ 	radiusX = dgAbsf(radiusX);
+@@ -2462,7 +2477,10 @@
+ 	world = (Newton *)newtonWorld;
+ 	dgMatrix matrix(dgGetIdentityMatrix());
+ 	if (offsetMatrix) {
+-		matrix = *((const dgMatrix *)offsetMatrix);
++		// The public API accepts float-aligned arrays, not aligned dgMatrix objects.
++		for (int row = 0; row < 4; ++row)
++			for (int col = 0; col < 4; ++col)
++				matrix[row][col] = offsetMatrix[row * 4 + col];
+ 	}
+ 	return (NewtonCollision *)world->CreateCone(radius, height, shapeID, matrix);
+ }
+@@ -2494,7 +2512,10 @@
+ 	world = (Newton *)newtonWorld;
+ 	dgMatrix matrix(dgGetIdentityMatrix());
+ 	if (offsetMatrix) {
+-		matrix = *((const dgMatrix *)offsetMatrix);
++		// The public API accepts float-aligned arrays, not aligned dgMatrix objects.
++		for (int row = 0; row < 4; ++row)
++			for (int col = 0; col < 4; ++col)
++				matrix[row][col] = offsetMatrix[row * 4 + col];
+ 	}
+ 	return (NewtonCollision *)world->CreateCapsule(radius, height, shapeID,
+ 	        matrix);
+@@ -2525,7 +2546,10 @@
+ 	world = (Newton *)newtonWorld;
+ 	dgMatrix matrix(dgGetIdentityMatrix());
+ 	if (offsetMatrix) {
+-		matrix = *((const dgMatrix *)offsetMatrix);
++		// The public API accepts float-aligned arrays, not aligned dgMatrix objects.
++		for (int row = 0; row < 4; ++row)
++			for (int col = 0; col < 4; ++col)
++				matrix[row][col] = offsetMatrix[row * 4 + col];
+ 	}
+ 	return (NewtonCollision *)world->CreateCylinder(radius, height, shapeID,
+ 	        matrix);
+@@ -2561,7 +2585,10 @@
+ 	world = (Newton *)newtonWorld;
+ 	dgMatrix matrix(dgGetIdentityMatrix());
+ 	if (offsetMatrix) {
+-		matrix = *((const dgMatrix *)offsetMatrix);
++		// The public API accepts float-aligned arrays, not aligned dgMatrix objects.
++		for (int row = 0; row < 4; ++row)
++			for (int col = 0; col < 4; ++col)
++				matrix[row][col] = offsetMatrix[row * 4 + col];
+ 	}
+ 	return (NewtonCollision *)world->CreateChamferCylinder(radius, height,
+ 	        shapeID, matrix);
+@@ -2618,7 +2645,10 @@
+ 	world = (Newton *)newtonWorld;
+ 	dgMatrix matrix(dgGetIdentityMatrix());
+ 	if (offsetMatrix) {
+-		matrix = *((const dgMatrix *)offsetMatrix);
++		// The public API accepts float-aligned arrays, not aligned dgMatrix objects.
++		for (int row = 0; row < 4; ++row)
++			for (int col = 0; col < 4; ++col)
++				matrix[row][col] = offsetMatrix[row * 4 + col];
+ 	}
+ 	tolerance = ClampValue(tolerance, dgFloat32(0.0f), dgFloat32(0.125f));
+ 	return (NewtonCollision *)world->CreateConvexHull(count, vertexCloud,
+@@ -2731,7 +2761,7 @@
+ 	collision = (dgCollision *)convexHullModifier;
+ 
+ 	TRACE_FUNTION(__FUNCTION__);
+-	const dgMatrix &matrix = (*((const dgMatrix *)matrixPtr));
++	const dgMatrix &matrix = (readApiMatrix(matrixPtr));
+ 	collision->ModifierSetMatrix(matrix);
+ }
+ 
+@@ -3778,7 +3808,7 @@
+ 	dgList<dgCollisionScene::dgProxy *>::dgListNode *const node = (dgList <
+ 	        dgCollisionScene::dgProxy * >::dgListNode *)proxy;
+ 	dgCollisionScene *const newtonScene = node->GetInfo()->m_owner;
+-	const dgMatrix &offset = *((const dgMatrix *)matrix);
++	const dgMatrix &offset = readApiMatrix(matrix);
+ 	newtonScene->SetProxyMatrix(node, offset);
+ }
+ 
+@@ -3869,7 +3899,7 @@
+ 
+ 	TRACE_FUNTION(__FUNCTION__);
+ 	return world->ClosestPoint(*((const dgTriplex *)point), (dgCollision *)collision,
+-	                           *((const dgMatrix *)matrix), *((dgTriplex *)contact), *((dgTriplex *)normal),
++	                           readApiMatrix(matrix), *((dgTriplex *)contact), *((dgTriplex *)normal),
+ 	                           threadIndex);
+ }
+ 
+@@ -3910,8 +3940,8 @@
+ 	world = (Newton *)newtonWorld;
+ 
+ 	TRACE_FUNTION(__FUNCTION__);
+-	return world->ClosestPoint((dgCollision *)collisionA, *((const dgMatrix *)matrixA),
+-	                           (dgCollision *)collisionB, *((const dgMatrix *)matrixB),
++	return world->ClosestPoint((dgCollision *)collisionA, readApiMatrix(matrixA),
++	                           (dgCollision *)collisionB, readApiMatrix(matrixB),
+ 	                           *((dgTriplex *)contactA), *((dgTriplex *)contactB),
+ 	                           *((dgTriplex *)normalAB), threadIndex);
+ }
+@@ -3951,8 +3981,8 @@
+ 	world = (Newton *)newtonWorld;
+ 
+ 	TRACE_FUNTION(__FUNCTION__);
+-	return world->Collide((dgCollision *)collisionA, *((const dgMatrix *)matrixA),
+-	                      (dgCollision *)collisionB, *((const dgMatrix *)matrixB), (dgTriplex *)contacts,
++	return world->Collide((dgCollision *)collisionA, readApiMatrix(matrixA),
++	                      (dgCollision *)collisionB, readApiMatrix(matrixB), (dgTriplex *)contacts,
+ 	                      (dgTriplex *)normals, penetration, maxSize, threadIndex);
+ }
+ 
+@@ -4009,8 +4039,8 @@
+ 
+ 	TRACE_FUNTION(__FUNCTION__);
+ 	return world->CollideContinue((dgCollision *)collisionA,
+-	                              *((const dgMatrix *)matrixA), *((const dgVector *)velocA), *((const dgVector *)omegaA),
+-	                              (dgCollision *)collisionB, *((const dgMatrix *)matrixB), *((const dgVector *)velocB),
++	                              readApiMatrix(matrixA), *((const dgVector *)velocA), *((const dgVector *)omegaA),
++	                              (dgCollision *)collisionB, readApiMatrix(matrixB), *((const dgVector *)velocB),
+ 	                              *((const dgVector *)omegaB), *timeOfImpact, (dgTriplex *)contacts,
+ 	                              (dgTriplex *)normals, penetration, maxSize, threadIndex);
+ }
+@@ -4116,7 +4146,7 @@
+ 	const dgCollision *collision;
+ 	collision = (const dgCollision *)collisionPtr;
+ 	// const dgMatrix& matrix = *((dgMatrix*) offsetMatrix);
+-	dgMatrix matrix(collision->GetOffsetMatrix() * (*((const dgMatrix *)offsetMatrix)));
++	dgMatrix matrix(collision->GetOffsetMatrix() * (readApiMatrix(offsetMatrix)));
+ 
+ 	dgVector q0;
+ 	dgVector q1;
+@@ -4159,7 +4189,7 @@
+                                      void *const userDataPtr) {
+ 	TRACE_FUNTION(__FUNCTION__);
+ 	const dgCollision *const collision = (const dgCollision *)(collisionPtr);
+-	const dgMatrix matrix = *((const dgMatrix *)matrixPtr);
++	const dgMatrix matrix = readApiMatrix(matrixPtr);
+ 
+ 	collision->DebugCollision(matrix, (OnDebugCollisionMeshCallback)callback,
+ 	                          userDataPtr);
+@@ -4381,7 +4411,7 @@
+ //
+ // See also: NewtonSetEulerAngle
+ void NewtonGetEulerAngle(const dFloat *const matrix, dFloat *const angles) {
+-	const dgMatrix &mat = *((const dgMatrix *)matrix);
++	const dgMatrix &mat = readApiMatrix(matrix);
+ 
+ 	TRACE_FUNTION(__FUNCTION__);
+ 	dgVector eulers(mat.CalcPitchYawRoll());
+@@ -4486,7 +4516,7 @@
+ 	SaveCollision(collisionPtr);
+ #endif
+ 
+-	dgMatrix matrix(*((const dgMatrix *)matrixPtr));
++	dgMatrix matrix(readApiMatrix(matrixPtr));
+ #ifdef _DEBUG
+ 	//  matrix.m_front = matrix.m_front.Scale (dgRsqrt (matrix.m_front % matrix.m_front));
+ 	//  matrix.m_right = matrix.m_front * matrix.m_up;
+@@ -4899,7 +4929,7 @@
+ 
+ 	body = (dgBody *)bodyPtr;
+ 	world = (Newton *)body->GetWorld();
+-	const dgMatrix matrix(*((const dgMatrix *)matrixPtr));
++	const dgMatrix matrix(readApiMatrix(matrixPtr));
+ 
+ 	world->BodySetMatrix(body, matrix);
+ }
+@@ -7959,7 +7989,7 @@
+ 	*topMesh = NULL;
+ 	*bottomMesh = NULL;
+ 	dgMatrix &matrix = *((dgMatrix *)planeMatrix);
+-	const dgMatrix &texMatrix = *((const dgMatrix *)planeTextureMatrix);
++	const dgMatrix &texMatrix = readApiMatrix(planeTextureMatrix);
+ 	((const dgMeshEffect *)mesh)->PlaneClipMesh(matrix, texMatrix, planeMaterial, (dgMeshEffect **)topMesh, (dgMeshEffect **)bottomMesh);
+ }
+ 
+@@ -7987,7 +8017,7 @@
+ NewtonMesh *NewtonMeshUnion(NewtonMesh *mesh,
+                             const NewtonMesh *const clipper, const dFloat *const clipperMatrix) {
+ 	TRACE_FUNTION(__FUNCTION__);
+-	const dgMatrix &matrix = *((const dgMatrix *)clipperMatrix);
++	const dgMatrix &matrix = readApiMatrix(clipperMatrix);
+ 
+ 	return (NewtonMesh *)((dgMeshEffect *)mesh)->Union(matrix, (const dgMeshEffect *)clipper);
+ }
+@@ -7995,7 +8025,7 @@
+ NewtonMesh *NewtonMeshDifference(NewtonMesh *const mesh,
+                                  const NewtonMesh *const clipper, const dFloat *const clipperMatrix) {
+ 	TRACE_FUNTION(__FUNCTION__);
+-	const dgMatrix &matrix = *((const dgMatrix *)clipperMatrix);
++	const dgMatrix &matrix = readApiMatrix(clipperMatrix);
+ 
+ 	return (NewtonMesh *)((dgMeshEffect *)mesh)->Difference(matrix, (const dgMeshEffect *)clipper);
+ }
+@@ -8003,7 +8033,7 @@
+ NewtonMesh *NewtonMeshIntersection(NewtonMesh *const mesh,
+                                    const NewtonMesh *const clipper, const dFloat *const clipperMatrix) {
+ 	TRACE_FUNTION(__FUNCTION__);
+-	const dgMatrix &matrix = *((const dgMatrix *)clipperMatrix);
++	const dgMatrix &matrix = readApiMatrix(clipperMatrix);
+ 
+ 	return (NewtonMesh *)((dgMeshEffect *)mesh)->Intersection(matrix, (const dgMeshEffect *)clipper);
+ }
+--- a/engines/hpl1/metaengine.cpp
++++ b/engines/hpl1/metaengine.cpp
+@@ -21,6 +21,7 @@
+ 
+ #include "hpl1/metaengine.h"
+ #include "backends/keymapper/action.h"
++#include "backends/keymapper/virtual-mouse.h"
+ #include "backends/keymapper/keymap.h"
+ #include "common/savefile.h"
+ #include "common/system.h"
+@@ -87,8 +88,8 @@
+ 	actions->addAction(createKeyBoardAction("INTERACTMODE", _("Interact mode"), "r", Common::KEYCODE_r));
+ 	actions->addAction(createMouseAction("LOOK_MODE", _("Look mode"), "MOUSE_MIDDLE", Common::EVENT_MBUTTONDOWN));
+ 	actions->addAction(createKeyBoardAction("HOLSTER", _("Holster"), "x", Common::KEYCODE_x));
+-	actions->addAction(createMouseAction("EXAMINE", _("Examine"), "MOUSE_LEFT", Common::EVENT_LBUTTONDOWN));
+-	actions->addAction(createMouseAction("INTERACT", _("Interact"), "MOUSE_RIGHT", Common::EVENT_RBUTTONDOWN));
++	actions->addAction(createMouseAction("EXAMINE", _("Examine"), "MOUSE_RIGHT", Common::EVENT_RBUTTONDOWN));
++	actions->addAction(createMouseAction("INTERACT", _("Interact"), "MOUSE_LEFT", Common::EVENT_LBUTTONDOWN));
+ 
+ 	Keymap *misc = new Keymap(Keymap::kKeymapTypeGame, "HPL1_MISC", "Misc");
+ 	misc->addAction(createKeyBoardAction("INVENTORY", _("Inventory"), "TAB", Common::KEYCODE_TAB));
+@@ -96,6 +97,23 @@
+ 	misc->addAction(createKeyBoardAction("PERSONAL_NOTES", _("Personal notes"), "p", Common::KEYCODE_p));
+ 	misc->addAction(createKeyBoardAction("FLASHLIGHT", _("Flashlight"), "f", Common::KEYCODE_f));
+ 	misc->addAction(createKeyBoardAction("GLOWSTICK", _("Glowstick"), "g", Common::KEYCODE_g));
++
++#ifdef __PS4__
++	// shadPS4 keyboard WASD is delivered as the left controller stick.
++	for (Common::Action *action : movement->getActions()) {
++		if (action->id == "FORWARD") action->addDefaultInputMapping("JOY_LEFT_STICK_Y-");
++		if (action->id == "BACKWARD") action->addDefaultInputMapping("JOY_LEFT_STICK_Y+");
++		if (action->id == "LEFT") action->addDefaultInputMapping("JOY_LEFT_STICK_X-");
++		if (action->id == "RIGHT") action->addDefaultInputMapping("JOY_LEFT_STICK_X+");
++		if (action->id == "JUMP") action->addDefaultInputMapping("JOY_Y");
++		if (action->id == "CROUCH") action->addDefaultInputMapping("JOY_LEFT_SHOULDER");
++	}
++	for (Common::Action *action : actions->getActions()) {
++		if (action->id == "INTERACT") action->addDefaultInputMapping("JOY_A");
++		if (action->id == "EXAMINE") action->addDefaultInputMapping("JOY_B");
++	}
++	Common::VirtualMouse::addActionsToKeymap(actions, true);
++#endif
+ 
+ 	Common::Array<Common::Keymap *> keymaps(3);
+ 	keymaps[0] = movement;
 --- a/engines/stark/metaengine.cpp
 +++ b/engines/stark/metaengine.cpp
 @@ -41,7 +41,12 @@

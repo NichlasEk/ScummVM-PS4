@@ -1013,3 +1013,60 @@ Validation: all 15 existing Director Python regressions and the new PFR1
 ASan/UBSan conversion/glyph test pass. Patch replay matches 143 modified files.
 PKG validation and extracted-payload comparison pass.
 Package SHA-256: `d09e993e0f71bcda8a18f63e90c812783c1401e4f5b3e39e90706ec1d680ddc7`.
+
+### Penumbra startup investigation (2026-10-18, after 0.17)
+
+Package 0.17 reproduces the hardware-reported startup failure in shadPS4 at
+NewtonCreateBox (guest 0x1dd3b3d). Its public float-array argument was cast to
+an aligned dgMatrix, emitting MOVAPS for an array without that guarantee.
+Seven primitive constructors now copy matrix elements without that cast.
+The rebuilt binary emits MOVUPS for the external matrix and passes the former
+crash site in the isolated Penumbra test. No hardware fix is claimed yet.
+
+A second blocker appears during loading: flexible memory runs out (0x110000
+available, 0x404000 requested), followed by a null output write in
+Graphics::PixelFormat::colorToARGB (guest 0x79b585). Diagnostic emulator trials
+with 256/1024 MiB extra flexible memory instead stop inside shadPS4 MapMemory
+with 'Failed to map physical memory'. The profile's memory settings were
+restored afterward. First playable scene has NOT been reached.
+
+Logs and the downloaded hardware dump are retained locally under
+artifacts/penumbra-hardware-20261018/. Intro/menu skipping is confined to this
+existing isolated test profile. Next work is CPU heap/memory allocation;
+the existing wrapper still forwards malloc to musl's flexible-memory heap.
+No new PKG has been delivered for this experiment.
+
+### Penumbra first room reached (follow-up)
+
+The direct-heap experiment and further Newton API matrix fixes reach the
+textured boat cabin with introductory text in shadPS4, using normal memory
+limits (extra_fmem_in_mbytes=0). This supersedes the startup blocker above;
+movement, interactions, later rooms and physical PS4 remain unverified.
+The visible test remains running. Evidence: matrix-api-run.log and
+first-room.png under artifacts/penumbra-hardware-20261018/.
+
+Opt-in `SCUMMVM_LARGE_DIRECT_HEAP=1` when configuring Vulkan routes malloc/calloc
+buffers >=256 KiB to CPU write-back Onion direct memory, with libc fallback.
+A fixed registry tracks ownership for free/realloc; failed growth preserves
+the original buffer. Existing libc pointers remain with libc. This is an
+experimental global allocator option and is OFF by default; PKG 0.17 is
+unchanged. The current local test binary was linked with this option enabled.
+Host ASan/UBSan tests cover growth/shrink/preservation, registry exhaustion,
+tombstones, mapping failure cleanup and libc fallback:
+`cc -std=c11 -O1 -g -fsanitize=address,undefined -I. tests/ps4/direct-heap.c -o /tmp/direct-heap-test && /tmp/direct-heap-test`.
+Newton's const float-matrix API readers now copy into aligned local matrices
+before calling internal SIMD routines, including collision queries.
+
+Input follow-up: user confirms control in the cabin. The opening message
+intentionally disables the player until Interact/Examine acknowledges it.
+PS4 bindings now map left stick to movement, right stick to virtual mouse,
+cross to Interact, circle to Examine, triangle to Jump and L1 to Crouch.
+The isolated shadPS4 profile maps captured PC mouse to the RIGHT stick;
+WASD moves, IJKL looks, N/left-click interacts, B/right-click examines.
+Mouse deltas accumulate rather than being replaced by later motion/button
+events. HPL's reversed Examine/Interact mouse defaults match its internal
+actions now. Temporary input/message traces were removed from source.
+
+Known rendering issue: the user observes the bunk bed turning black at some
+view angles, also visible in local testing. Startup/control acceptance does
+not establish rendering correctness or physical-console compatibility.

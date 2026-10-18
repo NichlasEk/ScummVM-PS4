@@ -20,7 +20,11 @@ target.parent.mkdir(parents=True,exist_ok=True)
 target.write_text((root/'compat/ps4gl/ps4gl-main.c').read_text().replace('/data/scummvm-vulkan','/data/scummvm-2026-vulkan'))
 PYMAIN
 sdk=${OO_PS4_TOOLCHAIN:-/opt/openorbis/OpenOrbis/PS4Toolchain}
-clang --target=x86_64-pc-freebsd12-elf -fPIC -O2 -D__PS4__ -D__ORBIS__ -isysroot "$sdk" -isystem "$sdk/include" -I"$root/compat/ps4gl" -I"$native/Vulkan-Headers/include" -I"$native/vulkan-ps4/include" -I"$root/.tools/glslang" -c "$root/artifacts/upstream-2026.4.0/ps4gl-main.c" -o "$bridge/ps4gl-main.o"
+heap_flags=()
+if [[ "${SCUMMVM_LARGE_DIRECT_HEAP:-0}" == 1 ]]; then
+ heap_flags+=(-DPS4_LARGE_DIRECT_HEAP)
+fi
+clang "${heap_flags[@]}" --target=x86_64-pc-freebsd12-elf -fPIC -O2 -D__PS4__ -D__ORBIS__ -isysroot "$sdk" -isystem "$sdk/include" -I"$root/compat/ps4gl" -I"$native/Vulkan-Headers/include" -I"$native/vulkan-ps4/include" -I"$root/.tools/glslang" -c "$root/artifacts/upstream-2026.4.0/ps4gl-main.c" -o "$bridge/ps4gl-main.o"
 # Rebuild every consumer of PS4GLContext when its layout changes.
 bash "$root/scripts/build-ps4-sdlgl.sh"
 for name in ps4gl ps4gl-glsl ps4gl-vulkan ps4gl-frame ps4gl-display; do

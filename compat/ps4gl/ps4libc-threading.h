@@ -44,16 +44,43 @@ static void allocator_lock(void) {
 static void allocator_unlock(void) {
   if (allocator_ready && scePthreadMutexUnlock(&allocator_mutex)) abort();
 }
+#ifdef PS4_LARGE_DIRECT_HEAP
+#include "ps4libc-direct-heap.h"
+#endif
 void *__wrap_malloc(size_t bytes) {
+#ifdef PS4_LARGE_DIRECT_HEAP
+  allocator_lock(); void *p=ps4_heap_alloc(bytes); allocator_unlock(); return p;
+#else
   allocator_lock(); void *p=__real_malloc(bytes); allocator_unlock(); return p;
+#endif
 }
 void *__wrap_calloc(size_t count,size_t bytes) {
+#ifdef PS4_LARGE_DIRECT_HEAP
+  if (bytes && count>SIZE_MAX/bytes) { errno=ENOMEM; return NULL; }
+  allocator_lock(); void *p=ps4_heap_alloc(count*bytes);
+  if (p) memset(p,0,count*bytes);
+  allocator_unlock(); return p;
+#else
   allocator_lock(); void *p=__real_calloc(count,bytes); allocator_unlock(); return p;
+#endif
 }
 void *__wrap_realloc(void *old,size_t bytes) {
-  allocator_lock(); void *p=__real_realloc(old,bytes); allocator_unlock(); return p;
+  allocator_lock(); void *p=
+#ifdef PS4_LARGE_DIRECT_HEAP
+  ps4_heap_realloc(old,bytes);
+#else
+  __real_realloc(old,bytes);
+#endif
+ allocator_unlock(); return p;
 }
 void __wrap_free(void *p) {
-  allocator_lock(); __real_free(p); allocator_unlock();
+  allocator_lock();
+#ifdef PS4_LARGE_DIRECT_HEAP
+  struct PS4DirectAllocation *a=p ? ps4_direct_find(p) : NULL;
+  if (a) ps4_direct_free(a); else __real_free(p);
+#else
+  __real_free(p);
+#endif
+  allocator_unlock();
 }
 #endif

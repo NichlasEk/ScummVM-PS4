@@ -41,5 +41,24 @@ int main(void) {
  assert(vk_ps4_AllocateCommandBuffers((VkDevice)&dev,&ai,pair)==VK_ERROR_OUT_OF_DEVICE_MEMORY);
  assert(live_direct==0 && ((VkPs4CommandPool*)pool)->command_buffer_count==0);
  vk_ps4_DestroyCommandPool((VkDevice)&dev,pool,NULL);assert(live_direct==0);
- puts("PASS: partial-allocation rollback; direct allocation, stable reuse, destroy active and trim cached buffers");
+ /* Exercise every scratch slot, including the slots beyond the old limit.
+  * Both active destruction and cached-buffer trimming must release them. */
+ for (unsigned cached=0; cached<2; ++cached) {
+  assert(vk_ps4_CreateCommandPool((VkDevice)&dev,&ci,NULL,&pool)==VK_SUCCESS);
+  ai.commandPool=pool; ai.commandBufferCount=1; fail_at=0;
+  assert(vk_ps4_AllocateCommandBuffers((VkDevice)&dev,&ai,&cb)==VK_SUCCESS);
+  c=(void*)cb;
+  for (unsigned i=0; i<VK_PS4_MAX_READBACK_SCRATCH; ++i)
+   assert(sceGnmDirectMemoryAllocate(&c->readback_scratch[i],65536,65536,
+    GNM_DIRECT_MEMORY_TYPE_WC_GARLIC,GNM_PROT_CPU_GPU_RW)==GNM_ERROR_OK);
+  assert(live_direct==1+VK_PS4_MAX_READBACK_SCRATCH);
+  if (cached) {
+   vk_ps4_FreeCommandBuffers((VkDevice)&dev,pool,1,&cb);
+   vk_ps4_TrimCommandPool((VkDevice)&dev,pool,0);
+   assert(live_direct==0);
+  }
+  vk_ps4_DestroyCommandPool((VkDevice)&dev,pool,NULL);
+  assert(live_direct==0);
+ }
+ puts("PASS: rollback, stable reuse, and all readback scratch slots released on destroy/trim");
 }

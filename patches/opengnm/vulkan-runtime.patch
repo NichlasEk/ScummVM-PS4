@@ -65,10 +65,20 @@ index e104443..641fb26 100644
  	      sce_module/libc.prx sce_module/libSceFios2.prx $(PKG_CONTENT_ID).pkg
  	@rm -rf sce_sys sce_module
 diff --git a/include/vk_ps4_internal.h b/include/vk_ps4_internal.h
-index 7634d6b..0fdb6ec 100644
+index 7634d6b..b199f29 100644
 --- a/include/vk_ps4_internal.h
 +++ b/include/vk_ps4_internal.h
-@@ -180,8 +180,12 @@ struct VkPs4Device {
+@@ -46,6 +46,9 @@ extern "C" {
+ #define VK_PS4_API_VERSION VK_MAKE_VERSION(1, 1, 0)
+ #define VK_PS4_DRIVER_VERSION VK_MAKE_VERSION(0, 1, 0)
+
++/* Grim save menu records 30 image copies before submission. */
++#define VK_PS4_MAX_READBACK_SCRATCH 32
++
+ /* === Breadcrumb logging (PS4 hardware debugging) === */
+ /* Opens a breadcrumb log file.  Default path on PS4: /data/vk_ps4_breadcrumb.log
+  * On host: /tmp/vk_ps4_breadcrumb.log.  Call early in main() or CreateInstance. */
+@@ -180,8 +183,12 @@ struct VkPs4Device {
       * Allocated from regular memory (GPU-accessible on PS4) at
       * device init time. */
      void *clear_ps_binary;
@@ -81,7 +91,7 @@ index 7634d6b..0fdb6ec 100644
  };
 
  /* === Queue === */
-@@ -227,8 +231,12 @@ struct VkPs4CommandBuffer {
+@@ -227,8 +234,12 @@ struct VkPs4CommandBuffer {
      /* GNM command buffer — the actual PM4 packet storage */
      GnmCommandBuffer gnm_cmd;
      uint32_t *pm4_buffer;      /* backing store */
@@ -94,7 +104,7 @@ index 7634d6b..0fdb6ec 100644
      bool is_recording;
      bool is_begin;
      /* Current render pass state */
-@@ -246,6 +254,19 @@ struct VkPs4CommandBuffer {
+@@ -246,6 +257,19 @@ struct VkPs4CommandBuffer {
      } current_render_pass;
      /* Current pipeline */
      VkPs4Pipeline *current_pipeline;
@@ -107,14 +117,14 @@ index 7634d6b..0fdb6ec 100644
 +    uint32_t graphics_push_valid[2];
 +    VkResult resource_error;
 +    GnmDirectMemory barrier_label;
-+    GnmDirectMemory readback_scratch[16];
++    GnmDirectMemory readback_scratch[VK_PS4_MAX_READBACK_SCRATCH];
 +    uint32_t readback_count;
 +    GnmDirectMemory vertex_tables;
 +    uint32_t vertex_tables_used;
      /* Bound vertex buffers */
      struct {
          VkBuffer buffer;
-@@ -318,6 +339,9 @@ struct VkPs4Image {
+@@ -318,6 +342,9 @@ struct VkPs4Image {
       * these fields identify the video out handle and buffer index so
       * that CmdBeginRenderPass can emit WaitUntilSafeForRendering. */
      bool is_swapchain_image;
@@ -124,7 +134,7 @@ index 7634d6b..0fdb6ec 100644
      int32_t video_out_handle;
      uint32_t swapchain_buffer_index;
      VkPs4DeviceMemory *memory;
-@@ -457,6 +481,10 @@ struct VkPs4Pipeline {
+@@ -457,6 +484,10 @@ struct VkPs4Pipeline {
      /* Compiled GCN shader binaries — kept alive for the pipeline's lifetime
       * because the stage registers contain GPU addresses that point into
       * these buffers.  Freed in DestroyPipeline. */
@@ -135,7 +145,7 @@ index 7634d6b..0fdb6ec 100644
      void *vs_binary;
      void *ps_binary;
      void *gs_binary;
-@@ -493,9 +521,14 @@ struct VkPs4Pipeline {
+@@ -493,9 +524,14 @@ struct VkPs4Pipeline {
      bool has_blend_state;
      VkPipelineDepthStencilStateCreateInfo depth_stencil_state;
      VkPipelineViewportStateCreateInfo viewport_state;
@@ -150,7 +160,7 @@ index 7634d6b..0fdb6ec 100644
      size_t fetch_shader_size;
      bool has_fetch_shader;
      bool has_ps;          /* true if fragment shader was set */
-@@ -572,6 +605,7 @@ struct VkPs4DescriptorPool {
+@@ -572,6 +608,7 @@ struct VkPs4DescriptorPool {
       * freed sets are kept in the free list for reuse instead of being
       * returned to the allocator.  This reduces allocation overhead for
       * apps that frequently allocate/free descriptor sets. */
@@ -158,7 +168,7 @@ index 7634d6b..0fdb6ec 100644
      uint32_t sets_allocated;
      uint32_t sets_freed;
  #define VK_PS4_MAX_POOLED_SETS 256
-@@ -583,6 +617,8 @@ struct VkPs4DescriptorSet {
+@@ -583,6 +620,8 @@ struct VkPs4DescriptorSet {
      VkPs4ObjectType type;
      VkPs4Device *device;
      VkPs4DescriptorPool *pool;
@@ -167,7 +177,7 @@ index 7634d6b..0fdb6ec 100644
      VkPs4DescriptorSetLayout *layout;
      VkPs4DescriptorBinding bindings[VK_PS4_MAX_DESCRIPTOR_BINDINGS];
      uint32_t binding_count;
-@@ -676,6 +712,8 @@ struct VkPs4Swapchain {
+@@ -676,6 +715,8 @@ struct VkPs4Swapchain {
  #define VK_PS4_CHECK_OBJ(handle, expected_type) \
      (VK_PS4_TO_OBJ(handle) && *(VK_PS4_TO_OBJ(handle)) == (expected_type))
 
@@ -176,7 +186,7 @@ index 7634d6b..0fdb6ec 100644
  /* === Allocator helpers === */
  void *vk_ps4_alloc(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
  void *vk_ps4_alloc_zero(const VkAllocationCallbacks *alloc, size_t size, size_t alignment);
-@@ -932,3 +970,8 @@ VKAPI_ATTR void VKAPI_CALL vk_ps4_CmdDispatchBase(VkCommandBuffer, uint32_t, uin
+@@ -932,3 +973,8 @@ VKAPI_ATTR void VKAPI_CALL vk_ps4_CmdDispatchBase(VkCommandBuffer, uint32_t, uin
  #endif
 
  #endif /* VK_PS4_INTERNAL_H */
@@ -260,7 +270,7 @@ index 0000000..cdd9989
 +};
 +static const unsigned meta_clear_color_offsets[4] = {63,67,71,75};
 diff --git a/src/vk_ps4_command.c b/src/vk_ps4_command.c
-index 168c1f3..dd391fb 100644
+index 168c1f3..efc6ffa 100644
 --- a/src/vk_ps4_command.c
 +++ b/src/vk_ps4_command.c
 @@ -11,15 +11,33 @@
@@ -623,7 +633,7 @@ index 168c1f3..dd391fb 100644
 -            if (cmd->pm4_buffer) vk_ps4_free(alloc, cmd->pm4_buffer);
 +            if (cmd->pm4_buffer) vk_ps4_release_pm4(cmd, alloc);
 +            if (cmd->barrier_label.allocated) sceGnmDirectMemoryRelease(&cmd->barrier_label);
-+            for (unsigned rb = 0; rb < 16; ++rb)
++            for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (cmd->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&cmd->readback_scratch[rb]);
 +            if (cmd->vertex_tables.allocated) sceGnmDirectMemoryRelease(&cmd->vertex_tables);
              vk_ps4_free(alloc, cmd);
@@ -636,7 +646,7 @@ index 168c1f3..dd391fb 100644
 -                vk_ps4_free(alloc, pool->free_list[i]->pm4_buffer);
 +                vk_ps4_release_pm4(pool->free_list[i], alloc);
 +            if (pool->free_list[i]->barrier_label.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->barrier_label);
-+            for (unsigned rb = 0; rb < 16; ++rb)
++            for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (pool->free_list[i]->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->readback_scratch[rb]);
 +            if (pool->free_list[i]->vertex_tables.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->vertex_tables);
              vk_ps4_free(alloc, pool->free_list[i]);
@@ -650,7 +660,7 @@ index 168c1f3..dd391fb 100644
 +                        vk_ps4_untrack_failed_command(pool, c);
 +                        if (c->pm4_buffer) vk_ps4_release_pm4(c, alloc);
 +                        if (c->barrier_label.allocated) sceGnmDirectMemoryRelease(&c->barrier_label);
-+                        for (unsigned rb = 0; rb < 16; ++rb)
++                        for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (c->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&c->readback_scratch[rb]);
 +                        if (c->vertex_tables.allocated) sceGnmDirectMemoryRelease(&c->vertex_tables);
                          vk_ps4_free(alloc, c);
@@ -674,7 +684,7 @@ index 168c1f3..dd391fb 100644
              if (!cmd->pm4_buffer) {
 -                vk_ps4_free(alloc, cmd);
 +                if (cmd->barrier_label.allocated) sceGnmDirectMemoryRelease(&cmd->barrier_label);
-+                for (unsigned rb = 0; rb < 16; ++rb)
++                for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (cmd->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&cmd->readback_scratch[rb]);
 +                if (cmd->vertex_tables.allocated) sceGnmDirectMemoryRelease(&cmd->vertex_tables);
 +            vk_ps4_free(alloc, cmd);
@@ -685,7 +695,7 @@ index 168c1f3..dd391fb 100644
 +                        vk_ps4_untrack_failed_command(pool, c);
 +                        if (c->pm4_buffer) vk_ps4_release_pm4(c, alloc);
 +                        if (c->barrier_label.allocated) sceGnmDirectMemoryRelease(&c->barrier_label);
-+                        for (unsigned rb = 0; rb < 16; ++rb)
++                        for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (c->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&c->readback_scratch[rb]);
 +                        if (c->vertex_tables.allocated) sceGnmDirectMemoryRelease(&c->vertex_tables);
                          vk_ps4_free(alloc, c);
@@ -705,7 +715,7 @@ index 168c1f3..dd391fb 100644
 -                vk_ps4_free(alloc, cmd);
 +                vk_ps4_release_pm4(cmd, alloc);
 +                if (cmd->barrier_label.allocated) sceGnmDirectMemoryRelease(&cmd->barrier_label);
-+                for (unsigned rb = 0; rb < 16; ++rb)
++                for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (cmd->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&cmd->readback_scratch[rb]);
 +                if (cmd->vertex_tables.allocated) sceGnmDirectMemoryRelease(&cmd->vertex_tables);
 +            vk_ps4_free(alloc, cmd);
@@ -722,7 +732,7 @@ index 168c1f3..dd391fb 100644
 +                        vk_ps4_untrack_failed_command(pool, c);
 +                        if (c->pm4_buffer) vk_ps4_release_pm4(c, alloc);
 +                        if (c->barrier_label.allocated) sceGnmDirectMemoryRelease(&c->barrier_label);
-+                        for (unsigned rb = 0; rb < 16; ++rb)
++                        for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (c->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&c->readback_scratch[rb]);
 +                        if (c->vertex_tables.allocated) sceGnmDirectMemoryRelease(&c->vertex_tables);
                          vk_ps4_free(alloc, c);
@@ -735,7 +745,7 @@ index 168c1f3..dd391fb 100644
 -            if (cmd->pm4_buffer) vk_ps4_free(alloc, cmd->pm4_buffer);
 +            if (cmd->pm4_buffer) vk_ps4_release_pm4(cmd, alloc);
 +            if (cmd->barrier_label.allocated) sceGnmDirectMemoryRelease(&cmd->barrier_label);
-+            for (unsigned rb = 0; rb < 16; ++rb)
++            for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (cmd->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&cmd->readback_scratch[rb]);
 +            if (cmd->vertex_tables.allocated) sceGnmDirectMemoryRelease(&cmd->vertex_tables);
              vk_ps4_free(alloc, cmd);
@@ -815,7 +825,7 @@ index 168c1f3..dd391fb 100644
 -                vk_ps4_free(alloc, pool->free_list[i]->pm4_buffer);
 +                vk_ps4_release_pm4(pool->free_list[i], alloc);
 +            if (pool->free_list[i]->barrier_label.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->barrier_label);
-+            for (unsigned rb = 0; rb < 16; ++rb)
++            for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (pool->free_list[i]->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->readback_scratch[rb]);
 +            if (pool->free_list[i]->vertex_tables.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->vertex_tables);
              vk_ps4_free(alloc, pool->free_list[i]);
@@ -828,7 +838,7 @@ index 168c1f3..dd391fb 100644
 -                vk_ps4_free(alloc, pool->free_list[i]->pm4_buffer);
 +                vk_ps4_release_pm4(pool->free_list[i], alloc);
 +            if (pool->free_list[i]->barrier_label.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->barrier_label);
-+            for (unsigned rb = 0; rb < 16; ++rb)
++            for (unsigned rb = 0; rb < VK_PS4_MAX_READBACK_SCRATCH; ++rb)
 +                if (pool->free_list[i]->readback_scratch[rb].allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->readback_scratch[rb]);
 +            if (pool->free_list[i]->vertex_tables.allocated) sceGnmDirectMemoryRelease(&pool->free_list[i]->vertex_tables);
              vk_ps4_free(alloc, pool->free_list[i]);
@@ -1374,7 +1384,7 @@ index 168c1f3..dd391fb 100644
 +        surface_size > available || (surface_size & 3)) {
 +        cmd->resource_error = VK_ERROR_FEATURE_NOT_PRESENT; return;
 +    }
-+    if (cmd->readback_count == 16) {
++    if (cmd->readback_count == VK_PS4_MAX_READBACK_SCRATCH) {
 +        cmd->resource_error = VK_ERROR_OUT_OF_DEVICE_MEMORY; return;
 +    }
 +    GnmDirectMemory *scratch = &cmd->readback_scratch[cmd->readback_count++];
@@ -1723,7 +1733,7 @@ index 168c1f3..dd391fb 100644
 +    }
 +    /* Stage the constant surface, then copy into the image. In shadPS4's
 +     * buffer/image alias path a direct fill does not invalidate a cached image. */
-+    if (cmd->readback_count == 16) {
++    if (cmd->readback_count == VK_PS4_MAX_READBACK_SCRATCH) {
 +        cmd->resource_error = VK_ERROR_OUT_OF_DEVICE_MEMORY; return;
 +    }
 +    GnmDirectMemory *scratch = &cmd->readback_scratch[cmd->readback_count++];

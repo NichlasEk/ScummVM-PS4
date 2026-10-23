@@ -1,6 +1,135 @@
+--- a/engines/grim/gfx_opengl_shaders.cpp
++++ b/engines/grim/gfx_opengl_shaders.cpp
+@@ -2093,20 +2093,42 @@
+ 
+ 	mud->_texCoordsVBO = OpenGL::Shader::createBuffer(GL_ARRAY_BUFFER, model->_numVertices * 2 * sizeof(float), model->_texVerts, GL_STATIC_DRAW);
+ 
++#ifdef __PS4__
++	// The bridge accepts float vertex attributes. Preserve normalized RGBA
++	// semantics without passing the unsupported GL_UNSIGNED_BYTE format.
++	Common::Array<float> colors;
++	colors.resize(model->_numVertices * 4);
++	for (uint32 i = 0; i < model->_numVertices; ++i) {
++		colors[i * 4 + 0] = model->_colorMap[i].r / 255.0f;
++		colors[i * 4 + 1] = model->_colorMap[i].g / 255.0f;
++		colors[i * 4 + 2] = model->_colorMap[i].b / 255.0f;
++		colors[i * 4 + 3] = model->_colorMap[i].a / 255.0f;
++	}
++	mud->_colorMapVBO = OpenGL::Shader::createBuffer(GL_ARRAY_BUFFER, colors.size() * sizeof(float), colors.begin(), GL_STATIC_DRAW);
++#else
+ 	mud->_colorMapVBO = OpenGL::Shader::createBuffer(GL_ARRAY_BUFFER, model->_numVertices * 4 * sizeof(byte), model->_colorMap, GL_STATIC_DRAW);
++#endif
+ 
+ 	OpenGL::Shader * actorShader = _actorProgram->clone();
+ 	actorShader->enableVertexAttribute("position", mud->_verticesVBO, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+ 	actorShader->enableVertexAttribute("normal", mud->_normalsVBO, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+ 	actorShader->enableVertexAttribute("texcoord", mud->_texCoordsVBO, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0);
++#ifdef __PS4__
++	actorShader->enableVertexAttribute("color", mud->_colorMapVBO, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 0);
++#else
+ 	actorShader->enableVertexAttribute("color", mud->_colorMapVBO, 4, GL_UNSIGNED_BYTE, GL_TRUE, 4 * sizeof(byte), 0);
++#endif
+ 	mud->_shader = actorShader;
+ 
+ 	actorShader = _actorLightsProgram->clone();
+ 	actorShader->enableVertexAttribute("position", mud->_verticesVBO, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+ 	actorShader->enableVertexAttribute("normal", mud->_normalsVBO, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+ 	actorShader->enableVertexAttribute("texcoord", mud->_texCoordsVBO, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0);
++#ifdef __PS4__
++	actorShader->enableVertexAttribute("color", mud->_colorMapVBO, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 0);
++#else
+ 	actorShader->enableVertexAttribute("color", mud->_colorMapVBO, 4, GL_UNSIGNED_BYTE, GL_TRUE, 4 * sizeof(byte), 0);
++#endif
+ 	mud->_shaderLights = actorShader;
+ 
+ 	for (uint32 i = 0; i < model->_numFaces; ++i) {
+@@ -2210,11 +2232,34 @@
+ }
+ 
+ static void readPixels(int x, int y, int width, int height, byte *buffer) {
++#ifdef __PS4__
++	// EMI splits the screen into eight power-of-two textures. Read each tile
++	// once, not once per row (each bridge readback submits and waits for GPU).
++	// Bottom tiles extend past 480 pixels; pad that unused area explicitly.
++	const int screenWidth = g_system->getWidth();
++	const int screenHeight = g_system->getHeight();
++	const int copyWidth = MIN(width, MAX(0, screenWidth - x));
++	const int copyHeight = MIN(height, MAX(0, screenHeight - y));
++	memset(buffer, 0, width * height * 4);
++	if (!copyWidth || !copyHeight)
++		return;
++	g_system->updateScreen();
++	Common::Array<byte> pixels;
++	pixels.resize(copyWidth * copyHeight * 4);
++	glReadPixels(x, screenHeight - y - copyHeight, copyWidth, copyHeight, GL_RGBA, GL_UNSIGNED_BYTE, pixels.begin());
++	const GLenum captureError = glGetError();
++	if (captureError != GL_NO_ERROR)
++		error("PS4 Grim screen tile: readback failed at %d,%d size=%dx%d GL=0x%x", x, y, copyWidth, copyHeight, captureError);
++	for (int row = 0; row < copyHeight; ++row)
++		memcpy(buffer + row * width * 4, pixels.begin() + (copyHeight - row - 1) * copyWidth * 4, copyWidth * 4);
++	debug(1, "PS4 Grim screen tile: %d,%d %dx%d captured in one readback", x, y, copyWidth, copyHeight);
++#else
+ 	byte *p = buffer;
+ 	for (int i = y; i < y + height; i++) {
+ 		glReadPixels(x, 479 - i, width, 1, GL_RGBA, GL_UNSIGNED_BYTE, p);
+ 		p += width * 4;
+ 	}
++#endif
+ }
+ 
+ Bitmap *GfxOpenGLS::getScreenshot(int w, int h, bool useStored) {
+@@ -2222,6 +2267,34 @@
+ 	src.create(_screenWidth, _screenHeight, Graphics::PixelFormat::createFormatRGBA32());
+ 	Bitmap *bmp;
+ 
++#ifdef __PS4__
++	// Complete queued rendering/copies before the bridge's synchronous readback.
++	// presentBuffer() alone does not submit the PS4 command buffer.
++	g_system->updateScreen();
++	GLint previousFramebuffer = 0;
++	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
++	GLuint captureFramebuffer = 0;
++	if (useStored) {
++		glGenFramebuffers(1, &captureFramebuffer);
++		glBindFramebuffer(GL_FRAMEBUFFER, captureFramebuffer);
++		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _storedDisplay, 0);
++	}
++	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
++		error("PS4 Grim screenshot: incomplete framebuffer (stored=%d)", useStored);
++	Graphics::Surface capture;
++	capture.create(_screenWidth, _screenHeight, src.format);
++	glReadPixels(0, 0, _screenWidth, _screenHeight, GL_RGBA, GL_UNSIGNED_BYTE, capture.getPixels());
++	GLenum captureError = glGetError();
++	glBindFramebuffer(GL_FRAMEBUFFER, previousFramebuffer);
++	if (captureFramebuffer)
++		glDeleteFramebuffers(1, &captureFramebuffer);
++	if (captureError != GL_NO_ERROR)
++		error("PS4 Grim screenshot: readback failed (stored=%d, GL=0x%x)", useStored, captureError);
++	for (int row = 0; row < _screenHeight; ++row)
++		memcpy(src.getBasePtr(0, row), capture.getBasePtr(0, _screenHeight - row - 1), _screenWidth * 4);
++	capture.free();
++	debug(1, "PS4 Grim screenshot: captured %dx%d stored=%d", _screenWidth, _screenHeight, useStored);
++#else
+ 	if (useStored) {
+ 		if (OpenGLContext.type == OpenGL::kContextGLES2) {
+ 			GLuint frameBuffer;
+@@ -2250,6 +2323,7 @@
+ 		g_system->presentBuffer();
+ 		readPixels(0, 0, _screenWidth, _screenHeight, (uint8 *)src.getPixels());
+ 	}
++#endif
+ 	bmp = createScreenshotBitmap(&src, w, h, true);
+ 	src.free();
+ 	return bmp;
 --- a/engines/grim/grim.cpp
 +++ b/engines/grim/grim.cpp
-@@ -297,6 +297,12 @@
+@@ -294,9 +294,18 @@
+ 
+ 	Graphics::RendererType matchingRendererType = Graphics::Renderer::getBestMatchingType(desiredRendererType, availableRendererTypes);
+ 
++#ifdef __PS4__
++	debug(1, "PS4 Grim renderer: requested=%s selected=%s available=0x%x size=%dx%d", rendererConfig.c_str(), Graphics::Renderer::getTypeCode(matchingRendererType).c_str(), availableRendererTypes, screenW, screenH);
++#endif
  	_softRenderer = matchingRendererType == Graphics::kRendererTypeTinyGL;
  	if (!_softRenderer) {
  		initGraphics3d(screenW, screenH);
@@ -388,3 +517,76 @@
  		return Common::Error(Common::kUnknownError, _s("This game requires OpenGL Framebuffer Objects, which are not supported on your system"));
  	}
  
+--- a/engines/dgds/dgds.cpp
++++ b/engines/dgds/dgds.cpp
+@@ -517,6 +517,9 @@
+ 	Common::Event ev;
+ 	while (_eventMan->pollEvent(ev)) {
+ 		if (ev.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START) {
++#ifdef __PS4__
++			debug(2, "PS4 DGDS action=%u menu=%d", ev.customType, _menu->menuShown());
++#endif
+ 			switch ((DgdsKeyEvent)ev.customType) {
+ 			case kDgdsKeyToggleMenu:
+ 				_menuToTrigger = kMenuMain;
+@@ -575,6 +578,10 @@
+ 				|| ev.type == Common::EVENT_MOUSEMOVE) {
+ 			_lastMouseEvent = ev.type;
+ 			_lastMouse = ev.mouse;
++#ifdef __PS4__
++			if (ev.type != Common::EVENT_MOUSEMOVE)
++				debug(2, "PS4 DGDS mouse event=%d x=%d y=%d menu=%d", ev.type, ev.mouse.x, ev.mouse.y, _menu->menuShown());
++#endif
+ 			// We can keep going if there were multiple moves or a move then a button, but
+ 			// stop if there was a button event to process it now.
+ 			if (_lastMouseEvent != Common::EVENT_MOUSEMOVE)
+--- a/engines/dgds/metaengine.cpp
++++ b/engines/dgds/metaengine.cpp
+@@ -92,9 +92,32 @@
+ 		act->addDefaultInputMapping(k._key);
+ 		if (k._altKey)
+ 			act->addDefaultInputMapping(k._altKey);
++#ifdef __PS4__
++		switch (k._action) {
++		case Dgds::kDgdsKeyNextChoice: act->addDefaultInputMapping("JOY_DOWN"); break;
++		case Dgds::kDgdsKeyPrevChoice: act->addDefaultInputMapping("JOY_UP"); break;
++		case Dgds::kDgdsKeyLook: act->addDefaultInputMapping("JOY_X"); break;
++		case Dgds::kDgdsKeyToggleMenu: act->addDefaultInputMapping("JOY_Y"); break;
++		default: break;
++		}
++#endif
+ 		map->addAction(act);
+ 	}
+ 
++#ifdef __PS4__
++	// DGDS supplies its own keymap, so the default engine mouse actions are
++	// not installed. Keep real mouse events and synthesize clicks for the pad.
++	Common::Action *leftClick = new Common::Action("LCLK", _("Left click"));
++	leftClick->setLeftClickEvent();
++	leftClick->addDefaultInputMapping("MOUSE_LEFT");
++	leftClick->addDefaultInputMapping("JOY_A");
++	map->addAction(leftClick);
++	Common::Action *rightClick = new Common::Action("RCLK", _("Right click"));
++	rightClick->setRightClickEvent();
++	rightClick->addDefaultInputMapping("MOUSE_RIGHT");
++	rightClick->addDefaultInputMapping("JOY_B");
++	map->addAction(rightClick);
++#endif
+ 	return Common::Keymap::arrayOf(map);
+ }
+ 
+--- a/engines/freescape/gfx.cpp
++++ b/engines/freescape/gfx.cpp
+@@ -1356,6 +1356,12 @@
+ }
+ 
+ Graphics::RendererType determinateRenderType() {
++#if defined(__PS4__) && defined(USE_TINYGL)
++	// The PS4 GL subset has no glPolygonOffset or glLineWidth. Freescape
++	// invokes both during normal rendering; use its supported CPU renderer.
++	warning("PS4 Freescape: selecting TinyGL (requested '%s'); hardware renderer requires polygon offset and line width", ConfMan.get("renderer").c_str());
++	return Graphics::kRendererTypeTinyGL;
++#endif
+ 	Common::String rendererConfig = ConfMan.get("renderer");
+ 	Graphics::RendererType desiredRendererType = Graphics::Renderer::parseTypeCode(rendererConfig);
+ 	Graphics::RendererType matchingRendererType = Graphics::Renderer::getBestMatchingAvailableType(desiredRendererType,

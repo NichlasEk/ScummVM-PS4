@@ -225,6 +225,18 @@
  		if (_sprite->_puppet || _sprite->_autoPuppet || (!nextSprite->isQDShape() && partial)) {
  			// Updating scripts, etc. does not require a full re-render
  			_sprite->_scriptId = nextSprite->_scriptId;
+@@ -805,7 +887,10 @@
+ }
+ 
+ bool Channel::isTrail() {
+-	return _sprite->_trails || (_sprite->_cast &&
++	// Direct-to-stage controls video layering, not persistent trails in
++	// Jönsson. Preserve explicit trails, but restore the old movie's area
++	// when its channel disappears or the next clip has different bounds.
++	return _sprite->_trails || (!isPS4Jonsson() && _sprite->_cast &&
+ 			(_sprite->_cast->_type == kCastDigitalVideo) &&
+ 			(((DigitalVideoCastMember *)_sprite->_cast)->_directToStage));
+ }
 --- a/engines/director/channel.h
 +++ b/engines/director/channel.h
 @@ -53,6 +53,12 @@
@@ -282,7 +294,19 @@
  }
  
  Movie *DirectorEngine::getCurrentMovie() const { return _currentWindow->getCurrentMovie(); }
-@@ -282,7 +289,7 @@
+@@ -221,7 +228,10 @@
+ 			return;
+ 	}
+ 	window->setVisible(false, true);
+-	window->getSoundManager()->stopSound();
++	// MIAWs share the Stage's sound channels. Forgetting a helper window
++	// must not stop music playing in the Stage.
++	if (window == _stage)
++		window->getSoundManager()->stopSound();
+ 	_windowsToForget.push_back(window);
+ }
+ 
+@@ -282,7 +292,7 @@
  	if (!debugChannelSet(-1, kDebugDesktop))
  		_wmMode |= Graphics::kWMModeFullscreen | Graphics::kWMModeNoDesktop;
  
@@ -291,7 +315,7 @@
  		// Both 16bpp and 32bpp formats are supported, but 32bpp is always reported to the scripts.
  		_pixelformat = g_system->getSupportedFormats().front();
  		_colorDepth = _pixelformat.isCLUT8() ? 8 : 32;
-@@ -370,9 +377,12 @@
+@@ -370,9 +380,12 @@
  
  	bool loop = true;
  
@@ -6300,7 +6324,19 @@
  	}
  
  	ScriptContext *spriteScript = _movie->getScriptContext(kScoreScript, _scriptId);
-@@ -633,7 +646,8 @@
+@@ -625,6 +638,11 @@
+ 		}
+ 
+ 		if (replaceDims) {
++			// Jönsson's QuickTime Xtra casts have no dimensions until their
++			// linked video is loaded. Resolve them before caching sprite size;
++			// otherwise later intro clips remain 0x0 and play only their audio.
++			if (isPS4Jonsson() && _cast->_type == kCastDigitalVideo)
++				static_cast<DigitalVideoCastMember *>(_cast)->loadVideoFromCast();
+ 			Common::Rect dims = _cast->getInitialRect();
+ 			switch (_cast->_type) {
+ 			case kCastShape:
+@@ -633,7 +651,8 @@
  			case kCastDigitalVideo:
  				// A video the score sizes to 0x0 is intentionally invisible (a
  				// hidden timing/audio clock); keep it, don't force native size.
@@ -6310,7 +6346,7 @@
  					_width = dims.width();
  					_height = dims.height();
  				}
-@@ -706,11 +720,13 @@
+@@ -706,11 +725,13 @@
  	if (!getAutoPuppet(kAPForeColor) && (nextSprite->_copyBackMask & kSCBForeColor)) {
  		_foreColor = nextSprite->_foreColor;
  		_fgColorB = nextSprite->_fgColorB;
@@ -6339,7 +6375,29 @@
  
 --- a/engines/director/window.cpp
 +++ b/engines/director/window.cpp
-@@ -690,6 +690,9 @@
+@@ -56,7 +56,9 @@
+ 	_isStage = isStage;
+ 	_stageColor = _wm->_colorBlack;
+ 	_puppetTransition = nullptr;
+-	_soundManager = new DirectorSound(this);
++	// Only the Stage owns the shared sound channels. Helper windows must not
++	// allocate unused PC speakers, which permanently occupy mixer slots.
++	_soundManager = _isStage ? new DirectorSound(this) : nullptr;
+ 	_lingoState = new LingoState;
+ 	_lingoPlayState = nullptr;
+ 
+@@ -600,7 +602,9 @@
+ }
+ 
+ bool Window::loadNextMovie() {
+-	_soundManager->changingMovie();
++	// A helper movie must not reset the Stage's sound channel state.
++	if (_soundManager)
++		_soundManager->changingMovie();
+ 	_newMovieStarted = true;
+ 	_newMovieFirstDraw = true;
+ 	_currentPath = Common::firstPathComponents(_nextMovie.movie, g_director->_dirSeparator);
+@@ -690,6 +694,9 @@
  }
  
  bool Window::step() {

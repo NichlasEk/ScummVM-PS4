@@ -5,7 +5,13 @@ rendering and a PS4 graphics bridge backed by Vulkan/OpenGNM. The current
 compatibility work uses **ScummVM 2026.4.0**, test title **SCVM00265**.
 The older 2.9.1 port remains available through its separate build scripts.
 
-**Latest local candidate: 0.29, checked on 2026-10-24.** Grim Fandango,
+**Latest local candidate: 0.30, checked on 2026-10-25.** Jönssonligan: Jakten
+på Mjölner now keeps the attic music playing, displays all three opening
+clips and clears the previous clip behind the next one in shadPS4. See the
+[0.30 findings and package](docs/PS4-JONSSON-030.md). Physical PS4 retesting
+and prolonged gameplay remain pending.
+
+**Compatibility baseline: 0.29, checked on 2026-10-24.** Grim Fandango,
 Escape from Monkey Island, Rise of the Dragon and Dark Side have been tested
 in visible shadPS4 sessions. The exact coverage and remaining checks are listed
 below. This is an experimental port, with no full-game compatibility guarantee.

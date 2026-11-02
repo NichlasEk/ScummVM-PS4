@@ -86,7 +86,9 @@ def main():
     archive(out/'ScummVM-PS4-2026.4.0-RC1-source.tar.gz', [
         (port, 'port', tracked(port)), (source, 'scummvm-src', files(source)),
         (build, 'build-config', [build/'config.mk', build/'config.h'])], identity,
-        [(str(work).encode(), b'/path/to/port')])
+        [(str(work).encode(), b'/path/to/port'),
+         (str(Path.home() / work.name).encode(), b'/path/to/port'),
+         (str(Path.home()).encode(), b'/home/developer')])
     groups = []; revisions = {}
     for relative in ('opengnm-stack/opengnm', 'opengnm-stack/opengnm-psbc',
                      'opengnm-stack/vulkan-ps4', 'opengnm-stack/Vulkan-Headers',
@@ -105,7 +107,9 @@ def main():
                    [sdk/'LICENSE', sdk/'README.md', sdk/'link.x', sdk/'build/build.sh', sdk/'build/Dockerfile']))
     archive(out/'ScummVM-PS4-2026.4.0-RC1-dependency-sources.tar.gz', groups,
             {'git_revisions': revisions, 'sdl_revision': (work/'.tools/sdl-input-src/.source-revision').read_text().strip()},
-            [(str(work).encode(), b'/path/to/port')])
+            [(str(work).encode(), b'/path/to/port'),
+         (str(Path.home() / work.name).encode(), b'/path/to/port'),
+         (str(Path.home()).encode(), b'/home/developer')])
     previous = work/'dist/public-vulkan-1.26-2026-09-30'
     sdk_inputs = json.loads((previous/'SDK-INPUTS.json').read_text())
     for name, record in sdk_inputs.items():

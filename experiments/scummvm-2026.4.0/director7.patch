@@ -5154,16 +5154,17 @@
  
 --- a/engines/director/lingo/lingo.cpp
 +++ b/engines/director/lingo/lingo.cpp
-@@ -41,6 +41,8 @@
+@@ -41,6 +41,9 @@
  #include "director/lingo/lingo-codegen.h"
  #include "director/lingo/lingo-the.h"
  
 +#include "director/ps4-jonsson.h"
 +
++
  namespace Director {
  
  Lingo *g_lingo;
-@@ -182,6 +184,7 @@
+@@ -182,6 +185,7 @@
  
  	_state = nullptr;
  	_globalCounter = 0;
@@ -5171,11 +5172,12 @@
  	_freezeState = false;
  	_freezePlay = false;
  	_playDone = false;
-@@ -628,10 +631,11 @@
+@@ -628,10 +632,12 @@
  }
  
  bool Lingo::execute(int targetFrame) {
 +	const bool ps4Jonsson = isPS4Jonsson();
++	const bool ps4Jonsson1 = ps4Jonsson && Common::String(_vm->getGameId()) == "jonssonligan1";
  	uint localCounter = 0;
  	uint lastUpdate = 0;
  
@@ -5184,7 +5186,7 @@
  		if (targetFrame != -1 && (int)_state->callstack.size() == targetFrame)
  			break;
  
-@@ -654,8 +658,22 @@
+@@ -654,8 +660,31 @@
  			break;
  		}
  
@@ -5202,14 +5204,23 @@
 +				Movie *movie = _vm->getCurrentMovie();
 +				if (movie)
 +					movie->getScore()->updateWidgets(true);
-+				_vm->draw();
++				// Mjölner creates/forgets hidden helper windows inside its frame
++				// scripts. Presenting here repeatedly uploads the old Stage while
++				// the new frame is still being computed. The main loop presents
++				// the completed frame; keep mid-script video and J2 cursor service.
++				if (!ps4Jonsson1 || (movie && movie->_videoPlayback))
++					_vm->draw();
 +				g_system->delayMillis(0);
++				// Presentation can block for longer than the service interval.
++				// Start the next interval after it completes, otherwise each
++				// short behavior can immediately wait for another presentation.
++				_lastPS4InputService = g_system->getMillis();
 +			}
 +		} else if (localCounter > 0 && localCounter % 100 == 0) {
  			_vm->processSysEvents();
  			// Also process update widgets!
  			Movie *movie = g_director->getCurrentMovie();
-@@ -843,6 +861,7 @@
+@@ -843,6 +872,7 @@
  void Lingo::resetLingo() {
  	debugC(3, kDebugLingoExec, "Resetting Lingo!");
  	cleanupLingo();
@@ -5217,7 +5228,7 @@
  	resetLingoGo();
  }
  
-@@ -1812,7 +1831,10 @@
+@@ -1812,7 +1842,10 @@
  				((TextCastMember *)member)->setRawText(value.asString());
  				break;
  			default:
@@ -5229,7 +5240,7 @@
  				break;
  			}
  		}
-@@ -1934,6 +1956,25 @@
+@@ -1934,6 +1967,25 @@
  	return result;
  }
  
@@ -5255,7 +5266,7 @@
  Common::U32String Lingo::evalChunkRef(const Datum &var) {
  	Common::U32String result;
  
-@@ -1942,7 +1983,7 @@
+@@ -1942,7 +1994,7 @@
  	case GLOBALREF:
  	case LOCALREF:
  	case PROPREF:
@@ -5264,7 +5275,7 @@
  		break;
  	case FIELDREF:
  	case CASTREF:
-@@ -1962,7 +2003,10 @@
+@@ -1962,7 +2014,10 @@
  				result = ((TextCastMember *)member)->getText();
  				break;
  			default:
@@ -5276,7 +5287,7 @@
  				break;
  			}
  		}
-@@ -1976,7 +2020,7 @@
+@@ -1976,7 +2031,7 @@
  		}
  		break;
  	default:

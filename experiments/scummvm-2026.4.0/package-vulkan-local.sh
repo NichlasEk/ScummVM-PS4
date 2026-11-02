@@ -29,7 +29,9 @@ elif [[ $# != 0 ]]; then
     exit 2
 fi
 if [[ ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} == 1 ]]; then
- [[ "$title_id" == SCVM00265 && "$output_name" == ScummVM-2026.4.0-Vulkan-Test.pkg ]] || {
+ [[ ( "$title_id" == SCVM00265 && "$output_name" == ScummVM-2026.4.0-Vulkan-Test.pkg ) ||
+    ( "$title_id" == SCVM00266 && "$output_name" == ScummVM-MT32-Diagnostic-0.23.pkg && "$content_id" == IV0000-SCVM00266_00-SCUMMVM2026MT001 ) ||
+    ( "$title_id" == SCVM00267 && "$output_name" == ScummVM-MT32-Intro-Trace-0.25.pkg && "$content_id" == IV0000-SCVM00267_00-SCUMMVM2026MT002 ) ]] || {
   echo 'Experimental Vulkan package requires its isolated title and filename' >&2; exit 1;
  }
 fi
@@ -144,6 +146,11 @@ while IFS= read -r resource; do
     cp "$resource" "$stage/data/"
     package_files+=("data/$(basename "$resource")")
 done <<< "$engine_data"
+if [[ ${SCUMMVM_EXPERIMENTAL_VULKAN:-0} == 1 ]]; then
+ python3 "$root/scripts/package-ps4-shaders.py" "$stage/data/shaders.dat"
+ package_files+=(data/shaders.dat)
+fi
+
 shader_data=$(make -s --no-print-directory -C "$build_dir" \
     --eval='ps4-shader-data: ; @printf "%s\n" $(DIST_FILES_SHADERS)' ps4-shader-data)
 while IFS= read -r resource; do

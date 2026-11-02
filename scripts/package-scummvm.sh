@@ -53,6 +53,7 @@ mkdir -p "$stage/sce_sys/about" "$stage/sce_module" "$stage/data" "$stage/games"
 cp "$sdk/samples/SDL2/sce_module/"{libc.prx,libSceFios2.prx} "$stage/sce_module/"
 cp "$sdk/samples/piglet/sce_sys/about/right.sprx" "$stage/sce_sys/about/"
 cp "$root/assets/icon0.png" "$stage/sce_sys/"
+cp "$sdk/LICENSE" "$stage/data/OpenOrbis-LICENSE"
 cp "$root/build/ps4-jpeg/install/share/licenses/libjpeg-turbo/LICENSE.md" "$stage/data/libjpeg-turbo-LICENSE.md"
 cp "$root/build/ps4-jpeg/install/share/licenses/libjpeg-turbo/README.ijg" "$stage/data/libjpeg-turbo-README.ijg"
 cp "$root/build/ps4-mad/install/share/licenses/libmad/COPYING" "$stage/data/libmad-COPYING"
@@ -94,7 +95,7 @@ done
 "$pkgtool" sfo_setentry "$sfo" TITLE_ID --type Utf8 --maxsize 12 --value "$title_id"
 "$pkgtool" sfo_setentry "$sfo" TITLE --type Utf8 --maxsize 128 --value "$app_title"
 package_files=(eboot.bin sce_sys/param.sfo sce_sys/icon0.png sce_sys/about/right.sprx
-    sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING data/COPYRIGHT
+    sce_module/libc.prx sce_module/libSceFios2.prx data/COPYING data/COPYRIGHT data/OpenOrbis-LICENSE
     data/libjpeg-turbo-LICENSE.md data/libjpeg-turbo-README.ijg data/libmad-COPYING data/libmad-COPYRIGHT
     data/freetype-FTL.TXT data/freetype-LICENSE.TXT data/freetype-GPLv2.TXT
     data/libogg-COPYING data/libvorbis-COPYING data/libpng-LICENSE data/zlib-LICENSE data/libtheora-COPYING data/libmpeg2-COPYING data/giflib-COPYING

@@ -13,7 +13,7 @@ void ps4glBeginFrame(VkCommandBuffer cmd,VkRenderPass pass,VkFramebuffer fb,GLin
   assert(current && pass && fb && w==1280 && h==720);current->command=cmd;current->managed_frame=1;
 }
 void ps4glEndFrame(void){assert(current && recording);current->command=0;current->managed_frame=0;}
-void ps4glReleaseVertexSnapshots(PS4GLContext *p){assert(p && !busy && !recording && resets>releases);++releases;}
+void ps4glRecycleVertexSnapshots(PS4GLContext *p){assert(p && !busy && !recording && resets>releases);++releases;}
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice d,const VkCommandPoolCreateInfo *i,const VkAllocationCallbacks *a,VkCommandPool *p){(void)d;(void)i;(void)a;*p=(VkCommandPool)1;++creates;return VK_SUCCESS;}
 VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(VkDevice d,const VkCommandBufferAllocateInfo *i,VkCommandBuffer *p){(void)d;(void)i;*p=(VkCommandBuffer)1;return VK_SUCCESS;}
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateFence(VkDevice d,const VkFenceCreateInfo *i,const VkAllocationCallbacks *a,VkFence *p){(void)d;(void)i;(void)a;*p=(VkFence)1;++creates;return VK_SUCCESS;}

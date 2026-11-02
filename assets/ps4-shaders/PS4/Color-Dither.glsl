@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Ordered 4-level colour quantization using a 2x2 dither.
+#version 120
+#if defined(VERTEX)
+attribute vec4 VertexCoord;
+attribute vec4 TexCoord;
+uniform mat4 MVPMatrix;
+varying vec2 ps4TexCoord;
+void main() { gl_Position = MVPMatrix * VertexCoord; ps4TexCoord = TexCoord.xy; }
+#elif defined(FRAGMENT)
+uniform sampler2D Texture;
+uniform vec2 TextureSize;
+uniform vec2 InputSize;
+uniform vec2 OutputSize;
+varying vec2 ps4TexCoord;
+vec3 sampleAt(vec2 uv) { return texture2D(Texture, clamp(uv, vec2(0.5)/TextureSize, (InputSize-vec2(0.5))/TextureSize)).rgb; }
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+vec3 softAt(vec2 uv) {
+ vec2 d=vec2(1.0)/TextureSize;
+ return sampleAt(uv)*0.5 + (sampleAt(uv+vec2(d.x,0.0))+sampleAt(uv-vec2(d.x,0.0))+sampleAt(uv+vec2(0.0,d.y))+sampleAt(uv-vec2(0.0,d.y)))*0.125;
+}
+void main() {
+ vec2 uv=ps4TexCoord;
+ vec2 screen=uv*TextureSize/InputSize;
+ vec3 c=sampleAt(uv);
+vec2 p=mod(floor(uv*TextureSize),2.0);
+ float threshold=(p.y<1.0 ? (p.x<1.0 ? 0.0:2.0):(p.x<1.0 ? 3.0:1.0));
+ c=floor(c*3.0+(threshold+0.5)/4.0)/3.0;
+ gl_FragColor=vec4(clamp(c,0.0,1.0),1.0);
+}
+#endif

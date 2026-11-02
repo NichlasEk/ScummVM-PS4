@@ -8,7 +8,7 @@ patch_id=$(sha256sum "$patch_file" | cut -d ' ' -f 1)
 mkdir -p "$root/.tools"
 if [[ ! -f "$source_dir/configure" ]]; then
     archive="$root/.tools/scummvm-$revision.tar"
-    reference=${SCUMMVM_REFERENCE:-/home/developer/ps4-scummvm/scummvm}
+    reference=${SCUMMVM_REFERENCE:-$root/../ps4-scummvm/scummvm}
     if [[ -d "$reference/.git" ]] && git -C "$reference" cat-file -e "$revision^{commit}"; then
         git -C "$reference" archive --format=tar -o "$archive" "$revision"
         mkdir -p "$source_dir"

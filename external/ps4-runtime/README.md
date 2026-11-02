@@ -4,8 +4,10 @@ Future work: [source-built runtime replacement roadmap](../../docs/PS4-OPEN-RUNT
 
 This directory documents the three prebuilt modules currently copied into
 ScummVM PS4 packages. Git contains text placeholders only, not the modules.
-Their source provenance and redistribution terms have not been verified here;
-the repository's GPL license does not grant rights to these external binaries.
+The [local runtime inventory](../../tools/ps4-runtime-inventory/README.md)
+records that the current SDK sample binaries match OpenOrbis module builds and
+shows what their visible source implements. Recheck hashes for another SDK;
+the repository's GPL license alone does not establish terms for SDK binaries.
 
 | Module | Current source relative to `OO_PS4_TOOLCHAIN` | Package destination |
 | --- | --- | --- |

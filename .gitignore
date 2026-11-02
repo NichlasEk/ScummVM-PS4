@@ -9,3 +9,13 @@ __pycache__/
 # External PS4 runtime modules: keep only documentation and placeholders in Git.
 *.prx
 *.sprx
+
+# Private local credentials and delivery artifacts
+.env
+.env.*
+*.pkg
+*.iso
+*.key
+*.pem
+*.p12
+*.pfx

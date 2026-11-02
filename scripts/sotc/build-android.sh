@@ -11,7 +11,7 @@ mkdir -p "$src" "$root/artifacts/sotc/android" "$root/dist/sotc-android"
 if [[ ! -f "$src/configure" ]]; then
  archive="$root/.tools/scummvm-$revision.tar"
  if [[ ! -f "$archive" ]]; then
-  git -C "${SCUMMVM_REFERENCE:-/home/developer/ps4-scummvm/scummvm}" archive --format=tar -o "$archive" "$revision"
+  git -C "${SCUMMVM_REFERENCE:-$root/../ps4-scummvm/scummvm}" archive --format=tar -o "$archive" "$revision"
  fi
  tar -xf "$archive" -C "$src"
 fi

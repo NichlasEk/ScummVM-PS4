@@ -1,2 +1,3 @@
 # Unified-diff context lines intentionally begin with a space.
 patches/scummvm/*.patch -whitespace
+experiments/scummvm-2026.4.0/*.patch -whitespace

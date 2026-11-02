@@ -6,6 +6,8 @@ root=Path(__file__).resolve().parents[2]; out=Path(__file__).resolve().parent
 clean=root/'.tools/upstream-2026.4.0/scummvm-2026.4.0'
 paths=set(re.findall(r'^\+\+\+ b/(.+)$',(root/'patches/scummvm/ps4.patch').read_text(),re.M))
 paths.update(n for n in re.findall(r'^\+\+\+ b/(.+)$',(out/'vulkan.patch').read_text(),re.M))
+paths.update(('backends/graphics/opengl/pipelines/libretro.h', 'backends/graphics/opengl/pipelines/libretro.cpp', 'backends/graphics/opengl/framebuffer.cpp'))
+paths.add('backends/graphics/opengl/ps4-filter-presets.h')
 paths.add('common/str-base.cpp')
 paths.add('engines/hpl1/engine/impl/low_level_graphics_tgl.cpp')
 paths.add('backends/keymapper/virtual-mouse.h')

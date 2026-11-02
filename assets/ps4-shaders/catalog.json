@@ -1,0 +1,182 @@
+[
+  {
+    "name": "Scanlines",
+    "category": "CRT",
+    "description": "Crisp source-row scanlines.",
+    "linear": false
+  },
+  {
+    "name": "CRT-Light",
+    "category": "CRT",
+    "description": "Scanlines and a light RGB mask.",
+    "linear": false
+  },
+  {
+    "name": "CRT-Soft",
+    "category": "CRT",
+    "description": "Soft phosphor image with smooth scanlines.",
+    "linear": true
+  },
+  {
+    "name": "CRT-Curved",
+    "category": "CRT",
+    "description": "Curved tube with scanlines and dark corners.",
+    "linear": true
+  },
+  {
+    "name": "CRT-Glow",
+    "category": "CRT",
+    "description": "Bright phosphors bloom into neighbouring pixels.",
+    "linear": true
+  },
+  {
+    "name": "CRT-Aperture",
+    "category": "CRT",
+    "description": "RGB aperture grille with smooth scanlines.",
+    "linear": false
+  },
+  {
+    "name": "CRT-Slot-Mask",
+    "category": "CRT",
+    "description": "Staggered RGB slots and horizontal phosphor gaps.",
+    "linear": false
+  },
+  {
+    "name": "CRT-Shadow-Mask",
+    "category": "CRT",
+    "description": "Staggered triad dot mask, softer than the slot mask.",
+    "linear": false
+  },
+  {
+    "name": "CRT-Warm",
+    "category": "CRT",
+    "description": "Warm television whites with horizontal colour softness.",
+    "linear": true
+  },
+  {
+    "name": "CRT-Curved-Glow",
+    "category": "CRT",
+    "description": "Curved tube with phosphor bloom and aperture grille.",
+    "linear": true
+  },
+  {
+    "name": "Monitor-Green",
+    "category": "Monochrome",
+    "description": "Green phosphor monochrome monitor.",
+    "linear": false
+  },
+  {
+    "name": "Monitor-Amber",
+    "category": "Monochrome",
+    "description": "Amber phosphor monochrome monitor.",
+    "linear": false
+  },
+  {
+    "name": "Monitor-White",
+    "category": "Monochrome",
+    "description": "Cool white monochrome phosphor display.",
+    "linear": false
+  },
+  {
+    "name": "LCD-Grid",
+    "category": "LCD",
+    "description": "Visible pixel-cell borders.",
+    "linear": false
+  },
+  {
+    "name": "LCD-RGB",
+    "category": "LCD",
+    "description": "RGB subpixels and pixel-cell borders.",
+    "linear": false
+  },
+  {
+    "name": "LCD-Handheld-Green",
+    "category": "LCD",
+    "description": "Four olive-green shades and a handheld pixel grid.",
+    "linear": false
+  },
+  {
+    "name": "LCD-Handheld-Gray",
+    "category": "LCD",
+    "description": "Four neutral shades and a handheld pixel grid.",
+    "linear": false
+  },
+  {
+    "name": "LCD-Backlit",
+    "category": "LCD",
+    "description": "Cool backlit display with a lifted black level.",
+    "linear": false
+  },
+  {
+    "name": "Scale-Smooth",
+    "category": "Scaling",
+    "description": "Bilinear image scaling.",
+    "linear": true
+  },
+  {
+    "name": "Scale-Sharp-Bilinear",
+    "category": "Scaling",
+    "description": "Keeps pixel interiors crisp and blends their edges.",
+    "linear": true
+  },
+  {
+    "name": "Scale-Soft",
+    "category": "Scaling",
+    "description": "Gentle five-tap image softening.",
+    "linear": true
+  },
+  {
+    "name": "Scale-Sharpen",
+    "category": "Scaling",
+    "description": "Mild unsharp masking with bounded contrast.",
+    "linear": true
+  },
+  {
+    "name": "Video-Composite",
+    "category": "Analog",
+    "description": "Horizontal chroma bleed and softened composite video.",
+    "linear": true
+  },
+  {
+    "name": "Video-RGB-Fringe",
+    "category": "Analog",
+    "description": "Subtle horizontal RGB channel misalignment.",
+    "linear": true
+  },
+  {
+    "name": "Video-Tape",
+    "category": "Analog",
+    "description": "Static tape-style chroma bleed, grain and edge tracking.",
+    "linear": true
+  },
+  {
+    "name": "Color-Grayscale",
+    "category": "Color",
+    "description": "Neutral grayscale conversion.",
+    "linear": false
+  },
+  {
+    "name": "Color-Sepia",
+    "category": "Color",
+    "description": "Warm sepia photographic tint.",
+    "linear": false
+  },
+  {
+    "name": "Color-Vivid",
+    "category": "Color",
+    "description": "Moderate saturation and contrast boost.",
+    "linear": false
+  },
+  {
+    "name": "Color-Poster",
+    "category": "Color",
+    "description": "Three-bit colour channels for a posterized retro palette.",
+    "linear": false
+  },
+  {
+    "name": "Color-Dither",
+    "category": "Color",
+    "description": "Ordered 4-level colour quantization using a 2x2 dither.",
+    "linear": false
+  }
+]

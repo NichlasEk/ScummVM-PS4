@@ -338,10 +338,37 @@
 + recordSize = length; nameSize = names; return true;
 +}
 +#endif
+--- a/backends/graphics/opengl/framebuffer.cpp
++++ b/backends/graphics/opengl/framebuffer.cpp
+@@ -188,7 +188,11 @@
+ 
+ void Backbuffer::activateInternal() {
+ #if !USE_FORCED_GLES
+-	if (OpenGLContext.framebufferObjectSupported) {
++	if (OpenGLContext.framebufferObjectSupported
++#ifdef __PS4__
++		|| glBindFramebuffer
++#endif
++	) {
+ 		GL_CALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+ 	}
+ #endif
 --- a/backends/graphics/opengl/opengl-graphics.cpp
 +++ b/backends/graphics/opengl/opengl-graphics.cpp
-@@ -414,7 +414,10 @@
+@@ -412,9 +412,22 @@
+ #endif
+ 
  bool OpenGLGraphicsManager::loadShader(const Common::Path &fileName) {
++#ifdef __PS4__
++	// Global 2D filter preferences must not force 3D engines onto color-only FBOs.
++	if (_currentState.flags & OSystem::kGfxModeRender3d) {
++		if (_libretroPipeline)
++			_libretroPipeline->close();
++		return true;
++	}
++	// External presets use the same parser/compiler and transaction rollback
++	// as bundled presets. Check actual unsupported features in the pipeline.
++#endif
  #if !USE_FORCED_GLES
  	if (!_libretroPipeline) {
 -		warning("Libretro is not supported");
@@ -352,7 +379,7 @@
  		return true;
  	}
  
-@@ -477,12 +480,19 @@
+@@ -477,12 +490,19 @@
  	const bool engineSupportsArbitraryResolutions = !g_engine || !render3d || g_engine->hasFeature(Engine::kSupportsArbitraryResolutions);
  	// Prefer to render on framebuffer if antialiasing is requested: this avoids recreating the window
  	// This is only needed for 3D rendering
@@ -373,6 +400,170 @@
  
  #if defined(USE_OPENGL_GAME) || defined(USE_OPENGL_SHADERS)
  	// Create the 3D renderer first to allow the platform specific code know we are in 3D
+@@ -1550,7 +1570,11 @@
+ 
+ 	// Try to setup LibRetro pipeline first if available.
+ #if !USE_FORCED_GLES
+-	if (LibRetroPipeline::isSupportedByContext()) {
++	if (LibRetroPipeline::isSupportedByContext()
++#ifdef __PS4__
++		&& !(_currentState.flags & OSystem::kGfxModeRender3d)
++#endif
++	) {
+ 		ShaderMan.notifyCreate();
+ 		_libretroPipeline = new LibRetroPipeline();
+ 		_pipeline = _libretroPipeline;
+--- a/backends/graphics/opengl/pipelines/libretro.cpp
++++ b/backends/graphics/opengl/pipelines/libretro.cpp
+@@ -463,6 +463,19 @@
+ 	if (!_shaderPreset)
+ 		return false;
+ 
++#ifdef __PS4__
++	// The native bridge renders RGBA8 targets and has no mipmap generation.
++	// Never silently render a preset with different precision or sampling.
++	for (uint i = 0; i < _shaderPreset->passes.size(); ++i) {
++		const LibRetro::ShaderPass &pass = _shaderPreset->passes[i];
++		if (pass.mipmapInput || pass.floatFBO || pass.srgbFBO) {
++			warning("PS4 shader '%s', pass %u: mipmaps, float and sRGB framebuffers are not supported", shaderPreset.toString().c_str(), i);
++			close();
++			return false;
++		}
++	}
++#endif
++
+ 	if (!loadTextures(archSet)) {
+ 		close();
+ 		return false;
+@@ -489,6 +502,7 @@
+ 	_textures.clear();
+ 
+ 	for (PassArray::size_type i = 0; i < _passes.size(); ++i) {
++		Shader::freeBuffer(_passes[i].coordinatesVBO);
+ 		delete _passes[i].shader;
+ 		delete _passes[i].target;
+ 	}
+@@ -976,7 +990,9 @@
+ 	// Activate shader and framebuffer to be used for rendering.
+ 	FakePipeline fakePipeline;
+ 
++#ifndef __PS4__
+ 	pass.shader->use();
++#endif
+ 	// We don't need to set the projection matrix here so let's use a fake pipeline
+ 	pass.target->activate(&fakePipeline);
+ 
+@@ -990,6 +1006,9 @@
+ 
+ 	// Activate attribute arrays and setup matching attributes.
+ 	renderPassSetupCoordinates(pass);
++#ifdef __PS4__
++	pass.shader->use(true);
++#endif
+ 
+ 	// Bind textures to samplers.
+ 	renderPassSetupTextures(pass);
+@@ -1004,7 +1023,20 @@
+ }
+ 
+ void LibRetroPipeline::renderPassSetupCoordinates(const Pass &pass) {
++#ifdef __PS4__
++	// The native bridge requires VBO-backed attributes. Keep one packed quad
++	// buffer per pass; each attribute contains four pairs of floats.
++	const uint quadBytes = 8 * sizeof(GLfloat);
++	Common::Array<GLfloat> coordinates;
++	coordinates.resize((1 + pass.texCoords.size()) * 8);
++	memcpy(coordinates.begin(), pass.vertexCoord, quadBytes);
++	if (!pass.coordinatesVBO)
++		pass.coordinatesVBO = Shader::createBuffer(GL_ARRAY_BUFFER, coordinates.size() * sizeof(GLfloat), nullptr, GL_DYNAMIC_DRAW);
++	pass.shader->enableVertexAttribute("VertexCoord", pass.coordinatesVBO, 2, GL_FLOAT, GL_FALSE, 0, 0);
++	uint coordinateIndex = 1;
++#else
+ 	pass.shader->enableVertexAttribute("VertexCoord", 2, GL_FLOAT, GL_FALSE, 0, pass.vertexCoord);
++#endif
+ 
+ 	for (const auto &texCoord : pass.texCoords) {
+ 		const GLfloat *texCoords = nullptr;
+@@ -1028,8 +1060,19 @@
+ 			continue;
+ 		}
+ 
++#ifdef __PS4__
++		memcpy(coordinates.begin() + coordinateIndex * 8, texCoords, quadBytes);
++		pass.shader->enableVertexAttribute(texCoord.name.c_str(), pass.coordinatesVBO, 2, GL_FLOAT, GL_FALSE, 0, coordinateIndex * quadBytes);
++		++coordinateIndex;
++#else
+ 		pass.shader->enableVertexAttribute(texCoord.name.c_str(), 2, GL_FLOAT, GL_FALSE, 0, texCoords);
+-	}
++#endif
++	}
++#ifdef __PS4__
++	GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, pass.coordinatesVBO));
++	GL_CALL(glBufferData(GL_ARRAY_BUFFER, coordinates.size() * sizeof(GLfloat), coordinates.begin(), GL_DYNAMIC_DRAW));
++	GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, 0));
++#endif
+ }
+ 
+ void LibRetroPipeline::renderPassSetupTextures(const Pass &pass) {
+--- a/backends/graphics/opengl/pipelines/libretro.h
++++ b/backends/graphics/opengl/pipelines/libretro.h
+@@ -73,7 +73,12 @@
+ 	static bool isSupportedByContext() {
+ 		return OpenGLContext.shadersSupported
+ 			&& OpenGLContext.multitextureSupported
++#ifdef __PS4__
++			// The bridge provides color texture FBOs, but not general depth/renderbuffers.
++			&& glBindFramebuffer && glFramebufferTexture2D;
++#else
+ 			&& OpenGLContext.framebufferObjectSupported;
++#endif
+ 	}
+ private:
+ 	void activateInternal() override;
+@@ -132,6 +137,7 @@
+ 			: shaderPass(sP), shader(s), target(t), texCoords(), texSamplers(),
+ 			inputTexture(nullptr), vertexCoord(), hasFrameCount(false), prevCount(0) {}
+ 
++		mutable GLuint coordinatesVBO = 0; // PS4 owns quad coordinates in a GPU buffer.
+ 		const LibRetro::ShaderPass *shaderPass;
+ 		Shader *shader;
+ 		TextureTarget *target;
+--- /dev/null
++++ b/backends/graphics/opengl/ps4-filter-presets.h
+@@ -0,0 +1,33 @@
++// Generated by scripts/generate-ps4-filters.py. GPL-3.0-or-later.
++static const char *const kPS4FilterPresets[] = {
++    "PS4/Scanlines.glslp",
++    "PS4/CRT-Light.glslp",
++    "PS4/CRT-Soft.glslp",
++    "PS4/CRT-Curved.glslp",
++    "PS4/CRT-Glow.glslp",
++    "PS4/CRT-Aperture.glslp",
++    "PS4/CRT-Slot-Mask.glslp",
++    "PS4/CRT-Shadow-Mask.glslp",
++    "PS4/CRT-Warm.glslp",
++    "PS4/CRT-Curved-Glow.glslp",
++    "PS4/Monitor-Green.glslp",
++    "PS4/Monitor-Amber.glslp",
++    "PS4/Monitor-White.glslp",
++    "PS4/LCD-Grid.glslp",
++    "PS4/LCD-RGB.glslp",
++    "PS4/LCD-Handheld-Green.glslp",
++    "PS4/LCD-Handheld-Gray.glslp",
++    "PS4/LCD-Backlit.glslp",
++    "PS4/Scale-Smooth.glslp",
++    "PS4/Scale-Sharp-Bilinear.glslp",
++    "PS4/Scale-Soft.glslp",
++    "PS4/Scale-Sharpen.glslp",
++    "PS4/Video-Composite.glslp",
++    "PS4/Video-RGB-Fringe.glslp",
++    "PS4/Video-Tape.glslp",
++    "PS4/Color-Grayscale.glslp",
++    "PS4/Color-Sepia.glslp",
++    "PS4/Color-Vivid.glslp",
++    "PS4/Color-Poster.glslp",
++    "PS4/Color-Dither.glslp",
++};
 --- a/backends/graphics/opengl/renderer3d.cpp
 +++ b/backends/graphics/opengl/renderer3d.cpp
 @@ -29,6 +29,10 @@
@@ -1047,6 +1238,19 @@
  	_oglType = OpenGL::kContextNone;
  	_supportsShaders = false;
  #if USE_FORCED_GLES2
+@@ -648,7 +654,11 @@
+ 
+ void OSystem_SDL::addSysArchivesToSearchSet(Common::SearchSet &s, int priority) {
+ 
+-#ifdef DATA_PATH
++#ifdef __PS4__
++	// Keep packaged engine data available when the user changes Extra Path.
++	// SearchManager supplies a lower priority than game and user directories.
++	s.addDirectory("/app0/data", "/app0/data", priority, 4);
++#elif defined(DATA_PATH)
+ 	// Add the global DATA_PATH to the directory search list
+ 	// FIXME: We use depth = 4 for now, to match the old code. May want to change that
+ 	Common::FSNode dataNode(DATA_PATH);
 --- a/backends/vkeybd/virtual-keyboard-parser.h
 +++ b/backends/vkeybd/virtual-keyboard-parser.h
 @@ -245,7 +245,7 @@

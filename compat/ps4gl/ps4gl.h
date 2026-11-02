@@ -455,7 +455,8 @@ typedef struct PS4GLContext {
   size_t texture_bytes;
   uint64_t next_texture_revision;
 #define PS4GL_TEXTURE_CACHE_SLOTS 128
-#define PS4GL_TEXTURE_CACHE_BUDGET (32u*1024u*1024u)
+// TWP room atlases exceed 32 MiB; keep them resident across frames.
+#define PS4GL_TEXTURE_CACHE_BUDGET (128u*1024u*1024u)
   PS4GLTextureSnapshot texture_cache[PS4GL_TEXTURE_CACHE_SLOTS];
   size_t texture_cache_bytes;
   unsigned texture_snapshot_uploads, texture_snapshot_reuses;
@@ -543,6 +544,7 @@ void ps4glDestroyBuffers(PS4GLContext *);
 void ps4glConfigureVertexDevice(VkPhysicalDevice, VkDevice);
 /* Only after fences complete AND all referencing command buffers are reset. */
 void ps4glReleaseVertexSnapshots(PS4GLContext *);
+void ps4glRecycleVertexSnapshots(PS4GLContext *);
 void glUseProgram(GLuint);
 void glDeleteProgram(GLuint);
 GLboolean glIsProgram(GLuint);

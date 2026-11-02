@@ -432,7 +432,7 @@ void ps4glConfigureVertexDevice(VkPhysicalDevice physical, VkDevice device) {
   ctx->prepare_target=prepare_render_target; ctx->end_target=end_render_target;
   ctx->query_command=query_command; ctx->complete_queries=complete_queries; ctx->physical=physical; ctx->copy_texture=copy_texture; ctx->program_device=device; ctx->read_pixels=read_pixels; ctx->upload_vertices=upload_vertices; ctx->upload_uniforms=upload_uniforms; ctx->select_pipeline=select_pipeline; ctx->import_program=ps4glCreateProgramSPIRV;
 }
-void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
+static void retire_vertex_snapshots(PS4GLContext *ctx, int release_storage) {
   if(!ctx) return;
   if(ctx->command) { if(!ctx->error) ctx->error=GL_INVALID_OPERATION; return; }
   release_queries(ctx);
@@ -445,16 +445,29 @@ void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
     }
     ctx->snapshots[i]=(PS4GLSnapshot){0};
   }
-  free(ctx->snapshots); ctx->snapshots=NULL; ctx->snapshot_capacity=0;
+  if(release_storage) {
+    free(ctx->snapshots); ctx->snapshots=NULL; ctx->snapshot_capacity=0;
+  }
   for(unsigned i=0;i<ctx->upload_page_count;++i) {
     PS4GLUploadPage *p=&ctx->upload_pages[i];
+    if(!release_storage) { p->used=0; continue; }
     if(p->mapped) vkUnmapMemory(ctx->program_device,p->memory);
     vkDestroyBuffer(ctx->program_device,p->buffer,NULL);
     vkFreeMemory(ctx->program_device,p->memory,NULL);
     *p=(PS4GLUploadPage){0};
   }
-  ctx->upload_page_count=0; ctx->upload_memory_bytes=0; ctx->allocation_failure=NULL;
+  if(release_storage) { ctx->upload_page_count=0; ctx->upload_memory_bytes=0; }
+  ctx->allocation_failure=NULL;
   ctx->snapshot_count=0; ctx->snapshot_bytes=0;
   ctx->texture_snapshot_uploads=ctx->texture_snapshot_reuses=0;
   collect_targets(ctx,0);
+}
+
+/* Both calls require a completed fence and a reset command buffer.
+ * Retain bounded, mapped upload storage between frames; release on teardown. */
+void ps4glRecycleVertexSnapshots(PS4GLContext *ctx) {
+  retire_vertex_snapshots(ctx,0);
+}
+void ps4glReleaseVertexSnapshots(PS4GLContext *ctx) {
+  retire_vertex_snapshots(ctx,1);
 }

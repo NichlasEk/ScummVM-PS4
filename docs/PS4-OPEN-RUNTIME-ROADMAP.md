@@ -13,7 +13,9 @@ The Vulkan/OpenGNM graphics route already avoids Piglet and Shacc.
 
 See [external module setup](../external/ps4-runtime/README.md) for current paths.
 `scripts/package-scummvm.sh` currently copies three prebuilt modules from the
-SDK. Their presence in the package alone does not prove they are used.
+SDK. The [local inventory](../tools/ps4-runtime-inventory/README.md) found
+matching OpenOrbis source builds for these exact files. Their presence in the
+package alone does not prove they are used.
 
 ## 1. Establish what is actually required
 
@@ -27,13 +29,19 @@ reuse a staging tree containing old files. Test boot, launcher, game startup,
 audio, scene transitions, save/load and shutdown. Repeat on physical PS4 before
 declaring a module unnecessary. Preserve baseline and variant evidence.
 
-## 2. Candidate replacements
+## 2. Module necessity
+
+The [local inventory](../tools/ps4-runtime-inventory/README.md) established
+that the packaged `libc.prx` and `libSceFios2.prx` are OpenOrbis dummy modules,
+while `right.sprx` provides OpenOrbis attribution in the shell information
+screen. These are not known Sony runtime implementations to replace. The
+remaining question is whether each file is required for a working package.
 
 | File | First investigation | If it is genuinely needed |
 | --- | --- | --- |
-| `libc.prx` | Determine which imports, if any, require it despite our static OpenOrbis musl runtime. | Use source-built musl functionality where possible; otherwise implement only the required exported ABI in a source-built module. |
-| `libSceFios2.prx` | Determine whether application, SDL, startup or other modules invoke FIOS at all. | Implement the observed file-I/O contract over kernel/POSIX operations, including async completion, cancellation and error semantics where used. |
-| `right.sprx` | Identify its actual role and whether packaging tools, loader or runtime require it. Its filename and SDK sample directory are insufficient evidence. | If it is ordinary callable code, implement the required interface from documented behavior. If it is a platform-format or signing requirement, investigate the toolchain/package format first; a dummy module is not a demonstrated replacement. |
+| `libc.prx` | Check whether the loader requires the OpenOrbis dummy module despite the statically linked musl C library. | If removable, omit it after isolated runtime tests. |
+| `libSceFios2.prx` | Check whether the loader requires the OpenOrbis dummy module; its source contains no FIOS I/O implementation. | If removable, omit it after isolated runtime tests. |
+| `right.sprx` | Check whether the shell information screen or package loader requires the OpenOrbis attribution module. | Retain it if needed; it already has visible OpenOrbis source. |
 
 Prefer removing an unused dependency. Do not build speculative full Sony API
 implementations. Do not claim that musl is automatically a drop-in replacement

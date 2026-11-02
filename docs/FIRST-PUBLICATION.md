@@ -44,6 +44,10 @@ De omfattar ännu inte alla medföljande runtime-komponenters källkod.
 
 ## Återstår innan en publik binärrelease
 
+För OpenOrbis-delarna, använd den uppdaterade
+[releaseinventeringen](OPENORBIS-RELEASE-SOURCES.md) som arbetslista. Denna
+äldre 1.01-kandidat gäller inte automatiskt för ett nytt paket.
+
 1. Kontrollera ursprung, licenser och motsvarande källkod för komponenterna
    från OpenOrbis: statiskt länkade bibliotek, `libc.prx`, `libSceFios2.prx`
    och `right.sprx`. Samla deras licensnotiser och nödvändig källkod.

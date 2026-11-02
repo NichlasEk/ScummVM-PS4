@@ -81,7 +81,7 @@ int ps4glFrameSubmit(PS4GLFrameOwner *f) {
 }
 static int frame_discard(PS4GLFrameOwner *f) {
   FRAME_TRY(vkResetCommandBuffer(f->command,0));
-  if(f->context) ps4glReleaseVertexSnapshots(f->context);
+  if(f->context) ps4glRecycleVertexSnapshots(f->context);
   f->state=0; f->context=NULL; return 0;
 }
 int ps4glFramePresent(void *data) {

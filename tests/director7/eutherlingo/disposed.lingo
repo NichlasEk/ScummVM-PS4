@@ -1,0 +1,12 @@
+-- Object lifecycle regression; no invalid native pointer is manufactured.
+set obj = ELGFactory(mNew)
+set the sampleValue of obj = 17
+scummvmAssertEqual the sampleValue of obj, 17
+obj(mDispose)
+put the sampleValue of obj
+put "ELG_UNREACHABLE"
+
+factory ELGFactory
+method mPing
+  instance sampleValue
+  return 1

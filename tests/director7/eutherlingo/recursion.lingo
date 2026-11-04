@@ -1,0 +1,6 @@
+-- Deliberately bounded by the configured VM depth limit in the test runner.
+elgRecurse(0)
+put "ELG_UNREACHABLE"
+on elgRecurse n
+  return elgRecurse(n + 1)
+end

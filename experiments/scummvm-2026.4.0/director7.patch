@@ -4120,6 +4120,88 @@
  		// Sprite blend does not respect colourization; defaults to matte ink
  		byte rSrc, gSrc, bSrc;
  		byte rDst, gDst, bDst;
+--- /dev/null
++++ b/engines/director/lingo/eutherlingo-guard.h
+@@ -0,0 +1,79 @@
++/* ScummVM - Graphic Adventure Engine
++ *
++ * ScummVM is the legal property of its developers, whose names
++ * are too numerous to list here. Please refer to the COPYRIGHT
++ * file distributed with this source distribution.
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#ifndef DIRECTOR_EUTHERLINGO_GUARD_H
++#define DIRECTOR_EUTHERLINGO_GUARD_H
++
++#include "common/scummsys.h"
++
++namespace Director {
++
++// Bounded, value-only history: no Datum/Symbol ownership and no object dereferences.
++// Pointer values are opaque, process-local correlation tokens, not persistent IDs.
++class EutherLingoGuard {
++public:
++	struct Entry {
++		const char *event;
++		char handler[64];
++		const void *state;
++		const void *context;
++		const void *object;
++		uint pc, stack, depth;
++	};
++	enum { kCapacity = 128 };
++	EutherLingoGuard() : reports(0), _next(0), _count(0) {}
++
++	void record(const char *event, const char *handler, const void *state,
++	            const void *context, const void *object, uint pc, uint stack, uint depth) {
++		Entry &e = _entries[_next];
++		e.event = event;
++		uint i = 0;
++		if (handler) {
++			for (; i + 1 < sizeof(e.handler) && handler[i]; ++i)
++				e.handler[i] = handler[i];
++		}
++		e.handler[i] = 0;
++		e.state = state;
++		e.context = context;
++		e.object = object;
++		e.pc = pc;
++		e.stack = stack;
++		e.depth = depth;
++		_next = (_next + 1) % kCapacity;
++		if (_count < kCapacity)
++			++_count;
++	}
++
++	uint size() const { return _count; }
++	const Entry &at(uint i) const {
++		assert(i < _count);
++		return _entries[(_next + kCapacity - _count + i) % kCapacity];
++	}
++	uint reports;
++
++private:
++	Entry _entries[kCapacity];
++	uint _next, _count;
++};
++
++} // End of namespace Director
++
++#endif
 --- a/engines/director/lingo/lingo-builtins.cpp
 +++ b/engines/director/lingo/lingo-builtins.cpp
 @@ -20,6 +20,8 @@
@@ -4612,7 +4694,64 @@
  	{ LC::cb_delete,		"cb_delete",		"i" },
  	{ LC::cb_hilite,		"cb_hilite",		"" },
  	{ LC::cb_globalassign,	"cb_globalassign",	"s" },
-@@ -1087,6 +1089,51 @@
+@@ -202,7 +204,10 @@
+ }
+ 
+ Datum Lingo::pop() {
+-	assert (_state->stack.size() != 0);
++	if (_state->stack.empty()) {
++		guardReport("operand stack underflow", true);
++		error("EutherLingo Guard: pop on empty operand stack");
++	}
+ 
+ 	Datum ret = _state->stack.back();
+ 	_state->stack.pop_back();
+@@ -211,7 +216,10 @@
+ }
+ 
+ Datum Lingo::peek(uint offset) {
+-	assert (_state->stack.size() > offset);
++	if (offset >= _state->stack.size()) {
++		guardReport("operand stack peek out of range", true);
++		error("EutherLingo Guard: peek %u outside operand stack %u", offset, _state->stack.size());
++	}
+ 
+ 	Datum ret = _state->stack[_state->stack.size() - 1 - offset];
+ 
+@@ -229,6 +237,12 @@
+ 
+ void Lingo::pushContext(const Symbol funcSym, bool allowRetVal, Datum defaultRetVal, int paramCount, int nargs) {
+ 	Common::Array<CFrame *> &callstack = _state->callstack;
++	guardCheckArguments(nargs);
++	if (_guardMaxCallDepth && callstack.size() >= _guardMaxCallDepth) {
++		guardReport("configured call depth limit reached", true);
++		error("EutherLingo Guard: call depth limit %u reached", _guardMaxCallDepth);
++	}
++	guardRecord("call", &funcSym);
+ 
+ 	debugC(5, kDebugLingoExec, "Pushing frame %d", callstack.size() + 1);
+ 	CFrame *fp = new CFrame;
+@@ -323,8 +337,19 @@
+ void Lingo::popContext(bool aborting) {
+ 	Common::Array<CFrame *> &callstack = _state->callstack;
+ 
++	if (callstack.empty()) {
++		guardReport("call stack underflow", true);
++		error("EutherLingo Guard: return with no call frame");
++	}
++	guardRecord(aborting ? "unwind" : "return");
+ 	debugC(5, kDebugLingoExec, "Popping frame %d", callstack.size());
+ 	CFrame *fp = callstack.back();
++	if (_state->stack.size() < fp->stackSizeBefore ||
++	    (!aborting && _state->stack.size() > fp->stackSizeBefore + 1)) {
++		guardReport("handler operand stack imbalance", true);
++		error("EutherLingo Guard: handler operand stack %u, expected %u%s",
++		      _state->stack.size(), fp->stackSizeBefore, aborting ? " or more" : " or one return value");
++	}
+ 	callstack.pop_back();
+ 
+ 	if (_state->stack.size() == fp->stackSizeBefore + 1) {
+@@ -1087,6 +1112,51 @@
  	}
  }
  
@@ -4664,7 +4803,7 @@
  Datum LC::chunkRef(ChunkType type, int startChunk, int endChunk, const Datum &src) {
  	// A chunk expression is made up of 0 or more chunks within a source text.
  	// This function returns a reference to the source text, the start index of the first chunk,
-@@ -1160,6 +1207,9 @@
+@@ -1160,6 +1230,9 @@
  	case kChunkLine:
  		{
  			Common::u32char_type_t delimiter = (type == kChunkItem) ? g_lingo->_itemDelimiter : '\r';
@@ -4674,15 +4813,16 @@
  
  			int idx = 0;
  			while (true) {
-@@ -1645,6 +1695,7 @@
+@@ -1645,6 +1718,8 @@
  }
  
  void LC::call(const Common::String &name, int nargs, bool allowRetVal) {
++	g_lingo->guardCheckArguments(nargs);
 +
  	if (debugChannelSet(3, kDebugLingoExec))
  		g_lingo->printArgs(name.c_str(), nargs, "call:");
  
-@@ -1673,7 +1724,37 @@
+@@ -1673,7 +1748,37 @@
  				}
  				return;
  			}
@@ -4721,7 +4861,27 @@
  		}
  
  		// Script/Xtra method call
-@@ -1855,8 +1936,13 @@
+@@ -1748,6 +1853,8 @@
+ }
+ 
+ void LC::call(const Symbol &funcSym, int nargs, bool allowRetVal) {
++	g_lingo->guardCheckArguments(nargs);
++	g_lingo->guardRecord("dispatch", &funcSym);
+ 	int paramCount = nargs;
+ 	Datum target = funcSym.target;
+ 
+@@ -1783,6 +1890,10 @@
+ 	}
+ 
+ 	if (funcSym.type != HANDLER && target.type != VOID) {
++		if (nargs == 0) {
++			g_lingo->guardReport("missing builtin target argument", true);
++			error("EutherLingo Guard: method call without target argument");
++		}
+ 		// Drop the target argument (only needed for user-defined methods)
+ 		g_lingo->_state->stack.remove_at(g_lingo->_state->stack.size() - nargs);
+ 		nargs--;
+@@ -1855,11 +1966,19 @@
  					warning("Builtin '%s' dropping return value: %s", funcSym.name->c_str(), extra.asString(true).c_str());
  				}
  			} else if (stackSize == stackSizeBefore) {
@@ -4731,11 +4891,35 @@
 +					// mutation has already run; supply VOID for the unused result.
 +					g_lingo->push(Datum());
 +				} else if (allowRetVal) {
++					g_lingo->guardReport("builtin missing return value", true);
  					error("Builtin '%s' did not return value", funcSym.name->c_str());
 +				}
  			} else if (stackSize > stackSizeBefore) {
++				g_lingo->guardReport("builtin returned extra values", true);
  				error("Builtin '%s' returned extra %d values", funcSym.name->c_str(), stackSize - stackSizeBefore);
  			} else {
++				g_lingo->guardReport("builtin consumed caller operands", true);
+ 				error("Builtin '%s' popped extra %d values", funcSym.name->c_str(), stackSizeBefore - stackSize);
+ 			}
+ 		}
+@@ -1880,12 +1999,17 @@
+ 	// as we could e.g. be in a loop.
+ 	// Returning a value must be done by calling LB::b_return().
+ 	Common::Array<CFrame *> &callstack = g_lingo->_state->callstack;
++	if (callstack.empty()) {
++		g_lingo->guardReport("return opcode without frame", true);
++		error("EutherLingo Guard: return opcode without frame");
++	}
+ 	CFrame *fp = callstack.back();
+ 	int extra = g_lingo->_state->stack.size() - fp->stackSizeBefore;
+ 	if (extra > 0) {
+ 		debugC(5, kDebugLingoExec, "c_procret: dropping %d items", extra);
+ 		g_lingo->dropStack(extra);
+ 	} else if (extra < 0) {
++		g_lingo->guardReport("return opcode operand stack imbalance", true);
+ 		error("c_procret: handler %s has a stack delta size of %d", fp->sp.name->c_str(), extra);
+ 	}
+ 
 --- a/engines/director/lingo/lingo-code.h
 +++ b/engines/director/lingo/lingo-code.h
 @@ -149,6 +149,7 @@
@@ -4875,6 +5059,30 @@
  		(*_xlibOpeners[name])(type, path);
  	} else {
  		warning("Lingo::openXLib: Unimplemented xlib: '%s'", name.c_str());
+@@ -681,6 +689,7 @@
+ 
+ bool ScriptContext::hasProp(const Common::String &propName) {
+ 	if (_disposed) {
++		g_lingo->guardReport("property access on disposed object", true);
+ 		error("Property '%s' accessed on disposed object <%s>", propName.c_str(), Datum(this).asString(true).c_str());
+ 	}
+ 	if (_properties.contains(propName)) {
+@@ -703,6 +712,7 @@
+ 
+ Datum ScriptContext::getProp(const Common::String &propName) {
+ 	if (_disposed) {
++		g_lingo->guardReport("property access on disposed object", true);
+ 		error("Property '%s' accessed on disposed object <%s>", propName.c_str(), Datum(this).asString(true).c_str());
+ 	}
+ 	if (_properties.contains(propName)) {
+@@ -741,6 +751,7 @@
+ 
+ void ScriptContext::setProp(const Common::String &propName, const Datum &value, bool force) {
+ 	if (_disposed) {
++		g_lingo->guardReport("property access on disposed object", true);
+ 		error("Property '%s' accessed on disposed object <%s>", propName.c_str(), Datum(this).asString(true).c_str());
+ 	}
+ 	if (_properties.contains(propName)) {
 --- a/engines/director/lingo/lingo-the.cpp
 +++ b/engines/director/lingo/lingo-the.cpp
 @@ -43,6 +43,8 @@
@@ -5080,7 +5288,18 @@
  		}
  		break;
  	case kTheRect:
-@@ -2505,6 +2577,8 @@
+@@ -2493,6 +2565,10 @@
+ void Lingo::getObjectProp(Datum &obj, Common::String &propName) {
+ 	Datum d;
+ 	if (obj.type == OBJECT) {
++		if (!obj.u.obj) {
++			guardReport("null object property access", true);
++			error("EutherLingo Guard: null object property access");
++		}
+ 		if (obj.u.obj->hasProp(propName)) {
+ 			d = obj.u.obj->getProp(propName);
+ 		} else {
+@@ -2505,6 +2581,8 @@
  		int index = LC::compareArrays(LC::eqData, obj, propName, true).u.i;
  		if (index > 0) {
  			d = obj.u.parr->arr[index - 1].v;
@@ -5089,7 +5308,7 @@
  		}
  		g_lingo->push(d);
  		g_debugger->propReadHook(propName);
-@@ -2643,6 +2717,18 @@
+@@ -2643,6 +2721,18 @@
  		Common::String key = Common::String::format("%d%s", kTheSprite, propName.c_str());
  		if (_theEntityFields.contains(key)) {
  			d = getTheSprite(obj, _theEntityFields[key]->field);
@@ -5108,7 +5327,18 @@
  		}
  		g_lingo->push(d);
  		return;
-@@ -2768,6 +2854,16 @@
+@@ -2659,6 +2749,10 @@
+ 
+ void Lingo::setObjectProp(Datum &obj, Common::String &propName, Datum &val) {
+ 	if (obj.type == OBJECT) {
++		if (!obj.u.obj) {
++			guardReport("null object property access", true);
++			error("EutherLingo Guard: null object property access");
++		}
+ 		if (obj.u.obj->hasProp(propName)) {
+ 			obj.u.obj->setProp(propName, val);
+ 			g_debugger->propWriteHook(propName);
+@@ -2768,6 +2862,16 @@
  		Common::String key = Common::String::format("%d%s", kTheSprite, propName.c_str());
  		if (_theEntityFields.contains(key)) {
  			setTheSprite(obj, _theEntityFields[key]->field, val);
@@ -5154,39 +5384,104 @@
  
 --- a/engines/director/lingo/lingo.cpp
 +++ b/engines/director/lingo/lingo.cpp
-@@ -41,6 +41,9 @@
+@@ -41,6 +41,10 @@
  #include "director/lingo/lingo-codegen.h"
  #include "director/lingo/lingo-the.h"
  
 +#include "director/ps4-jonsson.h"
++#include "director/lingo/eutherlingo-guard.h"
 +
 +
  namespace Director {
  
  Lingo *g_lingo;
-@@ -182,6 +185,7 @@
+@@ -181,7 +185,16 @@
+ 	g_lingo = this;
  
  	_state = nullptr;
++	if (ConfMan.hasKey("eutherlingo_guard") && ConfMan.getBool("eutherlingo_guard"))
++		_guard = new EutherLingoGuard;
++	if (ConfMan.hasKey("eutherlingo_max_call_depth")) {
++		int limit = ConfMan.getInt("eutherlingo_max_call_depth");
++		if (limit < 0)
++			error("EutherLingo Guard: negative call depth limit");
++		_guardMaxCallDepth = limit;
++	}
  	_globalCounter = 0;
 +	_lastPS4InputService = 0;
  	_freezeState = false;
  	_freezePlay = false;
  	_playDone = false;
-@@ -628,10 +632,12 @@
+@@ -233,6 +246,7 @@
+ 
+ Lingo::~Lingo() {
+ 	cleanupLingo();
++	delete _guard;
+ 	cleanupFuncs();
+ 	cleanupMethods();
+ 	delete _compiler;
+@@ -627,11 +641,59 @@
+ 	return result;
  }
  
++void Lingo::guardRecord(const char *event, const Symbol *symbol) {
++	if (!_guard || !_state)
++		return;
++	if (!symbol && !_state->callstack.empty())
++		symbol = &_state->callstack.back()->sp;
++	const void *object = _state->me.type == OBJECT ? _state->me.u.obj : nullptr;
++	if (symbol && symbol->target)
++		object = symbol->target;
++	_guard->record(event, symbol && symbol->name ? symbol->name->c_str() : "",
++	               _state, symbol ? symbol->ctx : _state->context, object,
++	               _state->pc, _state->stack.size(), _state->callstack.size());
++}
++
++void Lingo::guardReport(const char *reason, bool fatal) {
++	if (!_guard || (!fatal && _guard->reports >= 3))
++		return;
++	++_guard->reports;
++	guardRecord(fatal ? "fatal" : "script-error");
++	warning("EutherLingo Guard: %s (game=%s, report=%u, entries=%u)",
++	        reason, _vm->getGameId(), _guard->reports, _guard->size());
++	for (uint i = 0; i < _guard->size(); ++i) {
++		const EutherLingoGuard::Entry &e = _guard->at(i);
++		debug("ELG %u %s handler=%s state=%p context=%p object=%p pc=%u stack=%u depth=%u",
++		      i, e.event, e.handler, e.state, e.context, e.object, e.pc, e.stack, e.depth);
++	}
++}
++
++void Lingo::guardCheckArguments(int nargs) {
++	if (nargs < 0 || (uint)nargs > _state->stack.size()) {
++		guardReport("invalid argument stack", true);
++		error("EutherLingo Guard: argument count %d exceeds available stack %u",
++		      nargs, _state->stack.size());
++	}
++}
++
++void Lingo::guardCheckPC() {
++	if (!_state->script || _state->pc >= _state->script->size()) {
++		guardReport("invalid instruction position", true);
++		error("EutherLingo Guard: instruction position %u outside script", _state->pc);
++	}
++}
++
  bool Lingo::execute(int targetFrame) {
++	guardRecord("execute");
 +	const bool ps4Jonsson = isPS4Jonsson();
 +	const bool ps4Jonsson1 = ps4Jonsson && Common::String(_vm->getGameId()) == "jonssonligan1";
  	uint localCounter = 0;
  	uint lastUpdate = 0;
  
 -	while (!_abort && !_freezeState && !_playDone && _state->script && (*_state->script)[_state->pc] != STOP) {
-+	while (!_abort && !_freezeState && !_playDone && !g_system->getEventManager()->shouldReturnToLauncher() && _state->script && (*_state->script)[_state->pc] != STOP) {
++	while (!_abort && !_freezeState && !_playDone && !g_system->getEventManager()->shouldReturnToLauncher() && _state->script) {
++		guardCheckPC();
++		if ((*_state->script)[_state->pc] == STOP)
++			break;
  		if (targetFrame != -1 && (int)_state->callstack.size() == targetFrame)
  			break;
  
-@@ -654,8 +660,31 @@
+@@ -654,8 +716,31 @@
  			break;
  		}
  
@@ -5220,7 +5515,55 @@
  			_vm->processSysEvents();
  			// Also process update widgets!
  			Movie *movie = g_director->getCurrentMovie();
-@@ -843,6 +872,7 @@
+@@ -694,6 +779,10 @@
+ 			break;
+ 		}
+ 
++		// Debugger hooks can change the execution position.
++		guardCheckPC();
++		if ((*_state->script)[_state->pc] == STOP)
++			break;
+ 		_state->pc++;
+ 		(*((*_state->script)[_state->pc - 1]))();
+ 
+@@ -713,10 +802,8 @@
+ 			break;
+ 		}
+ 
+-		if (!_abort && _state->pc >= _state->script->size()) {
+-			warning("Lingo::execute(): Bad PC (%d)", _state->pc);
+-			break;
+-		}
++		if (!_abort)
++			guardCheckPC();
+ 
+ 		if (_playDone) {
+ 			// Returning from a script with "play done" does not freeze the state. Instead it obliterates it,
+@@ -733,6 +820,7 @@
+ 	}
+ 
+ 	bool result = !_freezeState;
++	guardRecord(_abort ? "abort" : (_freezeState || _freezePlay) ? "freeze" : "execute-end");
+ 	if (_freezePlay) {
+ 		debugC(5, kDebugLingoExec, "Lingo::execute(): Called play, pausing execution to the play buffer");
+ 		freezePlayState();
+@@ -765,6 +853,7 @@
+ 	ScriptContext *sc = movie->getScriptContext(type, id);
+ 
+ 	if (!sc) {
++		guardRecord("missing-script");
+ 		debugC(3, kDebugLingoExec, "Lingo::executeScript: Request to execute non-existent script type %d id %d of castLib %d", type, id.member, id.castLib);
+ 		return;
+ 	}
+@@ -797,6 +886,7 @@
+ 	vsnprintf(buf, 1024, s, va);
+ 	va_end(va);
+ 
++	guardReport(buf);
+ 	if (_expectError) {
+ 		warning("Caught Lingo error: %s", buf);
+ 		_caughtError = true;
+@@ -843,6 +933,7 @@
  void Lingo::resetLingo() {
  	debugC(3, kDebugLingoExec, "Resetting Lingo!");
  	cleanupLingo();
@@ -5228,7 +5571,7 @@
  	resetLingoGo();
  }
  
-@@ -1812,7 +1842,10 @@
+@@ -1812,7 +1903,10 @@
  				((TextCastMember *)member)->setRawText(value.asString());
  				break;
  			default:
@@ -5240,7 +5583,7 @@
  				break;
  			}
  		}
-@@ -1934,6 +1967,25 @@
+@@ -1934,6 +2028,25 @@
  	return result;
  }
  
@@ -5266,7 +5609,7 @@
  Common::U32String Lingo::evalChunkRef(const Datum &var) {
  	Common::U32String result;
  
-@@ -1942,7 +1994,7 @@
+@@ -1942,7 +2055,7 @@
  	case GLOBALREF:
  	case LOCALREF:
  	case PROPREF:
@@ -5275,7 +5618,7 @@
  		break;
  	case FIELDREF:
  	case CASTREF:
-@@ -1962,7 +2014,10 @@
+@@ -1962,7 +2075,10 @@
  				result = ((TextCastMember *)member)->getText();
  				break;
  			default:
@@ -5287,7 +5630,7 @@
  				break;
  			}
  		}
-@@ -1976,7 +2031,7 @@
+@@ -1976,7 +2092,7 @@
  		}
  		break;
  	default:
@@ -5298,7 +5641,15 @@
  
 --- a/engines/director/lingo/lingo.h
 +++ b/engines/director/lingo/lingo.h
-@@ -267,6 +267,7 @@
+@@ -48,6 +48,7 @@
+ class Frame;
+ class Window;
+ class LingoCompiler;
++class EutherLingoGuard;
+ struct Breakpoint;
+ 
+ typedef void (*inst)(void);
+@@ -267,6 +268,7 @@
  };
  
  struct LingoEvent {
@@ -5306,7 +5657,7 @@
  	LEvent event;
  	int eventId;
  	EventHandlerSourceType eventHandlerSourceType;
-@@ -416,7 +417,7 @@
+@@ -416,7 +418,7 @@
  	// lingo-events.cpp
  private:
  	void initEventHandlerTypes();
@@ -5315,7 +5666,24 @@
  
  public:
  	ScriptType event2script(LEvent ev);
-@@ -571,6 +572,7 @@
+@@ -465,6 +467,16 @@
+ 	void drop(uint num);
+ 
+ 	void lingoError(const char *s, ...);
++	void guardRecord(const char *event, const Symbol *symbol = nullptr);
++	void guardReport(const char *reason, bool fatal = false);
++	void guardCheckArguments(int nargs);
++	void guardCheckPC();
++
++private:
++	EutherLingoGuard *_guard = nullptr;
++	uint _guardMaxCallDepth = 0;
++
++public:
+ 
+ 	void func_mci(const Common::String &name);
+ 	void func_mciwait(const Common::String &name);
+@@ -571,6 +583,7 @@
  	Common::HashMap<int, const LingoV4TheEntity *> _lingoV4TheEntity;
  
  	uint _globalCounter;

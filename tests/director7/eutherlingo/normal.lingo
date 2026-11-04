@@ -1,0 +1,29 @@
+-- Synthetic VM regression, not a reproduction of a Jonssonligan failure.
+scummvmAssertEqual elgSum(6), 21
+scummvmAssertEqual elgMissingArg(7), 7
+scummvmAssertEqual elgExtraArg(3, 4), 3
+scummvmAssertError elgNoSuchHandler(11, 22)
+scummvmAssertEqual elgSum(3), 6
+scummvmAssertError getaProp([1, 2], 7)
+scummvmAssertEqual elgSum(2), 3
+scummvmAssertError put sqrt(#badArgument)
+scummvmAssertEqual elgSum(1), 1
+set badObject = 7
+scummvmAssertError put the missingProperty of badObject
+scummvmAssertError put the text of field 999
+scummvmAssertEqual elgSum(3), 6
+put "ELG_NORMAL_PASS"
+
+on elgSum n
+  if n = 0 then return 0
+  return n + elgSum(n - 1)
+end
+
+on elgMissingArg a, b
+  scummvmAssertEqual ilk(b), #void
+  return a
+end
+
+on elgExtraArg a
+  return a
+end

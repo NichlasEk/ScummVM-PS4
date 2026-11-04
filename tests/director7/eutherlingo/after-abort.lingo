@@ -1,0 +1,3 @@
+scummvmAssertEqual 12 + 34, 46
+scummvmAssertError elgNoSuchHandlerAfterAbort()
+put "ELG_AFTER_ABORT_PASS"

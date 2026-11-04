@@ -1,0 +1,7 @@
+-- Uncaught script error must unwind before the next test script executes.
+elgAbort(12)
+put "ELG_UNREACHABLE"
+on elgAbort n
+  elgNoSuchHandler(n)
+  put "ELG_UNREACHABLE"
+end

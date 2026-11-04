@@ -182,3 +182,76 @@ resource against the exact detected release before adding a narrowly matched
 entry to ScummVM's existing compatibility mechanism. Investigate the six baseline
 Lingo assertions separately; they may help distinguish shared engine limitations
 from Mjölner-specific behavior.
+
+
+## Shad follow-up: window identity (2026-11-04)
+
+A bounded gameplay run in the project's shadPS4 fork reached the Stockholm attic,
+selected and moved all three characters, varied movement-click timing, and used
+the inventory. Activating the lower-right inventory/menu area produced an actual
+script failure: `getObjectProp` could not read `name` on `window "block.dir"`.
+The stack was `9:miawPos` at PC 27, called from `36:mouseUp` at PC 45.
+The same failure was then reproduced in the untouched RC1 executable, using a
+separate emulator profile. Guard therefore exposes an existing missing engine
+property; this evidence does not attribute the failure to the original game.
+
+The fix adds window `name` to the existing entity-field table and Window's
+has/get/set methods, using the existing object name and lookup implementation.
+It does not alias `name` to `title` or `fileName`. Macromedia's
+[Director MX Lingo Dictionary, page 415](https://www.manualslib.com/manual/389805/Macromedia-Director-Mx-Lingo-Dictionary.html?page=415)
+documents readable/writable window identity, separate from the title bar.
+The real D7 script confirms its use there. Registration is conservatively gated
+at Director 7; this is not a claim that D7 introduced the property. Earlier
+versions need independent verification before widening availability.
+No game-specific exception, swallowed error, or game-file edit is needed.
+
+`window-name.lingo` uses classic property syntax because the test target compiles
+at D4 before changing its runtime version. Its pre-fix run failed on the same
+missing property. The corrected VM passes with Guard off and on: initial name,
+rename, case-insensitive lookup, unchanged title/fileName, missing-property error,
+and continued valid access. A fresh D4 target still rejects the property.
+Runtime version downgrades are not a valid availability test: existing entity
+cleanup does not clear the field map. That unrelated behavior was not changed.
+The 34 upstream Lingo files retain exactly the six baseline assertion failures.
+
+Local evidence (ignored, not published with game data):
+
+* Guard 0.33: `artifacts/eutherlingo-guard/shad/guard/20261104-101054.log`.
+* RC1 reproduction: `artifacts/eutherlingo-guard/shad/rc1/20261104-102753.log`.
+* Host regression results: `artifacts/eutherlingo-guard/window-name-final2/`.
+* Replay: `artifacts/eutherlingo-guard/window-name-replay.json` (157 files).
+* PS4 candidate: `dist/eutherlingo-guard-034/ScummVM-2026.4.0-Vulkan-Test.pkg`.
+  SHA256 `ad2660511fd9a01e61c1767d44f6ee9c36a36346e7b33eb0121614b0802c011a`.
+* Extracted executable SHA256
+  `2a451c447a8e7f81ad4d03b96605195a5e9e7f06cdb28116d372c865ec91749b`.
+* Package hashes/signatures passed validation; all 241 GP4 payload files matched
+  extraction. RC1 and the failing 0.33 candidate remain preserved.
+
+Input journals and screenshots accompany each local emulator run. Mouse motion
+uses relative XTest input and its resulting position is checked visually;
+activation uses the emulator's Cross mapping (`n`). This is emulator evidence,
+not physical PS4 acceptance, full-game completion, or a reproducibility claim
+for every intermittent click-dependent problem.
+
+The fixed 0.34 emulator run is
+`artifacts/eutherlingo-guard/shad/fixed/20261104-103528.log`.
+It visibly opened the notebook, turned to its empty page, closed it, and resumed
+walking. The game menu also opened and its Back button returned to the attic.
+The initial isolated scenario is: New Game, skip introduction, open the bag,
+activate the notebook, turn its lower-right page corner, click outside to close,
+then reopen the bag and activate Menu. At 1280x720, the bag/menu is near
+(1060,660), notebook near (998,660), and page corner near (810,540).
+Wait for each visible state before the next input; these are screenshot
+coordinates, not raw XTest coordinates or a timing-independent replay.
+
+The fixed session was stopped after approximately ten minutes with zero
+`window.name` errors, zero uncaught Lingo errors and zero Guard reports.
+This does not mean a warning-free run: unsupported D7 film-loop warnings and
+`setTheSprite` with a VOID sprite ID remain. Clicking Save did not yield a
+verified save dialog/file; the sole file in the configured saves directory is
+an existing screen-preference record, not gameplay state. No successful load or
+scene transition beyond the attic is claimed. The next bounded investigation
+should trace input/handler delivery for item actions and the save menu, then
+verify the FileIO path if the save handler is reached. Do not infer that FileIO
+is the cause from its startup warning alone. Owned emulator sessions were stopped;
+logs, screenshots, input journals and profiles remain local for resumption.

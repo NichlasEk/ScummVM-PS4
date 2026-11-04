@@ -1,0 +1,17 @@
+-- Synthetic regression for the property used by Jonssonligan's miawPos.
+set savedVersion = the scummvmVersion
+set w = window("ELG-original")
+scummvmAssertError put the name of w
+set the scummvmVersion = 700
+scummvmAssertEqual the name of w, "ELG-original"
+set originalTitle = the title of w
+set originalFile = the fileName of w
+set the name of w = "ELG-renamed"
+scummvmAssertEqual the name of w, "ELG-renamed"
+scummvmAssertEqual window("elg-renamed"), w
+scummvmAssertEqual the title of w, originalTitle
+scummvmAssertEqual the fileName of w, originalFile
+scummvmAssertError put the elgMissingProperty of w
+scummvmAssertEqual the name of w, "ELG-renamed"
+set the scummvmVersion = savedVersion
+put "ELG_WINDOW_NAME_PASS"

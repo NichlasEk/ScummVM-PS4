@@ -54,6 +54,16 @@ for enabled in (False, True):
     assert ('ELG ' in text) == enabled
     assert text.count('WARNING: EutherLingo Guard:') <= 3
 
+# Window identity is independent of the visible title and movie filename.
+for enabled in (False, True):
+    directory = output / ('window-name-data-' + str(enabled))
+    directory.mkdir(exist_ok=True)
+    (directory / 'lingotests').touch()
+    shutil.copyfile(fixtures / 'window-name.lingo', directory / 'window-name.lingo')
+    code, text = run('window-name-' + str(enabled), directory, enabled)
+    assert code == 0 and 'ELG_WINDOW_NAME_PASS' in text, text[-3000:]
+    check_assertions(text)
+
 abort_dir = output / 'abort-data'
 abort_dir.mkdir(exist_ok=True)
 (abort_dir / 'lingotests').touch()
@@ -106,5 +116,5 @@ else:
     'synthetic_regressions': 'passed',
 }, indent=2) + '\n')
 print(f'PASS: normal calls, optional/extra arguments, caught and uncaught errors, depth limit; '
-      f'{len(compiled(logs[0]))} upstream scripts with diagnostics off/on; '
+      f'window identity; {len(compiled(logs[0]))} upstream scripts with diagnostics off/on; '
       f'{len(failures(logs[0]))} unchanged baseline assertion failures')

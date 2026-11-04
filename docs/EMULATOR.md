@@ -1,3 +1,30 @@
+# Checkout-local ScummVM testing
+
+Run `python3 scripts/run-scummvm-shadps4.py` for an interactive Vulkan session.
+The default stage is `build/scummvm-2026.4.0-vulkan-pkg`; use `--stage PATH`
+to select another staged app containing `eboot.bin`.
+Set `SHADPS4_BIN` to a built emulator, or create the ignored local symlink
+`artifacts/emulator/shadps4` pointing to it. No emulator is downloaded automatically.
+
+Each mode has its own portable profile under `artifacts/emulator/<mode>/user`.
+ScummVM settings and saves are under that profile's `data/scummvm-2026-vulkan/`.
+The launcher uses a profile lock, timestamped console logs, and cleans up its
+owned process group. It does not use the shared `.tools` emulator profiles.
+
+For a bounded screenshot check:
+
+```sh
+xvfb-run -a -s '-screen 0 1280x720x24' python3 experiments/scummvm-2026.4.0/capture-test.py vulkan
+```
+
+Timeout returns 124; this is a stopped test, not a clean guest shutdown.
+Screenshots/logs stay under `artifacts/emulator/<mode>/`. An emulator menu check
+is not gameplay or physical PS4 validation. Build/package the current sources
+before using this workflow to validate code changes; a copied release stage
+only validates that release binary.
+
+---
+
 # shadPS4 diagnostic validation — 2026-09-19
 
 Run `./scripts/run-emulator.sh --diagnostic` from the repository. It builds the PS4

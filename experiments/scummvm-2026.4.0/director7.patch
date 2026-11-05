@@ -4465,7 +4465,7 @@
  	Datum value = g_lingo->pop();
  	Datum prop = g_lingo->pop();
  	Datum list = g_lingo->pop();
-@@ -1661,6 +1807,31 @@
+@@ -1661,9 +1807,45 @@
  		return;
  	}
  
@@ -4497,7 +4497,21 @@
  	// getNthFileNameInFolder requires an absolute path as an input.
  	// relative paths will not match anything.
  	Common::Path path = findAbsolutePath(pathRaw, true);
-@@ -1854,6 +2025,95 @@
++	// Mjolner's installed layout keeps voice folders under its search paths.
++	// Match the file loader when a root-relative folder is not at game root.
++	if (isPS4Jonsson() && Common::String(g_director->getGameId()) == "jonssonligan1" &&
++			path.empty() && isAbsolutePath(pathRaw) && !toSafePath(pathRaw).empty()) {
++		path = findPath(pathRaw, true, true, true);
++		if (path.empty()) {
++			// A failed lookup must not enumerate unrelated files at game root.
++			g_lingo->push(Datum(""));
++			return;
++		}
++	}
+ 	// for directory, we either return the correct path, which we can access recursively.
+ 	// or we get a wrong path, which will lead us to a non-exist file node
+ 
+@@ -1854,6 +2036,95 @@
  	g_lingo->push(d);
  }
  
@@ -4593,7 +4607,7 @@
  void LB::b_xtra(int nargs) {
  	Datum d = g_lingo->pop();
  	if (d.type == INT) {
-@@ -1865,6 +2125,11 @@
+@@ -1865,6 +2136,11 @@
  		}
  	} else {
  		Common::String name = d.asString();
@@ -4605,7 +4619,7 @@
  		for (uint i = 0; i < g_lingo->_openXtras.size(); i++) {
  			if (name.equalsIgnoreCase(g_lingo->_openXtras[i])) {
  				Datum var = g_lingo->_openXtraObjects[i];
-@@ -2000,6 +2265,7 @@
+@@ -2000,6 +2276,7 @@
  }
  
  void LB::b_go(int nargs) {
@@ -4613,7 +4627,7 @@
  	// Builtin function for go as used by the Director bytecode engine.
  	//
  	// Accepted arguments:
-@@ -3303,6 +3569,8 @@
+@@ -3303,6 +3580,8 @@
  			Sprite *target = sc->getSpriteById(spriteId);
  			bool val = (bool)state.asInt();
  			target->_puppet = val;

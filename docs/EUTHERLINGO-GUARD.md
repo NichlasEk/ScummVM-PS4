@@ -390,3 +390,36 @@ restore failure has not been retested by this change.
 
 Candidate PKG SHA256:
 `33ee1299bc8b51870efb3ee1ac3181c7038e7f705758e0a87b1a6e815886d9e8`.
+
+### Research-centre dynamite report: candidate 0.38 (2026-11-05)
+
+The user progressed beyond the attic and reported a crash when placing dynamite
+on the research-centre door. The preserved visible 0.37 log identifies
+`Stockholm.DIR`, `49:mouseUp` -> `11:useTool` PC 4646. This is a default-response
+branch: it enumerates `@\voice\default\`, filters names for the selected actor,
+then randomly selects a response. The filtered list was empty (`getAt` index
+6690 of 0); Guard reported the script error and the VM stopped. This evidence
+does not establish that the dynamite placement itself was accepted by the puzzle.
+
+The directory builtin used only `findAbsolutePath`. On failure an empty path
+was walked as the game root, exposing unrelated root entries. There are six
+root entries, consistent with the seven enumeration calls in the recorded
+handler. Thirteen actual default voice files exist under `data/voice/Default`.
+For opt-in PS4 Mjolner only, a failed non-root absolute folder lookup now uses
+`findPath` with the current folder/search paths, matching the asset loader.
+If that also fails it returns an empty filename rather than listing the root.
+Explicit root paths, existing directories, relative paths and other titles
+keep their previous behavior. No sound is fabricated and no script error is
+suppressed. A genuinely missing response set remains a game-script limitation.
+
+`check-folder-fallback.py` exercises the extracted production branch with
+ASan/UBSan for fallback success/failure, existing/root/relative paths and gates.
+This is a resolver fixture, not an end-to-end reproduction of the user's scene.
+Host/PS4 builds and window/fridge regression tests pass. Real-VM tests run 34
+upstream scripts with Guard off/on and retain six baseline assertion failures.
+Fresh source replay matches 158 modified files. The candidate PKG validates;
+its SHA256 is
+`341dbcd975d5349ac00e1fb064d84c514092109948be90bac96928349bc1e6f8`.
+Evidence is under `artifacts/eutherlingo-guard/dynamite/`.
+The research-centre action requires a live retest; no physical-PS4 acceptance
+or full-game stability is claimed. The earlier save-restore limitation remains.

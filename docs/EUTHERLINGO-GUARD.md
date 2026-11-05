@@ -255,3 +255,90 @@ should trace input/handler delivery for item actions and the save menu, then
 verify the FileIO path if the save handler is reached. Do not infer that FileIO
 is the cause from its startup warning alone. Owned emulator sessions were stopped;
 logs, screenshots, input journals and profiles remain local for resumption.
+
+
+### Additional gameplay probe, afternoon 2026-11-04
+
+No new executable or game-file edits were used. In the 0.34 Shad candidate,
+playing the full introduction and waiting for Harry's walk to the radio did not
+make item pickup visibly complete. This does not establish that the radio itself
+is a collectible or that its script is defective. No later scene was reached.
+
+Existing `events` logging at level 3 isolated the Save interaction: a click in
+`setUp.DIR` at local (127,87) resolved to sprite 0. Moving nine screenshot pixels
+down produced local (127,93), sprite 5, and opened the Save page. This is evidence
+of a narrow/offset hit target; its rendering or collision root cause is not yet
+established. The previous inability to open Save was not proof of missing FileIO.
+
+Saving with the default name wrote a 17,642-byte game-state file to the private
+profile's SaveFileManager directory, SHA256
+`32588099932e88551f5364dbeb621a8ef8d95c90dbdb9840e40f8287727333ba`.
+After clearing `setUp.DIR`, the emulator exited with signal 5 and reported a guest
+null read at PC `0x122b358`. With the executable mapped at `0x400000`, the exact
+candidate ELF resolves this to `Window::getMousePos()+0x28`, dereferencing its
+MacWindow pointer. A likely lifetime bug is that `Window::~Window()` destroys
+that widget without clearing the engine's non-owning `_cursorWindow`; the port's
+`DirectorEngine::draw()` uses that pointer for cursor updates. This is a targeted
+hypothesis, not a verified fix, and must not be treated with generic null recovery.
+
+A separate fresh launch retained the identical save file but Open Game displayed
+no saved games. The existing `getNthFileNameInFolder` compatibility path matches
+both Jonsson titles yet filters `save_*.sav.txt` (the second title's naming).
+The first title's default file is `jonssonligan1-Jönsson1.txt`, so that filter
+excludes it. Correct title-specific save enumeration and safe cursor-reference
+invalidation are the next two bounded fixes; save/load is still NOT accepted.
+
+Local evidence is under `artifacts/eutherlingo-guard/shad/followup/`, including
+`result.json`, a preserved save copy, and read-only compilation of the setup
+movie. Session logs: `fixed/20261104-142727.log` (full intro/item attempts),
+`fixed/20261104-143828.log` (event trace/save/crash), and
+`fixed/20261104-144530.log` (fresh-launch Open Game). Owned sessions were stopped
+and the profile's normal logging configuration restored. No additional source
+fix or physical-console validation is claimed by this probe.
+
+
+### Save/window repair candidate 0.36 (2026-11-05)
+
+The window destructor now invalidates the non-owning cursor reference before
+tearing down its movie, script state or widget. It preserves a cursor pointing
+to another window. This addresses the observed post-save null-widget access at
+its ownership boundary, without swallowing faults or attempting VM rollback.
+
+Mjolner save enumeration now accepts its freeform `.txt` filenames; the second
+Jonsson title retains its numbered-slot pattern. A live 0.35 test showed the
+previously invisible save, then reported that it could not find it. Inspection
+of the original setup handler identified a `baFileExists` check preceding load.
+Candidate 0.36 maps that check to FileIO's target-prefixed SaveFileManager name,
+only for Mjolner's `Sparade spel` directory and the opt-in PS4 experiment. Other
+asset paths, titles and non-PS4 behavior retain their existing implementation.
+Original game data is unchanged.
+
+`tests/director7/check-window-save-lifecycle.py` extracts the production destructor,
+save-list branch, name mapping and file-existence method into ASan/UBSan fixtures.
+It tests teardown ordering, unrelated windows, Unicode save names, target
+isolation, directory separators, missing saves, list bounds, opt-out behavior,
+second-title compatibility and stack balance. The old destructor and old listing
+failed their respective regression assertions; the repaired implementation passes.
+Host and PS4 builds pass. The real-VM regression suite passes its focused cases
+and runs 34 upstream scripts with Guard disabled/enabled; the six pre-existing
+baseline assertion failures remain unchanged. Fresh patch replay matches all
+158 modified files. PKG 0.36 validates and all 241 extracted payload files match
+staging. Evidence: `artifacts/eutherlingo-guard/window-save-fix/`.
+
+
+Live shadPS4 0.36 verification (`repaired/20261105-205442.log`) lists the preserved
+`Jönsson1` save, passes the existence check and executes FileIO open/read. Restore
+then stops at `getCord` PC 8: `getAt` receives INT rather than a list and does not
+return a value. Guard captures the 128-entry trace and the VM enters its fatal
+error path. No fabricated return value or recovery was added. Save/load remains
+unaccepted; investigate the restored coordinate data and serialization next.
+The destructor regression is sanitizer-verified, but a complete post-save gameplay
+cycle has not yet been revalidated with this candidate.
+
+The owned headless run ended. Our fork `/home/nichlas/shadPS4/build-validation/shadps4`
+was launched on the actual desktop DISPLAY `:1`, windowed, with candidate 0.36
+and a separate copied local profile under `shad/visible036/`. Its mapped window
+reports `shadPS4 NichlasEk/v0.18.0 ... <0.36>`. This interactive session is left
+running for New Game testing; it is not a physical-PS4 validation or proof that
+later scenes work. Package SHA256:
+`48fc43a9090ca3d15266124689e7a6b03ff950ec605a5acbbff7b7e81a0d4386`.

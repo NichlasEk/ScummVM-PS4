@@ -4447,12 +4447,12 @@
  	Datum value = g_lingo->pop();
  	Datum prop = g_lingo->pop();
  	Datum list = g_lingo->pop();
-@@ -1661,6 +1801,29 @@
+@@ -1661,6 +1801,31 @@
  		return;
  	}
  
 +	// FileIO virtualizes saves into SaveFileManager. Expose the same files
-+	// under J2's original Windows save directory, without backend decoration.
++	// under the original Windows save directory, without backend decoration.
 +	Common::String saveDirectory = pathRaw;
 +	for (uint i = 0; i < saveDirectory.size(); ++i)
 +		if (saveDirectory[i] == '\\') saveDirectory.setChar('/', i);
@@ -4463,7 +4463,9 @@
 +	                      saveDirectory == "sparade spel" ||
 +	                      saveDirectory.hasSuffix("/sparade spel"))) {
 +		const Common::String prefix = savePrefix();
-+		Common::StringArray files = g_system->getSavefileManager()->listSavefiles(prefix + "save_*.sav.txt");
++		// Mjolner uses player-supplied names; the second game uses numbered slots.
++		const Common::String pattern = Common::String(g_director->getGameId()) == "jonssonligan1" ? "*.txt" : "save_*.sav.txt";
++		Common::StringArray files = g_system->getSavefileManager()->listSavefiles(prefix + pattern);
 +		Common::sort(files.begin(), files.end());
 +		Common::String name;
 +		if (fileNum >= 0 && (uint)fileNum < files.size()) {
@@ -4477,7 +4479,7 @@
  	// getNthFileNameInFolder requires an absolute path as an input.
  	// relative paths will not match anything.
  	Common::Path path = findAbsolutePath(pathRaw, true);
-@@ -1854,6 +2017,95 @@
+@@ -1854,6 +2019,95 @@
  	g_lingo->push(d);
  }
  
@@ -4573,7 +4575,7 @@
  void LB::b_xtra(int nargs) {
  	Datum d = g_lingo->pop();
  	if (d.type == INT) {
-@@ -1865,6 +2117,11 @@
+@@ -1865,6 +2119,11 @@
  		}
  	} else {
  		Common::String name = d.asString();
@@ -4585,7 +4587,7 @@
  		for (uint i = 0; i < g_lingo->_openXtras.size(); i++) {
  			if (name.equalsIgnoreCase(g_lingo->_openXtras[i])) {
  				Datum var = g_lingo->_openXtraObjects[i];
-@@ -2000,6 +2257,7 @@
+@@ -2000,6 +2259,7 @@
  }
  
  void LB::b_go(int nargs) {
@@ -4593,7 +4595,7 @@
  	// Builtin function for go as used by the Director bytecode engine.
  	//
  	// Accepted arguments:
-@@ -3303,6 +3561,8 @@
+@@ -3303,6 +3563,8 @@
  			Sprite *target = sc->getSpriteById(spriteId);
  			bool val = (bool)state.asInt();
  			target->_puppet = val;
@@ -5761,6 +5763,33 @@
  		// Xtra version does not dispose handle on file delete
  		if (me->getObjType() == kXObj) {
  			me->dispose();
+--- a/engines/director/lingo/xtras/b/budapi.cpp
++++ b/engines/director/lingo/xtras/b/budapi.cpp
+@@ -21,8 +21,10 @@
+ 
+ #include "common/formats/ini-file.h"
+ #include "common/system.h"
++#include "common/savefile.h"
+ 
+ #include "director/director.h"
++#include "director/ps4-jonsson.h"
+ #include "director/util.h"
+ #include "director/lingo/lingo.h"
+ #include "director/lingo/lingo-object.h"
+@@ -509,6 +511,13 @@
+ XOBJSTUB(BudAPIXtra::m_baFileAge, 0)
+ void BudAPIXtra::m_baFileExists(int nargs) {
+ 	Common::String name = g_lingo->pop().asString();
++	if (isPS4Jonsson() && Common::String(g_director->getGameId()) == "jonssonligan1") {
++		const Common::String saveName = ps4JonssonSaveName(name, savePrefix());
++		if (!saveName.empty()) {
++			g_lingo->push(Datum(g_system->getSavefileManager()->exists(saveName) ? 1 : 0));
++			return;
++		}
++	}
+ 	g_lingo->push(Datum(findPath(name, true, true, false).empty() ? 0 : 1));
+ }
+ XOBJSTUB(BudAPIXtra::m_baFolderExists, 0)
 --- /dev/null
 +++ b/engines/director/lingo/xtras/k/kepath-grid.h
 @@ -0,0 +1,81 @@
@@ -6201,7 +6230,7 @@
  
 --- /dev/null
 +++ b/engines/director/ps4-jonsson.h
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,38 @@
 +// Local compatibility rules for the opt-in PS4 Jonssonligan experiment.
 +#ifndef DIRECTOR_PS4_JONSSON_H
 +#define DIRECTOR_PS4_JONSSON_H
@@ -6217,6 +6246,27 @@
 + return false;
 +#endif
 +}
++
++// Match FileIO's virtual filename for Mjolner's baFileExists check. Only
++// the game's save directory is redirected; ordinary assets keep normal lookup.
++inline Common::String ps4JonssonSaveName(Common::String path, const Common::String &prefix) {
++	for (uint i = 0; i < path.size(); ++i)
++		if (path[i] == '\\') path.setChar('/', i);
++	const size_t slash = path.findLastOf('/');
++	if (slash == Common::String::npos || slash + 1 == path.size())
++		return Common::String();
++	Common::String directory = path.substr(0, slash);
++	directory.toLowercase();
++	if (directory != "sparade spel" && !directory.hasSuffix("/sparade spel"))
++		return Common::String();
++	Common::String filename = path.substr(slash + 1);
++	if (!filename.hasSuffixIgnoreCase(".txt"))
++		filename += ".txt";
++	if (!filename.hasPrefixIgnoreCase(prefix))
++		filename = prefix + filename;
++	return filename;
++}
++
 +}
 +#endif
 --- a/engines/director/score.cpp
@@ -6800,7 +6850,19 @@
  	_lingoState = new LingoState;
  	_lingoPlayState = nullptr;
  
-@@ -600,7 +602,9 @@
+@@ -84,6 +86,11 @@
+ }
+ 
+ Window::~Window() {
++	// The cursor window is non-owning. Invalidate it before any teardown
++	// can redraw or poll input through the window being destroyed.
++	if (g_director->getCursorWindow() == this)
++		g_director->setCursorWindow(nullptr);
++
+ 	delete _lingoState;
+ 	if (_lingoPlayState)
+ 		delete _lingoPlayState;
+@@ -600,7 +607,9 @@
  }
  
  bool Window::loadNextMovie() {
@@ -6811,7 +6873,7 @@
  	_newMovieStarted = true;
  	_newMovieFirstDraw = true;
  	_currentPath = Common::firstPathComponents(_nextMovie.movie, g_director->_dirSeparator);
-@@ -690,6 +694,9 @@
+@@ -690,6 +699,9 @@
  }
  
  bool Window::step() {

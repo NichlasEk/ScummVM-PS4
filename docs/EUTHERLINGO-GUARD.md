@@ -342,3 +342,51 @@ reports `shadPS4 NichlasEk/v0.18.0 ... <0.36>`. This interactive session is left
 running for New Game testing; it is not a physical-PS4 validation or proof that
 later scenes work. Package SHA256:
 `48fc43a9090ca3d15266124689e7a6b03ff950ec605a5acbbff7b7e81a0d4386`.
+
+### Refrigerator crash: candidate 0.37 (2026-11-05)
+
+The user's visible 0.36 session crashed after opening the attic refrigerator.
+A second 0.36 run reproduced it with ordinary left clicks and `lingoexec`
+tracing: `56:mouseUp` executes a dynamic `changeMember` call, then
+`9:changeMember` searches the unsorted object-name list for `kylskap1`.
+The existing `findPos` implementation coerces the string to an integer and
+returns zero. `setAt(list, 0, ...)` then indexes `index - 1` without rejecting
+zero, hitting the array assertion. The same handler uses `cb_delete 5` with
+operand 24 to remove the final character from local slot 3. Our earlier D7
+slot-index compatibility rule incorrectly treated this as slot 24 and skipped
+the deletion, producing `kylskap12` rather than `kylskap2`.
+
+The candidate makes three bounded corrections:
+
+- In the opt-in PS4 Mjolner compatibility path, `findPos` searches string values
+  in an unsorted linear list. Numeric, other-title and disabled behavior stay
+  unchanged. This is game-specific compatibility, not a claim about all Director
+  versions' `findPos` semantics.
+- `cb_delete` requests byte-offset interpretation from `findVarV4`; other callers
+  retain their established behavior. Actual game bytecode supplies 24 for local
+  slot 3 and 8 for slot 1, while put-after supplies the plain slot index 1.
+- General `setAt` rejects nonpositive indices via the existing Lingo error path,
+  before arithmetic or mutation. Valid replacement and extension still work.
+
+The sanitizer fixture `check-fridge-bytecode.py` tests the extracted lookup and
+index-decoding code. Real-VM tests catch indices 0, -1 and INT_MIN, verify the
+list stays unchanged after errors, then replace and extend it successfully.
+Host/PS4 builds pass; 34 upstream scripts retain their six baseline assertion
+failures with Guard off/on. Fresh replay matches 158 modified files; the 0.37
+package validates and its 241 extracted payloads match staging.
+
+Local evidence: `artifacts/eutherlingo-guard/fridge/`, including the original
+user crash, the reproduced failing handler and read-only compilation of the
+Stockholm movie. No original game data has been modified.
+
+Actual game verification in our shadPS4 fork (`repaired/20261105-210717.log`):
+Sickan walked to the refrigerator; left clicks opened it, closed it and opened
+it again. Screenshots `open037.png`, `closed037.png` and `reopened037.png` record
+those states. The process remained alive; the invalid-number/variable-index
+warnings, array assertion and Guard fatal report did not recur in this test.
+Existing unrelated VOID sprite warnings remain. This is a bounded emulator
+regression result, not full-game or physical-console acceptance. The old save
+restore failure has not been retested by this change.
+
+Candidate PKG SHA256:
+`33ee1299bc8b51870efb3ee1ac3181c7038e7f705758e0a87b1a6e815886d9e8`.

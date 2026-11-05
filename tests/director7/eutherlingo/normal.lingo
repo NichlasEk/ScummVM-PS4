@@ -12,6 +12,14 @@ set badObject = 7
 scummvmAssertError put the missingProperty of badObject
 scummvmAssertError put the text of field 999
 scummvmAssertEqual elgSum(3), 6
+set guardedList = ["first", "second"]
+scummvmAssertError setAt(guardedList, 0, "bad")
+scummvmAssertError setAt(guardedList, -1, "bad")
+scummvmAssertError setAt(guardedList, -2147483647 - 1, "bad")
+scummvmAssertEqual guardedList, ["first", "second"]
+setAt(guardedList, 2, "changed")
+setAt(guardedList, 4, "extended")
+scummvmAssertEqual guardedList, ["first", "changed", 0, "extended"]
 put "ELG_NORMAL_PASS"
 
 on elgSum n

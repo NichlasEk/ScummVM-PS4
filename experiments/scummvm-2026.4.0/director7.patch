@@ -4277,7 +4277,18 @@
  	Datum list = g_lingo->pop();
  	Datum result;
  	result.type = INT;
-@@ -1134,8 +1156,14 @@
+@@ -1047,7 +1069,9 @@
+ 	TYPECHECK2(list, ARRAY, PARRAY);
+ 
+ 	if (list.type == ARRAY) {
+-		if (list.u.farr->_sorted) {
++		// Mjolner uses findPos to locate object names in an unsorted list.
++		const bool objectName = isPS4Jonsson() && Common::String(g_director->getGameId()) == "jonssonligan1" && prop.type == STRING;
++		if (list.u.farr->_sorted || objectName) {
+ 			int index = LC::compareArrays(LC::eqData, list, prop, true).u.i;
+ 			if (index > 0)
+ 				d = index;
+@@ -1134,8 +1158,14 @@
  
  void LB::b_getAt(int nargs) {
  	Datum indexD = g_lingo->pop();
@@ -4293,7 +4304,7 @@
  	int index = indexD.asInt();
  
  	switch (list.type) {
-@@ -1208,7 +1236,9 @@
+@@ -1208,7 +1238,9 @@
  	switch (list.type) {
  	case ARRAY: {
  		Datum d(0);
@@ -4304,7 +4315,7 @@
  		if (index > 0) {
  			d.u.i = index;
  		}
-@@ -1229,7 +1259,78 @@
+@@ -1229,7 +1261,78 @@
  	}
  }
  
@@ -4383,7 +4394,7 @@
  	Datum prop = g_lingo->pop();
  	Datum list = g_lingo->pop();
  
-@@ -1249,8 +1350,27 @@
+@@ -1249,8 +1352,27 @@
  		if (index > 0) {
  			g_lingo->push(list.u.parr->arr[index - 1].v);
  		} else {
@@ -4413,7 +4424,7 @@
  		break;
  	}
  	case OBJECT:
-@@ -1485,6 +1605,14 @@
+@@ -1485,9 +1607,21 @@
  	Datum indexD = g_lingo->pop();
  	Datum list = g_lingo->pop();
  
@@ -4428,7 +4439,14 @@
  	TYPECHECK2(indexD, INT, FLOAT);
  	TYPECHECK4(list, ARRAY, PARRAY, POINT, RECT);
  	int index = indexD.asInt();
-@@ -1515,6 +1643,18 @@
++	if (index <= 0) {
++		g_lingo->lingoError("setAt: index must be positive (%d)", index);
++		return;
++	}
+ 
+ 	switch (list.type) {
+ 	case ARRAY:
+@@ -1515,6 +1649,18 @@
  }
  
  void LB::b_setProp(int nargs) {
@@ -4447,7 +4465,7 @@
  	Datum value = g_lingo->pop();
  	Datum prop = g_lingo->pop();
  	Datum list = g_lingo->pop();
-@@ -1661,6 +1801,31 @@
+@@ -1661,6 +1807,31 @@
  		return;
  	}
  
@@ -4479,7 +4497,7 @@
  	// getNthFileNameInFolder requires an absolute path as an input.
  	// relative paths will not match anything.
  	Common::Path path = findAbsolutePath(pathRaw, true);
-@@ -1854,6 +2019,95 @@
+@@ -1854,6 +2025,95 @@
  	g_lingo->push(d);
  }
  
@@ -4575,7 +4593,7 @@
  void LB::b_xtra(int nargs) {
  	Datum d = g_lingo->pop();
  	if (d.type == INT) {
-@@ -1865,6 +2119,11 @@
+@@ -1865,6 +2125,11 @@
  		}
  	} else {
  		Common::String name = d.asString();
@@ -4587,7 +4605,7 @@
  		for (uint i = 0; i < g_lingo->_openXtras.size(); i++) {
  			if (name.equalsIgnoreCase(g_lingo->_openXtras[i])) {
  				Datum var = g_lingo->_openXtraObjects[i];
-@@ -2000,6 +2259,7 @@
+@@ -2000,6 +2265,7 @@
  }
  
  void LB::b_go(int nargs) {
@@ -4595,7 +4613,7 @@
  	// Builtin function for go as used by the Director bytecode engine.
  	//
  	// Accepted arguments:
-@@ -3303,6 +3563,8 @@
+@@ -3303,6 +3569,8 @@
  			Sprite *target = sc->getSpriteById(spriteId);
  			bool val = (bool)state.asInt();
  			target->_puppet = val;
@@ -4645,13 +4663,22 @@
  
  	{ 0x81, LC::c_intpush,		"W" },
  	{ 0x82, LC::c_argcnoretpush,"w" },
+@@ -347,7 +353,7 @@
+ 	}
+ }
+ 
+-Datum Lingo::findVarV4(int varType, const Datum &id) {
++Datum Lingo::findVarV4(int varType, const Datum &id, bool byteOffsets) {
+ 	Datum res;
+ 	switch (varType) {
+ 	case 1: // global
 @@ -372,6 +378,10 @@
  			if (g_director->getVersion() >= 500) {
  				stride = 8;
  			}
 +			// D7 stack-supplied argument/local IDs are slot indices. In
 +			// particular put-after must not divide local 1 into local 0.
-+			if (isPS4Jonsson() && g_director->getVersion() >= 700)
++			if (!byteOffsets && isPS4Jonsson() && g_director->getVersion() >= 700)
 +				stride = 1;
  			if (id.asInt() % stride != 0) {
  				warning("BUILDBOT: findVarV4: invalid var ID %d for var type %d (not divisible by %d)", id.asInt(), varType, stride);
@@ -4665,19 +4692,26 @@
  				res = (*varNames)[varIndex];
  				res.type = LOCALREF;
  			} else {
-@@ -421,6 +431,12 @@
- 	uint arg1 = g_lingo->readInt();
- 	uint arg2 = g_lingo->readInt();
+@@ -423,10 +433,18 @@
  	warning("STUB: opcode 0x%02x (%d, %d)", opcode, arg1, arg2);
-+}
-+
+ }
+ 
 +void LC::cb_chunkvarrefpush() {
 +	int varType = g_lingo->readInt();
 +	Datum id = g_lingo->pop();
 +	g_lingo->push(g_lingo->findVarV4(varType, id));
- }
- 
++}
++
  void LC::cb_delete() {
+ 	int varType = g_lingo->readInt();
+ 	Datum varID = g_lingo->pop();
+-	Datum var = g_lingo->findVarV4(varType, varID);
++	// Delete retains byte offsets (for example local 3 is encoded as 24),
++	// unlike D7 put-after, which supplies a slot index.
++	Datum var = g_lingo->findVarV4(varType, varID, true);
+ 	Datum chunkRef = readChunkRef(var);
+ 	g_lingo->push(chunkRef);
+ 	LC::c_delete();
 --- a/engines/director/lingo/lingo-code.cpp
 +++ b/engines/director/lingo/lingo-code.cpp
 @@ -42,6 +42,7 @@
@@ -5703,6 +5737,15 @@
  
  public:
  	ScriptType event2script(LEvent ev);
+@@ -436,7 +438,7 @@
+ 	void varAssign(const Datum &var, const Datum &value);
+ 	Datum varFetch(const Datum &var, bool silent = false);
+ 	Common::U32String evalChunkRef(const Datum &var);
+-	Datum findVarV4(int varType, const Datum &id);
++	Datum findVarV4(int varType, const Datum &id, bool byteOffsets = false);
+ 	CastMemberID resolveCastMember(const Datum &memberID, const Datum &castLib, CastType type);
+ 	CastMemberID toCastMemberID(const Datum &member, const Datum &castLib);
+ 	void exposeXObject(const char *name, Datum obj);
 @@ -465,6 +467,16 @@
  	void drop(uint num);
  

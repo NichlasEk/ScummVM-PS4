@@ -5785,6 +5785,85 @@
  
  	DirectorEngine *_vm;
  
+--- /dev/null
++++ b/engines/director/lingo/xlibs/f/fileio-read-stream.h
+@@ -0,0 +1,76 @@
++/* ScummVM - Graphic Adventure Engine
++ *
++ * ScummVM is the legal property of its developers, whose names
++ * are too numerous to list here. Please refer to the COPYRIGHT
++ * file distributed with this source distribution.
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
++ *
++ */
++
++#ifndef DIRECTOR_FILEIO_READ_STREAM_H
++#define DIRECTOR_FILEIO_READ_STREAM_H
++
++#include "common/memstream.h"
++
++namespace Director {
++
++// Read view of FileIO's writable buffer. Both sides share the same position.
++// The owner must destroy this view before destroying the buffer. Fetching data
++// on each read also keeps the view valid when a write grows the buffer.
++class FileIOReadStream : public Common::SeekableReadStream {
++	Common::MemoryWriteStreamDynamic *_buffer;
++	bool _eos;
++public:
++	explicit FileIOReadStream(Common::MemoryWriteStreamDynamic *buffer) : _buffer(buffer), _eos(false) {}
++
++	int64 pos() const override { return _buffer->pos(); }
++	int64 size() const override { return _buffer->size(); }
++	bool eos() const override { return _eos; }
++	bool err() const override { return false; }
++	void clearErr() override { _eos = false; }
++
++	uint32 read(void *data, uint32 length) override {
++		uint32 available = size() - pos();
++		if (length > available) {
++			length = available;
++			_eos = true;
++		}
++		if (length) {
++			memcpy(data, _buffer->getData() + pos(), length);
++			_buffer->seek(length, SEEK_CUR);
++		}
++		return length;
++	}
++
++	bool seek(int64 offset, int whence = SEEK_SET) override {
++		int64 base = 0;
++		if (whence == SEEK_CUR)
++			base = pos();
++		else if (whence == SEEK_END)
++			base = size();
++		else if (whence != SEEK_SET)
++			return false;
++		if (offset < -base || offset > size() - base)
++			return false;
++		offset += base;
++		if (size())
++			_buffer->seek(offset, SEEK_SET);
++		_eos = false;
++		return true;
++	}
++};
++
++} // namespace Director
++#endif
 --- a/engines/director/lingo/xlibs/f/fileio.cpp
 +++ b/engines/director/lingo/xlibs/f/fileio.cpp
 @@ -121,6 +121,7 @@
@@ -5795,7 +5874,77 @@
  #include "common/file.h"
  #include "common/macresman.h"
  #include "common/memstream.h"
-@@ -555,6 +556,11 @@
+@@ -136,6 +137,7 @@
+ #include "director/lingo/lingo-object.h"
+ #include "director/lingo/lingo-utils.h"
+ #include "director/lingo/xlibs/f/fileio.h"
++#include "director/lingo/xlibs/f/fileio-read-stream.h"
+ 
+ namespace Director {
+ 
+@@ -257,7 +259,7 @@
+ 
+ 	// We pretend that drive E:\ is a read-only CD-ROM
+ 	// It helps with CD checks in many games
+-	if (option.equalsIgnoreCase("write") || option.equalsIgnoreCase("append")) {
++	if (option.equalsIgnoreCase("write") || option.equalsIgnoreCase("append") || option.equalsIgnoreCase("readwrite")) {
+ 		if (origpath.hasPrefixIgnoreCase("E:\\"))
+ 			return kErrorIO;
+ 	}
+@@ -289,7 +291,7 @@
+ 		// OutSaveFile is not seekable so create a separate seekable stream
+ 		// which will be written to the save file upon disposal
+ 		_outStream = new Common::MemoryWriteStreamDynamic(DisposeAfterUse::YES);
+-	} else if (option.equalsIgnoreCase("append")) {
++	} else if (option.equalsIgnoreCase("append") || option.equalsIgnoreCase("readwrite")) {
+ 		Common::SeekableReadStream *inFile = saves->openForLoading(filename);
+ 		if (!inFile) {
+ 			// Create file if it doesn't exist.
+@@ -305,6 +307,11 @@
+ 			}
+ 			delete inFile;
+ 		}
++		if (option.equalsIgnoreCase("readwrite")) {
++			if (_outStream->size())
++				_outStream->seek(0, SEEK_SET);
++			_inStream = new FileIOReadStream(_outStream);
++		}
+ 	} else {
+ 		error("Unsupported FileIO option: '%s'", option.c_str());
+ 	}
+@@ -314,6 +321,9 @@
+ }
+ 
+ void FileObject::clear() {
++	// Read/write handles use a non-owning view of the output buffer.
++	delete _inStream;
++	_inStream = nullptr;
+ 	if (_outStream) {
+ 		// When opening a file in write mode with FileIO, any existing data is only destroyed
+ 		// after the first write. In order to be compatible with the POSIX expectation that
+@@ -335,10 +345,6 @@
+ 		delete _filename;
+ 		_filename = nullptr;
+ 	}
+-	if (_inStream) {
+-		delete _inStream;
+-		_inStream = nullptr;
+-	}
+ }
+ 
+ void FileObject::dispose() {
+@@ -396,7 +402,9 @@
+ 	Common::String option;
+ 	switch (mode) {
+ 	case 0:
+-		option = "append";
++		// Mjolner uses mode 0 for both loading and saving. Append has no
++		// read stream and incorrectly returns an empty save on readFile.
++		option = isPS4Jonsson() && Common::String(g_director->getGameId()) == "jonssonligan1" ? "readwrite" : "append";
+ 		break;
+ 	case 1:
+ 		option = "read";
+@@ -555,6 +563,11 @@
  		ch = me->_inStream->readByte();
  	}
  
@@ -5807,13 +5956,17 @@
  	g_lingo->push(res);
  }
  
-@@ -740,6 +746,12 @@
+@@ -740,6 +753,16 @@
  
  	if (me->_filename) {
  		Common::String filename = *me->_filename;
 +		// Do not resurrect a deleted Jönsson save when closeFile later flushes
 +		// the append buffer opened by its replace-file sequence.
 +		if (isPS4Jonsson() && me->getObjType() != kXObj) {
++			if (me->_outStream) {
++				delete me->_inStream;
++				me->_inStream = nullptr;
++			}
 +			delete me->_outStream;
 +			me->_outStream = nullptr;
 +		}
@@ -5833,7 +5986,7 @@
  #include "director/util.h"
  #include "director/lingo/lingo.h"
  #include "director/lingo/lingo-object.h"
-@@ -509,6 +511,13 @@
+@@ -509,13 +511,34 @@
  XOBJSTUB(BudAPIXtra::m_baFileAge, 0)
  void BudAPIXtra::m_baFileExists(int nargs) {
  	Common::String name = g_lingo->pop().asString();
@@ -5847,6 +6000,28 @@
  	g_lingo->push(Datum(findPath(name, true, true, false).empty() ? 0 : 1));
  }
  XOBJSTUB(BudAPIXtra::m_baFolderExists, 0)
+ XOBJSTUB(BudAPIXtra::m_baCreateFolder, 0)
+ XOBJSTUB(BudAPIXtra::m_baDeleteFolder, 0)
+ XOBJSTUB(BudAPIXtra::m_baRenameFile, 0)
+-XOBJSTUB(BudAPIXtra::m_baDeleteFile, 0)
++void BudAPIXtra::m_baDeleteFile(int nargs) {
++	if (isPS4Jonsson() && Common::String(g_director->getGameId()) == "jonssonligan1") {
++		const Common::String name = g_lingo->pop().asString();
++		const Common::String saveName = ps4JonssonSaveName(name, savePrefix());
++		// The save writer deletes an existing file before opening mode 0.
++		// Redirect only virtual saves; never delete original game assets.
++		Common::SaveFileManager *saves = g_system->getSavefileManager();
++		const bool removed = !saveName.empty() && (!saves->exists(saveName) || saves->removeSavefile(saveName));
++		g_lingo->push(Datum(removed ? 1 : 0));
++		return;
++	}
++	g_lingo->printSTUBWithArglist("BudAPIXtra::m_baDeleteFile", nargs);
++	g_lingo->dropStack(nargs);
++	g_lingo->push(Datum(0));
++}
+ XOBJSTUB(BudAPIXtra::m_baDeleteXFiles, 0)
+ XOBJSTUB(BudAPIXtra::m_baXDelete, 0)
+ XOBJSTUB(BudAPIXtra::m_baFileDate, 0)
 --- /dev/null
 +++ b/engines/director/lingo/xtras/k/kepath-grid.h
 @@ -0,0 +1,81 @@

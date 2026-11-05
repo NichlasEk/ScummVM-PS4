@@ -27,6 +27,8 @@ helper = header[start:header.index('\n}', start)+2]
 budapi = (root / 'engines/director/lingo/xtras/b/budapi.cpp').read_text()
 start = budapi.index('void BudAPIXtra::m_baFileExists(int nargs) {')
 exists = budapi[start:budapi.index('\n}', start)+2]
+start = budapi.index('void BudAPIXtra::m_baDeleteFile(int nargs) {')
+deletefile = budapi[start:budapi.index('\n}', start)+2]
 code = r'''
 #include <algorithm>
 #include <cassert>
@@ -103,11 +105,17 @@ struct Datum {
 struct Lingo {
  std::vector<Datum> stack;
  Datum pop() { assert(!stack.empty()); Datum d=stack.back();stack.pop_back();return d; }
+ void printSTUBWithArglist(const char *, int) {}
+ void dropStack(int n) { while(n--) pop(); }
  void push(Datum d) { stack.push_back(d); }
 } lingo;
 Lingo *g_lingo = &lingo;
-struct Saves {
+namespace Common { struct SaveFileManager; }
+using Saves = Common::SaveFileManager;
+struct Common::SaveFileManager {
  Common::StringArray catalogue;
+ bool denyRemoval = false;
+ bool removeSavefile(const Common::String &s) { if (denyRemoval) return false; auto it=std::find(catalogue.begin(),catalogue.end(),s);if(it==catalogue.end())return false;catalogue.erase(it);return true; }
  bool exists(const Common::String &s) { return std::find(catalogue.begin(),catalogue.end(),s)!=catalogue.end(); }
  Common::StringArray listSavefiles(const Common::String &pattern) {
   Common::StringArray result;
@@ -122,10 +130,10 @@ bool enabled = true, normalPathReached = false;
 bool isPS4Jonsson() { return enabled && (director.game=="jonssonligan1" || director.game=="jonssonligan2"); }
 Common::String savePrefix() { return "custom-target-"; }
 Common::String findPath(Common::String s, bool, bool, bool) { normalPathReached=true;return s=="asset.dat" ? s : Common::String(); }
-namespace BudAPIXtra { void m_baFileExists(int); }
+namespace BudAPIXtra { void m_baFileExists(int); void m_baDeleteFile(int); }
 namespace LB { void b_getNthFileNameInFolder(int); }
 '''
-code += destructor + '\n' + listing + '\n' + helper + '\n' + exists
+code += destructor + '\n' + listing + '\n' + helper + '\n' + exists + '\n' + deletefile
 code += r'''
 Common::String list(const char *path, int index) {
  normalPathReached=false;
@@ -139,6 +147,10 @@ Common::String list(const char *path, int index) {
 int fileExists(const char *path) {
  normalPathReached=false;assert(lingo.stack.empty());lingo.push(Datum(path));
  BudAPIXtra::m_baFileExists(1);assert(lingo.stack.size()==1);return lingo.pop().asInt();
+}
+int deleteFile(const char *path) {
+ assert(lingo.stack.empty());lingo.push(Datum(path));BudAPIXtra::m_baDeleteFile(1);
+ assert(lingo.stack.size()==1);return lingo.pop().asInt();
 }
 int main() {
  WM wm;director._wm=&wm;
@@ -169,12 +181,24 @@ int main() {
  assert(fileExists("Sparade spel/missing")==0 && !normalPathReached);
  assert(fileExists("other/Jönsson1")==0 && normalPathReached);
  assert(fileExists("asset.dat")==1 && normalPathReached);
+ assert(deleteFile("other/Jönsson1")==0);
+ assert(fileExists("Sparade spel/Jönsson1")==1);
+ saves.denyRemoval=true;
+ assert(deleteFile("Sparade spel/Jönsson1")==0);
+ assert(fileExists("Sparade spel/Jönsson1")==1);
+ saves.denyRemoval=false;
+ assert(deleteFile("Sparade spel/Jönsson1")==1);
+ assert(fileExists("Sparade spel/Jönsson1")==0);
+ assert(deleteFile("Sparade spel/Jönsson1")==1);
+ saves.catalogue={"custom-target-Jönsson1.txt"};
  director.game="jonssonligan2";
  assert(fileExists("Sparade spel/Jönsson1")==0 && normalPathReached);
+ assert(deleteFile("Sparade spel/Jönsson1")==0);
  director.game="anothergame";assert(list("Sparade spel",1)=="<normal>");
  director.game="jonssonligan1";enabled=false;
  assert(list("Sparade spel",1)=="<normal>");
  assert(fileExists("Sparade spel/Jönsson1")==0 && normalPathReached);
+ assert(deleteFile("Sparade spel/Jönsson1")==0);
 }
 '''
 with tempfile.TemporaryDirectory(prefix='director-window-save-') as d:
@@ -183,4 +207,4 @@ with tempfile.TemporaryDirectory(prefix='director-window-save-') as d:
     subprocess.run(['c++', '-std=c++11', '-g', '-O1', '-fsanitize=address,undefined',
                     '-fno-omit-frame-pointer', str(d / 'test.cpp'), '-o', str(d / 'test')], check=True)
     subprocess.run([str(d / 'test')], check=True)
-print('PASS: cursor invalidated before teardown, unrelated cursor retained; title-specific save listing, target isolation, bounds, save existence mapping and stack balance; ASan/UBSan')
+print('PASS: cursor invalidated before teardown, unrelated cursor retained; title-specific save listing, target isolation, bounds, save existence/deletion mapping, deletion failure and stack balance; ASan/UBSan')

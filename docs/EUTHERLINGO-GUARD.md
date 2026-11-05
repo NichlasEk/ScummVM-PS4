@@ -423,3 +423,65 @@ its SHA256 is
 Evidence is under `artifacts/eutherlingo-guard/dynamite/`.
 The research-centre action requires a live retest; no physical-PS4 acceptance
 or full-game stability is claimed. The earlier save-restore limitation remains.
+
+### Save restore / FileIO mode 0: candidate 0.39 (2026-11-05)
+
+The 0.38 load attempt reproduced the existing `getCord`/`getAt` INT failure.
+The preserved 17,642-byte save contains the character coordinate lists at its
+end; its SHA256 remains
+`32588099932e88551f5364dbeb621a8ef8d95c90dbdb9840e40f8287727333ba`.
+The original `readSaveFile` handler opens FileIO with mode 0 (read/write), calls
+`readFile`, then closes. ScummVM mapped that mode to append, which only creates
+an output buffer. `readFile` therefore returned empty text; `value` on empty
+coordinate chunks returned integer zero, causing the later coordinate failure.
+The same game uses mode 0 to write saves, so mapping it to read-only would break
+saving and is not a valid repair.
+
+For opt-in PS4 Mjolner, mode 0 now creates a read view of the existing writable
+memory buffer and starts at offset zero. Reads, writes and seeks share a position;
+the view fetches the buffer pointer on each read so growth cannot stale it.
+EOF and invalid seeks are bounded. The view is destroyed before its backing
+buffer during close or deletion. Modes 1/2, explicit append, other titles and
+non-PS4 behavior keep their existing mode selection. Persistence continues to
+use FileIO's existing SaveFileManager flush on close. No original game file or
+save content is patched and no replacement coordinates are invented.
+
+`check-fileio-readwrite.py SOURCE HOST_BUILD` compiles the actual production
+header against ScummVM's host common libraries with ASan/UBSan. It tests empty
+files, shared read/write position, overwriting, growth/reallocation, EOF,
+relative/end seeks and extreme invalid offsets. Host/PS4 builds pass; real-VM
+regressions retain six known baseline assertions across 34 upstream scripts.
+Fresh patch replay matches 159 modified files. PKG 0.39 validates and extracted
+payloads match staging. Evidence: `artifacts/eutherlingo-guard/load/`.
+
+Live 0.39 verification (`repaired/20261105-213901.log`) loaded the preserved
+`Jönsson1` save from the title menu and restored the attic and characters.
+`restored-old-save039.png` records the scene. The saved file's SHA256 remained
+unchanged after loading. This establishes the cause of the previous empty-input
+restore failure; the code does not bypass `getCord` or invent VM state.
+
+The save-overwrite path also uses `baDeleteFile` before mode-0 writing, but that
+function was a stub. Candidate 0.40 implements it only for Mjolner's virtual
+save directory via SaveFileManager, so replacing a longer file cannot retain
+its old tail. Original game asset paths remain ineligible. The existing
+save-lifecycle fixture now tests deletion, missing-file idempotence, title and
+opt-in gates, target isolation and stack balance. Buddy API's original help
+specifies success for deletion or an already absent file:
+https://discmaster.textfiles.com/file/15766/pc-play-and-learn.iso/xtras/BUDAPI.HLP/BUDAPI.pdf
+
+Live 0.40 save test (`repaired/20261105-214505.log`): loaded the old save,
+walked Sickan to a different position, selected the existing `Jönsson1` slot
+and saved over it. The menu closed and gameplay continued without the earlier
+window teardown crash. The resulting 17,642-byte file has SHA256
+`9a31fc335f39ca7257067b1cd0fa855b26a2755ebdb630b683bbfbaa4a3e7d4c`;
+Sickan's serialized grid position changed from `[25, 27]` to `[21, 19]`.
+The original user's profile and a backup retain the previous file.
+
+A separate emulator process (`repaired/20261105-215048.log`) then loaded that
+new file after restart. Sickan appeared at the saved new location; the file's
+SHA256 remained unchanged. `reloaded-new-position040.png` and `result040.json`
+record this round trip. Thus the formerly failing old save and an overwritten
+save both load in our fork. This replaces the earlier blanket save-restore
+limitation for this tested file/workflow; other saves, the research-centre
+sequence and physical PS4 remain unverified. Candidate 0.40 package SHA256:
+`ad5ecf2288a30ad5a34f36db8a2c9d7b566d26c25fc1e0791077c50f32ddbd80`.

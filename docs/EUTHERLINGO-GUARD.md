@@ -485,3 +485,58 @@ save both load in our fork. This replaces the earlier blanket save-restore
 limitation for this tested file/workflow; other saves, the research-centre
 sequence and physical PS4 remain unverified. Candidate 0.40 package SHA256:
 `ad5ecf2288a30ad5a34f36db8a2c9d7b566d26c25fc1e0791077c50f32ddbd80`.
+
+### 0.41: linked AIFF padding after loading the attic
+
+The user's 0.40 session ended in `audio/decoders/raw.cpp:210`: the PCM stream
+size was not divisible by its sample width. The reported symptom was a frozen
+pointer while a character was walking toward the attic window after loading;
+audio continued briefly. The process had exited by inspection. This is a native
+audio assertion, not a caught Lingo exception. The log does not identify the
+particular sound or character, so the exact interaction remains uncertain.
+
+Read-only inspection of 1,419 original AIFF assets found 501 mono, 16-bit,
+22,050 Hz files whose SSND chunk counts one zero byte beyond the complete
+sample frames declared in COMM. There is also an ordinary external chunk pad
+byte (not necessarily zero). The original decoder passes the entire SSND
+payload to the raw decoder, which asserts on its odd length. The original
+`AFB_DYN1_1_1` reproduces this same assertion in a host decoder test.
+
+`ps4-jonsson-aiff.h` recognizes only that observed layout: plain AIFF, exact
+FORM bounds, one 18-byte COMM before a terminal SSND, the above PCM format,
+nonzero frame count, zero SSND offset/block size, exactly one extra internal
+zero byte, and complete chunk bounds. It restores the input position. For
+Mjolner with the existing PS4 experimental opt-in, `AudioFileDecoder` supplies
+only the declared PCM samples to the existing raw decoder via a bounded stream.
+The wrapper owns its substream and honors ownership of the original source.
+No asset is modified, no sample is dropped, and no assertion is disabled.
+Other layouts, codecs, games, and platforms retain the original decoder path.
+A sound-debug message records each matched filename when explicitly enabled.
+
+`check-aiff-padding.py SOURCE HOST_BUILD` builds the production recognizer test
+with ASan/UBSan and links the real host audio/common libraries. The 73 synthetic cases
+cover valid and padded audio, nonzero extra data, extra whole samples, stereo,
+wrong depth/rate, invalid frame counts/offsets, duplicate COMM, and every prefix
+truncation. Accepted audio is decoded and compared sample-for-sample with the
+input, including rewind. Optional `--game-data PRIVATE_DIRECTORY` checks actual
+assets without copying any into the repository. All 501 padded files passed;
+the remaining 918 used the unmodified AIFF decoder successfully. Host and PS4
+builds pass, and the existing runtime suite retains its six baseline assertions
+across 34 upstream scripts. Fresh patch replay matches 160 modified files.
+Package validation and all 241 extracted payload comparisons pass.
+
+Local evidence is under `artifacts/eutherlingo-guard/freeze/` and
+`artifacts/eutherlingo-guard/shad/freeze041/`. Candidate 0.41 package SHA256:
+`88a4b52084955fd16c5a3ba5a10de7a2b0380a8f694c7d0e10314da987fa13d3`.
+Physical PS4 remains untested. This corrects an independently reproduced sound
+failure; it does not establish that every possible post-load freeze is fixed.
+
+Emulator validation (`freeze041/20261106-170630.log`): loaded the preserved
+Jönsson1 save into the attic, walked Sickan to the window, interacted there,
+then selected Vanheden and Harry and walked both to the floor by the window.
+All three moved and the cursor remained responsive. The sound debug log
+records the workaround on `@\voice\GHV\GHV_KY3_1_4` (99,988 PCM bytes),
+confirming that the new branch was exercised in PS4 gameplay. The save retained
+its original SHA256 (`32588099...7333ba`); no test progress was saved over it.
+This is an emulator check of the reported area, not an exact reproduction of
+the user's unknown click sequence or proof of physical-console behavior.

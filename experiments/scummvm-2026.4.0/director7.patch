@@ -6461,6 +6461,72 @@
  	bool processInputEvent(LEvent event, int targetId = 0, Common::Point pos = Common::Point(-1, -1));
  
 --- /dev/null
++++ b/engines/director/ps4-jonsson-aiff.h
+@@ -0,0 +1,63 @@
++/* ScummVM - Graphic Adventure Engine
++ * SPDX-License-Identifier: GPL-3.0-or-later
++ */
++
++#ifndef DIRECTOR_PS4_JONSSON_AIFF_H
++#define DIRECTOR_PS4_JONSSON_AIFF_H
++
++#include "common/stream.h"
++
++namespace Director {
++
++// Mjolner's linked voice files sometimes count one zero pad byte in SSND.
++// Recognize only the observed uncompressed mono 16-bit, 22050 Hz layout.
++// COMM must account for every sample; neither truncated audio nor arbitrary
++// unaligned data qualifies. Leave the source position unchanged on all paths.
++inline bool findJonssonAIFFPadding(Common::SeekableReadStream &stream, uint32 &pcmOffset, uint32 &pcmSize) {
++	const int64 savedPos = stream.pos();
++	bool matched = false;
++	bool foundCOMM = false;
++	uint32 frames = 0;
++	if (stream.size() >= 12 && stream.seek(0) && stream.readUint32BE() == MKTAG('F', 'O', 'R', 'M')) {
++		const uint64 end = (uint64)stream.readUint32BE() + 8;
++		if (end == (uint64)stream.size() && stream.readUint32BE() == MKTAG('A', 'I', 'F', 'F')) {
++			while ((uint64)stream.pos() + 8 <= end) {
++				const uint32 tag = stream.readUint32BE();
++				const uint32 length = stream.readUint32BE();
++				const uint64 next = (uint64)stream.pos() + length + (length & 1);
++				if (next > end || stream.err())
++					break;
++				if (tag == MKTAG('C', 'O', 'M', 'M')) {
++					if (foundCOMM || length != 18 || stream.readUint16BE() != 1)
++						break;
++					frames = stream.readUint32BE();
++					if (!frames || stream.readUint16BE() != 16 ||
++						stream.readUint16BE() != 0x400d || stream.readUint64BE() != 0xac44000000000000ULL)
++						break;
++					foundCOMM = true;
++				} else if (tag == MKTAG('S', 'S', 'N', 'D')) {
++					if (!foundCOMM || next != end || (uint64)length != (uint64)frames * 2 + 9 ||
++						stream.readUint32BE() != 0 || stream.readUint32BE() != 0)
++						break;
++					const uint64 start = stream.pos();
++					if (start > 0xffffffff || !stream.seek(next - 2))
++						break;
++					if (stream.readByte() == 0 && !stream.err() && !stream.eos()) {
++						pcmOffset = (uint32)start;
++						pcmSize = frames * 2;
++						matched = true;
++					}
++					break;
++				}
++				if (!stream.seek(next))
++					break;
++			}
++		}
++	}
++	stream.seek(savedPos);
++	return matched;
++}
++
++} // namespace Director
++
++#endif
+--- /dev/null
 +++ b/engines/director/ps4-jonsson.h
 @@ -0,0 +1,38 @@
 +// Local compatibility rules for the opt-in PS4 Jonssonligan experiment.
@@ -6767,11 +6833,12 @@
  	Common::HashMap<uint16, bool> _immediateActions;
 --- a/engines/director/sound.cpp
 +++ b/engines/director/sound.cpp
-@@ -39,7 +39,60 @@
+@@ -39,7 +39,61 @@
  #include "director/window.h"
  #include "director/castmember/sound.h"
  
 +#include "director/ps4-jonsson.h"
++#include "director/ps4-jonsson-aiff.h"
 +
  namespace Director {
 +
@@ -6828,7 +6895,7 @@
  
  DirectorSound::DirectorSound(Window *window) : _window(window) {
  	uint numChannels = 2;
-@@ -95,6 +148,8 @@
+@@ -95,6 +149,8 @@
  
  	// Set the last played sound so that cast member 0 in the sound channel doesn't stop this file.
  	setLastPlayedSound(soundChannel, SoundID(), false);
@@ -6837,7 +6904,7 @@
  	_channels[soundChannel]->fromLastMovie = false;
  }
  
-@@ -135,6 +190,10 @@
+@@ -135,6 +191,10 @@
  	cancelFade(soundChannel);
  
  	_mixer->stopHandle(_channels[soundChannel]->handle);
@@ -6848,7 +6915,7 @@
  
  	setChannelDefaultVolume(soundChannel);
  
-@@ -311,6 +370,16 @@
+@@ -311,6 +371,16 @@
  			continue;
  
  		fade->lapsedTicks = _window->getVM()->getMacTicks() - fade->startTicks;
@@ -6865,7 +6932,7 @@
  		if (fade->lapsedTicks > fade->totalTicks) {
  			if (fade->autoStop)
  				stopSound(it._key);
-@@ -534,6 +603,10 @@
+@@ -534,6 +604,10 @@
  		_channels[soundChannel]->loopPtr = nullptr;
  	cancelFade(soundChannel);
  	_mixer->stopHandle(_channels[soundChannel]->handle);
@@ -6876,7 +6943,7 @@
  	setLastPlayedSound(soundChannel, SoundID());
  	_channels[soundChannel]->fromLastMovie = false;
  	return;
-@@ -550,6 +623,9 @@
+@@ -550,6 +624,9 @@
  		cancelFade(it._key);
  
  		_mixer->stopHandle(it._value->handle);
@@ -6886,7 +6953,7 @@
  		setLastPlayedSound(it._key, SoundID());
  		it._value->fromLastMovie = false;
  	}
-@@ -757,35 +833,36 @@
+@@ -757,35 +834,36 @@
  void DirectorSound::processCuePoints() {
  	for (auto &it : _channels) {
  		SoundChannel *channel = it._value;
@@ -6948,6 +7015,24 @@
  		}
  	}
  }
+@@ -1005,7 +1083,16 @@
+ 		stream = Audio::makeWAVStream(copiedStream, disposeAfterUse);
+ 	} else if (magic1 == MKTAG('F', 'O', 'R', 'M') &&
+ 				(magic2 == MKTAG('A', 'I', 'F', 'F') || magic2 == MKTAG('A', 'I', 'F', 'C'))) {
+-		stream = Audio::makeAIFFStream(copiedStream, disposeAfterUse);
++		uint32 pcmOffset = 0, pcmSize = 0;
++		if (isPS4Jonsson() && Common::String(g_director->getGameId()) == "jonssonligan1" &&
++				findJonssonAIFFPadding(*copiedStream, pcmOffset, pcmSize)) {
++			debugC(2, kDebugSound, "Mjolner AIFF padding: %s (%u PCM bytes)", _path.c_str(), pcmSize);
++			Common::SeekableReadStream *pcm = new Common::SeekableSubReadStream(
++				copiedStream, pcmOffset, (uint64)pcmOffset + pcmSize, disposeAfterUse);
++			stream = Audio::makeRawStream(pcm, 22050, Audio::FLAG_16BITS, DisposeAfterUse::YES);
++		} else {
++			stream = Audio::makeAIFFStream(copiedStream, disposeAfterUse);
++		}
+ 	} else {
+ 		warning("Unknown file type for %s", _path.c_str());
+ 		delete copiedStream;
 --- a/engines/director/sound.h
 +++ b/engines/director/sound.h
 @@ -37,6 +37,8 @@

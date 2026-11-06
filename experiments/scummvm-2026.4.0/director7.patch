@@ -7154,6 +7154,33 @@
  	int32 _angleRot;
  	int32 _angleSkew;
  
+--- a/engines/director/stxt.cpp
++++ b/engines/director/stxt.cpp
+@@ -25,6 +25,9 @@
+ #include "director/director.h"
+ #include "director/cast.h"
+ #include "director/stxt.h"
++#include "director/ps4-jonsson.h"
++#include "graphics/macgui/macfontmanager.h"
++#include "graphics/macgui/macwindowmanager.h"
+ 
+ namespace Director {
+ 
+@@ -148,6 +151,14 @@
+ 		}
+ 	}
+ 
++	// Mjolner's save dialog references an unregistered font (32769).
++	// MacFontManager already substitutes Geneva's glyphs for unknown IDs,
++	// but retains an invalid encoding. Resolve the ID as well so MacText
++	// encodes Unicode text as Mac Roman for that bitmap font.
++	if (isPS4Jonsson() && Common::String(g_director->getGameId()) == "jonssonligan1" &&
++			g_director->_wm->_fontMan->getFontName(fontId).empty())
++		fontId = Graphics::kMacFontGeneva;
++
+ 	debugC(3, kDebugLoading, "FontStyle::read(): formatStartOffset: %d, height: %d -> %d ascent: %d, fontId: %d -> %d, textSlant: %d, fontSize: %d, r: %x g: %x b: %x",
+ 			formatStartOffset, originalHeight, height, ascent, originalFontId, fontId, textSlant, fontSize, r, g, b);
+ }
 --- a/engines/director/window.cpp
 +++ b/engines/director/window.cpp
 @@ -56,7 +56,9 @@

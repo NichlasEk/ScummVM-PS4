@@ -194,6 +194,14 @@ int main() {
  director.game="jonssonligan2";
  assert(fileExists("Sparade spel/Jönsson1")==0 && normalPathReached);
  assert(deleteFile("Sparade spel/Jönsson1")==0);
+ director.game="jonssonligan1";
+ saves.catalogue={"custom-target-ÅÄÖ-åäö.txt"};
+ assert(list("Sparade spel",1)=="ÅÄÖ-åäö");
+ assert(fileExists("Sparade spel/ÅÄÖ-åäö")==1);
+ assert(ps4JonssonSaveName("Sparade spel/ÅÄÖ-åäö",savePrefix())=="custom-target-ÅÄÖ-åäö.txt");
+ assert(deleteFile("Sparade spel/ÅÄÖ-åäö")==1);
+ assert(fileExists("Sparade spel/ÅÄÖ-åäö")==0);
+ saves.catalogue={"custom-target-Jönsson1.txt"};
  director.game="anothergame";assert(list("Sparade spel",1)=="<normal>");
  director.game="jonssonligan1";enabled=false;
  assert(list("Sparade spel",1)=="<normal>");

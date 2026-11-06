@@ -540,3 +540,35 @@ confirming that the new branch was exercised in PS4 gameplay. The save retained
 its original SHA256 (`32588099...7333ba`); no test progress was saved over it.
 This is an emulator check of the reported area, not an exact reproduction of
 the user's unknown click sequence or proof of physical-console behavior.
+
+### 0.42: Swedish characters in save-name fields
+
+The save filename already contains valid UTF-8 (`Jönsson1.txt`), and the list
+builtin returns it unchanged. The dialog's STXT uses unregistered font ID
+32769. MacFontManager substitutes Geneva's bitmap glyphs by name, but leaves
+the original font ID and its invalid encoding. MacText consequently sends
+Unicode code points to that legacy bitmap font; `ö` becomes a missing-glyph
+box instead of being encoded as Mac Roman.
+
+The Mjolner PS4 opt-in now resolves unregistered STXT font IDs to the existing
+Geneva ID in `FontStyle::read`, after applying the cast's font map. That keeps
+the font's glyphs and encoding consistent in both initial styled text and
+subsequent script-supplied text. Registered fonts, other games and platforms
+are unchanged. No filenames, file contents, or player input are transliterated.
+The durable change is in `director7.patch` (`engines/director/stxt.cpp`).
+
+The existing save lifecycle test now additionally checks listing, path mapping,
+existence and deletion for `ÅÄÖ-åäö` without changing its UTF-8 bytes. Its
+ASan/UBSan fixtures pass. Host and PS4 builds pass, fresh patch replay matches
+161 modified files, and package validation plus 241 extracted payload
+comparisons pass. Candidate 0.42 package SHA256:
+`74a379bad4ecdc6b0dc59fe43fec425ce9c9208e531b207174a9884199824e30`.
+Local evidence: `artifacts/eutherlingo-guard/save-font/`.
+
+In the isolated 0.42 emulator session (`font042/20261106-171729.log`), both
+`Jönsson1` and `ÅÄÖ-åäö` render correctly in the save list. Selecting the second
+entry and loading restores the attic successfully. The test used a copied
+save under the additional name; its SHA256 stayed unchanged. Screenshots
+`swedish-save-list042.png` and `loaded-swedish-name042.png` record the checks.
+The user's live 0.41 session was left running; 0.42 is ready for the next
+launch. Physical PS4 validation remains outstanding.

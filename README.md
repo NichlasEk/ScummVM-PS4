@@ -3,9 +3,9 @@
 An unofficial native PS4 port of **ScummVM 2026.4.0**, built with OpenOrbis,
 controller and USB mouse input, and a Vulkan/OpenGNM graphics backend.
 
-**[Download RC1](https://github.com/NichlasEk/ScummVM-PS4/releases/tag/v2026.4.0-rc1)**
+**[Download RC2](https://github.com/NichlasEk/ScummVM-PS4/releases/tag/v2026.4.0-rc2)**
 
-Install **ScummVM-PS4-2026.4.0-RC1.pkg**. The application appears as
+Install **ScummVM-PS4-2026.4.0-RC2.pkg**. The application appears as
 **ScummVM PS4** on the console. No separate engine-data folder is required.
 Games and MT-32 ROMs are not included; provide your own legally obtained files.
 
@@ -18,10 +18,8 @@ Games and MT-32 ROMs are not included; provide your own legally obtained files.
 4. Leave the packaged support data in place. A custom **Extra Path** is optional;
    the application also finds its bundled engine data at `/app0/data`.
 
-RC1 retains title ID **SCVM00265** and internal application version **0.32**.
-It is the 0.32 test package with only the console display name changed; it is
-not a new program build. If 0.32 is already installed, your package installer
-may report the same version. Back up settings and saves before replacing it.
+RC2 retains title ID **SCVM00265** and raises the internal application version
+to **0.43**. Back up settings and saves before updating.
 They remain at `/data/scummvm-2026-vulkan/scummvm.ini` and
 `/data/scummvm-2026-vulkan/saves/`. Older port variants have different title IDs.
 
@@ -33,29 +31,27 @@ They remain at `/data/scummvm-2026-vulkan/scummvm.ini` and
 - USB mouse input is enabled. Games can override controls; use the keymapper
   for engine-specific bindings.
 
-## What RC1 contains
+## What RC2 contains
 
-The community-tested 0.32 program includes the packaged-data fallback,
-MT-32 audio pacing correction, selectable 2D filters, Grim/Monkey Island
-rendering fixes and Jönssonligan compatibility work. The maintainer reports no
-new community bug reports over the recent test period.
+RC2 restores The Longest Journey's face and clothing textures and includes the
+committed Jönssonligan/Mjolner fixes through 0.42 for dialogue audio, helper
+windows and saves, including Swedish save names. RC1's packaged-data fallback,
+MT-32 pacing, 2D filters and Grim/Monkey Island rendering fixes remain included.
 
-The renamed package passes digest/signature validation. All 241 packaged files
-were compared against the original: only `sce_sys/param.sfo` differs, and only
-its `TITLE` entry changed. Host regression tests cover graphics resource reuse,
-frame ownership, Director input handling and the shader catalog. Physical
-installation/start of the **renamed package** has not yet been confirmed.
+The exact TLJ executable accepted in shadPS4 is packaged unchanged. Host graphics
+regressions pass, clean source replay matches 161 patched files, and all 241
+extracted PKG payloads match staging. Physical PS4 testing of RC2 is pending.
 
 This is a **release candidate**, not a full-game compatibility guarantee.
 The graphics bridge implements a subset of OpenGL. Performance, save/load and
 later-game behavior vary by engine; PICE, SOTC and Director work remains
-experimental. See [release notes](docs/releases/rc1/RELEASE-NOTES.md).
+experimental. See [release notes](docs/releases/rc2/RELEASE-NOTES.md).
 
 ## Source and building
 
 This repository contains the port, patches, tests and build recipes. The release
 also includes prepared ScummVM source, patched dependency sources, runtime source
-supplement, notices and checksums. Read [SOURCES.md](docs/releases/rc1/SOURCES.md)
+supplement, notices and checksums. Read [SOURCES.md](docs/releases/rc2/SOURCES.md)
 for the build order and provenance limitations. A fresh-machine or bit-identical
 rebuild has not been established.
 

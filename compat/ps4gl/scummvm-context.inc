@@ -149,6 +149,7 @@
 	shadersSupported = true;
 	NPOTSupported = true;
 	textureEdgeClampSupported = true;
+	textureMirrorRepeatSupported = true;
 	textureLookupPrecision = UINT_MAX;
 	debug(5, "PS4GL explicit desktop shader subset loaded; general GL version remains disabled");
 	return;

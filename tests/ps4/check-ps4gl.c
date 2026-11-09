@@ -412,6 +412,7 @@ static void check_rectangle_textures(void) {
   const PS4GLTexture *rect=ps4glRectangleAtUnit(&ctx,0);assert(rect && rect->width==2 && rect->height==3 && rect->min_filter==GL_LINEAR);
   assert(ps4glTextureAtUnit(&ctx,0)->width==0 && !glGetError());
   glTexParameteri(GL_TEXTURE_RECTANGLE,GL_TEXTURE_WRAP_S,GL_REPEAT);assert(glGetError()==GL_INVALID_ENUM && rect->wrap_s==GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_RECTANGLE,GL_TEXTURE_WRAP_S,GL_MIRRORED_REPEAT);assert(glGetError()==GL_INVALID_ENUM && rect->wrap_s==GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_RECTANGLE,GL_TEXTURE_MIN_FILTER,GL_NEAREST_MIPMAP_LINEAR);assert(glGetError()==GL_INVALID_ENUM);
   glTexImage2D(GL_TEXTURE_RECTANGLE,1,GL_RGBA,1,1,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);assert(glGetError()==GL_INVALID_VALUE && rect->width==2);
   glDeleteTextures(2,names);assert(!ps4glRectangleAtUnit(&ctx,0) && !ps4glTextureAtUnit(&ctx,0));ps4glDestroyTextures(&ctx);
@@ -731,6 +732,9 @@ int main(void) {
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
   assert(ps4glTextureAtUnit(&texctx,1)->min_filter==GL_NEAREST && ps4glTextureAtUnit(&texctx,1)->wrap_s==GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_MIRRORED_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_MIRRORED_REPEAT);
+  assert(glGetError()==GL_NO_ERROR && ps4glTextureAtUnit(&texctx,1)->wrap_s==GL_MIRRORED_REPEAT && ps4glTextureAtUnit(&texctx,1)->wrap_t==GL_MIRRORED_REPEAT);
   glActiveTexture(GL_TEXTURE0+PS4GL_TEXTURE_UNITS); assert(glGetError()==GL_INVALID_ENUM && texctx.active_texture==1);
   glPixelStorei(GL_UNPACK_ALIGNMENT,3); assert(glGetError()==GL_INVALID_VALUE && texctx.unpack_alignment==8);
   texctx.programs[0].pipeline=(VkPipeline)(uintptr_t)1; texctx.programs[0].uniform_count=1;

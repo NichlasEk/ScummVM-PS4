@@ -161,6 +161,7 @@ typedef struct PS4GLBlendVariant { PS4GLBlend state; PS4GLRaster raster; VkPipel
 #define GL_LINEAR 0x2601
 #define GL_NEAREST_MIPMAP_LINEAR 0x2702
 #define GL_REPEAT 0x2901
+#define GL_MIRRORED_REPEAT 0x8370
 #define GL_CLAMP_TO_EDGE 0x812f
 #define GL_FRAMEBUFFER_UNSUPPORTED 0x8cdd
 #define GL_RGB 0x1907

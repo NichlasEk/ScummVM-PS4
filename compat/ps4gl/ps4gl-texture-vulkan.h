@@ -66,8 +66,8 @@ sampler:;
     .minFilter=source->min_filter==GL_LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
     .magFilter=source->mag_filter==GL_LINEAR ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
     .mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
-    .addressModeU=source->wrap_s==GL_REPEAT ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-    .addressModeV=source->wrap_t==GL_REPEAT ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    .addressModeU=source->wrap_s==GL_REPEAT ? VK_SAMPLER_ADDRESS_MODE_REPEAT : source->wrap_s==GL_MIRRORED_REPEAT ? VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    .addressModeV=source->wrap_t==GL_REPEAT ? VK_SAMPLER_ADDRESS_MODE_REPEAT : source->wrap_t==GL_MIRRORED_REPEAT ? VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
     .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
   if(vkCreateSampler(device,&si,NULL,&t->sampler)!=VK_SUCCESS) return 0;
   if(t->borrowed_view) { texture_snapshot_key(t,source); return 1; }

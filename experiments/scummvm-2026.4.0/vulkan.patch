@@ -1647,7 +1647,7 @@
  		}
 --- a/graphics/opengl/context.cpp
 +++ b/graphics/opengl/context.cpp
-@@ -91,6 +91,162 @@
+@@ -91,6 +91,163 @@
  	}
  
  	type = contextType;
@@ -1803,6 +1803,7 @@
 +	shadersSupported = true;
 +	NPOTSupported = true;
 +	textureEdgeClampSupported = true;
++	textureMirrorRepeatSupported = true;
 +	textureLookupPrecision = UINT_MAX;
 +	debug(5, "PS4GL explicit desktop shader subset loaded; general GL version remains disabled");
 +	return;

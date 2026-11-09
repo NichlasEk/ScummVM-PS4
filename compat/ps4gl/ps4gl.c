@@ -845,7 +845,7 @@ void glTexParameteri(GLenum target, GLenum pname, GLint value) {
     }
     if(pname==GL_TEXTURE_MIN_FILTER) t->min_filter=value; else t->mag_filter=value;
   } else if(pname==GL_TEXTURE_WRAP_S || pname==GL_TEXTURE_WRAP_T || pname==GL_TEXTURE_WRAP_R) {
-    if(value!=GL_REPEAT && value!=GL_CLAMP_TO_EDGE) { error(GL_INVALID_ENUM); return; }
+    if(value!=GL_REPEAT && value!=GL_MIRRORED_REPEAT && value!=GL_CLAMP_TO_EDGE) { error(GL_INVALID_ENUM); return; }
     if(pname==GL_TEXTURE_WRAP_S) t->wrap_s=value; else if(pname==GL_TEXTURE_WRAP_T) t->wrap_t=value; else t->wrap_r=value;
   } else error(GL_INVALID_ENUM);
 }

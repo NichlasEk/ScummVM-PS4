@@ -25,6 +25,12 @@ int main(void) {
     cache_retired_texture(&ctx,&t); destroy_texture_snapshot(0,&t);
     assert(ctx.texture_cache_bytes==4096 && destroyed==0);
   }
+  s->wrap_s=GL_MIRRORED_REPEAT;
+  assert(!texture_snapshot_matches(&ctx.texture_cache[0],s));
+  s->wrap_s=GL_REPEAT;
+  s->wrap_t=GL_MIRRORED_REPEAT;
+  assert(!texture_snapshot_matches(&ctx.texture_cache[0],s));
+  s->wrap_t=GL_REPEAT;
   // Old in-flight image remains valid until retirement, never mutated in place.
   ++s->revision; assert(!texture_snapshot_matches(&ctx.texture_cache[0],s));
   assert(destroyed==0); retire_texture_cache(&ctx,0); assert(destroyed==1 && !ctx.texture_cache_bytes);

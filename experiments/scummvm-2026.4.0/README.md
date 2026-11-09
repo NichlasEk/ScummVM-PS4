@@ -329,6 +329,27 @@ Verified in shadPS4: Up produces key 273 down/up and moves Manny in the office
 `artifacts/upstream-2026.4.0`). The test executable includes temporary engine
 input tracing; exported source patches omit that tracing.
 
+### The Longest Journey: missing face and clothing textures (2026-11-09)
+
+The opening cabin rendered faces and patterned clothing as stretched solid colors.
+Actor draws had valid textures and enabled UV attributes (including negative UVs),
+and the `textured` uniform was true. The PS4 subset did not expose mirrored repeat,
+so Stark left these textures clamped to their edges. PS4GL now accepts
+`GL_MIRRORED_REPEAT`, maps U/V to Vulkan mirrored-repeat addressing, and exposes
+`textureMirrorRepeatSupported` through the explicit context loader and replay patch.
+Rectangle textures retain their clamp-only validation.
+
+The sanitizer frame/state/cache/copy suite passes, including mirrored-repeat state,
+rectangle rejection and sampler-cache invalidation. A clean context patch replay
+matches the built source. Visible shadPS4 verification of the same cabin shows all
+three faces and clothing patterns restored. Evidence is local under
+`artifacts/emulator/tlj-20261109/` (`before-mirrored-repeat.png`,
+`after-mirrored-repeat.png`, `mirror-tests.log`, `mirror-build.log`, `mirror-launch.log`).
+The isolated candidate is `build/tlj-textures/eboot.bin`, SHA-256
+`cfb0008acb6c6f83e6f9dfa6341806853ec425a23b0d7613932c4c615d443f8b`.
+This is emulator verification of the reported scene; no new PKG or physical PS4
+validation was performed. The original staged release eboot is unchanged.
+
 ### The Longest Journey: missing untextured actor parts
 
 The opening dialogue scene exposed a PS4GL descriptor restriction: the actor

@@ -23,6 +23,54 @@ to **0.43**. Back up settings and saves before updating.
 They remain at `/data/scummvm-2026-vulkan/scummvm.ini` and
 `/data/scummvm-2026-vulkan/saves/`. Older port variants have different title IDs.
 
+### Game folders and Add Game
+
+For internal storage, put each game in its own folder under
+`/data/scummvm/games/`, for example:
+
+```text
+/data/scummvm/games/monkey/
+/data/scummvm/games/tlj/
+```
+
+Choose **Add Game → Internal storage – games → your game folder → Choose**.
+For USB storage, game folders can be at the drive's root or inside subfolders;
+select **USB 0** or **USB 1** in the file browser. If you upload games while
+the browser is open, close and reopen it to refresh the listing.
+
+You do not need to change **Extra Path** to add games. Leave it set to
+`/app0/data` for the bundled support files. The **Bundled games** entry points
+to `/app0/games` inside the application package, not your uploaded game folders.
+
+### Reset settings and the game list
+
+Close ScummVM, then rename the following file as a backup (or delete it):
+
+```text
+/data/scummvm-2026-vulkan/scummvm.ini
+```
+
+Restart ScummVM to recreate the default configuration with an empty game list.
+This resets settings and registered games; it does not delete game files or
+save files. Saves remain in `/data/scummvm-2026-vulkan/saves/`.
+
+### Lure of the Temptress: outdated lure.dat
+
+RC2 requires **lure.dat version 1.32** and already includes it in `/app0/data`.
+An older copy in the game's folder can override the bundled file and cause:
+
+```text
+Incorrect version of the 'lure.dat' engine data file found. Expected 1.32 but got 1.29.
+```
+
+Rename or remove the outdated `lure.dat` from the **game folder**, so ScummVM
+uses the bundled version. If you keep a separate copy in a custom **Extra Path**,
+update it to version 1.32 or remove that outdated copy too. Keep the packaged
+file in `/app0/data` intact.
+
+This does not require a new RC2 package or a code fix. Reinstalling RC2 or
+resetting `scummvm.ini` will not remove an old file left in a game folder.
+
 ## Controls
 
 - Left stick: mouse pointer; hold R1 for finer movement.
@@ -40,7 +88,9 @@ MT-32 pacing, 2D filters and Grim/Monkey Island rendering fixes remain included.
 
 The exact TLJ executable accepted in shadPS4 is packaged unchanged. Host graphics
 regressions pass, clean source replay matches 161 patched files, and all 241
-extracted PKG payloads match staging. Physical PS4 testing of RC2 is pending.
+extracted PKG payloads match staging. Adding games from internal storage has
+also been confirmed on a physical PS4 with the unchanged RC2 package. This
+does not establish full gameplay compatibility or physical USB compatibility.
 
 This is a **release candidate**, not a full-game compatibility guarantee.
 The graphics bridge implements a subset of OpenGL. Performance, save/load and

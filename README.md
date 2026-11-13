@@ -38,9 +38,25 @@ For USB storage, game folders can be at the drive's root or inside subfolders;
 select **USB 0** or **USB 1** in the file browser. If you upload games while
 the browser is open, close and reopen it to refresh the listing.
 
-You do not need to change **Extra Path** to add games. Leave it set to
-`/app0/data` for the bundled support files. The **Bundled games** entry points
-to `/app0/games` inside the application package, not your uploaded game folders.
+You do not need to change **Extra Path** just to add games. The **Bundled games**
+entry points to `/app0/games` inside the application package, not your uploaded
+game folders.
+
+### Extra Path: bundled support files and your own files
+
+The default **Extra Path**, `/app0/data`, is the complete path to support files
+inside the running application's mounted package. It is not a writable FTP
+upload folder, and you do not need to create it manually.
+
+For your own MT-32/CM-32L ROMs, SoundFonts or additional font files, create a
+writable folder such as `/data/scummvm/games/extra/`, upload the files there by
+FTP, and set **Global Options → Paths → Extra Path** to that folder. You do not
+need to copy these shared files into every game's folder. Games may require
+additional audio settings to use a particular synthesizer or SoundFont.
+
+The port still searches `/app0/data` for its bundled support files when you
+choose a custom Extra Path. If you do not use your own additional files, leave
+Extra Path at its default value.
 
 ### Reset settings and the game list
 
